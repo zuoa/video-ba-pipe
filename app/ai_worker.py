@@ -64,7 +64,7 @@ def main(args):
             # 可以在这里添加逻辑：如果当前算法被更新，则重新实例化
             last_check_time = time.time()
 
-        latest_frame = buffer.peek(-1)
+        latest_frame = buffer.read()
         if latest_frame is not None:
             logger.debug("[AIWorker] 处理新帧")
             logger.debug(f"[{time.strftime('%H:%M:%S')}] 已处理一帧, "

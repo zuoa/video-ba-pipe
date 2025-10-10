@@ -126,7 +126,7 @@ class DecoderWorker:
             while self.running:
                 try:
                     # 获取解码后的帧
-                    frame = self.decoder.get_frame(timeout=2.0)
+                    frame = self.decoder.get_frame(timeout=1.0)
 
                     if frame is not None:
                         frame_count += 1
@@ -138,8 +138,7 @@ class DecoderWorker:
                             written_count += 1
                             error_count = 0  # 重置错误计数
 
-                            if written_count % 100 == 0:
-                                logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
+                            logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
                         else:
                             skipped_count += 1
 
@@ -207,6 +206,9 @@ class DecoderWorker:
 
 def main(args):
     """主函数"""
+
+    logger.info("启动 DECODER 工作进程")
+
     # 解码器配置
     decoder_config = {
         'type': args.decoder_type,
@@ -243,6 +245,7 @@ def main(args):
         logger.error(f"工作进程异常退出: {e}", exc_info=True)
         sys.exit(1)
 
+    logger.warning("停止 DECODER 工作进程")
     sys.exit(0)
 
 
@@ -275,8 +278,8 @@ if __name__ == '__main__':
     sample_group.add_argument('--sample-mode', default='interval',
                               choices=['all', 'interval', 'fps'],
                               help='采样模式: all=所有帧, interval=按时间间隔, fps=按目标帧率 (默认: interval)')
-    sample_group.add_argument('--sample-interval', type=float, default=1000.0,
-                              help='采样时间间隔(毫秒), 仅在 interval 模式下生效 (默认: 1000.0)')
+    sample_group.add_argument('--sample-interval', type=float, default=1.0,
+                              help='采样时间间隔(秒), 仅在 interval 模式下生效 (默认: 1.0)')
     sample_group.add_argument('--sample-fps', type=float, default=None,
                               help='目标采样帧率, 仅在 fps 模式下生效 (例如: 5 表示每秒5帧)')
 

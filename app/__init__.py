@@ -19,7 +19,7 @@ LOG_CONF = {
             'level': logging.DEBUG,
             'class': 'logging.StreamHandler',
             'stream': sys.stdout,
-            'formatter': 'simple'
+            'formatter': 'verbose'
         },
         'file': {
             'level': logging.INFO,
