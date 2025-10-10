@@ -66,6 +66,7 @@ class BaseAlgorithm(ABC):
         :param save_path: 保存路径
         """
         img_vis = img.copy()
+        img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
 
         # 绘制第一阶段检测框（蓝色）
         for box in result.boxes:

@@ -121,7 +121,7 @@ class DecoderWorker:
             written_count = 0
             skipped_count = 0
             error_count = 0
-            max_consecutive_errors = 10
+            max_consecutive_errors = 60
 
             while self.running:
                 try:
