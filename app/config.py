@@ -18,3 +18,7 @@ SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1'
 SNAPSHOT_INTERVAL = int(os.getenv('SNAPSHOT_INTERVAL', '60'))  # in seconds
 SNAPSHOT_SAVE_PATH = os.getenv('SNAPSHOT_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/snapshots'))
 os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
+
+
+# 极速解码模式，每次取最新的帧，扔掉所有老的帧
+IS_EXTREME_DECODE_MODE = os.getenv('IS_Extreme_DECODE_MODE', 'true').lower() in ('true', '1', 'yes')

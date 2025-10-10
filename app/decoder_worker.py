@@ -7,7 +7,7 @@ import time
 from multiprocessing import resource_tracker
 
 from app import logger
-from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL
+from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL, IS_EXTREME_DECODE_MODE
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import RTSPStreamer
@@ -145,7 +145,10 @@ class DecoderWorker:
             while self.running:
                 try:
                     # 获取解码后的帧
-                    frame = self.decoder.get_frame(timeout=1.0)
+                    if IS_EXTREME_DECODE_MODE:
+                        frame = self.decoder.get_latest_frame()
+                    else:
+                        frame = self.decoder.get_frame(timeout=1.0)
 
                     if frame is not None:
                         frame_count += 1
@@ -171,10 +174,11 @@ class DecoderWorker:
                             logger.warning("RTSP 流已停止")
                             break
 
-                        error_count += 1
-                        if error_count >= max_consecutive_errors:
-                            logger.error(f"连续 {error_count} 次获取帧失败，停止工作")
-                            break
+                        if not IS_EXTREME_DECODE_MODE:
+                            error_count += 1
+                            if error_count >= max_consecutive_errors:
+                                logger.error(f"连续 {error_count} 次获取帧失败，停止工作")
+                                break
 
                 except KeyboardInterrupt:
                     logger.info("收到中断信号")

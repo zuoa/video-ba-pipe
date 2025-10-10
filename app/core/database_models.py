@@ -28,14 +28,15 @@ class BaseModel(pw.Model):
 # 3. 定义 Algorithm 模型 (对应 algorithms 表)
 class Algorithm(BaseModel):
     name = pw.CharField(unique=True)
-    model_path = pw.TextField()
+    model_json = pw.TextField(default='{}')
+    interval_seconds = pw.DoubleField(default=1)
     # 使用 TextField 存储 JSON 字符串，灵活且强大
-    config_json = pw.TextField(default='{}')
+    ext_config_json = pw.TextField(default='{}')
 
     @property
-    def config(self):
+    def models_config(self):
         """提供一个方便的方法来获取解析后的JSON配置"""
-        return json.loads(self.config_json)
+        return json.loads(self.model_json)
 
 
 # 4. 定义 Task 模型 (对应 tasks 表)

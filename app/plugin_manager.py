@@ -39,7 +39,7 @@ class PluginManager:
             # 遍历模块成员，寻找继承自 BaseAlgorithm 的类
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, BaseAlgorithm) and obj is not BaseAlgorithm:
-                    algo_instance_for_name = obj(algo_config={'model_path': ''})  # 临时实例以获取名称
+                    algo_instance_for_name = obj(algo_config={'models': []})  # 临时实例以获取名称
                     algo_name = algo_instance_for_name.name
                     self.algorithms[algo_name] = obj  # 存储的是类本身，而不是实例
                     self.last_mtime[module_name] = current_mtime

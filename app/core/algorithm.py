@@ -22,7 +22,7 @@ class BaseAlgorithm(ABC):
                                包含 'model_path' 和其他自定义参数。
         """
         self.config = algo_config
-        self.model = None
+        self.models = []
         self.load_model()
 
     @property
@@ -57,7 +57,7 @@ class BaseAlgorithm(ABC):
         pass
 
     @staticmethod
-    def visualize(img, result, label_prefix='Object', save_path=None):
+    def visualize(img, results, save_path=None):
         """
         可视化检测结果
         :param label_prefix:
@@ -69,10 +69,17 @@ class BaseAlgorithm(ABC):
         img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
 
         # 绘制第一阶段检测框（蓝色）
-        for box in result.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
-            cls = int(box.cls[0])
-            conf = float(box.conf[0])
+        for result in results:
+
+            #result.get('box'): (700.0509643554688, 495.17333984375, 990.0289306640625, 1076.567626953125)
+
+            x1, y1, x2, y2 = map(int, result.get('box', [0, 0, 0, 0]))
+            logger.debug(f"{x1, y1, x2, y2}")
+
+            label_prefix = result.get('label', 'Object')
+            cls = result.get('class', 0)
+            conf = result.get('confidence', 1.0)
+
 
             cv2.rectangle(img_vis, (x1, y1), (x2, y2), (255, 0, 0), 2)
             label = f"{label_prefix}-C{cls}: {conf:.2f}"

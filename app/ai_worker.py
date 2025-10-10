@@ -12,15 +12,6 @@ from app.core.ringbuffer import VideoRingBuffer
 from app.plugin_manager import PluginManager
 
 
-def get_algorithm_config(algo_id):
-    # 使用 Peewee 的 get_by_id，如果找不到会直接抛出异常
-    try:
-        algo = Algorithm.get_by_id(algo_id)
-        # 直接使用 @property 方法获取解析后的配置
-        return algo.name, algo.model_path, algo.config
-    except Algorithm.DoesNotExist:
-        print(f"错误：在数据库中找不到 ID 为 {algo_id} 的算法。")
-        return None, None, None
 
 
 def main(args):
@@ -49,8 +40,10 @@ def main(args):
 
     # 4. 实例化算法插件
     # 将数据库中的配置（model_path, config_json）传递给插件
-    full_config = algo_config_db.config
-    full_config['model_path'] = algo_config_db.model_path
+    full_config = {
+        "models_config": algo_config_db.models_config,
+        "interval_seconds": algo_config_db.interval_seconds,
+    }
     algorithm = AlgorithmClass(full_config)
     print(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_name}'，开始处理 {args.buffer}")
 
@@ -73,7 +66,7 @@ def main(args):
             result = algorithm.process(latest_frame)
             if result and result.get("detections"):
                 filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
-                algorithm.visualize(latest_frame, result.get("detections"), label_prefix='Person', save_path=filepath)
+                algorithm.visualize(latest_frame, result.get("detections"), save_path=filepath)
 
             frame_count += 1
         time.sleep(0.1)  # 控制处理频率

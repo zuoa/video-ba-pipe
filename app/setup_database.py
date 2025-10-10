@@ -13,26 +13,46 @@ def setup_database():
     person_detection, _ = Algorithm.get_or_create(
         name="person_detection",
         defaults={
-            'model_path': "/Users/yujian/Downloads/yolov8n.pt",
-            'config_json': json.dumps({"confidence": 0.8})
+            'model_json': json.dumps({"models": [
+                {
+                    "name": "yolov8n",
+                    "path": "/Users/yujian/Downloads/yolov8n.pt",
+                    "confidence": 0.7,
+                    "expand_width": 0.1, # 扩展宽度比例
+                    "expand_height": 0.1 # 扩展高度比例
+                },                {
+                    "name": "yolov8n2",
+                    "path": "/Users/yujian/Downloads/yolov8n.pt",
+                    "confidence": 0.9,
+                    "expand_width": 0.1,  # 扩展宽度比例
+                    "expand_height": 0.1  # 扩展高度比例
+                }
+            ]}),
+            'interval_seconds': 5
         }
     )
 
-    face_recognition, _ = Algorithm.get_or_create(
-        name="face_recognition",
-        defaults={
-            'model_path': "/path/to/arcface_model.onnx",
-            'config_json': json.dumps({"threshold": 0.7})
-        }
-    )
+    # face_recognition, _ = Algorithm.get_or_create(
+    #     name="face_recognition",
+    #     defaults={
+    #         'model_json': json.dumps({"models": [
+    #             {
+    #                 "name": "face_recognition_model_1",
+    #                 "path": "/Users/yujian/Downloads/face_recognition_model_1.pt",
+    #                 "threshold": 0.6
+    #             }
+    #         ]}),
+    #         'interval_seconds': 5
+    #     }
+    # )
 
     Task.get_or_create(
         source_code="1201",
         defaults={
             'name': "大厅人流检测",
-            'enabled': True,
+            'enabled': False,
             'buffer_name': "buffer_lobby_1201",
-            "source_name": "大厅摄像头",
+            "source_name": "电梯口",
             'source_url': "rtsp://admin:codvision120@192.168.201.120:554/Streaming/Channels/1",
             'algorithm': person_detection
         }
@@ -42,7 +62,7 @@ def setup_database():
         defaults={
             'name': "大厅人流检测2",
             'buffer_name': "buffer_lobby_1211",
-            "source_name": "大厅摄像头2",
+            "source_name": "研发门口",
             'enabled': True,
             'source_url': "rtsp://admin:codvision121@192.168.201.121:554/Streaming/Channels/1",
             'algorithm': person_detection
@@ -55,7 +75,7 @@ def setup_database():
             'source_code': "1251",
             'buffer_name': "buffer_lobby_1251",
             "source_name": "大厅摄像头5",
-            'enabled': True,
+            'enabled': False,
             'source_url': "rtsp://admin:codvision125@192.168.201.125:554/Streaming/Channels/1",
             'algorithm': person_detection
         }
