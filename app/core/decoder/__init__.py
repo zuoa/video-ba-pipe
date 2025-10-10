@@ -1,11 +1,4 @@
-import threading
-from queue import Full, Empty, Queue
-from typing import Optional
-
-import numpy as np
-
 from app.core.decoder.async_dec import AsyncSoftwareDecoder
-from app import logger
 from app.core.decoder.base import FFmpegSoftwareDecoder, OpenCVDecoder, PyNvCodecDecoder, GStreamerNVDecoder, BaseDecoder, DecoderStatus
 from app.core.decoder.nv import FFmpegNVDECDecoder
 from app.core.decoder.vt import FFmpegVTDecoder
@@ -39,8 +32,8 @@ class DecoderFactory:
         decoders = {
             'ffmpeg_nvdec': FFmpegNVDECDecoder,
             'nvdec': FFmpegNVDECDecoder,
-            'ffmpeg_sw': AsyncSoftwareDecoder, # <--- 更新为新的异步解码器
-            'ffmpeg': AsyncSoftwareDecoder,    # <--- 更新为新的异步解码器
+            'ffmpeg_sw': AsyncSoftwareDecoder,  # <--- 更新为新的异步解码器
+            'ffmpeg': AsyncSoftwareDecoder,  # <--- 更新为新的异步解码器
             'opencv': OpenCVDecoder,
             'pynvcodec': PyNvCodecDecoder,
             'gstreamer': GStreamerNVDecoder,
@@ -58,7 +51,6 @@ class DecoderFactory:
         decoder = decoder_class(decoder_id, **kwargs)
         decoder.initialize()
         return decoder
-
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-import time
 import signal
 import subprocess
+import time
 
 from app import logger
-from app.core.ringbuffer import VideoRingBuffer
 from app.core.database_models import db, Task  # 只需导入模型
+from app.core.ringbuffer import VideoRingBuffer
 
 
 class Orchestrator:

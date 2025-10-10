@@ -1,14 +1,10 @@
-from multiprocessing.context import BaseContext
-
-import numpy as np
-import mmap
-import os
 import struct
 from multiprocessing import shared_memory
+from multiprocessing.context import BaseContext
 from threading import Lock
-import time
 from typing import Optional, Tuple
-from ctypes import c_uint64, c_bool
+
+import numpy as np
 
 
 class VideoRingBuffer:

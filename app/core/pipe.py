@@ -1,10 +1,11 @@
-import numpy as np
-import cv2
-import time
-import threading
-from typing import Dict, Optional, Callable
-from dataclasses import dataclass
 import logging
+import threading
+import time
+from dataclasses import dataclass
+from typing import Dict, Optional
+
+import cv2
+import numpy as np
 
 # 假设已经导入了之前实现的模块
 # from decoder_pool import DecoderPool, Priority

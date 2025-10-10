@@ -1,11 +1,12 @@
 import argparse
 import os
-
-from app.core.decoder import DecoderFactory
-from app.core.streamer import RTSPStreamer
-from app.core.ringbuffer import VideoRingBuffer
 import signal
 from multiprocessing import resource_tracker
+
+from app.core.decoder import DecoderFactory
+from app.core.ringbuffer import VideoRingBuffer
+from app.core.streamer import RTSPStreamer
+
 
 def main(args):
     # 连接到由编排器创建的缓冲区

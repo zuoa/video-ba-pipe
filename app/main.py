@@ -1,16 +1,6 @@
-import os
-import queue
 import signal
-import time
-from typing import Optional
 
-import cv2
-import numpy as np
-
-from app import logger
-from app.core.decoder import DecoderFactory
 from app.core.orchestrator import Orchestrator
-from app.core.streamer import RTSPStreamer
 from app.setup_database import setup_database
 
 #

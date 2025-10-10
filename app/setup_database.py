@@ -1,5 +1,6 @@
-from app.core.database_models import db, Algorithm, Task
 import json
+
+from app.core.database_models import db, Algorithm, Task
 
 
 def setup_database():
@@ -34,7 +35,6 @@ def setup_database():
             'algorithm': person_detection
         }
     )
-
 
     db.close()
     print(f"数据库已使用 Peewee 模型初始化。")

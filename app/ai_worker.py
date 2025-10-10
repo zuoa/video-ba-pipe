@@ -9,6 +9,7 @@ from app import logger
 from app.config import FRAME_SAVE_PATH
 from app.core.database_models import Algorithm  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
+from app.plugin_manager import PluginManager
 
 
 def get_algorithm_config(algo_id):
@@ -28,35 +29,47 @@ def main(args):
     shm_name = args.buffer if os.name == 'nt' else f"/{args.buffer}"
     resource_tracker.unregister(shm_name, 'shared_memory')
 
-    algo_name, model_path, algo_config = get_algorithm_config(args.algo_id)
-    if not algo_name:
-        logger.error(f"[AIWorker:{os.getpid()}] 无法加载算法 ID {args.algo_id}，请检查数据库配置。")
-        exit(1)
+    # 1. 初始化插件管理器
+    plugin_manager = PluginManager()
 
-    logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_name}' (模型: {model_path})")
+    # 2. 从数据库获取此工作者被指定的算法配置
+    algo_config_db = Algorithm.get_by_id(args.algo_id)
+    algo_name = algo_config_db.name
 
+    # 3. 从插件管理器获取对应的算法类
+    AlgorithmClass = plugin_manager.get_algorithm_class(algo_name)
+    if not AlgorithmClass:
+        print(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{algo_name}' 的算法插件。")
+        return
+
+    # 4. 实例化算法插件
+    # 将数据库中的配置（model_path, config_json）传递给插件
+    full_config = algo_config_db.config
+    full_config['model_path'] = algo_config_db.model_path
+    algorithm = AlgorithmClass(full_config)
+    print(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_name}'，开始处理 {args.buffer}")
+
+    check_interval = 10  # 每10秒检查一次插件更新
+    last_check_time = time.time()
     frame_count = 0
     while True:
+        # 热重载检查
+        if time.time() - last_check_time > check_interval:
+            plugin_manager.check_for_updates()
+            # 可以在这里添加逻辑：如果当前算法被更新，则重新实例化
+            last_check_time = time.time()
+
         latest_frame = buffer.peek(-1)
         if latest_frame is not None:
             logger.debug("[AIWorker] 处理新帧")
             logger.debug(f"[{time.strftime('%H:%M:%S')}] 已处理一帧, "
-                  f"尺寸: {latest_frame.shape}")
+                         f"尺寸: {latest_frame.shape}")
 
-            # 1. 将帧从 RGB 转换为 BGR
-            bgr_frame = cv2.cvtColor(latest_frame, cv2.COLOR_RGB2BGR)
+            result = algorithm.process(latest_frame)
+            if result and result.get("detections"):
+                filepath = os.path.join(FRAME_SAVE_PATH, f"frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
+                algorithm.visualize(latest_frame, result.get("detections"), label_prefix='Person', save_path=filepath)
 
-            # 2. 创建文件名 (例如：frame_00010.jpg)
-            filename = os.path.join(FRAME_SAVE_PATH, f"frame_{frame_count:05d}.jpg")
-
-            # 3. 将 BGR 帧写入文件
-            cv2.imwrite(filename, bgr_frame)
-
-            print(f"✅ 已保存帧: {filename}")
-            # result = algorithm.process(latest_frame)
-            # if result:
-            #     # 触发保存视频等后续操作
-            #     trigger_save_action(buffer, result)
             frame_count += 1
         time.sleep(0.1)  # 控制处理频率
 
@@ -68,4 +81,3 @@ if __name__ == '__main__':
     parser.add_argument('--buffer', required=True, help="共享内存缓冲区名称")
     args = parser.parse_args()
     main(args)
-

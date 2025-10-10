@@ -1,8 +1,8 @@
-import peewee as pw
 import json
 
-from app.config import DB_PATH
+import peewee as pw
 
+from app.config import DB_PATH
 
 
 class DatabaseConfig:
@@ -20,10 +20,10 @@ db_config = DatabaseConfig(DB_PATH)
 db = db_config.get_database()
 
 
-
 class BaseModel(pw.Model):
     class Meta:
         database = db
+
 
 # 3. 定义 Algorithm 模型 (对应 algorithms 表)
 class Algorithm(BaseModel):
@@ -37,9 +37,10 @@ class Algorithm(BaseModel):
         """提供一个方便的方法来获取解析后的JSON配置"""
         return json.loads(self.config_json)
 
+
 # 4. 定义 Task 模型 (对应 tasks 表)
 class Task(BaseModel):
-    id=pw.AutoField()
+    id = pw.AutoField()
     name = pw.CharField()
     enabled = pw.BooleanField(default=True)
     source_url = pw.TextField()
