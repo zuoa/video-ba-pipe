@@ -21,7 +21,7 @@ class Orchestrator:
         buffer = VideoRingBuffer(name=task_buffer_name, create=True)
         self.buffers[task.id] = buffer
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name]
+        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name, '--sample-mode', 'interval', '--sample-interval', '5000']
         decoder_p = subprocess.Popen(decoder_args)
 
         # 将 algorithm id 传递给工作者
