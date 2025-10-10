@@ -6,6 +6,7 @@ from multiprocessing import resource_tracker
 import cv2
 
 from app import logger
+from app.config import FRAME_SAVE_PATH
 from app.core.database_models import Algorithm  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
 
@@ -34,9 +35,9 @@ def main(args):
 
     logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_name}' (模型: {model_path})")
 
+    frame_count = 0
     while True:
         latest_frame = buffer.peek(-1)
-        frame_count = 0
         if latest_frame is not None:
             logger.debug("[AIWorker] 处理新帧")
             logger.debug(f"[{time.strftime('%H:%M:%S')}] 已处理一帧, "
@@ -46,7 +47,7 @@ def main(args):
             bgr_frame = cv2.cvtColor(latest_frame, cv2.COLOR_RGB2BGR)
 
             # 2. 创建文件名 (例如：frame_00010.jpg)
-            filename = os.path.join("data/frames", f"frame_{frame_count:05d}.jpg")
+            filename = os.path.join(FRAME_SAVE_PATH, f"frame_{frame_count:05d}.jpg")
 
             # 3. 将 BGR 帧写入文件
             cv2.imwrite(filename, bgr_frame)

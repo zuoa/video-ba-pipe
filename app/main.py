@@ -11,7 +11,7 @@ from app import logger
 from app.core.decoder import DecoderFactory
 from app.core.orchestrator import Orchestrator
 from app.core.streamer import RTSPStreamer
-
+from app.setup_database import setup_database
 
 #
 # if __name__ == "__main__":
@@ -98,6 +98,7 @@ from app.core.streamer import RTSPStreamer
 #         decoder.close()
 #         print("所有组件已安全关闭。")
 if __name__ == "__main__":
+    setup_database()
     orch = Orchestrator()
     signal.signal(signal.SIGINT, lambda s, f: orch.stop() or exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: orch.stop() or exit(0))

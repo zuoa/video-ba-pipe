@@ -1,11 +1,26 @@
 import peewee as pw
 import json
 
-# 1. 创建一个数据库实例
-# 'check_same_thread=False' 在多线程应用中与SQLite一起使用时是推荐的
-db = pw.SqliteDatabase('config.db', pragmas={'check_same_thread': False})
+from app.config import DB_PATH
 
-# 2. 创建一个所有模型都会继承的基类
+
+
+class DatabaseConfig:
+    """数据库配置类"""
+
+    def __init__(self, db_path: str = 'app.db'):
+        self.db_path = db_path
+        self.database = pw.SqliteDatabase(db_path, pragmas={'check_same_thread': False})
+
+    def get_database(self):
+        return self.database
+
+
+db_config = DatabaseConfig(DB_PATH)
+db = db_config.get_database()
+
+
+
 class BaseModel(pw.Model):
     class Meta:
         database = db
