@@ -7,16 +7,20 @@ import time
 from multiprocessing import resource_tracker
 
 from app import logger
+from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import RTSPStreamer
+from app.core.utils import save_frame
+
 
 class DecoderWorker:
     """RTSP 视频流解码工作进程"""
 
-    def __init__(self, rtsp_url, buffer_name, decoder_config=None, sample_config=None):
+    def __init__(self, rtsp_url, buffer_name, source_info, decoder_config=None, sample_config=None):
         self.rtsp_url = rtsp_url
         self.buffer_name = buffer_name
+        self.source_info = source_info or {}
         self.decoder_config = decoder_config or {}
         self.sample_config = sample_config or {}
 
@@ -35,6 +39,10 @@ class DecoderWorker:
         self.frame_interval = 0
         if self.target_fps and self.target_fps > 0:
             self.frame_interval = 1.0 / self.target_fps
+
+        # Snapshot
+        self.last_snapshot_time = 0
+        self.snapshot_interval = SNAPSHOT_INTERVAL
 
     def setup(self):
         """初始化所有组件"""
@@ -110,6 +118,17 @@ class DecoderWorker:
 
         return True
 
+    def snapshot(self, frame):
+        if SNAPSHOT_ENABLED:
+            current_time = time.time()
+            if current_time - self.last_snapshot_time < self.snapshot_interval:
+                return
+            self.last_snapshot_time = current_time
+
+            # 如果启用快照功能，保存当前帧为图片
+            filepath = os.path.join(SNAPSHOT_SAVE_PATH, f"{self.source_info.get('code')}.jpg")
+            save_frame(frame, filepath)
+
     def start(self):
         """启动解码工作流程"""
         try:
@@ -139,6 +158,10 @@ class DecoderWorker:
                             error_count = 0  # 重置错误计数
 
                             logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
+
+                            self.snapshot(frame)
+
+
                         else:
                             skipped_count += 1
 
@@ -209,6 +232,11 @@ def main(args):
 
     logger.info("启动 DECODER 工作进程")
 
+    source_info = {
+        'code': args.source_code,
+        'name': args.source_name
+    }
+
     # 解码器配置
     decoder_config = {
         'type': args.decoder_type,
@@ -230,6 +258,7 @@ def main(args):
     worker = DecoderWorker(
         rtsp_url=args.url,
         buffer_name=args.buffer,
+        source_info=source_info,
         decoder_config=decoder_config,
         sample_config=sample_config
     )
@@ -255,6 +284,8 @@ if __name__ == '__main__':
     # 必需参数
     parser.add_argument('--url', required=True, help='RTSP 源地址')
     parser.add_argument('--buffer', required=True, help='共享内存缓冲区名称')
+    parser.add_argument('--source-code', required=True, help="视频源ID")
+    parser.add_argument('--source-name', required=True, help="视频源名称")
 
     # 解码器配置参数
     parser.add_argument('--decoder-type', default='ffmpeg_sw',

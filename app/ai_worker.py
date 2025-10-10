@@ -82,9 +82,9 @@ def main(args):
 if __name__ == '__main__':
     logger.info("=== AI 工作者启动 ===")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algo_id', required=True, help="要加载的算法名称")
+    parser.add_argument('--algo-id', required=True, help="要加载的算法名称")
     parser.add_argument('--buffer', required=True, help="共享内存缓冲区名称")
-    parser.add_argument('--source_code', required=True, help="视频源ID")
-    parser.add_argument('--source_name', required=True, help="视频源名称")
+    parser.add_argument('--source-code', required=True, help="视频源ID")
+    parser.add_argument('--source-name', required=True, help="视频源名称")
     args = parser.parse_args()
     main(args)

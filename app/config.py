@@ -11,3 +11,10 @@ os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 FRAME_SAVE_PATH = os.getenv('FRAME_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/frames'))
 os.makedirs(FRAME_SAVE_PATH, exist_ok=True)
+
+
+
+SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
+SNAPSHOT_INTERVAL = int(os.getenv('SNAPSHOT_INTERVAL', '60'))  # in seconds
+SNAPSHOT_SAVE_PATH = os.getenv('SNAPSHOT_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/snapshots'))
+os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)

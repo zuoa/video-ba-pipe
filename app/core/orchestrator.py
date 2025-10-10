@@ -21,11 +21,11 @@ class Orchestrator:
         buffer = VideoRingBuffer(name=task_buffer_name, create=True)
         self.buffers[task.id] = buffer
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name, '--sample-mode', 'interval', '--sample-interval', '5']
+        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name, '--source-code', task.source_code, '--source-name', task.source_name or '', '--sample-mode', 'interval', '--sample-interval', '5']
         decoder_p = subprocess.Popen(decoder_args)
 
         # 将 algorithm id 传递给工作者
-        ai_args = ['python', 'ai_worker.py', '--algo_id', str(task.algorithm.id), '--buffer', task_buffer_name, '--source_code', task.source_code, '--source_name', task.source_name or '']
+        ai_args = ['python', 'ai_worker.py', '--algo-id', str(task.algorithm.id), '--buffer', task_buffer_name, '--source-code', task.source_code, '--source-name', task.source_name or '']
         ai_p = subprocess.Popen(ai_args)
 
         # 更新任务状态，就像操作一个普通Python对象一样

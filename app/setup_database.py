@@ -27,21 +27,21 @@ def setup_database():
     )
 
     Task.get_or_create(
-        buffer_name="buffer_lobby",
+        source_code="1201",
         defaults={
             'name': "大厅人流检测",
             'enabled': True,
-            'source_code': "1201",
+            'buffer_name': "buffer_lobby_1201",
             "source_name": "大厅摄像头",
             'source_url': "rtsp://admin:codvision120@192.168.201.120:554/Streaming/Channels/1",
             'algorithm': person_detection
         }
     )
     Task.get_or_create(
-        buffer_name="buffer_lobby2",
+        source_code="1211",
         defaults={
             'name': "大厅人流检测2",
-            'source_code': "1211",
+            'buffer_name': "buffer_lobby_1211",
             "source_name": "大厅摄像头2",
             'enabled': True,
             'source_url': "rtsp://admin:codvision121@192.168.201.121:554/Streaming/Channels/1",
@@ -49,10 +49,11 @@ def setup_database():
         }
     )
     Task.get_or_create(
-        buffer_name="buffer_lobby5",
+        source_code="1251",
         defaults={
             'name': "大厅人流检测5",
             'source_code': "1251",
+            'buffer_name': "buffer_lobby_1251",
             "source_name": "大厅摄像头5",
             'enabled': True,
             'source_url': "rtsp://admin:codvision125@192.168.201.125:554/Streaming/Channels/1",
