@@ -1,3 +1,5 @@
+from multiprocessing.context import BaseContext
+
 import numpy as np
 import mmap
 import os
@@ -23,7 +25,8 @@ class VideoRingBuffer:
             frame_shape: Tuple[int, int, int] = (1080, 1920, 3),
             fps: int = 30,
             duration_seconds: int = 10,
-            create: bool = True
+            create: bool = True,
+            mp_context: Optional[BaseContext] = None
     ):
         """
         初始化环形缓冲区
@@ -70,7 +73,12 @@ class VideoRingBuffer:
             self.shm = shared_memory.SharedMemory(name=name)
 
         # 本地锁（用于单进程内的线程安全）
-        self._local_lock = Lock()
+        if mp_context:
+            # 如果在多进程环境中使用，创建一个进程锁
+            self._lock = mp_context.Lock()
+        else:
+            # 否则，使用线程锁
+            self._lock = Lock()
 
     def _write_metadata(self, write_idx: int, read_idx: int,
                         count: int, locked: bool):
@@ -87,7 +95,7 @@ class VideoRingBuffer:
         CAS（Compare-And-Swap）原子操作更新写指针
         注意：Python的GIL提供了基本的原子性，但对于多进程需要额外处理
         """
-        with self._local_lock:
+        with self._lock:
             write_idx, read_idx, count, locked = self._read_metadata()
             if write_idx == expected:
                 self._write_metadata(new, read_idx, count + 1, locked)
@@ -114,7 +122,7 @@ class VideoRingBuffer:
                 f"expected {self.frame_shape}"
             )
 
-        with self._local_lock:
+        with self._lock:
             write_idx, read_idx, count, locked = self._read_metadata()
 
             # 计算新的写指针位置
@@ -142,7 +150,7 @@ class VideoRingBuffer:
         Returns:
             视频帧数据，如果缓冲区为空则返回 None
         """
-        with self._local_lock:
+        with self._lock:
             write_idx, read_idx, count, locked = self._read_metadata()
 
             if count == 0:
@@ -171,7 +179,7 @@ class VideoRingBuffer:
         Returns:
             视频帧数据
         """
-        with self._local_lock:
+        with self._lock:
             write_idx, read_idx, count, locked = self._read_metadata()
 
             if count == 0 or abs(index) >= count:
@@ -209,7 +217,7 @@ class VideoRingBuffer:
 
     def clear(self):
         """清空缓冲区"""
-        with self._local_lock:
+        with self._lock:
             self._write_metadata(0, 0, 0, False)
 
     def close(self):
