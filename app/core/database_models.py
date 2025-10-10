@@ -43,6 +43,8 @@ class Task(BaseModel):
     id = pw.AutoField()
     name = pw.CharField()
     enabled = pw.BooleanField(default=True)
+    source_code = pw.CharField(max_length=255)
+    source_name = pw.CharField(max_length=255, null=True)
     source_url = pw.TextField()
     buffer_name = pw.CharField(unique=True)
     # 使用外键关联到 Algorithm 模型，Peewee 会自动处理 JOIN

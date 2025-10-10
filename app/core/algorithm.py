@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 
 import cv2
@@ -78,6 +79,7 @@ class BaseAlgorithm(ABC):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
         if save_path:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
             cv2.imwrite(save_path, img_vis)
             logger.debug(f"已保存可视化结果到 {save_path}")
 

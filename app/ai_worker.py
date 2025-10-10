@@ -24,6 +24,11 @@ def get_algorithm_config(algo_id):
 
 
 def main(args):
+    source_code = args.source_code
+    source_name = args.source_name if args.source_name else args.source_code
+    print(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
+
+
     buffer = VideoRingBuffer(name=args.buffer, create=False)
 
     shm_name = args.buffer if os.name == 'nt' else f"/{args.buffer}"
@@ -67,7 +72,7 @@ def main(args):
 
             result = algorithm.process(latest_frame)
             if result and result.get("detections"):
-                filepath = os.path.join(FRAME_SAVE_PATH, f"frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
+                filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
                 algorithm.visualize(latest_frame, result.get("detections"), label_prefix='Person', save_path=filepath)
 
             frame_count += 1
@@ -79,5 +84,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--algo_id', required=True, help="要加载的算法名称")
     parser.add_argument('--buffer', required=True, help="共享内存缓冲区名称")
+    parser.add_argument('--source_code', required=True, help="视频源ID")
+    parser.add_argument('--source_name', required=True, help="视频源名称")
     args = parser.parse_args()
     main(args)

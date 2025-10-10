@@ -16,14 +16,16 @@ class Orchestrator:
     def _start_task(self, task: Task):
         print(f"  -> 正在启动任务 ID {task.id}: {task.name}")
 
-        buffer = VideoRingBuffer(name=task.buffer_name, create=True)
+        # 创建共享内存环形缓冲区
+        task_buffer_name = f"{task.buffer_name}.{task.id}"
+        buffer = VideoRingBuffer(name=task_buffer_name, create=True)
         self.buffers[task.id] = buffer
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task.buffer_name]
+        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name]
         decoder_p = subprocess.Popen(decoder_args)
 
         # 将 algorithm id 传递给工作者
-        ai_args = ['python', 'ai_worker.py', '--algo_id', str(task.algorithm.id), '--buffer', task.buffer_name]
+        ai_args = ['python', 'ai_worker.py', '--algo_id', str(task.algorithm.id), '--buffer', task_buffer_name, '--source_code', task.source_code, '--source_name', task.source_name or '']
         ai_p = subprocess.Popen(ai_args)
 
         # 更新任务状态，就像操作一个普通Python对象一样
