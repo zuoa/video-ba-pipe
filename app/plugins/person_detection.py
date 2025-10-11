@@ -90,5 +90,5 @@ class PersonDetector(BaseAlgorithm):
         #
         # if people_results:
         #     return {'detections': people_results[0]}
-        logger.info(detections)
+        # logger.info(detections)
         return {'detections': detections}

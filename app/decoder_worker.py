@@ -10,17 +10,30 @@ from app import logger
 from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL, IS_EXTREME_DECODE_MODE
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
-from app.core.streamer import RTSPStreamer
+from app.core.streamer import StreamerFactory  # 使用工厂模式
 from app.core.utils import save_frame
 
 
 class DecoderWorker:
-    """RTSP 视频流解码工作进程"""
+    """通用视频流解码工作进程，支持 RTSP、文件、HTTP-FLV、HLS 等多种流类型"""
 
-    def __init__(self, rtsp_url, buffer_name, source_info, decoder_config=None, sample_config=None):
-        self.rtsp_url = rtsp_url
+    def __init__(self, stream_url, buffer_name, source_info,
+                 stream_config=None, decoder_config=None, sample_config=None):
+        """
+        初始化解码工作进程。
+
+        Args:
+            stream_url: 流源地址（RTSP URL、文件路径、HTTP-FLV URL等）
+            buffer_name: 共享内存缓冲区名称
+            source_info: 源信息字典，包含 code 和 name
+            stream_config: 流配置字典，包含 type, transport, loop 等参数
+            decoder_config: 解码器配置字典
+            sample_config: 采样配置字典
+        """
+        self.stream_url = stream_url
         self.buffer_name = buffer_name
         self.source_info = source_info or {}
+        self.stream_config = stream_config or {}
         self.decoder_config = decoder_config or {}
         self.sample_config = sample_config or {}
 
@@ -55,9 +68,17 @@ class DecoderWorker:
             shm_name = self.buffer_name if os.name == 'nt' else f"/{self.buffer_name}"
             resource_tracker.unregister(shm_name, 'shared_memory')
 
-            # 初始化 RTSP 流接收器
-            self.streamer = RTSPStreamer(rtsp_url=self.rtsp_url)
-            logger.info(f"已初始化 RTSP 流: {self.rtsp_url}")
+            # 使用工厂创建合适的 Streamer
+            stream_type = self.stream_config.get('type')
+            stream_kwargs = self._build_stream_kwargs()
+
+            self.streamer = StreamerFactory.create_streamer(
+                source=self.stream_url,
+                stream_type=stream_type,
+                **stream_kwargs
+            )
+
+            logger.info(f"已初始化流处理器: {self.streamer.__class__.__name__} ({self.stream_url})")
 
             # 初始化解码器
             decoder_type = self.decoder_config.get('type', 'ffmpeg_sw')
@@ -84,7 +105,7 @@ class DecoderWorker:
             if self.sample_mode == 'all':
                 logger.info("采样模式: 写入所有帧")
             elif self.sample_mode == 'interval':
-                logger.info(f"采样模式: 按时间间隔 ({self.sample_interval}毫秒)")
+                logger.info(f"采样模式: 按时间间隔 ({self.sample_interval}秒)")
             elif self.sample_mode == 'fps':
                 logger.info(f"采样模式: 按目标帧率 ({self.target_fps} fps)")
 
@@ -92,6 +113,42 @@ class DecoderWorker:
             logger.error(f"初始化失败: {e}", exc_info=True)
             self.cleanup()
             raise
+
+    def _build_stream_kwargs(self):
+        """根据流类型构建相应的参数"""
+        kwargs = {}
+
+        # 获取流类型（可能是显式指定的或需要自动检测）
+        stream_type = self.stream_config.get('type')
+
+        # 如果没有显式指定类型，尝试自动检测
+        if not stream_type:
+            url_lower = self.stream_url.lower()
+            if url_lower.startswith('rtsp://') or url_lower.startswith('rtsps://'):
+                stream_type = 'rtsp'
+            elif url_lower.endswith('.flv') or 'flv' in url_lower:
+                stream_type = 'http-flv'
+            elif url_lower.endswith('.m3u8') or url_lower.endswith('.m3u'):
+                stream_type = 'hls'
+            elif url_lower.startswith('http://') or url_lower.startswith('https://'):
+                stream_type = 'http-flv'
+            else:
+                stream_type = 'file'
+
+        # 根据流类型添加相应参数
+        if stream_type == 'rtsp':
+            # RTSP 特定参数
+            if 'transport' in self.stream_config:
+                kwargs['transport'] = self.stream_config['transport']
+
+        elif stream_type == 'file':
+            # 文件流特定参数
+            if 'loop' in self.stream_config:
+                kwargs['loop'] = self.stream_config['loop']
+
+        # HTTP-FLV 和 HLS 目前没有特定参数，但预留扩展空间
+
+        return kwargs
 
     def should_write_frame(self):
         """判断是否应该写入当前帧"""
@@ -119,6 +176,7 @@ class DecoderWorker:
         return True
 
     def snapshot(self, frame):
+        """保存快照"""
         if SNAPSHOT_ENABLED:
             current_time = time.time()
             if current_time - self.last_snapshot_time < self.snapshot_interval:
@@ -134,7 +192,9 @@ class DecoderWorker:
         try:
             self.streamer.start()
             self.running = True
-            logger.info(f"[PID:{os.getpid()}] 开始解码 {self.rtsp_url} -> {self.buffer_name}")
+
+            stream_type = self.streamer.__class__.__name__
+            logger.info(f"[PID:{os.getpid()}] 开始解码 {stream_type}: {self.stream_url} -> {self.buffer_name}")
 
             frame_count = 0
             written_count = 0
@@ -163,15 +223,13 @@ class DecoderWorker:
                             logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
 
                             self.snapshot(frame)
-
-
                         else:
                             skipped_count += 1
 
                     else:
                         # 检查流是否仍在运行
                         if not self.streamer.is_running():
-                            logger.warning("RTSP 流已停止")
+                            logger.warning("视频流已停止")
                             break
 
                         if not IS_EXTREME_DECODE_MODE:
@@ -205,9 +263,9 @@ class DecoderWorker:
         if self.streamer:
             try:
                 self.streamer.stop()
-                logger.info("已停止 RTSP 流接收器")
+                logger.info("已停止流处理器")
             except Exception as e:
-                logger.error(f"停止流接收器失败: {e}")
+                logger.error(f"停止流处理器失败: {e}")
 
         if self.decoder:
             try:
@@ -241,6 +299,13 @@ def main(args):
         'name': args.source_name
     }
 
+    # 流配置
+    stream_config = {
+        'type': args.stream_type,
+        'transport': args.transport,  # RTSP transport
+        'loop': args.loop,  # 文件流循环播放
+    }
+
     # 解码器配置
     decoder_config = {
         'type': args.decoder_type,
@@ -260,9 +325,10 @@ def main(args):
 
     # 创建工作进程
     worker = DecoderWorker(
-        rtsp_url=args.url,
+        stream_url=args.url,
         buffer_name=args.buffer,
         source_info=source_info,
+        stream_config=stream_config,
         decoder_config=decoder_config,
         sample_config=sample_config
     )
@@ -283,30 +349,46 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='RTSP 视频流解码工作进程')
+    parser = argparse.ArgumentParser(description='通用视频流解码工作进程')
 
     # 必需参数
-    parser.add_argument('--url', required=True, help='RTSP 源地址')
-    parser.add_argument('--buffer', required=True, help='共享内存缓冲区名称')
-    parser.add_argument('--source-code', required=True, help="视频源ID")
-    parser.add_argument('--source-name', required=True, help="视频源名称")
+    parser.add_argument('--url', required=True,
+                        help='流源地址 (RTSP URL、文件路径、HTTP-FLV URL、HLS URL等)')
+    parser.add_argument('--buffer', required=True,
+                        help='共享内存缓冲区名称')
+    parser.add_argument('--source-code', required=True,
+                        help="视频源ID")
+    parser.add_argument('--source-name', required=True,
+                        help="视频源名称")
+
+    # 流类型配置
+    stream_group = parser.add_argument_group('流类型配置')
+    stream_group.add_argument('--stream-type', default=None,
+                              choices=['rtsp', 'file', 'http-flv', 'flv', 'hls', None],
+                              help='显式指定流类型，留空则自动检测 (默认: 自动检测)')
+    stream_group.add_argument('--transport', default='tcp',
+                              choices=['tcp', 'udp'],
+                              help='RTSP 传输协议 (默认: tcp)')
+    stream_group.add_argument('--loop', action='store_true',
+                              help='文件流是否循环播放')
 
     # 解码器配置参数
-    parser.add_argument('--decoder-type', default='ffmpeg_sw',
-                        choices=['ffmpeg_sw', 'ffmpeg_hw', 'nvdec'],
-                        help='解码器类型 (默认: ffmpeg_sw)')
-    parser.add_argument('--decoder-id', type=int, default=401,
-                        help='解码器 ID (默认: 401)')
-    parser.add_argument('--width', type=int, default=1920,
-                        help='视频宽度 (默认: 1920)')
-    parser.add_argument('--height', type=int, default=1080,
-                        help='视频高度 (默认: 1080)')
-    parser.add_argument('--input-format', default='h264',
-                        choices=['h264', 'h265', 'mjpeg'],
-                        help='输入格式 (默认: h264)')
-    parser.add_argument('--output-format', default='rgb24',
-                        choices=['rgb24', 'bgr24', 'yuv420p'],
-                        help='输出格式 (默认: rgb24)')
+    decoder_group = parser.add_argument_group('解码器配置')
+    decoder_group.add_argument('--decoder-type', default='ffmpeg_sw',
+                               choices=['ffmpeg_sw', 'ffmpeg_hw', 'nvdec'],
+                               help='解码器类型 (默认: ffmpeg_sw)')
+    decoder_group.add_argument('--decoder-id', type=int, default=401,
+                               help='解码器 ID (默认: 401)')
+    decoder_group.add_argument('--width', type=int, default=1920,
+                               help='视频宽度 (默认: 1920)')
+    decoder_group.add_argument('--height', type=int, default=1080,
+                               help='视频高度 (默认: 1080)')
+    decoder_group.add_argument('--input-format', default='h264',
+                               choices=['h264', 'h265', 'mjpeg'],
+                               help='输入格式 (默认: h264)')
+    decoder_group.add_argument('--output-format', default='rgb24',
+                               choices=['rgb24', 'bgr24', 'yuv420p'],
+                               help='输出格式 (默认: rgb24)')
 
     # 帧采样参数
     sample_group = parser.add_argument_group('帧采样配置')
@@ -325,6 +407,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-
     main(args)
-

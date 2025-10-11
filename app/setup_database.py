@@ -17,13 +17,13 @@ def setup_database():
                 {
                     "name": "yolov8n",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
-                    "confidence": 0.7,
+                    "confidence": 0.5,
                     "expand_width": 0.1, # 扩展宽度比例
                     "expand_height": 0.1 # 扩展高度比例
                 },                {
                     "name": "yolov8n2",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
-                    "confidence": 0.9,
+                    "confidence": 0.8,
                     "expand_width": 0.1,  # 扩展宽度比例
                     "expand_height": 0.1  # 扩展高度比例
                 }
@@ -50,7 +50,7 @@ def setup_database():
         source_code="1201",
         defaults={
             'name': "大厅人流检测",
-            'enabled': False,
+            'enabled': True,
             'buffer_name': "buffer_lobby_1201",
             "source_name": "电梯口",
             'source_url': "rtsp://admin:codvision120@192.168.201.120:554/Streaming/Channels/1",
@@ -75,7 +75,7 @@ def setup_database():
             'source_code': "1251",
             'buffer_name': "buffer_lobby_1251",
             "source_name": "大厅摄像头5",
-            'enabled': False,
+            'enabled': True,
             'source_url': "rtsp://admin:codvision125@192.168.201.125:554/Streaming/Channels/1",
             'algorithm': person_detection
         }
