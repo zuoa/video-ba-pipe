@@ -25,12 +25,13 @@ class BaseModel(pw.Model):
         database = db
 
 
-# 1. 保持 Algorithm 模型不变 (但移除了 backref，因为它会被 TaskAlgorithm 使用)
 class Algorithm(BaseModel):
     name = pw.CharField(unique=True)
     model_json = pw.TextField(default='{}')
     interval_seconds = pw.DoubleField(default=1)
     ext_config_json = pw.TextField(default='{}')
+    plugin_module = pw.CharField(max_length=255, null=True)
+    label_name = pw.CharField(default='Object')
 
     @property
     def models_config(self):

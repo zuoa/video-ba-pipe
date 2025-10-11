@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}管理后台{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-blue-600 text-white shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-8">
+                    <a href="/" class="text-xl font-bold">管理系统</a>
+                    <div class="flex space-x-4">
+                        <a href="/admin/tasks" class="hover:bg-blue-700 px-3 py-2 rounded">任务管理</a>
+                        <a href="/admin/algorithms" class="hover:bg-blue-700 px-3 py-2 rounded">算法管理</a>
+                        <a href="/admin/alerts" class="hover:bg-blue-700 px-3 py-2 rounded">告警记录</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        // 通用的 API 请求函数
+        async function apiRequest(url, method = 'GET', data = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || '请求失败');
+            }
+            return await response.json();
+        }
+
+        // 显示提示消息
+        function showMessage(message, type = 'success') {
+            const bgColor = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+            const div = document.createElement('div');
+            div.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded shadow-lg z-50`;
+            div.textContent = message;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

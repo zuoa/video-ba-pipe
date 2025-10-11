@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}算法管理{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">算法管理</h1>
+        <button onclick="showCreateModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+            + 添加算法
+        </button>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">标签名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">间隔(秒)</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">插件模块</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                </tr>
+            </thead>
+            <tbody id="algorithmsTable" class="bg-white divide-y divide-gray-200">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 创建/编辑模态框 -->
+<div id="algorithmModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-2/3 lg:w-1/2 shadow-lg rounded-md bg-white">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold" id="modalTitle">添加算法</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <form id="algorithmForm" onsubmit="handleSubmit(event)">
+            <input type="hidden" id="algorithmId">
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">名称 *</label>
+                <input type="text" id="name" required class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">标签名称</label>
+                <input type="text" id="labelName" value="Object" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">间隔秒数</label>
+                <input type="number" id="intervalSeconds" value="1" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">插件模块</label>
+                <input type="text" id="pluginModule" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">模型配置 (JSON)</label>
+                <textarea id="modelJson" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 font-mono text-sm">{}</textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">扩展配置 (JSON)</label>
+                <textarea id="extConfigJson" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 font-mono text-sm">{}</textarea>
+            </div>
+
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded">
+                    取消
+                </button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                    保存
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let algorithms = [];
+
+    async function loadAlgorithms() {
+        try {
+            algorithms = await apiRequest('/api/algorithms');
+            renderTable();
+        } catch (error) {
+            showMessage('加载算法列表失败: ' + error.message, 'error');
+        }
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('algorithmsTable');
+        tbody.innerHTML = algorithms.map(a => `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${a.id}</td>
+                <td class="px-6 py-4 whitespace-nowrap font-medium">${a.name}</td>
+                <td class="px-6 py-4 whitespace-nowrap">${a.label_name}</td>
+                <td class="px-6 py-4 whitespace-nowrap">${a.interval_seconds}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${a.plugin_module || '-'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                    <button onclick="editAlgorithm(${a.id})" class="text-blue-600 hover:text-blue-800">编辑</button>
+                    <button onclick="deleteAlgorithm(${a.id})" class="text-red-600 hover:text-red-800">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function showCreateModal() {
+        document.getElementById('modalTitle').textContent = '添加算法';
+        document.getElementById('algorithmForm').reset();
+        document.getElementById('algorithmId').value = '';
+        document.getElementById('modelJson').value = '{}';
+        document.getElementById('extConfigJson').value = '{}';
+        document.getElementById('algorithmModal').classList.remove('hidden');
+    }
+
+    function editAlgorithm(id) {
+        const algorithm = algorithms.find(a => a.id === id);
+        if (!algorithm) return;
+
+        document.getElementById('modalTitle').textContent = '编辑算法';
+        document.getElementById('algorithmId').value = algorithm.id;
+        document.getElementById('name').value = algorithm.name;
+        document.getElementById('labelName').value = algorithm.label_name;
+        document.getElementById('intervalSeconds').value = algorithm.interval_seconds;
+        document.getElementById('pluginModule').value = algorithm.plugin_module || '';
+        document.getElementById('modelJson').value = algorithm.model_json;
+        document.getElementById('extConfigJson').value = algorithm.ext_config_json;
+        document.getElementById('algorithmModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('algorithmModal').classList.add('hidden');
+    }
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+
+        const id = document.getElementById('algorithmId').value;
+        const data = {
+            name: document.getElementById('name').value,
+            label_name: document.getElementById('labelName').value,
+            interval_seconds: parseFloat(document.getElementById('intervalSeconds').value),
+            plugin_module: document.getElementById('pluginModule').value || null,
+            model_json: document.getElementById('modelJson').value,
+            ext_config_json: document.getElementById('extConfigJson').value
+        };
+
+        try {
+            // 验证 JSON
+            JSON.parse(data.model_json);
+            JSON.parse(data.ext_config_json);
+        } catch (e) {
+            showMessage('JSON 格式错误: ' + e.message, 'error');
+            return;
+        }
+
+        try {
+            if (id) {
+                await apiRequest(`/api/algorithms/${id}`, 'PUT', data);
+                showMessage('算法更新成功');
+            } else {
+                await apiRequest('/api/algorithms', 'POST', data);
+                showMessage('算法创建成功');
+            }
+            closeModal();
+            loadAlgorithms();
+        } catch (error) {
+            showMessage('操作失败: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteAlgorithm(id) {
+        if (!confirm('确定要删除这个算法吗?')) return;
+
+        try {
+            await apiRequest(`/api/algorithms/${id}`, 'DELETE');
+            showMessage('算法删除成功');
+            loadAlgorithms();
+        } catch (error) {
+            showMessage('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    loadAlgorithms();
+</script>
+{% endblock %}

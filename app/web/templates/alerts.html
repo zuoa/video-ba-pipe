@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}告警记录{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">告警记录</h1>
+        <div class="flex space-x-4">
+            <select id="taskFilter" onchange="loadAlerts()" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                <option value="">所有任务</option>
+            </select>
+            <button onclick="loadAlerts()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                刷新
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="alertsContainer">
+    </div>
+
+    <div id="noAlerts" class="hidden bg-white rounded-lg shadow p-8 text-center">
+        <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+        </svg>
+        <p class="text-gray-600 text-lg">暂无告警记录</p>
+    </div>
+</div>
+
+<!-- 告警详情模态框 -->
+<div id="alertDetailModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">告警详情</h3>
+            <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div id="alertDetailContent" class="space-y-4">
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let alerts = [];
+    let tasks = [];
+
+    async function loadTasks() {
+        try {
+            tasks = await apiRequest('/api/tasks');
+            const select = document.getElementById('taskFilter');
+            tasks.forEach(t => {
+                const option = document.createElement('option');
+                option.value = t.id;
+                option.textContent = t.name;
+                select.appendChild(option);
+            });
+        } catch (error) {
+            showMessage('加载任务列表失败: ' + error.message, 'error');
+        }
+    }
+
+    async function loadAlerts() {
+        const taskId = document.getElementById('taskFilter').value;
+        const url = taskId ? `/api/alerts?task_id=${taskId}` : '/api/alerts';
+
+        try {
+            alerts = await apiRequest(url);
+            renderAlerts();
+        } catch (error) {
+            showMessage('加载告警记录失败: ' + error.message, 'error');
+        }
+    }
+
+    function renderAlerts() {
+        const container = document.getElementById('alertsContainer');
+        const noAlerts = document.getElementById('noAlerts');
+
+        if (alerts.length === 0) {
+            container.innerHTML = '';
+            noAlerts.classList.remove('hidden');
+            return;
+        }
+
+        noAlerts.classList.add('hidden');
+
+        const alertTypeColors = {
+            'warning': 'border-yellow-500 bg-yellow-50',
+            'error': 'border-red-500 bg-red-50',
+            'info': 'border-blue-500 bg-blue-50',
+            'critical': 'border-purple-500 bg-purple-50'
+        };
+
+        const alertTypeIcons = {
+            'warning': '⚠️',
+            'error': '❌',
+            'info': 'ℹ️',
+            'critical': '🚨'
+        };
+
+        container.innerHTML = alerts.map(a => {
+            const task = tasks.find(t => t.id === a.task_id);
+            const taskName = task ? task.name : `任务 #${a.task_id}`;
+            const alertClass = alertTypeColors[a.alert_type.toLowerCase()] || 'border-gray-500 bg-gray-50';
+            const icon = alertTypeIcons[a.alert_type.toLowerCase()] || '📋';
+            const time = new Date(a.alert_time).toLocaleString('zh-CN');
+
+            return `
+            <div class="bg-white rounded-lg shadow hover:shadow-lg transition border-l-4 ${alertClass} cursor-pointer" onclick="showAlertDetail(${a.id})">
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-2xl">${icon}</span>
+                        <span class="text-xs text-gray-500">${time}</span>
+                    </div>
+                    <h3 class="font-bold text-gray-800 mb-1">${taskName}</h3>
+                    <p class="text-sm text-gray-600 mb-2 line-clamp-2">${a.alert_message}</p>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs px-2 py-1 rounded ${alertClass} border border-current">
+                            ${a.alert_type}
+                        </span>
+                        ${a.alert_image ? '<span class="text-xs text-blue-600">📷 有图片</span>' : ''}
+                        ${a.alert_video ? '<span class="text-xs text-green-600">🎥 有视频</span>' : ''}
+                    </div>
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    function showAlertDetail(id) {
+        const alert = alerts.find(a => a.id === id);
+        if (!alert) return;
+
+        const task = tasks.find(t => t.id === alert.task_id);
+        const taskName = task ? task.name : `任务 #${alert.task_id}`;
+        const time = new Date(alert.alert_time).toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        const content = document.getElementById('alertDetailContent');
+        content.innerHTML = `
+            <div class="border-b pb-3">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="text-lg font-semibold text-gray-800">${taskName}</h4>
+                        <p class="text-sm text-gray-500">${time}</p>
+                    </div>
+                    <span class="px-3 py-1 text-sm rounded bg-${alert.alert_type === 'error' ? 'red' : alert.alert_type === 'warning' ? 'yellow' : 'blue'}-100 text-${alert.alert_type === 'error' ? 'red' : alert.alert_type === 'warning' ? 'yellow' : 'blue'}-800">
+                        ${alert.alert_type}
+                    </span>
+                </div>
+            </div>
+
+            <div class="py-3">
+                <h5 class="font-semibold text-gray-700 mb-2">告警信息</h5>
+                <p class="text-gray-600 whitespace-pre-wrap">${alert.alert_message}</p>
+            </div>
+
+            ${alert.alert_image ? `
+            <div class="py-3">
+                <h5 class="font-semibold text-gray-700 mb-2">告警图片</h5>
+                <img src="${alert.alert_image}" alt="Alert Image" class="max-w-full h-auto rounded border">
+            </div>
+            ` : ''}
+
+            ${alert.alert_video ? `
+            <div class="py-3">
+                <h5 class="font-semibold text-gray-700 mb-2">告警视频</h5>
+                <video controls class="max-w-full h-auto rounded border">
+                    <source src="${alert.alert_video}" type="video/mp4">
+                    您的浏览器不支持视频播放
+                </video>
+            </div>
+            ` : ''}
+        `;
+
+        document.getElementById('alertDetailModal').classList.remove('hidden');
+    }
+
+    function closeDetailModal() {
+        document.getElementById('alertDetailModal').classList.add('hidden');
+    }
+
+    // 初始化
+    loadTasks().then(() => loadAlerts());
+
+    // 自动刷新（每30秒）
+    setInterval(loadAlerts, 30000);
+</script>
+{% endblock %}

@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import resource_tracker
 
 import cv2
+from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import FRAME_SAVE_PATH
@@ -33,16 +34,17 @@ def main(args):
     # TODO: 支持多个算法，目前只处理第一个
     algo_id_list = args.algo_ids.split(',')
     algorithms = {}
+    algorithm_datamap = {}
 
 
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
-        algo_name = algo_config_db.name
+        plugin_module = algo_config_db.plugin_module
 
         # 3. 从插件管理器获取对应的算法类
-        AlgorithmClass = plugin_manager.get_algorithm_class(algo_name)
+        AlgorithmClass = plugin_manager.get_algorithm_class(plugin_module)
         if not AlgorithmClass:
-            print(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{algo_name}' 的算法插件。")
+            print(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
             return
 
         # 4. 实例化算法插件
@@ -52,8 +54,10 @@ def main(args):
             "interval_seconds": algo_config_db.interval_seconds,
         }
         algorithm = AlgorithmClass(full_config)
-        print(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_name}'，开始处理 {args.buffer}")
+        print(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {args.buffer}")
         algorithms[algo_id] = algorithm
+
+        algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
 
 
     check_interval = 10  # 每10秒检查一次插件更新
@@ -86,7 +90,8 @@ def main(args):
                         # 根据结果进行后续操作，例如可视化
                         if result and result.get("detections"):
                             # filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/algo_{algo_id}_{time.time()}.jpg")
-                            filepath = f"frame_{algo_id}.jpg"  # 模拟路径
+
+                            filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
                             algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath)
 
                     except Exception as exc:

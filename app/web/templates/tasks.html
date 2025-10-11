@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}任务管理{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">任务管理</h1>
+        <button onclick="showCreateModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+            + 添加任务
+        </button>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">启用</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">源代码</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">源名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                </tr>
+            </thead>
+            <tbody id="tasksTable" class="bg-white divide-y divide-gray-200">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 创建/编辑模态框 -->
+<div id="taskModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-2/3 shadow-lg rounded-md bg-white">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold" id="modalTitle">添加任务</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <form id="taskForm" onsubmit="handleSubmit(event)">
+            <input type="hidden" id="taskId">
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">任务名称 *</label>
+                    <input type="text" id="name" required class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">源代码 *</label>
+                    <input type="text" id="sourceCode" required class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">源名称</label>
+                    <input type="text" id="sourceName" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">缓冲区名称</label>
+                    <input type="text" id="bufferName" value="video_buffer" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">源地址 *</label>
+                <input type="text" id="sourceUrl" required class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="enabled" checked class="mr-2">
+                        <span class="text-gray-700 text-sm font-bold">启用任务</span>
+                    </label>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">状态</label>
+                    <select id="status" class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                        <option value="STOPPED">停止</option>
+                        <option value="RUNNING">运行中</option>
+                        <option value="ERROR">错误</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h4 class="text-gray-700 text-sm font-bold mb-2">关联算法</h4>
+                <div id="algorithmsList" class="space-y-2 max-h-40 overflow-y-auto border border-gray-300 rounded p-3">
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded">
+                    取消
+                </button>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                    保存
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let tasks = [];
+    let algorithms = [];
+    let taskAlgorithms = [];
+
+    async function loadData() {
+        try {
+            tasks = await apiRequest('/api/tasks');
+            algorithms = await apiRequest('/api/algorithms');
+            taskAlgorithms = await apiRequest('/api/task-algorithms');
+            renderTable();
+        } catch (error) {
+            showMessage('加载数据失败: ' + error.message, 'error');
+        }
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tasksTable');
+        tbody.innerHTML = tasks.map(t => {
+            const statusColors = {
+                'STOPPED': 'bg-gray-200 text-gray-800',
+                'RUNNING': 'bg-green-200 text-green-800',
+                'ERROR': 'bg-red-200 text-red-800'
+            };
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${t.id}</td>
+                <td class="px-6 py-4 whitespace-nowrap font-medium">${t.name}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="px-2 py-1 text-xs rounded ${statusColors[t.status]}">${t.status}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="px-2 py-1 text-xs rounded ${t.enabled ? 'bg-blue-200 text-blue-800' : 'bg-gray-200 text-gray-800'}">
+                        ${t.enabled ? '启用' : '禁用'}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${t.source_code}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${t.source_name || '-'}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                    <button onclick="editTask(${t.id})" class="text-blue-600 hover:text-blue-800">编辑</button>
+                    <button onclick="deleteTask(${t.id})" class="text-red-600 hover:text-red-800">删除</button>
+                </td>
+            </tr>
+        `}).join('');
+    }
+
+    function renderAlgorithmsList(selectedAlgorithmIds = []) {
+        const container = document.getElementById('algorithmsList');
+        container.innerHTML = algorithms.map(a => `
+            <label class="flex items-center hover:bg-gray-50 p-2 rounded">
+                <input type="checkbox"
+                    value="${a.id}"
+                    ${selectedAlgorithmIds.includes(a.id) ? 'checked' : ''}
+                    class="mr-2 algorithm-checkbox">
+                <span class="text-sm">${a.name} (${a.label_name})</span>
+            </label>
+        `).join('') || '<p class="text-gray-500 text-sm">暂无可用算法</p>';
+    }
+
+    function showCreateModal() {
+        document.getElementById('modalTitle').textContent = '添加任务';
+        document.getElementById('taskForm').reset();
+        document.getElementById('taskId').value = '';
+        document.getElementById('enabled').checked = true;
+        renderAlgorithmsList();
+        document.getElementById('taskModal').classList.remove('hidden');
+    }
+
+    async function editTask(id) {
+        const task = tasks.find(t => t.id === id);
+        if (!task) return;
+
+        document.getElementById('modalTitle').textContent = '编辑任务';
+        document.getElementById('taskId').value = task.id;
+        document.getElementById('name').value = task.name;
+        document.getElementById('sourceCode').value = task.source_code;
+        document.getElementById('sourceName').value = task.source_name || '';
+        document.getElementById('sourceUrl').value = task.source_url;
+        document.getElementById('bufferName').value = task.buffer_name;
+        document.getElementById('enabled').checked = task.enabled;
+        document.getElementById('status').value = task.status;
+
+        const linkedAlgorithms = taskAlgorithms
+            .filter(ta => ta.task_id === id)
+            .map(ta => ta.algorithm_id);
+
+        renderAlgorithmsList(linkedAlgorithms);
+        document.getElementById('taskModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('taskModal').classList.add('hidden');
+    }
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+
+        const id = document.getElementById('taskId').value;
+        const data = {
+            name: document.getElementById('name').value,
+            source_code: document.getElementById('sourceCode').value,
+            source_name: document.getElementById('sourceName').value || null,
+            source_url: document.getElementById('sourceUrl').value,
+            buffer_name: document.getElementById('bufferName').value,
+            enabled: document.getElementById('enabled').checked,
+            status: document.getElementById('status').value
+        };
+
+        const selectedAlgorithms = Array.from(document.querySelectorAll('.algorithm-checkbox:checked'))
+            .map(cb => parseInt(cb.value));
+
+        try {
+            let taskId;
+            if (id) {
+                await apiRequest(`/api/tasks/${id}`, 'PUT', data);
+                taskId = parseInt(id);
+                showMessage('任务更新成功');
+            } else {
+                const result = await apiRequest('/api/tasks', 'POST', data);
+                taskId = result.id;
+                showMessage('任务创建成功');
+            }
+
+            // 更新任务-算法关联
+            const existingLinks = taskAlgorithms.filter(ta => ta.task_id === taskId);
+
+            // 删除不再需要的关联
+            for (const link of existingLinks) {
+                if (!selectedAlgorithms.includes(link.algorithm_id)) {
+                    await apiRequest(`/api/task-algorithms/${link.id}`, 'DELETE');
+                }
+            }
+
+            // 添加新的关联
+            for (const algId of selectedAlgorithms) {
+                if (!existingLinks.find(l => l.algorithm_id === algId)) {
+                    await apiRequest('/api/task-algorithms', 'POST', {
+                        task_id: taskId,
+                        algorithm_id: algId,
+                        priority: 0
+                    });
+                }
+            }
+
+            closeModal();
+            loadData();
+        } catch (error) {
+            showMessage('操作失败: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteTask(id) {
+        if (!confirm('确定要删除这个任务吗?')) return;
+
+        try {
+            await apiRequest(`/api/tasks/${id}`, 'DELETE');
+            showMessage('任务删除成功');
+            loadData();
+        } catch (error) {
+            showMessage('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    loadData();
+</script>
+{% endblock %}

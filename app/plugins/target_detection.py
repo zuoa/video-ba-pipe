@@ -10,13 +10,13 @@ from app.core.utils import find_multimodel_groups
 # 假设你使用 some_yolo_library 来进行推理
 # import torch
 
-class PersonDetector(BaseAlgorithm):
+class TargetDetector(BaseAlgorithm):
     """一个具体的人流检测算法实现"""
 
     @property
     def name(self) -> str:
         # 这个名称必须和数据库 'algorithms' 表中的 'name' 字段一致
-        return "person_detection"
+        return "target_detection"
 
     def load_model(self):
         logger.info(f"[{self.name}] 正在加载模型...")
@@ -47,8 +47,18 @@ class PersonDetector(BaseAlgorithm):
         # logger.info(stages_results)
         # 如果参与检测的模型少于2个，则无需进行碰撞检测
         if len(stages_results) < 2:
-            # logger.info("模型数量不足，跳过碰撞检测")
-            pass
+            # 直接返回第一个模型的结果（如果有的话）
+            if stages_results:
+                first_model_name = list(stages_results.keys())[0]
+                first_model_results = stages_results[first_model_name]
+                for det in first_model_results.boxes.data.tolist():
+                    x1, y1, x2, y2, conf, cls = det
+                    detections.append({
+                        'box': (x1, y1, x2, y2),
+                        'label': 'Person',
+                        'class': int(cls),
+                        'confidence': float(conf)
+                    })
         else:
             # 2) 查找被所有模型共同检测到的目标组
             iou_thresh = 0.4  # 对于关联性检测，IoU可以适当放宽
