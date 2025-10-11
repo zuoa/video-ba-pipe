@@ -8,6 +8,7 @@ from multiprocessing import resource_tracker
 
 from app import logger
 from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL, IS_EXTREME_DECODE_MODE
+from app.core.database_models import Task
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
@@ -294,9 +295,16 @@ def main(args):
 
     logger.info("启动 DECODER 工作进程")
 
+    task_id = args.task_id
+
+    task = Task.get_by_id(Task.id == task_id)  # 确保任务存在，否则抛出异常
+    source_code = task.source_code
+    source_name = task.source_name
+    buffer_name = f"{task.buffer_name}.{task.id}"
+
     source_info = {
-        'code': args.source_code,
-        'name': args.source_name
+        'code': source_code,
+        'name': source_name
     }
 
     # 流配置
@@ -326,7 +334,7 @@ def main(args):
     # 创建工作进程
     worker = DecoderWorker(
         stream_url=args.url,
-        buffer_name=args.buffer,
+        buffer_name=buffer_name,
         source_info=source_info,
         stream_config=stream_config,
         decoder_config=decoder_config,
@@ -354,12 +362,7 @@ if __name__ == '__main__':
     # 必需参数
     parser.add_argument('--url', required=True,
                         help='流源地址 (RTSP URL、文件路径、HTTP-FLV URL、HLS URL等)')
-    parser.add_argument('--buffer', required=True,
-                        help='共享内存缓冲区名称')
-    parser.add_argument('--source-code', required=True,
-                        help="视频源ID")
-    parser.add_argument('--source-name', required=True,
-                        help="视频源名称")
+    parser.add_argument('--task-id', required=True, help='任务ID')
 
     # 流类型配置
     stream_group = parser.add_argument_group('流类型配置')

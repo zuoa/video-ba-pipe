@@ -4,38 +4,37 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import resource_tracker
 
-import cv2
 from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import FRAME_SAVE_PATH
-from app.core.database_models import Algorithm  # 导入 Algorithm 模型
+from app.core.database_models import Algorithm, Task  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
 from app.plugin_manager import PluginManager
 
 
-
-
 def main(args):
-    source_code = args.source_code
-    source_name = args.source_name if args.source_name else args.source_code
+    task_id = args.task_id
+
+    task = Task.get_by_id(Task.id == task_id)  # 确保任务存在，否则抛出异常
+    source_code = task.source_code
+    source_name = task.source_name
+    buffer_name = f"{task.buffer_name}.{task.id}"
+
     print(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
 
+    buffer = VideoRingBuffer(name=buffer_name, create=False)
 
-    buffer = VideoRingBuffer(name=args.buffer, create=False)
-
-    shm_name = args.buffer if os.name == 'nt' else f"/{args.buffer}"
+    shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
     resource_tracker.unregister(shm_name, 'shared_memory')
 
     # 1. 初始化插件管理器
     plugin_manager = PluginManager()
 
     # 2. 从数据库获取此工作者被指定的算法配置
-    # TODO: 支持多个算法，目前只处理第一个
     algo_id_list = args.algo_ids.split(',')
     algorithms = {}
     algorithm_datamap = {}
-
 
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
@@ -54,11 +53,10 @@ def main(args):
             "interval_seconds": algo_config_db.interval_seconds,
         }
         algorithm = AlgorithmClass(full_config)
-        print(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {args.buffer}")
+        print(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {buffer_name}")
         algorithms[algo_id] = algorithm
 
         algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
-
 
     check_interval = 10  # 每10秒检查一次插件更新
     last_check_time = time.time()
@@ -94,6 +92,15 @@ def main(args):
                             filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
                             algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath)
 
+                            # Alert.create(
+                            #     task=source_code,
+                            #     alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
+                            #     alert_type="",
+                            #     alert_image=filepath,
+                            #     alert_video="",
+                            # )
+                            # print(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
+
                     except Exception as exc:
                         print(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")
 
@@ -105,8 +112,6 @@ if __name__ == '__main__':
     logger.info("=== AI 工作者启动 ===")
     parser = argparse.ArgumentParser()
     parser.add_argument('--algo-ids', required=True, help="要加载的算法名称")
-    parser.add_argument('--buffer', required=True, help="共享内存缓冲区名称")
-    parser.add_argument('--source-code', required=True, help="视频源ID")
-    parser.add_argument('--source-name', required=True, help="视频源名称")
+    parser.add_argument('--task-id', required=True, help="任务ID")
     args = parser.parse_args()
     main(args)
