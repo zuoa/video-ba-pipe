@@ -3,3 +3,4 @@ python-dotenv
 opencv-python
 peewee
 ultralytics
+flask

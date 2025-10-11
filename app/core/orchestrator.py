@@ -2,8 +2,10 @@ import signal
 import subprocess
 import time
 
+from playhouse.shortcuts import model_to_dict
+
 from app import logger
-from app.core.database_models import db, Task  # 只需导入模型
+from app.core.database_models import db, Task, TaskAlgorithm  # 只需导入模型
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -24,14 +26,18 @@ class Orchestrator:
         decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url, '--buffer', task_buffer_name, '--source-code', task.source_code, '--source-name', task.source_name or '', '--sample-mode', 'interval', '--sample-interval', '5']
         decoder_p = subprocess.Popen(decoder_args)
 
-        # 将 algorithm id 传递给工作者
-        ai_args = ['python', 'ai_worker.py', '--algo-id', str(task.algorithm.id), '--buffer', task_buffer_name, '--source-code', task.source_code, '--source-name', task.source_name or '']
-        ai_p = subprocess.Popen(ai_args)
+        query = TaskAlgorithm.select().where(TaskAlgorithm.task == task)
 
+        ai_ids = []
+        for task_algorithm in query:
+            ai_ids.append(str(task_algorithm.algorithm.id))
+
+        ai_args = ['python', 'ai_worker.py', '--algo-ids', str(','.join(ai_ids)), '--buffer', task_buffer_name, '--source-code', task.source_code, '--source-name', task.source_name or '']
+        ai_p = subprocess.Popen(ai_args)
         # 更新任务状态，就像操作一个普通Python对象一样
         task.status = 'RUNNING'
         task.decoder_pid = decoder_p.pid
-        task.ai_pid = ai_p.pid
+        task.ai_pid = ai_p.pid  # 这里假设只有一个AI进程
         task.save()  # .save() 会将更改写入数据库
 
         self.running_processes[task.id] = {'decoder': decoder_p, 'ai': ai_p}
@@ -51,7 +57,6 @@ class Orchestrator:
 
         task.status = 'STOPPED'
         task.decoder_pid = None
-        task.ai_pid = None
         task.save()
 
     def manage_tasks(self):
@@ -73,8 +78,7 @@ class Orchestrator:
         running_tasks = Task.select().where(Task.status == 'RUNNING')
         for task in running_tasks:
             if task.id in self.running_processes:
-                if self.running_processes[task.id]['decoder'].poll() is not None or \
-                        self.running_processes[task.id]['ai'].poll() is not None:
+                if self.running_processes[task.id]['decoder'].poll() is not None or  self.running_processes[task.id]['ai'].poll() is not None :
                     logger.warn(f"🚨 任务 ID {task.id} 的某个工作进程已退出！")
                     print(f"[警告] 任务 ID {task.id} 的某个工作进程已退出！")
                     task.status = 'FAILED'

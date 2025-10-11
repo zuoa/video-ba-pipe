@@ -25,12 +25,11 @@ class BaseModel(pw.Model):
         database = db
 
 
-# 3. 定义 Algorithm 模型 (对应 algorithms 表)
+# 1. 保持 Algorithm 模型不变 (但移除了 backref，因为它会被 TaskAlgorithm 使用)
 class Algorithm(BaseModel):
     name = pw.CharField(unique=True)
     model_json = pw.TextField(default='{}')
     interval_seconds = pw.DoubleField(default=1)
-    # 使用 TextField 存储 JSON 字符串，灵活且强大
     ext_config_json = pw.TextField(default='{}')
 
     @property
@@ -39,7 +38,7 @@ class Algorithm(BaseModel):
         return json.loads(self.model_json)
 
 
-# 4. 定义 Task 模型 (对应 tasks 表)
+# 2. 定义 Task 模型 (移除 ForeignKeyField)
 class Task(BaseModel):
     id = pw.AutoField()
     name = pw.CharField()
@@ -48,8 +47,35 @@ class Task(BaseModel):
     source_name = pw.CharField(max_length=255, null=True)
     source_url = pw.TextField()
     buffer_name = pw.CharField(max_length=255, default='video_buffer')
-    # 使用外键关联到 Algorithm 模型，Peewee 会自动处理 JOIN
-    algorithm = pw.ForeignKeyField(Algorithm, backref='tasks')
+
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
     ai_pid = pw.IntegerField(null=True)
+
+
+# 3. 引入中间表 TaskAlgorithm 模型
+class TaskAlgorithm(BaseModel):
+    """
+    关联模型，用于实现 Task 和 Algorithm 之间的多对多关系
+    """
+    task = pw.ForeignKeyField(Task, backref='task_algorithms', on_delete='CASCADE')
+    algorithm = pw.ForeignKeyField(Algorithm, backref='task_algorithms', on_delete='CASCADE')
+    # 可以在关联表中存储与这次关联相关的额外信息，例如：
+    priority = pw.IntegerField(default=0)  # 例如，这个算法在这个任务中的优先级
+    config_override_json = pw.TextField(default='{}') # 对该算法在这个任务中的特定配置
+
+    class Meta:
+        # 确保一个任务不会重复关联同一个算法
+        indexes = (
+            (('task', 'algorithm'), True),
+        )
+
+
+class Alert(BaseModel):
+    id = pw.AutoField()
+    task = pw.ForeignKeyField(Task, backref='alerts')
+    alert_time = pw.DateTimeField()
+    alert_type = pw.CharField()
+    alert_message = pw.TextField()
+    alert_image = pw.TextField(null=True)
+    alert_video = pw.TextField(null=True)

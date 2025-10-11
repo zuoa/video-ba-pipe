@@ -1,12 +1,12 @@
 import json
 
-from app.core.database_models import db, Algorithm, Task
+from app.core.database_models import db, Algorithm, Task, TaskAlgorithm
 
 
 def setup_database():
     # 连接数据库并创建表
     db.connect()
-    db.create_tables([Algorithm, Task])
+    db.create_tables([Algorithm, Task, TaskAlgorithm])
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
     # 这样脚本就可以重复运行而不会出错
@@ -18,9 +18,9 @@ def setup_database():
                     "name": "yolov8n",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
                     "confidence": 0.5,
-                    "expand_width": 0.1, # 扩展宽度比例
-                    "expand_height": 0.1 # 扩展高度比例
-                },                {
+                    "expand_width": 0.1,  # 扩展宽度比例
+                    "expand_height": 0.1  # 扩展高度比例
+                }, {
                     "name": "yolov8n2",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
                     "confidence": 0.8,
@@ -46,7 +46,7 @@ def setup_database():
     #     }
     # )
 
-    Task.get_or_create(
+    task, _ = Task.get_or_create(
         source_code="1201",
         defaults={
             'name': "大厅人流检测",
@@ -54,10 +54,18 @@ def setup_database():
             'buffer_name': "buffer_lobby_1201",
             "source_name": "电梯口",
             'source_url': "rtsp://admin:codvision120@192.168.201.120:554/Streaming/Channels/1",
-            'algorithm': person_detection
         }
     )
-    Task.get_or_create(
+
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=person_detection,
+        defaults={
+            "priority" :1
+        }
+    )
+
+    task, _ = Task.get_or_create(
         source_code="1211",
         defaults={
             'name': "大厅人流检测2",
@@ -68,7 +76,17 @@ def setup_database():
             'algorithm': person_detection
         }
     )
-    Task.get_or_create(
+
+
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=person_detection,
+        defaults={
+            "priority" :1
+        }
+    )
+
+    task, _ = Task.get_or_create(
         source_code="1251",
         defaults={
             'name': "大厅人流检测5",
@@ -78,6 +96,15 @@ def setup_database():
             'enabled': True,
             'source_url': "rtsp://admin:codvision125@192.168.201.125:554/Streaming/Channels/1",
             'algorithm': person_detection
+        }
+    )
+
+
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=person_detection,
+        defaults={
+            "priority" :1
         }
     )
 
