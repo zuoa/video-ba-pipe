@@ -23,7 +23,7 @@ class Orchestrator:
         buffer = VideoRingBuffer(name=task_buffer_name, create=True)
         self.buffers[task.id] = buffer
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '5']
+        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '1']
         decoder_p = subprocess.Popen(decoder_args)
 
         query = TaskAlgorithm.select().where(TaskAlgorithm.task == task)
@@ -37,7 +37,7 @@ class Orchestrator:
         # 更新任务状态，就像操作一个普通Python对象一样
         task.status = 'RUNNING'
         task.decoder_pid = decoder_p.pid
-        task.ai_pid = ai_p.pid  # 这里假设只有一个AI进程
+        task.ai_pid = ai_p.pid
         task.save()  # .save() 会将更改写入数据库
 
         self.running_processes[task.id] = {'decoder': decoder_p, 'ai': ai_p}

@@ -91,27 +91,26 @@ def setup_database():
             "priority" :2
         }
     )
-    #
-    # task, _ = Task.get_or_create(
-    #     source_code="1211",
-    #     defaults={
-    #         'name': "大厅人流检测2",
-    #         'buffer_name': "buffer_lobby_1211",
-    #         "source_name": "研发门口",
-    #         'enabled': True,
-    #         'source_url': "rtsp://admin:codvision121@192.168.201.121:554/Streaming/Channels/1",
-    #         'algorithm': person_detection
-    #     }
-    # )
-    #
-    #
-    # TaskAlgorithm.get_or_create(
-    #     task=task,
-    #     algorithm=person_detection,
-    #     defaults={
-    #         "priority" :1
-    #     }
-    # )
+
+    task, _ = Task.get_or_create(
+        source_code="1211",
+        defaults={
+            'name': "大厅人流检测2",
+            'buffer_name': "buffer_lobby_1211",
+            "source_name": "研发门口",
+            'enabled': True,
+            'source_url': "rtsp://admin:codvision121@192.168.201.121:554/Streaming/Channels/1",
+        }
+    )
+
+
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=person_detection,
+        defaults={
+            "priority" :1
+        }
+    )
     #
     # task, _ = Task.get_or_create(
     #     source_code="1251",
