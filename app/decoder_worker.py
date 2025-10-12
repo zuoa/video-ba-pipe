@@ -297,7 +297,7 @@ def main(args):
 
     task_id = args.task_id
 
-    task = Task.get_by_id(Task.id == task_id)  # 确保任务存在，否则抛出异常
+    task = Task.get_by_id(task_id)  # 确保任务存在，否则抛出异常
     source_code = task.source_code
     source_name = task.source_name
     buffer_name = f"{task.buffer_name}.{task.id}"

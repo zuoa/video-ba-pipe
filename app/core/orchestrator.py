@@ -24,6 +24,7 @@ class Orchestrator:
         self.buffers[task.id] = buffer
 
         decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '1']
+        logger.info(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
 
         query = TaskAlgorithm.select().where(TaskAlgorithm.task == task)
