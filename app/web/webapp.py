@@ -1,8 +1,11 @@
+import os
 from datetime import datetime
+from pathlib import Path
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file, abort
 
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
+from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
@@ -231,6 +234,64 @@ def create_alert():
         return jsonify({'id': alert.id, 'message': 'Alert created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# ========== 图片服务接口 ==========
+
+@app.route('/api/image/<path:file_path>', methods=['GET'])
+def get_image(file_path):
+    """
+    安全的图片返回接口
+    支持的图片路径：
+    - frames/ 下的帧图片
+    - snapshots/ 下的快照图片
+    """
+    try:
+        # 定义允许访问的基础路径
+        allowed_bases = {
+            'frames': FRAME_SAVE_PATH,
+            'snapshots': SNAPSHOT_SAVE_PATH
+        }
+        
+        # 解析路径的第一部分作为基础目录类型
+        path_parts = file_path.split('/', 1)
+        if len(path_parts) < 2:
+            abort(400, description="Invalid path format")
+            
+        base_type, relative_path = path_parts
+        
+        # 检查基础路径是否被允许
+        if base_type not in allowed_bases:
+            abort(403, description="Access to this directory is not allowed")
+            
+        base_path = allowed_bases[base_type]
+        
+        # 构建完整的文件路径
+        full_path = os.path.join(base_path, relative_path)
+        
+        # 规范化路径，防止路径遍历攻击
+        full_path = os.path.abspath(full_path)
+        base_path = os.path.abspath(base_path)
+        
+        # 确保请求的文件在允许的基础路径内
+        if not full_path.startswith(base_path + os.sep) and full_path != base_path:
+            abort(403, description="Path traversal detected")
+            
+        # 检查文件是否存在
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
+            abort(404, description="Image not found")
+            
+        # 验证文件扩展名（只允许常见的图片格式）
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'}
+        file_ext = Path(full_path).suffix.lower()
+        if file_ext not in allowed_extensions:
+            abort(400, description="File type not supported")
+            
+        # 返回图片文件
+        return send_file(full_path, as_attachment=False)
+        
+    except Exception as e:
+        app.logger.error(f"Error serving image {file_path}: {str(e)}")
+        abort(500, description="Internal server error")
 
 # ========== 管理后台页面路由 ==========
 
