@@ -13,7 +13,8 @@ from app.config import (
     RECORDING_ENABLED, 
     PRE_ALERT_DURATION, 
     POST_ALERT_DURATION, 
-    RECORDING_FPS
+    RECORDING_FPS,
+    ALERT_SUPPRESSION_DURATION
 )
 from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
@@ -79,8 +80,18 @@ def main(args):
 
         algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
 
+    # 为每个算法维护处理时间和告警时间
+    algo_last_process_time = {algo_id: 0 for algo_id in algorithms.keys()}
+    algo_last_alert_time = {algo_id: 0 for algo_id in algorithms.keys()}
+    
     check_interval = 10  # 每10秒检查一次插件更新
     last_check_time = time.time()
+
+    logger.info(f"[AIWorker:{os.getpid()}] 算法处理间隔配置:")
+    for algo_id in algorithms.keys():
+        interval = algorithm_datamap[algo_id].get('interval_seconds', 1)
+        logger.info(f"  - 算法 {algo_id} ({algorithm_datamap[algo_id].get('name')}): {interval}秒/次")
+    logger.info(f"[AIWorker:{os.getpid()}] 告警抑制时长: {ALERT_SUPPRESSION_DURATION}秒")
 
     with ThreadPoolExecutor(max_workers=len(algorithms)) as executor:
         frame_count = 0
@@ -93,10 +104,24 @@ def main(args):
 
             latest_frame = buffer.read()
             if latest_frame is not None:
-                logger.debug(f"\n[AIWorker] 收到第 {frame_count} 帧，提交给 {len(algorithms)} 个算法并行处理...")
+                current_time = time.time()
+                
+                # 检查哪些算法需要处理这一帧（根据interval_seconds）
+                algos_to_process = {}
+                for algo_id, algo in algorithms.items():
+                    interval = algorithm_datamap[algo_id].get('interval_seconds', 1)
+                    if current_time - algo_last_process_time[algo_id] >= interval:
+                        algos_to_process[algo_id] = algo
+                        algo_last_process_time[algo_id] = current_time
+                
+                if not algos_to_process:
+                    # 没有算法需要处理这一帧，跳过
+                    continue
+                
+                logger.debug(f"\n[AIWorker] 收到第 {frame_count} 帧，提交给 {len(algos_to_process)} 个算法处理...")
                 future_to_algo = {
                     executor.submit(algo.process, latest_frame.copy()): aid
-                    for aid, algo in algorithms.items()
+                    for aid, algo in algos_to_process.items()
                 }
 
                 for future in as_completed(future_to_algo):
@@ -111,6 +136,18 @@ def main(args):
                             
                             # 记录触发时间
                             trigger_time = time.time()
+                            
+                            # 告警抑制检查
+                            time_since_last_alert = trigger_time - algo_last_alert_time[algo_id]
+                            if time_since_last_alert < ALERT_SUPPRESSION_DURATION:
+                                logger.info(
+                                    f"[AIWorker] 算法 {algo_id} 检测到目标，但处于告警抑制期 "
+                                    f"(距上次告警 {time_since_last_alert:.1f}秒，需 {ALERT_SUPPRESSION_DURATION}秒)，跳过本次告警"
+                                )
+                                continue
+                            
+                            # 更新最后告警时间
+                            algo_last_alert_time[algo_id] = trigger_time
 
                             # 检测目标可视化并保存
                             filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
