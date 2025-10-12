@@ -8,7 +8,7 @@ from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import FRAME_SAVE_PATH
-from app.core.database_models import Algorithm, Task  # 导入 Algorithm 模型
+from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
 from app.plugin_manager import PluginManager
 
@@ -92,14 +92,15 @@ def main(args):
                             filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
                             algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath)
 
-                            # Alert.create(
-                            #     task=source_code,
-                            #     alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
-                            #     alert_type="",
-                            #     alert_image=filepath,
-                            #     alert_video="",
-                            # )
-                            # print(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
+                            Alert.create(
+                                task=task,
+                                alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
+                                alert_type=algorithm_datamap[algo_id].get('name'),
+                                alert_message='',
+                                alert_image=filepath,
+                                alert_video="",
+                            )
+                            print(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
 
                     except Exception as exc:
                         print(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")

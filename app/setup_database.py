@@ -1,12 +1,12 @@
 import json
 
-from app.core.database_models import db, Algorithm, Task, TaskAlgorithm
+from app.core.database_models import db, Algorithm, Task, TaskAlgorithm, Alert
 
 
 def setup_database():
     # 连接数据库并创建表
     db.connect()
-    db.create_tables([Algorithm, Task, TaskAlgorithm])
+    db.create_tables([Algorithm, Task, TaskAlgorithm, Alert], safe=True)
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
     # 这样脚本就可以重复运行而不会出错

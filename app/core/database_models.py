@@ -77,6 +77,7 @@ class Alert(BaseModel):
     task = pw.ForeignKeyField(Task, backref='alerts')
     alert_time = pw.DateTimeField()
     alert_type = pw.CharField()
-    alert_message = pw.TextField()
+    alert_message = pw.TextField(null=True)
     alert_image = pw.TextField(null=True)
+    alert_image_ori = pw.TextField(null=True)
     alert_video = pw.TextField(null=True)
