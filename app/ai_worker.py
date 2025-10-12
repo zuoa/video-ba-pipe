@@ -22,7 +22,7 @@ def main(args):
     source_name = task.source_name
     buffer_name = f"{task.buffer_name}.{task.id}"
 
-    print(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
+    logger.info(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
 
     buffer = VideoRingBuffer(name=buffer_name, create=False)
 
@@ -44,7 +44,7 @@ def main(args):
         # 3. 从插件管理器获取对应的算法类
         AlgorithmClass = plugin_manager.get_algorithm_class(plugin_module)
         if not AlgorithmClass:
-            print(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
+            logger.error(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
             return
 
         # 4. 实例化算法插件
@@ -54,7 +54,7 @@ def main(args):
             "interval_seconds": algo_config_db.interval_seconds,
         }
         algorithm = AlgorithmClass(full_config)
-        print(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {buffer_name}")
+        logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {buffer_name}")
         algorithms[algo_id] = algorithm
 
         algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
@@ -84,7 +84,7 @@ def main(args):
                     try:
                         # 获取算法的处理结果
                         result = future.result()
-                        print(f"[AIWorker] 收到来自算法 {algo_id} 的处理结果。")
+                        logger.info(f"[AIWorker] 收到来自算法 {algo_id} 的处理结果。")
 
                         # 根据结果进行后续操作，例如可视化
                         if result and result.get("detections"):
@@ -108,10 +108,10 @@ def main(args):
                                 alert_image_ori=filepath_ori,
                                 alert_video="",
                             )
-                            print(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
+                            logger.info(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
 
                     except Exception as exc:
-                        print(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")
+                        logger.info(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")
 
                 frame_count += 1
             time.sleep(0.1)  # 控制处理频率
