@@ -88,10 +88,6 @@ def main(args):
 
                         # 根据结果进行后续操作，例如可视化
                         if result and result.get("detections"):
-                            # filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/algo_{algo_id}_{time.time()}.jpg")
-
-                            save_frame(latest_frame, FRAME_SAVE_PATH)
-
 
                             # 检测目标可视化并保存
                             filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
