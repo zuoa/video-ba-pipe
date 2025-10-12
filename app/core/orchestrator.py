@@ -23,7 +23,7 @@ class Orchestrator:
         buffer = VideoRingBuffer(name=task_buffer_name, create=True)
         self.buffers[task.id] = buffer
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '1']
+        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '3']
         logger.info(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
 
