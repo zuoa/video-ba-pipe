@@ -5,6 +5,7 @@ import time
 from playhouse.shortcuts import model_to_dict
 
 from app import logger
+from app.config import RINGBUFFER_DURATION, RECORDING_FPS
 from app.core.database_models import db, Task, TaskAlgorithm  # 只需导入模型
 from app.core.ringbuffer import VideoRingBuffer
 
@@ -18,12 +19,26 @@ class Orchestrator:
     def _start_task(self, task: Task):
         print(f"  -> 正在启动任务 ID {task.id}: {task.name}")
 
-        # 创建共享内存环形缓冲区
+        # 创建共享内存环形缓冲区（使用配置的FPS和时长）
         task_buffer_name = f"{task.buffer_name}.{task.id}"
-        buffer = VideoRingBuffer(name=task_buffer_name, create=True)
+        buffer = VideoRingBuffer(
+            name=task_buffer_name, 
+            create=True,
+            fps=RECORDING_FPS,  # 使用录制帧率
+            duration_seconds=RINGBUFFER_DURATION  # 使用配置的缓冲时长
+        )
         self.buffers[task.id] = buffer
+        
+        logger.info(f"创建RingBuffer: fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧")
 
-        decoder_args = ['python', 'decoder_worker.py', '--url', task.source_url,  '--task-id', str(task.id), '--sample-mode', 'interval', '--sample-interval', '3']
+        # 启动解码器工作进程（使用fps采样模式）
+        decoder_args = [
+            'python', 'decoder_worker.py', 
+            '--url', task.source_url,  
+            '--task-id', str(task.id), 
+            '--sample-mode', 'fps',  # 改为fps模式
+            '--sample-fps', str(RECORDING_FPS)  # 使用配置的录制帧率
+        ]
         logger.info(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
 

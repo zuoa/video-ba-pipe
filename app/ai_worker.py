@@ -7,10 +7,18 @@ from multiprocessing import resource_tracker
 from playhouse.shortcuts import model_to_dict
 
 from app import logger
-from app.config import FRAME_SAVE_PATH
+from app.config import (
+    FRAME_SAVE_PATH, 
+    VIDEO_SAVE_PATH, 
+    RECORDING_ENABLED, 
+    PRE_ALERT_DURATION, 
+    POST_ALERT_DURATION, 
+    RECORDING_FPS
+)
 from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
+from app.core.video_recorder import VideoRecorderManager
 from app.plugin_manager import PluginManager
 
 
@@ -28,6 +36,18 @@ def main(args):
 
     shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
     resource_tracker.unregister(shm_name, 'shared_memory')
+
+    # 初始化视频录制器（如果启用）
+    video_recorder = None
+    if RECORDING_ENABLED:
+        recorder_manager = VideoRecorderManager()
+        video_recorder = recorder_manager.get_recorder(
+            task_id=task_id,
+            buffer=buffer,
+            save_dir=VIDEO_SAVE_PATH,
+            fps=RECORDING_FPS
+        )
+        logger.info(f"[AIWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
 
     # 1. 初始化插件管理器
     plugin_manager = PluginManager()
@@ -88,6 +108,9 @@ def main(args):
 
                         # 根据结果进行后续操作，例如可视化
                         if result and result.get("detections"):
+                            
+                            # 记录触发时间
+                            trigger_time = time.time()
 
                             # 检测目标可视化并保存
                             filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
@@ -99,7 +122,8 @@ def main(args):
                             filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
                             save_frame(latest_frame, filepath_ori_absolute)
 
-                            Alert.create(
+                            # 创建Alert记录
+                            alert = Alert.create(
                                 task=task,
                                 alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
                                 alert_type=algorithm_datamap[algo_id].get('name'),
@@ -109,6 +133,25 @@ def main(args):
                                 alert_video="",
                             )
                             logger.info(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
+                            
+                            # 启动视频录制（如果启用）
+                            if video_recorder:
+                                try:
+                                    video_path = video_recorder.start_recording(
+                                        task_id=task_id,
+                                        alert_id=alert.id,
+                                        trigger_time=trigger_time,
+                                        pre_seconds=PRE_ALERT_DURATION,
+                                        post_seconds=POST_ALERT_DURATION
+                                    )
+                                    
+                                    # 更新Alert记录中的视频路径
+                                    alert.alert_video = video_path
+                                    alert.save()
+                                    
+                                    logger.info(f"[AIWorker] 已启动视频录制任务，预计保存到: {video_path}")
+                                except Exception as rec_err:
+                                    logger.error(f"[AIWorker] 启动视频录制失败: {rec_err}", exc_info=True)
 
                     except Exception as exc:
                         logger.info(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")

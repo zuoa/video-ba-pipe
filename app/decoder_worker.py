@@ -7,7 +7,13 @@ import time
 from multiprocessing import resource_tracker
 
 from app import logger
-from app.config import SNAPSHOT_ENABLED, SNAPSHOT_SAVE_PATH, SNAPSHOT_INTERVAL, IS_EXTREME_DECODE_MODE
+from app.config import (
+    SNAPSHOT_ENABLED, 
+    SNAPSHOT_SAVE_PATH, 
+    SNAPSHOT_INTERVAL, 
+    IS_EXTREME_DECODE_MODE,
+    RECORDING_FPS
+)
 from app.core.database_models import Task
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer

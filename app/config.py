@@ -12,6 +12,9 @@ os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 FRAME_SAVE_PATH = os.getenv('FRAME_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/frames'))
 os.makedirs(FRAME_SAVE_PATH, exist_ok=True)
 
+VIDEO_SAVE_PATH = os.getenv('VIDEO_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/videos'))
+os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
+
 
 
 SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
@@ -22,3 +25,20 @@ os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 
 # 极速解码模式，每次取最新的帧，扔掉所有老的帧
 IS_EXTREME_DECODE_MODE = os.getenv('IS_Extreme_DECODE_MODE', 'true').lower() in ('true', '1', 'yes')
+
+
+# ============ 视频录制配置 ============
+# 预警录制功能开关
+RECORDING_ENABLED = os.getenv('RECORDING_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+# 录制预警前的时长（秒）
+PRE_ALERT_DURATION = int(os.getenv('PRE_ALERT_DURATION', '30'))
+
+# 录制预警后的时长（秒）
+POST_ALERT_DURATION = int(os.getenv('POST_ALERT_DURATION', '30'))
+
+# 录制视频的帧率
+RECORDING_FPS = int(os.getenv('RECORDING_FPS', '10'))
+
+# RingBuffer缓冲时长（秒）- 需要足够大以容纳PRE_ALERT_DURATION
+RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '60'))

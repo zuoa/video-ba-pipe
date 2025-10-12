@@ -1,8 +1,9 @@
 import struct
+import time
 from multiprocessing import shared_memory
 from multiprocessing.context import BaseContext
 from threading import Lock
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import numpy as np
 
@@ -44,9 +45,12 @@ class VideoRingBuffer:
 
         # 元数据大小：写指针(8) + 读指针(8) + 帧计数(8) + 锁标志(1)
         self.metadata_size = 25
+        
+        # 时间戳数组大小：每帧一个double (8字节)
+        self.timestamp_size = 8 * self.capacity
 
-        # 总共享内存大小
-        self.total_size = self.metadata_size + self.frame_size * self.capacity
+        # 总共享内存大小：元数据 + 时间戳数组 + 帧数据
+        self.total_size = self.metadata_size + self.timestamp_size + self.frame_size * self.capacity
 
         # 创建或连接共享内存
         if create:
@@ -100,14 +104,29 @@ class VideoRingBuffer:
 
     def _get_frame_offset(self, index: int) -> int:
         """计算帧在共享内存中的偏移量"""
-        return self.metadata_size + (index % self.capacity) * self.frame_size
+        return self.metadata_size + self.timestamp_size + (index % self.capacity) * self.frame_size
+    
+    def _get_timestamp_offset(self, index: int) -> int:
+        """计算时间戳在共享内存中的偏移量"""
+        return self.metadata_size + (index % self.capacity) * 8
+    
+    def _write_timestamp(self, index: int, timestamp: float):
+        """写入时间戳"""
+        offset = self._get_timestamp_offset(index)
+        struct.pack_into('d', self.shm.buf, offset, timestamp)
+    
+    def _read_timestamp(self, index: int) -> float:
+        """读取时间戳"""
+        offset = self._get_timestamp_offset(index)
+        return struct.unpack_from('d', self.shm.buf, offset)[0]
 
-    def write(self, frame: np.ndarray) -> bool:
+    def write(self, frame: np.ndarray, timestamp: Optional[float] = None) -> bool:
         """
         写入一帧数据
 
         Args:
             frame: 视频帧数据，形状应匹配 frame_shape
+            timestamp: 帧的时间戳（秒），如果为None则使用当前时间
 
         Returns:
             是否写入成功
@@ -117,6 +136,9 @@ class VideoRingBuffer:
                 f"Frame shape {frame.shape} doesn't match "
                 f"expected {self.frame_shape}"
             )
+
+        if timestamp is None:
+            timestamp = time.time()
 
         with self._lock:
             write_idx, read_idx, count, locked = self._read_metadata()
@@ -133,6 +155,9 @@ class VideoRingBuffer:
             offset = self._get_frame_offset(write_idx)
             frame_bytes = frame.astype(np.uint8).tobytes()
             self.shm.buf[offset:offset + self.frame_size] = frame_bytes
+            
+            # 写入时间戳
+            self._write_timestamp(write_idx, timestamp)
 
             # 更新元数据
             self._write_metadata(new_write_idx, read_idx, count + 1, locked)
@@ -196,6 +221,116 @@ class VideoRingBuffer:
             )
 
             return frame.copy()
+    
+    def peek_with_timestamp(self, index: int = 0) -> Optional[Tuple[np.ndarray, float]]:
+        """
+        查看缓冲区中的帧及其时间戳但不移除
+
+        Args:
+            index: 相对于当前读位置的偏移（0=最旧，-1=最新）
+
+        Returns:
+            (视频帧数据, 时间戳) 或 None
+        """
+        with self._lock:
+            write_idx, read_idx, count, locked = self._read_metadata()
+
+            if count == 0 or abs(index) >= count:
+                return None
+
+            # 计算实际索引
+            if index < 0:
+                # 负索引：从写位置往回数
+                actual_idx = (write_idx + index) % self.capacity
+            else:
+                # 正索引：从读位置往前数
+                actual_idx = (read_idx + index) % self.capacity
+
+            # 读取帧数据
+            offset = self._get_frame_offset(actual_idx)
+            frame_bytes = bytes(self.shm.buf[offset:offset + self.frame_size])
+            frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape(
+                self.frame_shape
+            )
+            
+            # 读取时间戳
+            timestamp = self._read_timestamp(actual_idx)
+
+            return frame.copy(), timestamp
+
+    def get_recent_frames(self, seconds: float) -> List[Tuple[np.ndarray, float]]:
+        """
+        获取最近N秒的所有帧
+
+        Args:
+            seconds: 要获取的时间范围（秒）
+
+        Returns:
+            [(帧, 时间戳), ...] 按时间从旧到新排序
+        """
+        with self._lock:
+            write_idx, read_idx, count, locked = self._read_metadata()
+
+            if count == 0:
+                return []
+
+            # 获取最新帧的时间戳
+            latest_idx = (write_idx - 1) % self.capacity
+            latest_timestamp = self._read_timestamp(latest_idx)
+            cutoff_time = latest_timestamp - seconds
+
+            frames = []
+            
+            # 从最旧的帧开始遍历
+            for i in range(count):
+                actual_idx = (read_idx + i) % self.capacity
+                timestamp = self._read_timestamp(actual_idx)
+                
+                # 只收集在时间范围内的帧
+                if timestamp >= cutoff_time:
+                    offset = self._get_frame_offset(actual_idx)
+                    frame_bytes = bytes(self.shm.buf[offset:offset + self.frame_size])
+                    frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape(
+                        self.frame_shape
+                    )
+                    frames.append((frame.copy(), timestamp))
+
+            return frames
+    
+    def get_frames_in_time_range(self, start_time: float, end_time: float) -> List[Tuple[np.ndarray, float]]:
+        """
+        获取指定时间范围内的所有帧
+
+        Args:
+            start_time: 开始时间戳
+            end_time: 结束时间戳
+
+        Returns:
+            [(帧, 时间戳), ...] 按时间从旧到新排序
+        """
+        with self._lock:
+            write_idx, read_idx, count, locked = self._read_metadata()
+
+            if count == 0:
+                return []
+
+            frames = []
+            
+            # 遍历所有帧
+            for i in range(count):
+                actual_idx = (read_idx + i) % self.capacity
+                timestamp = self._read_timestamp(actual_idx)
+                
+                # 只收集在时间范围内的帧
+                if start_time <= timestamp <= end_time:
+                    offset = self._get_frame_offset(actual_idx)
+                    frame_bytes = bytes(self.shm.buf[offset:offset + self.frame_size])
+                    frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape(
+                        self.frame_shape
+                    )
+                    frames.append((frame.copy(), timestamp))
+
+            return frames
 
     def get_stats(self) -> dict:
         """获取缓冲区统计信息"""
