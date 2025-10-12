@@ -41,7 +41,7 @@ POST_ALERT_DURATION = int(os.getenv('POST_ALERT_DURATION', '10'))
 RECORDING_FPS = int(os.getenv('RECORDING_FPS', '5'))
 
 # RingBuffer缓冲时长（秒）- 需要足够大以容纳PRE_ALERT_DURATION
-RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '30'))
+RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '60'))
 
 # ============ 告警抑制配置 ============
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警

@@ -114,6 +114,10 @@ class VideoRecorder:
             post_seconds = recording_info['post_seconds']
             output_path = recording_info['output_path']
             
+            # 检查buffer状态
+            buffer_stats = self.buffer.get_stats()
+            logger.info(f"[录制 {alert_id}] Buffer状态: {buffer_stats['count']}帧 / {buffer_stats['capacity']}容量")
+            
             # 第一步：从RingBuffer获取历史帧（过去N秒）
             logger.info(f"[录制 {alert_id}] 正在提取过去 {pre_seconds} 秒的帧...")
             start_time = trigger_time - pre_seconds
@@ -124,7 +128,13 @@ class VideoRecorder:
                 end_time=trigger_time
             )
             
-            logger.info(f"[录制 {alert_id}] 提取到 {len(historical_frames)} 个历史帧")
+            logger.info(f"[录制 {alert_id}] 提取到 {len(historical_frames)} 个历史帧 (范围: {start_time:.2f} - {trigger_time:.2f})")
+            
+            # 如果没有历史帧，尝试获取最近的所有帧
+            if not historical_frames and buffer_stats['count'] > 0:
+                logger.warning(f"[录制 {alert_id}] 时间范围内无历史帧，尝试获取最近 {pre_seconds} 秒的所有帧")
+                historical_frames = self.buffer.get_recent_frames(pre_seconds)
+                logger.info(f"[录制 {alert_id}] 重新提取到 {len(historical_frames)} 个历史帧")
             
             # 第二步：等待并收集未来M秒的帧
             logger.info(f"[录制 {alert_id}] 正在等待并收集未来 {post_seconds} 秒的帧...")
@@ -134,29 +144,59 @@ class VideoRecorder:
             
             future_frames = []
             end_time = trigger_time + post_seconds
-            collect_start = time.time()
+            real_end_time = time.time() + post_seconds
+            last_collected_timestamp = trigger_time
+            
+            logger.info(f"[录制 {alert_id}] 等待时间范围: {trigger_time:.2f} - {end_time:.2f} (实际等到 {real_end_time:.2f})")
             
             # 等待并收集未来的帧
-            while time.time() < end_time:
-                # 从buffer获取最新的帧
-                result = self.buffer.peek_with_timestamp(-1)  # 获取最新帧
-                if result:
-                    frame, timestamp = result
-                    # 确保时间戳在范围内且不重复
-                    if trigger_time < timestamp <= end_time:
-                        # 检查是否已经收集过这个时间戳的帧
-                        if not future_frames or timestamp > future_frames[-1][1]:
-                            future_frames.append((frame, timestamp))
+            check_count = 0
+            while time.time() < real_end_time:
+                check_count += 1
+                
+                # 获取buffer中所有在时间范围内的新帧
+                current_time = time.time()
+                buffer_frames = self.buffer.get_frames_in_time_range(
+                    start_time=last_collected_timestamp,
+                    end_time=current_time
+                )
+                
+                # 添加新帧到列表
+                for frame, timestamp in buffer_frames:
+                    if timestamp > last_collected_timestamp and timestamp <= end_time:
+                        future_frames.append((frame, timestamp))
+                        last_collected_timestamp = timestamp
+                
+                # 每秒记录一次进度
+                if check_count % 20 == 0:
+                    logger.debug(f"[录制 {alert_id}] 已收集 {len(future_frames)} 帧，继续等待...")
                 
                 time.sleep(0.05)  # 短暂休眠，避免CPU占用过高
             
-            logger.info(f"[录制 {alert_id}] 收集到 {len(future_frames)} 个未来帧")
+            logger.info(f"[录制 {alert_id}] 收集到 {len(future_frames)} 个未来帧 (检查了 {check_count} 次)")
             
             # 第三步：合并所有帧并编码为视频
             all_frames = historical_frames + future_frames
             
             if not all_frames:
+                # 提供详细的诊断信息
                 logger.error(f"[录制 {alert_id}] 没有收集到任何帧，取消录制")
+                logger.error(f"[录制 {alert_id}] 诊断信息:")
+                logger.error(f"  - Buffer状态: {buffer_stats}")
+                logger.error(f"  - 历史帧数: {len(historical_frames)}")
+                logger.error(f"  - 未来帧数: {len(future_frames)}")
+                logger.error(f"  - 触发时间: {trigger_time:.2f}")
+                logger.error(f"  - 时间范围: [{start_time:.2f}, {end_time:.2f}]")
+                
+                # 尝试获取buffer中任意帧来诊断问题
+                if buffer_stats['count'] > 0:
+                    oldest = self.buffer.peek_with_timestamp(0)
+                    newest = self.buffer.peek_with_timestamp(-1)
+                    if oldest and newest:
+                        logger.error(f"  - Buffer最旧帧时间戳: {oldest[1]:.2f}")
+                        logger.error(f"  - Buffer最新帧时间戳: {newest[1]:.2f}")
+                        logger.error(f"  - Buffer时间跨度: {newest[1] - oldest[1]:.2f}秒")
+                
                 with self.lock:
                     self.recording_tasks[alert_id]['status'] = 'failed'
                 return
