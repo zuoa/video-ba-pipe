@@ -130,7 +130,7 @@
 
             // 使用告警图片，如果没有则显示默认的告警类型图标背景
             const alertImage = a.alert_image ? 
-                `<img src="${a.alert_image}" alt="Alert Image" class="w-full h-full object-cover">` :
+                `<img src="/api/image/frames/${a.alert_image}" alt="Alert Image" class="w-full h-full object-cover">` :
                 `<div class="w-full h-full ${bgColor} flex items-center justify-center text-white text-xl">${icon}</div>`;
 
             return `
@@ -225,7 +225,7 @@
             ${alert.alert_image ? `
             <div class="py-3">
                 <h5 class="font-semibold text-gray-700 mb-2">告警图片</h5>
-                <img src="${alert.alert_image}" alt="Alert Image" class="max-w-full h-auto rounded border">
+                <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="max-w-full h-auto rounded border">
             </div>
             ` : ''}
 
