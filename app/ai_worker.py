@@ -10,6 +10,7 @@ from app import logger
 from app.config import FRAME_SAVE_PATH
 from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
+from app.core.utils import save_frame
 from app.plugin_manager import PluginManager
 
 
@@ -89,8 +90,18 @@ def main(args):
                         if result and result.get("detections"):
                             # filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/algo_{algo_id}_{time.time()}.jpg")
 
-                            filepath = os.path.join(FRAME_SAVE_PATH, f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg")
-                            algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath)
+                            save_frame(latest_frame, FRAME_SAVE_PATH)
+
+
+                            # 检测目标可视化并保存
+                            filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+                            filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
+                            algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath_absolute)
+
+                            # 保存原始图片
+                            filepath_ori = f"{filepath}.ori.jpg"
+                            filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
+                            save_frame(latest_frame, filepath_ori_absolute)
 
                             Alert.create(
                                 task=task,
@@ -98,6 +109,7 @@ def main(args):
                                 alert_type=algorithm_datamap[algo_id].get('name'),
                                 alert_message='',
                                 alert_image=filepath,
+                                alert_image_ori=filepath_ori,
                                 alert_video="",
                             )
                             print(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
