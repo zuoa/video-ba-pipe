@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_file, abort
 
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
-from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH
+from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
@@ -249,7 +249,8 @@ def get_image(file_path):
         # 定义允许访问的基础路径
         allowed_bases = {
             'frames': FRAME_SAVE_PATH,
-            'snapshots': SNAPSHOT_SAVE_PATH
+            'snapshots': SNAPSHOT_SAVE_PATH,
+            'videos': VIDEO_SAVE_PATH
         }
         
         # 解析路径的第一部分作为基础目录类型
