@@ -420,7 +420,7 @@ def get_video(file_path):
 
 @app.route('/')
 def index():
-    return admin_tasks()
+    return render_template('dashboard.html')
 
 @app.route('/admin/algorithms')
 def admin_algorithms():

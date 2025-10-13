@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
 {% block title %}告警记录{% endblock %}
+{% block page_title %}告警记录{% endblock %}
+{% block page_subtitle %}实时监控和管理告警信息{% endblock %}
 
 {% block content %}
 <style>
@@ -13,108 +15,127 @@
     }
 </style>
 <div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">告警记录</h1>
-        <div class="flex space-x-4">
-            <select id="taskFilter" onchange="loadAlerts(1)" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+    <div class="flex justify-between items-center mb-8">
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white shadow-lg">
+                <i class="fas fa-bell text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">告警列表</h3>
+                <p class="text-sm text-gray-500" id="alertCount">实时监控中...</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <select id="taskFilter" onchange="loadAlerts(1)" class="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all bg-white font-medium text-gray-700">
                 <option value="">所有任务</option>
             </select>
-            <button onclick="loadAlerts(currentPage)" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
-                刷新
+            <button onclick="loadAlerts(currentPage)" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
+                <i class="fas fa-sync-alt"></i>
+                <span>刷新</span>
             </button>
         </div>
     </div>
 
     <!-- 顶部分页组件 -->
-    <div id="paginationContainerTop" class="hidden mb-4 flex justify-between items-center bg-white rounded-lg shadow p-4">
-        <div class="text-sm text-gray-600">
-            共 <span class="totalRecords">0</span> 条记录，每页 
-            <select class="perPageSelect" onchange="changePerPage()" class="mx-1 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+    <div id="paginationContainerTop" class="hidden mb-6 flex justify-between items-center bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div class="text-sm text-gray-600 font-medium flex items-center space-x-2">
+            <i class="fas fa-list text-gray-700"></i>
+            <span>共 <span class="totalRecords font-semibold text-gray-900">0</span> 条记录，每页</span>
+            <select class="perPageSelect mx-1 px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white font-medium">
                 <option value="10">10</option>
                 <option value="30" selected>30</option>
                 <option value="60">60</option>
                 <option value="120">120</option>
             </select>
-            条
+            <span>条</span>
         </div>
         <div class="flex items-center space-x-2">
-            <button onclick="goToPage(1)" class="firstPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(1)" class="firstPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 首页
             </button>
-            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 上一页
             </button>
             <div class="flex items-center space-x-1 pageNumbers">
             </div>
-            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 下一页
             </button>
-            <button onclick="goToPage(totalPages)" class="lastPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(totalPages)" class="lastPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 末页
             </button>
         </div>
-        <div class="text-sm text-gray-600">
-            第 <span class="currentPageDisplay">1</span> / <span class="totalPagesDisplay">1</span> 页
+        <div class="text-sm text-gray-600 font-medium flex items-center space-x-2">
+            <i class="fas fa-bookmark text-gray-700"></i>
+            <span>第 <span class="currentPageDisplay font-semibold text-gray-900">1</span> / <span class="totalPagesDisplay font-semibold text-gray-900">1</span> 页</span>
         </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="alertsContainer">
     </div>
 
-    <div id="noAlerts" class="hidden bg-white rounded-lg shadow p-8 text-center">
-        <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
-        </svg>
-        <p class="text-gray-600 text-lg">暂无告警记录</p>
+    <div id="noAlerts" class="hidden bg-white rounded-2xl shadow-xl p-12 text-center border border-gray-100">
+        <div class="w-24 h-24 mx-auto mb-6 bg-gray-100 rounded-full flex items-center justify-center">
+            <i class="fas fa-bell-slash text-4xl text-gray-400"></i>
+        </div>
+        <h3 class="text-xl font-semibold text-gray-800 mb-2">暂无告警记录</h3>
+        <p class="text-gray-500">系统运行正常，没有检测到告警信息</p>
     </div>
 
     <!-- 底部分页组件 -->
-    <div id="paginationContainerBottom" class="hidden mt-6 flex justify-between items-center bg-white rounded-lg shadow p-4">
-        <div class="text-sm text-gray-600">
-            共 <span class="totalRecords">0</span> 条记录，每页 
-            <select class="perPageSelect" onchange="changePerPage()" class="mx-1 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+    <div id="paginationContainerBottom" class="hidden mt-6 flex justify-between items-center bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div class="text-sm text-gray-600 font-medium flex items-center space-x-2">
+            <i class="fas fa-list text-gray-700"></i>
+            <span>共 <span class="totalRecords font-semibold text-gray-900">0</span> 条记录，每页</span>
+            <select class="perPageSelect mx-1 px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white font-medium">
                 <option value="10">10</option>
                 <option value="30" selected>30</option>
                 <option value="60">60</option>
                 <option value="120">120</option>
             </select>
-            条
+            <span>条</span>
         </div>
         <div class="flex items-center space-x-2">
-            <button onclick="goToPage(1)" class="firstPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(1)" class="firstPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 首页
             </button>
-            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 上一页
             </button>
             <div class="flex items-center space-x-1 pageNumbers">
             </div>
-            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 下一页
             </button>
-            <button onclick="goToPage(totalPages)" class="lastPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onclick="goToPage(totalPages)" class="lastPageBtn px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-gray-700">
                 末页
             </button>
         </div>
-        <div class="text-sm text-gray-600">
-            第 <span class="currentPageDisplay">1</span> / <span class="totalPagesDisplay">1</span> 页
+        <div class="text-sm text-gray-600 font-medium flex items-center space-x-2">
+            <i class="fas fa-bookmark text-gray-700"></i>
+            <span>第 <span class="currentPageDisplay font-semibold text-gray-900">1</span> / <span class="totalPagesDisplay font-semibold text-gray-900">1</span> 页</span>
         </div>
     </div>
 </div>
 
 <!-- 告警详情模态框 -->
-<div id="alertDetailModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold">告警详情</h3>
-            <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600">
+<div id="alertDetailModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 md:w-3/4 lg:w-2/3 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white">
+                    <i class="fas fa-bell"></i>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-800">告警详情</h3>
+            </div>
+            <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
             </button>
         </div>
 
-        <div id="alertDetailContent" class="space-y-4">
+        <div id="alertDetailContent" class="space-y-6">
         </div>
     </div>
 </div>
@@ -159,6 +180,9 @@
             totalPages = response.pagination.total_pages;
             currentPage = response.pagination.page;
             perPage = response.pagination.per_page;
+            
+            const alertCount = document.getElementById('alertCount');
+            alertCount.textContent = `共 ${totalRecords} 条告警`;
             
             renderAlerts();
             renderPagination();
@@ -238,10 +262,10 @@
         // 添加第一页和省略号
         if (startPage > 1) {
             html += `
-                <button onclick="goToPage(1)" class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100">1</button>
+                <button onclick="goToPage(1)" class="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 transition-all font-medium text-gray-700">1</button>
             `;
             if (startPage > 2) {
-                html += '<span class="px-2 text-gray-500">...</span>';
+                html += '<span class="px-2 text-gray-400">...</span>';
             }
         }
 
@@ -250,7 +274,7 @@
             const isActive = i === currentPage;
             html += `
                 <button onclick="goToPage(${i})" 
-                    class="px-3 py-1 border rounded ${isActive ? 'bg-black text-white border-black' : 'border-gray-300 hover:bg-gray-100'}">
+                    class="px-4 py-2 border rounded-lg font-medium transition-all ${isActive ? 'bg-black text-white border-transparent shadow-lg' : 'border-gray-200 text-gray-700 hover:bg-gray-100'}">
                     ${i}
                 </button>
             `;
@@ -259,10 +283,10 @@
         // 添加省略号和最后一页
         if (endPage < totalPages) {
             if (endPage < totalPages - 1) {
-                html += '<span class="px-2 text-gray-500">...</span>';
+                html += '<span class="px-2 text-gray-400">...</span>';
             }
             html += `
-                <button onclick="goToPage(${totalPages})" class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100">${totalPages}</button>
+                <button onclick="goToPage(${totalPages})" class="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 transition-all font-medium text-gray-700">${totalPages}</button>
             `;
         }
         
@@ -282,10 +306,17 @@
         noAlerts.classList.add('hidden');
 
         const alertTypeColors = {
-            'warning': 'bg-gradient-to-r from-yellow-400 to-yellow-500',
-            'error': 'bg-gradient-to-r from-red-400 to-red-500',
-            'info': 'bg-gradient-to-r from-blue-400 to-blue-500',
-            'critical': 'bg-gradient-to-r from-purple-400 to-purple-500'
+            'warning': 'from-yellow-400 to-orange-500',
+            'error': 'from-red-400 to-pink-500',
+            'info': 'from-blue-400 to-cyan-500',
+            'critical': 'from-purple-500 to-pink-500'
+        };
+
+        const alertTypeBg = {
+            'warning': 'bg-gradient-to-r from-yellow-400 to-orange-500',
+            'error': 'bg-gradient-to-r from-red-400 to-pink-500',
+            'info': 'bg-gradient-to-r from-blue-400 to-cyan-500',
+            'critical': 'bg-gradient-to-r from-purple-500 to-pink-500'
         };
 
         const alertTypeIcons = {
@@ -307,7 +338,8 @@
             const taskName = task ? task.name : `任务 #${a.task_id}`;
             const sourceName = task ? (task.source_name || '未命名源') : '未知源';
             const sourceCode = task ? task.source_code : 'N/A';
-            const bgColor = alertTypeColors[a.alert_type.toLowerCase()] || 'bg-gradient-to-r from-gray-400 to-gray-500';
+            const gradient = alertTypeColors[a.alert_type.toLowerCase()] || 'from-gray-400 to-gray-500';
+            const bgGradient = alertTypeBg[a.alert_type.toLowerCase()] || 'bg-gradient-to-r from-gray-400 to-gray-500';
             const icon = alertTypeIcons[a.alert_type.toLowerCase()] || '<i class="fas fa-clipboard"></i>';
             const typeText = alertTypeTexts[a.alert_type.toLowerCase()] || a.alert_type;
             const time = new Date(a.alert_time).toLocaleString('zh-CN');
@@ -315,51 +347,56 @@
             // 使用告警图片，如果没有则显示默认的告警类型图标背景
             const alertImage = a.alert_image ? 
                 `<img src="/api/image/frames/${a.alert_image}" alt="Alert Image" class="w-full h-full object-cover">` :
-                `<div class="w-full h-full ${bgColor} flex items-center justify-center text-white text-xl">${icon}</div>`;
+                `<div class="w-full h-full ${bgGradient} flex items-center justify-center text-white text-3xl">${icon}</div>`;
 
             return `
-            <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer border border-gray-200 hover:border-gray-300" onclick="showAlertDetail(${a.id})">
-                <div class="flex">
-                    <!-- 左侧图片区域（无padding，4:3比例） -->
-                    <div class="flex-shrink-0 w-32 h-18 rounded-l-lg overflow-hidden bg-gray-200">
-                        ${alertImage}
+            <div class="card-hover bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer border border-gray-100 overflow-hidden group" onclick="showAlertDetail(${a.id})">
+                <!-- 图片区域 -->
+                <div class="relative h-48 overflow-hidden bg-gradient-to-br ${gradient}">
+                    ${alertImage}
+                    <div class="absolute top-3 right-3">
+                        <span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold text-white bg-black bg-opacity-60 backdrop-blur-sm shadow-lg">
+                            <span class="mr-1.5">${icon}</span>
+                            ${typeText}
+                        </span>
                     </div>
-                    
-                    <!-- 右侧信息区域 -->
-                    <div class="flex-1 p-4 min-w-0">
-                        <!-- 顶部：告警类型标签 -->
-                        <div class="flex justify-start mb-3">
-                            <span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-sm ${bgColor} transform hover:scale-105 transition-transform duration-200">
-                                <span class="mr-1.5">${icon}</span>
-                                ${typeText}
+                    ${a.alert_video ? `
+                        <div class="absolute bottom-3 right-3">
+                            <span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-green-500 bg-opacity-90 backdrop-blur-sm shadow-lg">
+                                <i class="fas fa-video mr-1"></i>视频
                             </span>
                         </div>
-                        
-                        <!-- 任务信息 -->
-                        <div class="mb-2">
-                            <h3 class="text-base font-semibold text-gray-800 truncate">${taskName}</h3>
-                            <div class="text-sm text-gray-500 mt-1">
-                                <span class="inline-flex items-center">
-                                    <i class="fas fa-video mr-1"></i>
-                                    ${sourceName} (${sourceCode})
-                                </span>
+                    ` : ''}
+                </div>
+                
+                <!-- 信息区域 -->
+                <div class="p-5">
+                    <!-- 任务信息 -->
+                    <div class="mb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-2 group-hover:text-black transition-colors">${taskName}</h3>
+                        <div class="flex items-center text-sm text-gray-500">
+                            <div class="flex items-center px-3 py-1 bg-gray-100 rounded-lg">
+                                <i class="fas fa-video mr-2 text-gray-700"></i>
+                                <span class="font-medium">${sourceName}</span>
                             </div>
+                            <span class="mx-2 text-gray-300">•</span>
+                            <code class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-mono">${sourceCode}</code>
                         </div>
-                        
-                        <!-- 告警消息 -->
-                        <div class="mb-2">
-                            <p class="text-sm text-blue-500 line-clamp-2">- ${a.alert_message}</p>
+                    </div>
+                    
+                    <!-- 告警消息 -->
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-600 line-clamp-2 leading-relaxed">${a.alert_message}</p>
+                    </div>
+                    
+                    <!-- 底部信息 -->
+                    <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+                        <div class="flex items-center text-xs text-gray-500">
+                            <i class="fas fa-clock mr-2 text-gray-600"></i>
+                            <span class="font-medium">${time}</span>
                         </div>
-                        
-                        <!-- 底部信息 -->
-                        <div class="flex items-center justify-between text-xs text-gray-500">
-                            <div class="flex items-center space-x-3">
-                                <span><i class="fas fa-clock mr-1"></i>${time}</span>
-                                ${a.alert_video ? '<span class="text-green-600"><i class="fas fa-video mr-1"></i>视频</span>' : ''}
-                            </div>
-                            <div class="text-gray-400">
-                                <i class="fas fa-chevron-right"></i>
-                            </div>
+                        <div class="text-gray-700 group-hover:translate-x-1 transition-transform">
+                            <i class="fas fa-arrow-right"></i>
                         </div>
                     </div>
                 </div>
@@ -383,51 +420,85 @@
             second: '2-digit'
         });
 
+        const alertTypeColors = {
+            'warning': 'from-yellow-400 to-orange-500',
+            'error': 'from-red-400 to-pink-500',
+            'info': 'from-blue-400 to-cyan-500',
+            'critical': 'from-purple-500 to-pink-500'
+        };
+        const gradient = alertTypeColors[alert.alert_type.toLowerCase()] || 'from-gray-400 to-gray-500';
+
         const content = document.getElementById('alertDetailContent');
         content.innerHTML = `
-            <div class="border-b pb-3">
+            <div class="bg-gradient-to-br ${gradient} rounded-2xl p-6 text-white mb-6">
                 <div class="flex justify-between items-start">
-                    <div>
-                        <h4 class="text-lg font-semibold text-gray-800">${taskName}</h4>
-                        <p class="text-sm text-gray-500 mt-1">
-                            <i class="fas fa-video mr-1"></i>
-                            ${task ? (task.source_name || '未命名源') : '未知源'} (${task ? task.source_code : 'N/A'})
-                        </p>
-                        <p class="text-sm text-gray-500">${time}</p>
+                    <div class="flex-1">
+                        <h4 class="text-2xl font-bold mb-3">${taskName}</h4>
+                        <div class="flex flex-wrap items-center gap-3 text-sm">
+                            <div class="flex items-center px-3 py-1.5 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                                <i class="fas fa-video mr-2"></i>
+                                <span>${task ? (task.source_name || '未命名源') : '未知源'}</span>
+                            </div>
+                            <div class="flex items-center px-3 py-1.5 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                                <i class="fas fa-code mr-2"></i>
+                                <span>${task ? task.source_code : 'N/A'}</span>
+                            </div>
+                            <div class="flex items-center px-3 py-1.5 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                                <i class="fas fa-clock mr-2"></i>
+                                <span>${time}</span>
+                            </div>
+                        </div>
                     </div>
-                    <span class="px-3 py-1 text-sm rounded bg-${alert.alert_type === 'error' ? 'red' : alert.alert_type === 'warning' ? 'yellow' : 'blue'}-100 text-${alert.alert_type === 'error' ? 'red' : alert.alert_type === 'warning' ? 'yellow' : 'blue'}-800">
-                        ${alert.alert_type}
-                    </span>
+                    <div class="ml-4">
+                        <span class="inline-flex items-center px-4 py-2 text-sm font-bold bg-white bg-opacity-30 backdrop-blur-sm rounded-xl">
+                            ${alert.alert_type}
+                        </span>
+                    </div>
                 </div>
             </div>
 
-            <div class="py-3">
-                <h5 class="font-semibold text-gray-700 mb-2">告警信息</h5>
-                <p class="text-gray-600 whitespace-pre-wrap">${alert.alert_message}</p>
+            <div class="bg-gray-50 rounded-2xl p-6 mb-6">
+                <h5 class="font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-info-circle mr-2 text-gray-700"></i>
+                    告警信息
+                </h5>
+                <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">${alert.alert_message}</p>
             </div>
 
             ${(alert.alert_image || alert.alert_video) ? `
-            <div class="py-3">
-                <h5 class="font-semibold text-gray-700 mb-3">告警媒体</h5>
-                <div class="grid grid-cols-1 ${(alert.alert_image && alert.alert_video) ? 'md:grid-cols-3' : ''} gap-4">
+            <div>
+                <h5 class="font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-images mr-2 text-gray-700"></i>
+                    告警媒体
+                </h5>
+                <div class="grid grid-cols-1 ${(alert.alert_image && alert.alert_video) ? 'md:grid-cols-3' : ''} gap-6">
                     ${alert.alert_image ? `
-                    <div class="flex flex-col">
-                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警图片</h6>
-                        <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="w-full h-auto rounded border border-gray-300 shadow-sm">
+                    <div class="flex flex-col bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <h6 class="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                            <i class="fas fa-image mr-2 text-blue-500"></i>
+                            告警图片
+                        </h6>
+                        <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow">
                     </div>
                     ` : ''}
 
                     ${alert.alert_image_ori ? `
-                    <div class="flex flex-col">
-                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警原始图片</h6>
-                        <img src="/api/image/frames/${alert.alert_image_ori}" alt="Alert Image" class="w-full h-auto rounded border border-gray-300 shadow-sm">
+                    <div class="flex flex-col bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <h6 class="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                            <i class="fas fa-image mr-2 text-green-500"></i>
+                            原始图片
+                        </h6>
+                        <img src="/api/image/frames/${alert.alert_image_ori}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow">
                     </div>
                     ` : ''}
                     
                     ${alert.alert_video ? `
-                    <div class="flex flex-col">
-                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警视频</h6>
-                        <video controls class="w-full h-auto rounded border border-gray-300 shadow-sm" preload="metadata">
+                    <div class="flex flex-col bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <h6 class="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                            <i class="fas fa-video mr-2 text-red-500"></i>
+                            告警视频
+                        </h6>
+                        <video controls class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md" preload="metadata">
                             <source src="/api/video/videos/${alert.alert_video}" type="video/mp4">
                             您的浏览器不支持视频播放
                         </video>
