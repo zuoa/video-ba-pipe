@@ -244,17 +244,37 @@ class VideoRecorder:
             first_frame = frames[0][0]
             height, width = first_frame.shape[:2]
             
-            # 创建VideoWriter
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 或使用 'avc1', 'H264'
-            video_writer = cv2.VideoWriter(
-                output_path,
-                fourcc,
-                self.fps,
-                (width, height)
-            )
+            # 创建VideoWriter - 使用H.264编码器以确保浏览器兼容性
+            # 尝试多个H.264编码器，按优先级顺序
+            fourcc_options = [
+                'avc1',  # H.264编码（macOS推荐）
+                'H264',  # H.264编码（通用）
+                'X264',  # H.264编码（x264库）
+                'mp4v'   # MPEG-4编码（备选方案）
+            ]
             
-            if not video_writer.isOpened():
-                logger.error(f"无法创建视频写入器: {output_path}")
+            video_writer = None
+            for fourcc_str in fourcc_options:
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
+                    video_writer = cv2.VideoWriter(
+                        output_path,
+                        fourcc,
+                        self.fps,
+                        (width, height)
+                    )
+                    if video_writer.isOpened():
+                        logger.info(f"使用编码器: {fourcc_str}")
+                        break
+                    else:
+                        video_writer.release()
+                        video_writer = None
+                except Exception as e:
+                    logger.debug(f"编码器 {fourcc_str} 不可用: {e}")
+                    continue
+            
+            if not video_writer or not video_writer.isOpened():
+                logger.error(f"无法创建视频写入器: {output_path} (尝试了所有编码器)")
                 return False
             
             # 写入所有帧

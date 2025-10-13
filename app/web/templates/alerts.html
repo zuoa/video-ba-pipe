@@ -7,6 +7,7 @@
     .line-clamp-2 {
         display: -webkit-box;
         -webkit-line-clamp: 2;
+        line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
@@ -15,12 +16,45 @@
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-gray-800">告警记录</h1>
         <div class="flex space-x-4">
-            <select id="taskFilter" onchange="loadAlerts()" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+            <select id="taskFilter" onchange="loadAlerts(1)" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
                 <option value="">所有任务</option>
             </select>
-            <button onclick="loadAlerts()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
+            <button onclick="loadAlerts(currentPage)" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
                 刷新
             </button>
+        </div>
+    </div>
+
+    <!-- 顶部分页组件 -->
+    <div id="paginationContainerTop" class="hidden mb-4 flex justify-between items-center bg-white rounded-lg shadow p-4">
+        <div class="text-sm text-gray-600">
+            共 <span class="totalRecords">0</span> 条记录，每页 
+            <select class="perPageSelect" onchange="changePerPage()" class="mx-1 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                <option value="10">10</option>
+                <option value="30" selected>30</option>
+                <option value="60">60</option>
+                <option value="120">120</option>
+            </select>
+            条
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="goToPage(1)" class="firstPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                首页
+            </button>
+            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                上一页
+            </button>
+            <div class="flex items-center space-x-1 pageNumbers">
+            </div>
+            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                下一页
+            </button>
+            <button onclick="goToPage(totalPages)" class="lastPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                末页
+            </button>
+        </div>
+        <div class="text-sm text-gray-600">
+            第 <span class="currentPageDisplay">1</span> / <span class="totalPagesDisplay">1</span> 页
         </div>
     </div>
 
@@ -32,6 +66,39 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
         </svg>
         <p class="text-gray-600 text-lg">暂无告警记录</p>
+    </div>
+
+    <!-- 底部分页组件 -->
+    <div id="paginationContainerBottom" class="hidden mt-6 flex justify-between items-center bg-white rounded-lg shadow p-4">
+        <div class="text-sm text-gray-600">
+            共 <span class="totalRecords">0</span> 条记录，每页 
+            <select class="perPageSelect" onchange="changePerPage()" class="mx-1 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500">
+                <option value="10">10</option>
+                <option value="30" selected>30</option>
+                <option value="60">60</option>
+                <option value="120">120</option>
+            </select>
+            条
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="goToPage(1)" class="firstPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                首页
+            </button>
+            <button onclick="goToPage(currentPage - 1)" class="prevPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                上一页
+            </button>
+            <div class="flex items-center space-x-1 pageNumbers">
+            </div>
+            <button onclick="goToPage(currentPage + 1)" class="nextPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                下一页
+            </button>
+            <button onclick="goToPage(totalPages)" class="lastPageBtn px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                末页
+            </button>
+        </div>
+        <div class="text-sm text-gray-600">
+            第 <span class="currentPageDisplay">1</span> / <span class="totalPagesDisplay">1</span> 页
+        </div>
     </div>
 </div>
 
@@ -57,6 +124,10 @@
 <script>
     let alerts = [];
     let tasks = [];
+    let currentPage = 1;
+    let perPage = 30;
+    let totalPages = 1;
+    let totalRecords = 0;
 
     async function loadTasks() {
         try {
@@ -73,16 +144,129 @@
         }
     }
 
-    async function loadAlerts() {
+    async function loadAlerts(page = 1) {
+        currentPage = page;
         const taskId = document.getElementById('taskFilter').value;
-        const url = taskId ? `/api/alerts?task_id=${taskId}` : '/api/alerts';
+        let url = `/api/alerts?page=${page}&per_page=${perPage}`;
+        if (taskId) {
+            url += `&task_id=${taskId}`;
+        }
 
         try {
-            alerts = await apiRequest(url);
+            const response = await apiRequest(url);
+            alerts = response.data;
+            totalRecords = response.pagination.total;
+            totalPages = response.pagination.total_pages;
+            currentPage = response.pagination.page;
+            perPage = response.pagination.per_page;
+            
             renderAlerts();
+            renderPagination();
         } catch (error) {
             showMessage('加载告警记录失败: ' + error.message, 'error');
         }
+    }
+
+    function goToPage(page) {
+        if (page < 1 || page > totalPages || page === currentPage) return;
+        loadAlerts(page);
+    }
+
+    function changePerPage() {
+        const selects = document.querySelectorAll('.perPageSelect');
+        perPage = parseInt(selects[0].value);
+        loadAlerts(1); // 改变每页数量时回到第一页
+    }
+
+    function renderPagination() {
+        const paginationTop = document.getElementById('paginationContainerTop');
+        const paginationBottom = document.getElementById('paginationContainerBottom');
+        
+        // 如果没有数据，隐藏分页
+        if (totalRecords === 0) {
+            paginationTop.classList.add('hidden');
+            paginationBottom.classList.add('hidden');
+            return;
+        }
+        paginationTop.classList.remove('hidden');
+        paginationBottom.classList.remove('hidden');
+
+        // 更新统计信息（所有分页器）
+        document.querySelectorAll('.totalRecords').forEach(el => el.textContent = totalRecords);
+        document.querySelectorAll('.currentPageDisplay').forEach(el => el.textContent = currentPage);
+        document.querySelectorAll('.totalPagesDisplay').forEach(el => el.textContent = totalPages);
+
+        // 更新每页数量选择器
+        document.querySelectorAll('.perPageSelect').forEach(select => {
+            select.value = perPage;
+        });
+
+        // 更新按钮状态（所有分页器）
+        const isFirstPage = currentPage === 1;
+        const isLastPage = currentPage === totalPages;
+        
+        document.querySelectorAll('.firstPageBtn').forEach(btn => btn.disabled = isFirstPage);
+        document.querySelectorAll('.prevPageBtn').forEach(btn => btn.disabled = isFirstPage);
+        document.querySelectorAll('.nextPageBtn').forEach(btn => btn.disabled = isLastPage);
+        document.querySelectorAll('.lastPageBtn').forEach(btn => btn.disabled = isLastPage);
+
+        // 生成页码按钮HTML
+        const pageNumbersHTML = generatePageNumbersHTML();
+        
+        // 渲染页码按钮（所有分页器）
+        document.querySelectorAll('.pageNumbers').forEach(container => {
+            container.innerHTML = pageNumbersHTML;
+        });
+    }
+
+    function generatePageNumbersHTML() {
+        let html = '';
+        
+        // 计算要显示的页码范围
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, currentPage + 2);
+
+        // 如果当前页靠近开始，显示更多后面的页码
+        if (currentPage <= 3) {
+            endPage = Math.min(totalPages, 5);
+        }
+        // 如果当前页靠近结束，显示更多前面的页码
+        if (currentPage >= totalPages - 2) {
+            startPage = Math.max(1, totalPages - 4);
+        }
+
+        // 添加第一页和省略号
+        if (startPage > 1) {
+            html += `
+                <button onclick="goToPage(1)" class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100">1</button>
+            `;
+            if (startPage > 2) {
+                html += '<span class="px-2 text-gray-500">...</span>';
+            }
+        }
+
+        // 添加页码按钮
+        for (let i = startPage; i <= endPage; i++) {
+            const isActive = i === currentPage;
+            html += `
+                <button onclick="goToPage(${i})" 
+                    class="px-3 py-1 border rounded ${isActive ? 'bg-black text-white border-black' : 'border-gray-300 hover:bg-gray-100'}">
+                    ${i}
+                </button>
+            `;
+        }
+
+        // 添加省略号和最后一页
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                html += '<span class="px-2 text-gray-500">...</span>';
+            }
+            html += `
+                <button onclick="goToPage(${totalPages})" class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100">${totalPages}</button>
+            `;
+        }
+        
+        return html;
     }
 
     function renderAlerts() {
@@ -222,20 +406,34 @@
                 <p class="text-gray-600 whitespace-pre-wrap">${alert.alert_message}</p>
             </div>
 
-            ${alert.alert_image ? `
+            ${(alert.alert_image || alert.alert_video) ? `
             <div class="py-3">
-                <h5 class="font-semibold text-gray-700 mb-2">告警图片</h5>
-                <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="max-w-full h-auto rounded border">
-            </div>
-            ` : ''}
+                <h5 class="font-semibold text-gray-700 mb-3">告警媒体</h5>
+                <div class="grid grid-cols-1 ${(alert.alert_image && alert.alert_video) ? 'md:grid-cols-3' : ''} gap-4">
+                    ${alert.alert_image ? `
+                    <div class="flex flex-col">
+                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警图片</h6>
+                        <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="w-full h-auto rounded border border-gray-300 shadow-sm">
+                    </div>
+                    ` : ''}
 
-            ${alert.alert_video ? `
-            <div class="py-3">
-                <h5 class="font-semibold text-gray-700 mb-2">告警视频</h5>
-                <video controls class="max-w-full h-auto rounded border">
-                    <source src="${alert.alert_video}" type="video/mp4">
-                    您的浏览器不支持视频播放
-                </video>
+                    ${alert.alert_image_ori ? `
+                    <div class="flex flex-col">
+                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警原始图片</h6>
+                        <img src="/api/image/frames/${alert.alert_image_ori}" alt="Alert Image" class="w-full h-auto rounded border border-gray-300 shadow-sm">
+                    </div>
+                    ` : ''}
+                    
+                    ${alert.alert_video ? `
+                    <div class="flex flex-col">
+                        <h6 class="text-sm font-medium text-gray-600 mb-2">告警视频</h6>
+                        <video controls class="w-full h-auto rounded border border-gray-300 shadow-sm" preload="metadata">
+                            <source src="/api/video/videos/${alert.alert_video}" type="video/mp4">
+                            您的浏览器不支持视频播放
+                        </video>
+                    </div>
+                    ` : ''}
+                </div>
             </div>
             ` : ''}
         `;
@@ -248,9 +446,9 @@
     }
 
     // 初始化
-    loadTasks().then(() => loadAlerts());
+    loadTasks().then(() => loadAlerts(1));
 
-    // 自动刷新（每30秒）
-    setInterval(loadAlerts, 30000);
+    // 自动刷新（每30秒）- 刷新当前页
+    setInterval(() => loadAlerts(currentPage), 30000);
 </script>
 {% endblock %}

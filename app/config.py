@@ -45,4 +45,4 @@ RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '60'))
 
 # ============ 告警抑制配置 ============
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警
-ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '60'))
+ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '20'))

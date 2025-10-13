@@ -95,6 +95,8 @@ def main(args):
 
     with ThreadPoolExecutor(max_workers=len(algorithms)) as executor:
         frame_count = 0
+        last_processed_frame_time = 0  # 记录上次处理的帧时间，避免重复处理
+        
         while True:
             # 热重载检查
             if time.time() - last_check_time > check_interval:
@@ -102,8 +104,19 @@ def main(args):
                 # 可以在这里添加逻辑：如果当前算法被更新，则重新实例化
                 last_check_time = time.time()
 
-            latest_frame = buffer.read()
-            if latest_frame is not None:
+            # 使用 peek 而不是 read，避免消费 RingBuffer 中的历史帧
+            # 这样可以保证录制功能能获取到完整的历史帧
+            frame_with_timestamp = buffer.peek_with_timestamp(-1)
+            
+            if frame_with_timestamp is not None:
+                latest_frame, frame_timestamp = frame_with_timestamp
+                
+                # 避免重复处理同一帧
+                if frame_timestamp <= last_processed_frame_time:
+                    time.sleep(0.05)  # 短暂休眠，避免CPU占用过高
+                    continue
+                
+                last_processed_frame_time = frame_timestamp
                 current_time = time.time()
                 
                 # 检查哪些算法需要处理这一帧（根据interval_seconds）
