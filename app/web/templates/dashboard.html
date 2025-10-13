@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘{% endblock %}
+{% block page_title %}仪表盘{% endblock %}
+{% block page_subtitle %}系统概览和实时监控{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- 任务统计 -->
+        <div class="card-hover bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-black rounded-lg flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-tasks text-xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-500">总任务数</span>
+            </div>
+            <div class="flex items-end justify-between">
+                <div>
+                    <p class="text-3xl font-bold text-gray-800" id="totalTasks">0</p>
+                    <p class="text-sm text-gray-500 mt-1">运行中: <span id="runningTasks" class="text-green-600 font-semibold">0</span></p>
+                </div>
+                <div class="text-gray-700">
+                    <i class="fas fa-arrow-up"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- 算法统计 -->
+        <div class="card-hover bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-black rounded-lg flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-brain text-xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-500">算法模型</span>
+            </div>
+            <div class="flex items-end justify-between">
+                <div>
+                    <p class="text-3xl font-bold text-gray-800" id="totalAlgorithms">0</p>
+                    <p class="text-sm text-gray-500 mt-1">AI 分析引擎</p>
+                </div>
+                <div class="text-gray-700">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- 告警统计 -->
+        <div class="card-hover bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-bell text-xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-500">今日告警</span>
+            </div>
+            <div class="flex items-end justify-between">
+                <div>
+                    <p class="text-3xl font-bold text-gray-800" id="todayAlerts">0</p>
+                    <p class="text-sm text-gray-500 mt-1">实时监控中</p>
+                </div>
+                <div class="text-red-500">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统状态 -->
+        <div class="card-hover bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-server text-xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-500">系统状态</span>
+            </div>
+            <div class="flex items-end justify-between">
+                <div>
+                    <p class="text-xl font-bold text-green-600">运行中</p>
+                    <p class="text-sm text-gray-500 mt-1">正常运行</p>
+                </div>
+                <div class="text-green-500">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷操作 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- 快速访问 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fas fa-rocket mr-2 text-gray-700"></i>
+                快速访问
+            </h3>
+            <div class="space-y-3">
+                <a href="/admin/tasks" class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:shadow-md transition-all group hover:bg-gray-100">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white mr-3">
+                            <i class="fas fa-tasks"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800">任务管理</p>
+                            <p class="text-sm text-gray-500">配置和管理分析任务</p>
+                        </div>
+                    </div>
+                    <i class="fas fa-arrow-right text-gray-700 group-hover:translate-x-1 transition-transform"></i>
+                </a>
+
+                <a href="/admin/algorithms" class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:shadow-md transition-all group hover:bg-gray-100">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white mr-3">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800">算法管理</p>
+                            <p class="text-sm text-gray-500">管理AI算法模型</p>
+                        </div>
+                    </div>
+                    <i class="fas fa-arrow-right text-gray-700 group-hover:translate-x-1 transition-transform"></i>
+                </a>
+
+                <a href="/admin/alerts" class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:shadow-md transition-all group hover:bg-gray-100">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center text-white mr-3">
+                            <i class="fas fa-bell"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800">告警记录</p>
+                            <p class="text-sm text-gray-500">查看历史告警信息</p>
+                        </div>
+                    </div>
+                    <i class="fas fa-arrow-right text-red-500 group-hover:translate-x-1 transition-transform"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- 最近告警 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <i class="fas fa-history mr-2 text-gray-700"></i>
+                    最近告警
+                </h3>
+                <a href="/admin/alerts" class="text-sm text-black hover:text-gray-700 font-medium">查看全部</a>
+            </div>
+            <div id="recentAlerts" class="space-y-3">
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p class="text-sm">加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 欢迎信息 -->
+    <div class="bg-black rounded-xl shadow-xl p-8 text-white">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold mb-2">欢迎使用视频分析系统</h2>
+                <p class="text-gray-300">基于AI的智能视频监控与分析平台</p>
+            </div>
+            <div class="hidden md:block">
+                <div class="w-24 h-24 bg-white bg-opacity-10 rounded-full flex items-center justify-center backdrop-blur-sm">
+                    <i class="fas fa-video text-5xl"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let tasks = [];
+    let algorithms = [];
+    let alerts = [];
+
+    async function loadDashboardData() {
+        try {
+            // 加载任务
+            tasks = await apiRequest('/api/tasks');
+            const runningTasksCount = tasks.filter(t => t.status === 'RUNNING').length;
+            document.getElementById('totalTasks').textContent = tasks.length;
+            document.getElementById('runningTasks').textContent = runningTasksCount;
+
+            // 加载算法
+            algorithms = await apiRequest('/api/algorithms');
+            document.getElementById('totalAlgorithms').textContent = algorithms.length;
+
+            // 加载告警
+            const alertsResponse = await apiRequest('/api/alerts?page=1&per_page=5');
+            alerts = alertsResponse.data;
+            
+            // 计算今日告警
+            const today = new Date().toDateString();
+            const todayAlertsCount = alerts.filter(a => {
+                const alertDate = new Date(a.alert_time).toDateString();
+                return alertDate === today;
+            }).length;
+            document.getElementById('todayAlerts').textContent = todayAlertsCount;
+
+            // 渲染最近告警
+            renderRecentAlerts();
+        } catch (error) {
+            console.error('加载仪表盘数据失败:', error);
+            showMessage('加载数据失败: ' + error.message, 'error');
+        }
+    }
+
+    function renderRecentAlerts() {
+        const container = document.getElementById('recentAlerts');
+        
+        if (alerts.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-check-circle text-3xl mb-2"></i>
+                    <p class="text-sm">暂无告警</p>
+                </div>
+            `;
+            return;
+        }
+
+        const alertTypeColors = {
+            'warning': 'bg-yellow-500',
+            'error': 'bg-red-500',
+            'info': 'bg-blue-500',
+            'critical': 'bg-black'
+        };
+
+        container.innerHTML = alerts.slice(0, 5).map(a => {
+            const task = tasks.find(t => t.id === a.task_id);
+            const taskName = task ? task.name : `任务 #${a.task_id}`;
+            const bgColor = alertTypeColors[a.alert_type.toLowerCase()] || 'bg-gray-500';
+            const time = new Date(a.alert_time).toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            return `
+                <div class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all cursor-pointer" onclick="window.location.href='/admin/alerts'">
+                    <div class="w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center text-white mr-3 flex-shrink-0">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-gray-800 truncate">${taskName}</p>
+                        <p class="text-xs text-gray-500 truncate">${a.alert_message}</p>
+                    </div>
+                    <div class="text-xs text-gray-400 ml-2">${time}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 初始化
+    loadDashboardData();
+
+    // 自动刷新（每30秒）
+    setInterval(loadDashboardData, 30000);
+</script>
+{% endblock %}
+
