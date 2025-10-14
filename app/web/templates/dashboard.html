@@ -230,7 +230,7 @@
 
         container.innerHTML = alerts.slice(0, 5).map(a => {
             const task = tasks.find(t => t.id === a.task_id);
-            const taskName = task ? task.name : `任务 #${a.task_id}`;
+            const taskName = task ? `${task.source_name} #${task.source_code}` : task.name;
             const bgColor = alertTypeColors[a.alert_type.toLowerCase()] || 'bg-gray-500';
             const time = new Date(a.alert_time).toLocaleString('zh-CN', {
                 month: '2-digit',
@@ -239,16 +239,27 @@
                 minute: '2-digit'
             });
 
+            // 构建图片URL
+            const imageUrl = a.alert_image ? `/api/image/frames/${a.alert_image}` : '';
+
             return `
-                <div class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all cursor-pointer" onclick="window.location.href='/admin/alerts'">
+                <div class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all cursor-pointer group" onclick="window.location.href='/admin/alerts'">
+                    ${imageUrl ? `
+                    <div class="w-24 h-auto flex-shrink-0 mr-3 rounded overflow-hidden border border-gray-200 group-hover:border-gray-300 transition-colors" style="aspect-ratio: 16/9;">
+                        <img src="${imageUrl}" alt="Alert" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full bg-gray-300 flex items-center justify-center\\'><i class=\\'fas fa-image text-gray-400\\'></i></div>'">
+                    </div>
+                    ` : `
                     <div class="w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center text-white mr-3 flex-shrink-0">
                         <i class="fas fa-bell"></i>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-gray-800 truncate">${taskName}</p>
-                        <p class="text-xs text-gray-500 truncate">${a.alert_message}</p>
+                    `}
+                    <div class="flex-1 min-w-0 flex items-center justify-between">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-gray-800 truncate text-sm">${taskName}</p>
+                            <p class="text-xs text-gray-400">${time}</p>
+                        </div>
+                        <span class="text-xs px-2 py-1 ${bgColor} text-white rounded ml-2 flex-shrink-0">${a.alert_type}</span>
                     </div>
-                    <div class="text-xs text-gray-400 ml-2">${time}</div>
                 </div>
             `;
         }).join('');
