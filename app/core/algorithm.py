@@ -57,34 +57,82 @@ class BaseAlgorithm(ABC):
         pass
 
     @staticmethod
-    def visualize(img, results, save_path=None):
+    def hex_to_bgr(hex_color):
+        """
+        将十六进制颜色转换为BGR格式
+        :param hex_color: 十六进制颜色字符串，如 '#FF0000'
+        :return: BGR颜色元组
+        """
+        hex_color = hex_color.lstrip('#')
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return (b, g, r)  # OpenCV使用BGR格式
+
+    @staticmethod
+    def visualize(img, results, save_path=None, label_color='#FF0000'):
         """
         可视化检测结果
-        :param label_prefix:
         :param img: 原始图像
-        :param result: 第一阶段检测结果
+        :param results: 检测结果列表
         :param save_path: 保存路径
+        :param label_color: 标签颜色（十六进制格式）
         """
         img_vis = img.copy()
         img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
 
-        # 绘制第一阶段检测框（蓝色）
+        # 转换主标签颜色
+        main_color = BaseAlgorithm.hex_to_bgr(label_color)
+        
+        # 定义stages的颜色列表（不同颜色用于区分不同stage）
+        stage_colors = [
+            (0, 255, 0),    # 绿色
+            (255, 0, 255),  # 洋红色
+            (0, 255, 255),  # 黄色
+            (255, 255, 0),  # 青色
+            (128, 0, 128),  # 紫色
+            (255, 165, 0),  # 橙色
+        ]
+
+        # 绘制检测结果
         for result in results:
-
-            #result.get('box'): (700.0509643554688, 495.17333984375, 990.0289306640625, 1076.567626953125)
-
             x1, y1, x2, y2 = map(int, result.get('box', [0, 0, 0, 0]))
-            logger.debug(f"{x1, y1, x2, y2}")
+            logger.debug(f"Main detection box: {x1, y1, x2, y2}")
 
-            label_prefix = result.get('label', 'Object')
+            label_prefix = result.get('label_name', 'Object')
             cls = result.get('class', 0)
             conf = result.get('confidence', 1.0)
+            stages = result.get('stages', [])
 
 
-            cv2.rectangle(img_vis, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            label = f"{label_prefix}-C{cls}: {conf:.2f}"
-            cv2.putText(img_vis, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            # 绘制stages信息
+            if stages:
+                logger.debug(f"Drawing {len(stages)} stages")
+                for i, stage in enumerate(stages):
+                    stage_x1, stage_y1, stage_x2, stage_y2 = map(int, stage.get('box', [0, 0, 0, 0]))
+                    stage_model = stage.get('model_name', f'Stage{i+1}')
+                    stage_label = stage.get('label_name', stage_model)
+                    stage_conf = stage.get('confidence', 0.0)
+
+                    
+                    # 使用循环颜色为不同stage分配颜色
+                    stage_color = BaseAlgorithm.hex_to_bgr(stage.get('label_color', label_color))
+                    
+                    # 绘制stage检测框（较细的线条）
+                    cv2.rectangle(img_vis, (stage_x1, stage_y1), (stage_x2, stage_y2), stage_color, 1)
+                    
+                    # 绘制stage标签
+                    stage_label = f"{stage_label}: {stage_conf:.2f}"
+                    # 在stage框的右下角显示标签
+                    label_y = stage_y2 + 15 + (i * 15)  # 垂直偏移避免重叠
+                    cv2.putText(img_vis, stage_label, (stage_x1, label_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, stage_color, 1)
+            else:
+                # 绘制主检测框（使用label_color）
+                cv2.rectangle(img_vis, (x1, y1), (x2, y2), main_color, 3)
+                label = f"{label_prefix}: {conf:.2f}"
+                cv2.putText(img_vis, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, main_color, 2)
 
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)

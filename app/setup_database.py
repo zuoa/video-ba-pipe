@@ -10,26 +10,31 @@ def setup_database():
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
     # 这样脚本就可以重复运行而不会出错
-    person_detection_2stage, _ = Algorithm.get_or_create(
-        name="person_detection_2stage",
+    phone_detection_2stage, _ = Algorithm.get_or_create(
+        name="phone_detection_2stage",
         defaults={
-            'plugin_module':'target_detection',
+            'plugin_module': 'target_detection',
             'model_json': json.dumps({"models": [
                 {
-                    "name": "yolov8n",
-                    "path": "/Users/yujian/Downloads/yolov8n.pt",
-                    "confidence": 0.5,
+                    "name": "yolov8-head",
+                    "path": "/Users/yujian/Downloads/head.pt",
+                    "confidence": 0.6,
+                    "label_name": "Head",
+                    "label_color": "#FF0000",
                     "expand_width": 0.1,  # 扩展宽度比例
                     "expand_height": 0.1  # 扩展高度比例
                 }, {
-                    "name": "yolov8n2",
-                    "path": "/Users/yujian/Downloads/yolov8n.pt",
-                    "confidence": 0.8,
+                    "name": "yolov8-phone",
+                    "path": "/Users/yujian/Downloads/phone.pt",
+                    "confidence": 0.5,
+                    "label_name": "Phone",
+                    "label_color": "#0000FF",
                     "expand_width": 0.1,  # 扩展宽度比例
                     "expand_height": 0.1  # 扩展高度比例
                 }
             ]}),
-            'label_name': 'Person',
+            'label_name': 'Phone',
+            'label_color': '#FFFF00',
             'interval_seconds': 5
         }
     )
@@ -37,17 +42,20 @@ def setup_database():
     person_detection, _ = Algorithm.get_or_create(
         name="person_detection",
         defaults={
-            'plugin_module':'target_detection',
+            'plugin_module': 'target_detection',
             'model_json': json.dumps({"models": [
                 {
                     "name": "yolov8n",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
                     "confidence": 0.5,
+                    "label_name": "Person",
+                    "label_color": "#00FF00",
                     "expand_width": 0.1,  # 扩展宽度比例
                     "expand_height": 0.1  # 扩展高度比例
                 }
             ]}),
             'label_name': 'Person',
+            'label_color': '#FFFF00',
             'interval_seconds': 5
         }
     )
@@ -86,9 +94,9 @@ def setup_database():
 
     TaskAlgorithm.get_or_create(
         task=task,
-        algorithm=person_detection_2stage,
+        algorithm=phone_detection_2stage,
         defaults={
-            "priority" :2
+            "priority": 2
         }
     )
 
@@ -103,12 +111,45 @@ def setup_database():
         }
     )
 
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=person_detection,
+        defaults={
+            "priority" :1
+        }
+    )
+
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=phone_detection_2stage,
+        defaults={
+            "priority": 1
+        }
+    )
+
+    task, _ = Task.get_or_create(
+        source_code="1231",
+        defaults={
+            'name': "展厅门口人员检测",
+            'buffer_name': "buffer_lobby_1231",
+            "source_name": "展厅门口",
+            'enabled': True,
+            'source_url': "rtsp://admin:codvision123@192.168.201.123:554/Streaming/Channels/1",
+        }
+    )
 
     TaskAlgorithm.get_or_create(
         task=task,
         algorithm=person_detection,
         defaults={
             "priority" :1
+        }
+    )
+    TaskAlgorithm.get_or_create(
+        task=task,
+        algorithm=phone_detection_2stage,
+        defaults={
+            "priority": 1
         }
     )
     #

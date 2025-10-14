@@ -71,6 +71,10 @@ def main(args):
         # 4. 实例化算法插件
         # 将数据库中的配置（model_path, config_json）传递给插件
         full_config = {
+            "name": algo_config_db.name,
+            "label_name": algo_config_db.label_name,
+            "label_color": algo_config_db.label_color,
+            "ext_config": algo_config_db.ext_config_json,
             "models_config": algo_config_db.models_config,
             "interval_seconds": algo_config_db.interval_seconds,
         }
@@ -165,7 +169,8 @@ def main(args):
                             # 检测目标可视化并保存
                             filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
                             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
-                            algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath_absolute)
+                            label_color = algorithm_datamap[algo_id].get('label_color', '#FF0000')
+                            algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath_absolute, label_color=label_color)
 
                             # 保存原始图片
                             filepath_ori = f"{filepath}.ori.jpg"
@@ -205,6 +210,7 @@ def main(args):
 
                     except Exception as exc:
                         logger.info(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")
+                        logger.exception(exc, exc_info=True)
 
                 frame_count += 1
             time.sleep(0.1)  # 控制处理频率

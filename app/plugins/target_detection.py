@@ -39,9 +39,12 @@ class TargetDetector(BaseAlgorithm):
             try:
                 results = model.predict(frame, save=False, classes=[0], conf=conf_thresh)
                 if results and len(results) > 0:
-                    stages_results[model_cfg.get('name')] = results[0]
+                    stages_results[model_cfg.get('name')] = {}
+                    stages_results[model_cfg.get('name')]['result'] = results[0]
+                    stages_results[model_cfg.get('name')]['model_config'] = model_cfg
             except Exception as e:
                 logger.warn(f"[{self.name}] 模型 {model_cfg.get('name')} 出错: {e}")
+                logger.exception(e)
 
         detections = []
         # logger.info(stages_results)
@@ -50,14 +53,16 @@ class TargetDetector(BaseAlgorithm):
             # 直接返回第一个模型的结果（如果有的话）
             if stages_results:
                 first_model_name = list(stages_results.keys())[0]
-                first_model_results = stages_results[first_model_name]
+                first_model_results = stages_results[first_model_name].get('result')
+                first_model_config = stages_results[first_model_name].get('model_config')
                 for det in first_model_results.boxes.data.tolist():
                     x1, y1, x2, y2, conf, cls = det
                     detections.append({
                         'box': (x1, y1, x2, y2),
-                        'label': 'Person',
+                        'label_name': first_model_config.get('label_name', 'Object'),
+                        'label_color': first_model_config.get('label_color', '#00FF00'),
                         'class': int(cls),
-                        'confidence': float(conf)
+                        'confidence': float(conf),
                     })
         else:
             # 2) 查找被所有模型共同检测到的目标组
@@ -84,11 +89,25 @@ class TargetDetector(BaseAlgorithm):
                     x_max = max(d['bbox'][2] for d in group)
                     y_max = max(d['bbox'][3] for d in group)
 
+                    # 构建stages信息，包含每个模型的检测结果
+                    stages_info = []
+                    for d in group:
+                        stages_info.append({
+                            'model_name': d['model_name'],
+                            'box': tuple(d['bbox']),
+                            'label_name': stages_results[d['model_name']].get('model_config', {}).get('label_name', 'Object'),
+                            'label_color': stages_results[d['model_name']].get('model_config', {}).get('label_color', '#00FF00'),
+                            'class': 0,  # 统一为Person类
+                            'confidence': d['confidence']
+                        })
+
                     detections.append({
                         'box': (x_min, y_min, x_max, y_max),
-                        'label': 'Person',
+                        'label_name': self.config.get('label_name', 'Object'),
+                        'label_color': self.config.get('label_color', '#00FF00'),
                         'class': 0,
-                        'confidence': np.mean([d['confidence'] for d in group])
+                        'confidence': np.mean([d['confidence'] for d in group]),
+                        'stages': stages_info
                     })
 
         # 3) 只检测人

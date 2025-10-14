@@ -51,9 +51,13 @@ def find_multimodel_groups(stages_results, iou_threshold=0.5):
     if not stages_results:
         return []
 
+
     for model_name, results in stages_results.items():
-        boxes = results.boxes
-        class_names = results.names
+
+        results_result = results.get('result')
+
+        boxes = results_result.boxes
+        class_names = results_result.names
         for i in range(len(boxes)):
             all_boxes_with_info.append({
                 'model_name': model_name,

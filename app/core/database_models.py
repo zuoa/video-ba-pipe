@@ -32,6 +32,7 @@ class Algorithm(BaseModel):
     ext_config_json = pw.TextField(default='{}')
     plugin_module = pw.CharField(max_length=255, null=True)
     label_name = pw.CharField(default='Object')
+    label_color = pw.CharField(default='#FF0000')
 
     @property
     def models_config(self):

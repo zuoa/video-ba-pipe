@@ -29,6 +29,9 @@
             <select id="taskFilter" onchange="loadAlerts(1)" class="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all bg-white font-medium text-gray-700">
                 <option value="">所有任务</option>
             </select>
+            <select id="alertTypeFilter" onchange="loadAlerts(1)" class="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all bg-white font-medium text-gray-700">
+                <option value="">所有告警类型</option>
+            </select>
             <button onclick="loadAlerts(currentPage)" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
                 <i class="fas fa-sync-alt"></i>
                 <span>刷新</span>
@@ -139,16 +142,289 @@
         </div>
     </div>
 </div>
+
+<!-- 全屏图片查看器 -->
+<div id="imageViewerModal" class="hidden fixed inset-0 bg-black bg-opacity-95 overflow-hidden h-full w-full z-[60]">
+    <div class="relative w-full h-full flex items-center justify-center">
+        <!-- 关闭按钮 -->
+        <button onclick="closeImageViewer()" class="absolute top-6 right-6 z-10 text-white hover:text-gray-300 hover:bg-white hover:bg-opacity-10 rounded-full p-3 transition-all">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+        
+        <!-- 缩放控制按钮 -->
+        <div class="absolute top-6 left-6 z-10 flex flex-col space-y-2">
+            <button onclick="zoomIn()" class="text-white hover:text-gray-300 hover:bg-white hover:bg-opacity-10 rounded-full p-3 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                </svg>
+            </button>
+            <button onclick="zoomOut()" class="text-white hover:text-gray-300 hover:bg-white hover:bg-opacity-10 rounded-full p-3 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path>
+                </svg>
+            </button>
+            <button onclick="resetZoom()" class="text-white hover:text-gray-300 hover:bg-white hover:bg-opacity-10 rounded-full p-3 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <!-- 图片容器 -->
+        <div id="imageContainer" class="relative max-w-full max-h-full overflow-hidden cursor-move select-none">
+            <img id="fullscreenImage" class="block max-w-none transition-transform duration-200 ease-out" 
+                 style="transform-origin: center; user-select: none; -webkit-user-drag: none;" 
+                 draggable="false">
+        </div>
+        
+        <!-- 缩放比例显示 -->
+        <div id="zoomLevel" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 px-4 py-2 rounded-full text-sm font-medium">
+            100%
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     let alerts = [];
     let tasks = [];
+    let alertTypes = [];
     let currentPage = 1;
     let perPage = 30;
     let totalPages = 1;
     let totalRecords = 0;
+
+    // 图片查看器相关变量
+    let currentZoom = 1;
+    let minZoom = 0.1;
+    let maxZoom = 10;
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    let translateX = 0;
+    let translateY = 0;
+
+    // 图片查看器功能
+    function openImageViewer(imageSrc) {
+        const modal = document.getElementById('imageViewerModal');
+        const img = document.getElementById('fullscreenImage');
+        const zoomLevel = document.getElementById('zoomLevel');
+        
+        img.src = imageSrc;
+        img.onload = function() {
+            // 重置缩放和平移
+            currentZoom = 1;
+            translateX = 0;
+            translateY = 0;
+            updateImageTransform();
+            updateZoomDisplay();
+            
+            // 显示模态框
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            
+            // 添加事件监听器
+            addImageViewerEventListeners();
+        };
+    }
+
+    function closeImageViewer() {
+        const modal = document.getElementById('imageViewerModal');
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+        
+        // 移除事件监听器
+        removeImageViewerEventListeners();
+    }
+
+    function zoomIn() {
+        currentZoom = Math.min(currentZoom * 1.2, maxZoom);
+        updateImageTransform();
+        updateZoomDisplay();
+    }
+
+    function zoomOut() {
+        currentZoom = Math.max(currentZoom / 1.2, minZoom);
+        updateImageTransform();
+        updateZoomDisplay();
+    }
+
+    function resetZoom() {
+        currentZoom = 1;
+        translateX = 0;
+        translateY = 0;
+        updateImageTransform();
+        updateZoomDisplay();
+    }
+
+    function updateImageTransform() {
+        const img = document.getElementById('fullscreenImage');
+        img.style.transform = `scale(${currentZoom}) translate(${translateX}px, ${translateY}px)`;
+    }
+
+    function updateZoomDisplay() {
+        const zoomLevel = document.getElementById('zoomLevel');
+        zoomLevel.textContent = Math.round(currentZoom * 100) + '%';
+    }
+
+    function addImageViewerEventListeners() {
+        const img = document.getElementById('fullscreenImage');
+        const container = document.getElementById('imageContainer');
+        
+        // 鼠标滚轮缩放
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        
+        // 鼠标拖拽
+        container.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        // 键盘事件
+        document.addEventListener('keydown', handleKeyDown);
+        
+        // 触摸事件（移动端支持）
+        container.addEventListener('touchstart', handleTouchStart, { passive: false });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchend', handleTouchEnd);
+    }
+
+    function removeImageViewerEventListeners() {
+        const container = document.getElementById('imageContainer');
+        
+        container.removeEventListener('wheel', handleWheel);
+        container.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('keydown', handleKeyDown);
+        
+        container.removeEventListener('touchstart', handleTouchStart);
+        container.removeEventListener('touchmove', handleTouchMove);
+        container.removeEventListener('touchend', handleTouchEnd);
+    }
+
+    function handleWheel(e) {
+        e.preventDefault();
+        
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        const oldZoom = currentZoom;
+        currentZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom + delta));
+        
+        // 如果缩放级别改变，更新变换
+        if (oldZoom !== currentZoom) {
+            updateImageTransform();
+            updateZoomDisplay();
+        }
+    }
+
+    function handleMouseDown(e) {
+        if (currentZoom > 1) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            e.preventDefault();
+        }
+    }
+
+    function handleMouseMove(e) {
+        if (isDragging && currentZoom > 1) {
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            
+            translateX += deltaX / currentZoom;
+            translateY += deltaY / currentZoom;
+            
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            
+            updateImageTransform();
+            e.preventDefault();
+        }
+    }
+
+    function handleMouseUp(e) {
+        isDragging = false;
+    }
+
+    function handleKeyDown(e) {
+        switch(e.key) {
+            case 'Escape':
+                closeImageViewer();
+                break;
+            case '+':
+            case '=':
+                zoomIn();
+                break;
+            case '-':
+                zoomOut();
+                break;
+            case '0':
+                resetZoom();
+                break;
+        }
+    }
+
+    // 触摸事件处理
+    let lastTouchDistance = 0;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+
+    function handleTouchStart(e) {
+        if (e.touches.length === 1) {
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+            isDragging = true;
+        } else if (e.touches.length === 2) {
+            lastTouchDistance = getTouchDistance(e.touches[0], e.touches[1]);
+            e.preventDefault();
+        }
+    }
+
+    function handleTouchMove(e) {
+        if (e.touches.length === 1 && isDragging && currentZoom > 1) {
+            const deltaX = e.touches[0].clientX - lastTouchX;
+            const deltaY = e.touches[0].clientY - lastTouchY;
+            
+            translateX += deltaX / currentZoom;
+            translateY += deltaY / currentZoom;
+            
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+            
+            updateImageTransform();
+            e.preventDefault();
+        } else if (e.touches.length === 2) {
+            const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+            const deltaDistance = currentDistance - lastTouchDistance;
+            
+            if (Math.abs(deltaDistance) > 10) {
+                const delta = deltaDistance > 0 ? 0.1 : -0.1;
+                const oldZoom = currentZoom;
+                currentZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom + delta));
+                
+                if (oldZoom !== currentZoom) {
+                    updateImageTransform();
+                    updateZoomDisplay();
+                }
+                
+                lastTouchDistance = currentDistance;
+            }
+            e.preventDefault();
+        }
+    }
+
+    function handleTouchEnd(e) {
+        isDragging = false;
+        lastTouchDistance = 0;
+    }
+
+    function getTouchDistance(touch1, touch2) {
+        const dx = touch1.clientX - touch2.clientX;
+        const dy = touch1.clientY - touch2.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
 
     async function loadTasks() {
         try {
@@ -165,12 +441,43 @@
         }
     }
 
+    async function loadAlertTypes() {
+        try {
+            alertTypes = await apiRequest('/api/alert-types');
+            const select = document.getElementById('alertTypeFilter');
+            alertTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = getAlertTypeDisplayName(type);
+                select.appendChild(option);
+            });
+        } catch (error) {
+            showMessage('加载告警类型列表失败: ' + error.message, 'error');
+        }
+    }
+
+    function getAlertTypeDisplayName(alertType) {
+        const typeMap = {
+            'person_detection': '人员检测',
+            'phone_detection_2stage': '手机检测',
+            'warning': '警告',
+            'error': '错误',
+            'info': '信息',
+            'critical': '严重'
+        };
+        return typeMap[alertType] || alertType;
+    }
+
     async function loadAlerts(page = 1) {
         currentPage = page;
         const taskId = document.getElementById('taskFilter').value;
+        const alertType = document.getElementById('alertTypeFilter').value;
         let url = `/api/alerts?page=${page}&per_page=${perPage}`;
         if (taskId) {
             url += `&task_id=${taskId}`;
+        }
+        if (alertType) {
+            url += `&alert_type=${alertType}`;
         }
 
         try {
@@ -346,7 +653,7 @@
 
             // 使用告警图片，如果没有则显示默认的告警类型图标背景
             const alertImage = a.alert_image ? 
-                `<img src="/api/image/frames/${a.alert_image}" alt="Alert Image" class="w-full h-full object-cover">` :
+                `<img src="/api/image/frames/${a.alert_image}" alt="Alert Image" class="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onclick="event.stopPropagation(); openImageViewer('/api/image/frames/${a.alert_image}')">` :
                 `<div class="w-full h-full ${bgGradient} flex items-center justify-center text-white text-3xl">${icon}</div>`;
 
             return `
@@ -478,7 +785,7 @@
                             <i class="fas fa-image mr-2 text-blue-500"></i>
                             告警图片
                         </h6>
-                        <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow">
+                        <img src="/api/image/frames/${alert.alert_image}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow cursor-pointer" onclick="openImageViewer('/api/image/frames/${alert.alert_image}')">
                     </div>
                     ` : ''}
 
@@ -488,7 +795,7 @@
                             <i class="fas fa-image mr-2 text-green-500"></i>
                             原始图片
                         </h6>
-                        <img src="/api/image/frames/${alert.alert_image_ori}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow">
+                        <img src="/api/image/frames/${alert.alert_image_ori}" alt="Alert Image" class="w-full h-auto rounded-xl border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow cursor-pointer" onclick="openImageViewer('/api/image/frames/${alert.alert_image_ori}')">
                     </div>
                     ` : ''}
                     
@@ -517,7 +824,9 @@
     }
 
     // 初始化
-    loadTasks().then(() => loadAlerts(1));
+    loadTasks().then(() => {
+        loadAlertTypes().then(() => loadAlerts(1));
+    });
 
     // 自动刷新（每30秒）- 刷新当前页
     setInterval(() => loadAlerts(currentPage), 30000);

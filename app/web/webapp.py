@@ -205,6 +205,7 @@ def delete_task_algorithm(id):
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
     task_id = request.args.get('task_id')
+    alert_type = request.args.get('alert_type')
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 30))
     
@@ -212,6 +213,8 @@ def get_alerts():
     query = Alert.select()
     if task_id:
         query = query.where(Alert.task == task_id)
+    if alert_type:
+        query = query.where(Alert.alert_type == alert_type)
     
     # 获取总数
     total = query.count()
@@ -257,6 +260,12 @@ def create_alert():
         return jsonify({'id': alert.id, 'message': 'Alert created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/alert-types', methods=['GET'])
+def get_alert_types():
+    """获取所有可用的告警类型"""
+    alert_types = Alert.select(Alert.alert_type).distinct().order_by(Alert.alert_type)
+    return jsonify([at.alert_type for at in alert_types])
 
 # ========== 图片服务接口 ==========
 
