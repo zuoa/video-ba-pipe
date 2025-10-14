@@ -37,7 +37,7 @@ class TargetDetector(BaseAlgorithm):
         for model_cfg, model in zip(self.config.get('models_config', {}).get("models", []), self.models):
             conf_thresh = model_cfg.get('confidence', confidence_threshold)
             try:
-                results = model.predict(frame, save=False, classes=[0], conf=conf_thresh)
+                results = model.predict(frame, save=False, classes=[model_cfg.get('class', 0)], conf=conf_thresh)
                 if results and len(results) > 0:
                     stages_results[model_cfg.get('name')] = {}
                     stages_results[model_cfg.get('name')]['result'] = results[0]
@@ -97,7 +97,7 @@ class TargetDetector(BaseAlgorithm):
                             'box': tuple(d['bbox']),
                             'label_name': stages_results[d['model_name']].get('model_config', {}).get('label_name', 'Object'),
                             'label_color': stages_results[d['model_name']].get('model_config', {}).get('label_color', '#00FF00'),
-                            'class': 0,  # 统一为Person类
+                            'class': d['class'],
                             'confidence': d['confidence']
                         })
 

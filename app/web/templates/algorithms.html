@@ -81,15 +81,24 @@
 
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">插件模块</label>
-                <input type="text" id="pluginModule" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
+                <select id="pluginModuleSelect" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"></select>
             </div>
 
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2 flex items-center">
-                    <i class="fas fa-code mr-2 text-gray-700"></i>
-                    模型配置 (JSON)
+                    <i class="fas fa-cubes mr-2 text-gray-700"></i>
+                    模型列表
                 </label>
-                <textarea id="modelJson" rows="4" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-mono text-sm bg-gray-50">{}</textarea>
+                <div id="modelsContainer" class="space-y-4">
+                    <!-- 动态渲染模型条目 -->
+                </div>
+                <div class="mt-3">
+                    <button type="button" onclick="addModelEntry()" class="px-3 py-2 bg-black text-white rounded-lg text-sm hover:bg-gray-800 transition-all">
+                        <i class="fas fa-plus mr-1"></i> 添加模型
+                    </button>
+                </div>
+                <!-- 保留隐藏域以兼容后端字段 -->
+                <textarea id="modelJson" class="hidden">{}</textarea>
             </div>
 
             <div>
@@ -146,15 +155,17 @@
                         </div>
                         <div id="imagePreview" class="hidden">
                             <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-md">
-                            <div class="mt-4 flex justify-center space-x-2">
-                                <button onclick="removeImage(event)" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all text-sm">
-                                    <i class="fas fa-trash mr-1"></i>移除
-                                </button>
-                                <button onclick="runTest(event)" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm">
-                                    <i class="fas fa-play mr-1"></i>开始测试
-                                </button>
-                            </div>
                         </div>
+                    </div>
+                    
+                    <!-- 按钮区域 - 移到上传框外部 -->
+                    <div id="buttonArea" class="hidden mt-4 flex justify-center space-x-3">
+                        <button onclick="removeImage()" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all text-sm flex items-center">
+                            <i class="fas fa-trash mr-2"></i>移除图片
+                        </button>
+                        <button onclick="runTest()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm flex items-center">
+                            <i class="fas fa-play mr-2"></i>开始测试
+                        </button>
                     </div>
                 </div>
 
@@ -201,6 +212,8 @@
 {% block scripts %}
 <script>
     let algorithms = [];
+    let modelsState = [];
+    let pluginModules = [];
 
     async function loadAlgorithms() {
         try {
@@ -209,6 +222,29 @@
         } catch (error) {
             showMessage('加载算法列表失败: ' + error.message, 'error');
         }
+    }
+
+    async function loadPluginModules() {
+        try {
+            const resp = await apiRequest('/api/plugins/modules');
+            pluginModules = Array.isArray(resp.modules) ? resp.modules : [];
+        } catch (error) {
+            pluginModules = [];
+            console.error('加载插件模块失败:', error);
+        }
+    }
+
+    function renderPluginModuleSelect(selected) {
+        const sel = document.getElementById('pluginModuleSelect');
+        if (!sel) return;
+        const options = [''].concat(pluginModules);
+        sel.innerHTML = options.map(m => {
+            const val = m || '';
+            const text = m || '（不选择插件）';
+            const isSel = selected ? selected === val : false;
+            return `<option value="${val}">${text}</option>`;
+        }).join('');
+        if (selected) sel.value = selected;
     }
 
     function renderTable() {
@@ -278,8 +314,12 @@
         document.getElementById('modalTitle').textContent = '添加算法';
         document.getElementById('algorithmForm').reset();
         document.getElementById('algorithmId').value = '';
-        document.getElementById('modelJson').value = '{}';
+        // 初始化空的模型列表
+        modelsState = [];
+        renderModels();
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
         document.getElementById('extConfigJson').value = '{}';
+        renderPluginModuleSelect('');
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
 
@@ -292,8 +332,16 @@
         document.getElementById('name').value = algorithm.name;
         document.getElementById('labelName').value = algorithm.label_name;
         document.getElementById('intervalSeconds').value = algorithm.interval_seconds;
-        document.getElementById('pluginModule').value = algorithm.plugin_module || '';
-        document.getElementById('modelJson').value = algorithm.model_json;
+        renderPluginModuleSelect(algorithm.plugin_module || '');
+        // 解析并渲染模型列表
+        try {
+            const parsed = JSON.parse(algorithm.model_json || '{}');
+            modelsState = Array.isArray(parsed?.models) ? parsed.models : [];
+        } catch (e) {
+            modelsState = [];
+        }
+        renderModels();
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
         document.getElementById('extConfigJson').value = algorithm.ext_config_json;
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
@@ -306,11 +354,13 @@
         event.preventDefault();
 
         const id = document.getElementById('algorithmId').value;
+        // 提交前同步隐藏的 JSON 字段
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
         const data = {
             name: document.getElementById('name').value,
             label_name: document.getElementById('labelName').value,
             interval_seconds: parseFloat(document.getElementById('intervalSeconds').value),
-            plugin_module: document.getElementById('pluginModule').value || null,
+            plugin_module: (document.getElementById('pluginModuleSelect').value || null),
             model_json: document.getElementById('modelJson').value,
             ext_config_json: document.getElementById('extConfigJson').value
         };
@@ -337,6 +387,161 @@
         } catch (error) {
             showMessage('操作失败: ' + error.message, 'error');
         }
+    }
+
+    // ========== 模型列表编辑器 ==========
+    function renderModels() {
+        const container = document.getElementById('modelsContainer');
+        if (!container) return;
+        container.innerHTML = modelsState.map((m, idx) => `
+            <div class="border border-gray-200 rounded-xl p-4">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="text-sm text-gray-600 font-medium">模型 ${idx + 1}</div>
+                    <button type="button" class="text-red-600 text-sm hover:underline" onclick="removeModelEntry(${idx})">
+                        移除
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">名称</label>
+                        <input type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${escapeHtml(m.name || '')}" oninput="updateModelField(${idx}, 'name', this.value)">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">模型路径 / 上传</label>
+                        <div class="space-y-2">
+                            <input type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg font-mono" placeholder="/path/to/model.pt" value="${escapeHtml(m.path || '')}" oninput="updateModelField(${idx}, 'path', this.value)">
+                            <div class="flex items-center space-x-2">
+                                <input data-kind="model-file" type="file" accept=".pt,.onnx,.engine,.bin,.tflite,.xml,.param,.json" class="text-sm" onchange="handleModelFileSelect(${idx}, this)">
+                                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm" onclick="triggerModelFile(${idx})">选择文件</button>
+                                <button type="button" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm" onclick="uploadModelFile(${idx})">上传到服务器</button>
+                                <span id="uploadStatus-${idx}" class="text-xs text-gray-500"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">类别索引 (class)</label>
+                        <input type="number" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${Number.isFinite(m.class) ? m.class : 0}" oninput="updateModelField(${idx}, 'class', parseInt(this.value || '0'))">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">置信度 (0-1)</label>
+                        <input type="number" step="0.01" min="0" max="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.confidence === 'number' ? m.confidence : 0.6}" oninput="updateModelField(${idx}, 'confidence', parseFloat(this.value || '0'))">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">标签名称</label>
+                        <input type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${escapeHtml(m.label_name || 'Object')}" oninput="updateModelField(${idx}, 'label_name', this.value)">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">标签颜色</label>
+                        <input type="color" class="w-16 h-10 p-0 border border-gray-200 rounded" value="${escapeColor(m.label_color || '#FF0000')}" oninput="updateModelField(${idx}, 'label_color', this.value)">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">扩展宽度比例 (%)</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="number" step="1" min="0" max="100" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.expand_width === 'number' ? Math.round((m.expand_width || 0) * 100) : 10}" oninput="updateModelPercentField(${idx}, 'expand_width', parseFloat(this.value || '0'))">
+                            <span class="text-gray-500 text-sm">%</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-1">扩展高度比例 (%)</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="number" step="1" min="0" max="100" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.expand_height === 'number' ? Math.round((m.expand_height || 0) * 100) : 10}" oninput="updateModelPercentField(${idx}, 'expand_height', parseFloat(this.value || '0'))">
+                            <span class="text-gray-500 text-sm">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        // 同步隐藏 JSON
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
+    }
+
+    function triggerModelFile(index) {
+        const container = document.getElementById('modelsContainer');
+        const inputs = container.querySelectorAll('input[data-kind="model-file"]');
+        const input = inputs[index];
+        if (input) input.click();
+    }
+
+    function handleModelFileSelect(index, inputEl) {
+        const file = inputEl.files && inputEl.files[0];
+        if (!file) return;
+        const status = document.getElementById(`uploadStatus-${index}`);
+        if (status) status.textContent = `已选择: ${file.name}`;
+    }
+
+    async function uploadModelFile(index) {
+        const container = document.getElementById('modelsContainer');
+        const inputs = container.querySelectorAll('input[data-kind="model-file"]');
+        const fileInput = inputs[index];
+        const status = document.getElementById(`uploadStatus-${index}`);
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            showMessage('请先选择模型文件', 'error');
+            return;
+        }
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('model_file', file);
+        try {
+            if (status) status.textContent = '上传中...';
+            const resp = await fetch('/api/upload/model', { method: 'POST', body: formData });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || '上传失败');
+            updateModelField(index, 'path', data.saved_path);
+            if (status) status.textContent = '上传成功';
+            showMessage('模型已上传并设置路径');
+        } catch (e) {
+            if (status) status.textContent = '上传失败';
+            showMessage('上传失败: ' + e.message, 'error');
+        }
+    }
+
+    function addModelEntry() {
+        modelsState.push({
+            name: '',
+            path: '',
+            class: 0,
+            confidence: 0.6,
+            label_name: 'Object',
+            label_color: '#FF0000',
+            expand_width: 0.1,
+            expand_height: 0.1
+        });
+        renderModels();
+    }
+
+    function removeModelEntry(index) {
+        modelsState.splice(index, 1);
+        renderModels();
+    }
+
+    function updateModelField(index, key, value) {
+        modelsState[index] = { ...modelsState[index], [key]: value };
+        // 不立即重绘，避免光标跳动；但同步 JSON
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
+    }
+
+    function updateModelPercentField(index, key, percentValue) {
+        let safe = isFinite(percentValue) ? percentValue : 0;
+        if (safe < 0) safe = 0; if (safe > 100) safe = 100;
+        const ratio = safe / 100;
+        modelsState[index] = { ...modelsState[index], [key]: ratio };
+        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
+    }
+
+    function escapeHtml(str) {
+        if (typeof str !== 'string') return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function escapeColor(val) {
+        // 简单校验颜色格式
+        return /^#([0-9a-fA-F]{6})$/.test(val || '') ? val : '#FF0000';
     }
 
     async function deleteAlgorithm(id) {
@@ -386,6 +591,7 @@
         selectedImage = null;
         document.getElementById('uploadArea').classList.remove('hidden');
         document.getElementById('imagePreview').classList.add('hidden');
+        document.getElementById('buttonArea').classList.add('hidden');
         document.getElementById('noResults').classList.remove('hidden');
         document.getElementById('resultsContent').classList.add('hidden');
         document.getElementById('loadingResults').classList.add('hidden');
@@ -466,28 +672,20 @@
             document.getElementById('previewImg').src = e.target.result;
             document.getElementById('uploadArea').classList.add('hidden');
             document.getElementById('imagePreview').classList.remove('hidden');
+            document.getElementById('buttonArea').classList.remove('hidden');
         };
         reader.readAsDataURL(file);
     }
 
-    function removeImage(event) {
-        // 阻止事件冒泡，防止触发dropZone的点击事件
-        if (event) {
-            event.stopPropagation();
-        }
-        
+    function removeImage() {
         selectedImage = null;
         document.getElementById('uploadArea').classList.remove('hidden');
         document.getElementById('imagePreview').classList.add('hidden');
+        document.getElementById('buttonArea').classList.add('hidden');
         document.getElementById('imageInput').value = '';
     }
 
-    async function runTest(event) {
-        // 阻止事件冒泡，防止触发dropZone的点击事件
-        if (event) {
-            event.stopPropagation();
-        }
-        
+    async function runTest() {
         if (!selectedImage || !currentTestAlgorithm) return;
         
         // 显示加载状态
@@ -594,6 +792,8 @@
         }
     }
 
-    loadAlgorithms();
+    Promise.all([loadAlgorithms(), loadPluginModules()]).then(() => {
+        // nothing
+    });
 </script>
 {% endblock %}

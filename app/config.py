@@ -16,6 +16,11 @@ VIDEO_SAVE_PATH = os.getenv('VIDEO_SAVE_PATH', os.path.join(os.path.dirname(os.p
 os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 
 
+# Models storage path for uploaded AI model files
+MODEL_SAVE_PATH = os.getenv('MODEL_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/models'))
+os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
+
+
 
 SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
 SNAPSHOT_INTERVAL = int(os.getenv('SNAPSHOT_INTERVAL', '60'))  # in seconds

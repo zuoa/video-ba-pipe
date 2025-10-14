@@ -18,6 +18,7 @@ def setup_database():
                 {
                     "name": "yolov8-head",
                     "path": "/Users/yujian/Downloads/head.pt",
+                    "class": 0,
                     "confidence": 0.6,
                     "label_name": "Head",
                     "label_color": "#FF0000",
@@ -26,6 +27,7 @@ def setup_database():
                 }, {
                     "name": "yolov8-phone",
                     "path": "/Users/yujian/Downloads/phone.pt",
+                    "class": 0,
                     "confidence": 0.5,
                     "label_name": "Phone",
                     "label_color": "#0000FF",
@@ -47,6 +49,7 @@ def setup_database():
                 {
                     "name": "yolov8n",
                     "path": "/Users/yujian/Downloads/yolov8n.pt",
+                    "class": 0,
                     "confidence": 0.5,
                     "label_name": "Person",
                     "label_color": "#00FF00",

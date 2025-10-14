@@ -62,6 +62,7 @@ def find_multimodel_groups(stages_results, iou_threshold=0.5):
             all_boxes_with_info.append({
                 'model_name': model_name,
                 'class_name': class_names[int(boxes.cls[i])],
+                'class': int(boxes.cls[i]),
                 'confidence': float(boxes.conf[i]),
                 'bbox': boxes.xyxy[i].tolist()
             })

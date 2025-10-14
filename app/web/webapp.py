@@ -10,13 +10,25 @@ from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
-from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH
+from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
 from app.plugin_manager import PluginManager
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
 
 # ========== API 端点 ==========
+
+# Plugin API
+@app.route('/api/plugins/modules', methods=['GET'])
+def list_plugin_modules():
+    try:
+        plugins_path = os.path.join(os.path.dirname(__file__), '..', 'plugins')
+        plugin_manager = PluginManager(plugins_path)
+        modules = sorted(list(plugin_manager.algorithms_by_module.keys()))
+        return jsonify({'modules': modules})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
@@ -568,6 +580,47 @@ def admin_tasks():
 @app.route('/admin/alerts')
 def admin_alerts():
     return render_template('alerts.html')
+
+@app.route('/api/upload/model', methods=['POST'])
+def upload_model_file():
+    try:
+        if 'model_file' not in request.files:
+            return jsonify({'success': False, 'error': '缺少文件字段 model_file'}), 400
+        file = request.files['model_file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': '未选择文件'}), 400
+
+        # 安全的文件名
+        filename = secure_filename(file.filename)
+        if not filename:
+            return jsonify({'success': False, 'error': '无效的文件名'}), 400
+
+        # 允许的扩展名
+        allowed_exts = {'.pt', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json'}
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in allowed_exts:
+            return jsonify({'success': False, 'error': '不支持的文件类型'}), 400
+
+        # 创建存储路径（按日期分目录）
+        date_dir = datetime.now().strftime('%Y%m%d')
+        save_dir = os.path.join(MODEL_SAVE_PATH, date_dir)
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 防止重名覆盖
+        base, extname = os.path.splitext(filename)
+        counter = 0
+        final_name = filename
+        while os.path.exists(os.path.join(save_dir, final_name)):
+            counter += 1
+            final_name = f"{base}_{counter}{extname}"
+
+        save_path = os.path.join(save_dir, final_name)
+        file.save(save_path)
+
+        return jsonify({'success': True, 'saved_path': save_path})
+    except Exception as e:
+        app.logger.error(f"模型上传失败: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)
