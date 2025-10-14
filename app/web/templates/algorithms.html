@@ -111,6 +111,91 @@
         </form>
     </div>
 </div>
+
+<!-- 算法测试模态框 -->
+<div id="testModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 md:w-4/5 lg:w-3/4 xl:w-2/3 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center text-white">
+                    <i class="fas fa-play"></i>
+                </div>
+                <div>
+                    <h3 class="text-2xl font-bold text-gray-800" id="testModalTitle">算法测试</h3>
+                    <p class="text-sm text-gray-500" id="testModalSubtitle">上传图片测试算法效果</p>
+                </div>
+            </div>
+            <button onclick="closeTestModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- 左侧：上传区域 -->
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-3">上传测试图片</label>
+                    <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
+                        <div id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                            <p class="text-gray-600 mb-2">点击或拖拽上传图片</p>
+                            <p class="text-xs text-gray-500">支持 JPG, PNG, GIF 格式</p>
+                            <input type="file" id="imageInput" accept="image/*" class="hidden">
+                        </div>
+                        <div id="imagePreview" class="hidden">
+                            <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-md">
+                            <div class="mt-4 flex justify-center space-x-2">
+                                <button onclick="removeImage(event)" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all text-sm">
+                                    <i class="fas fa-trash mr-1"></i>移除
+                                </button>
+                                <button onclick="runTest(event)" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm">
+                                    <i class="fas fa-play mr-1"></i>开始测试
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 算法信息 -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h4 class="font-semibold text-gray-800 mb-2">算法信息</h4>
+                    <div id="algorithmInfo" class="text-sm text-gray-600 space-y-1">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：结果显示 -->
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-3">测试结果</label>
+                    <div id="testResults" class="border border-gray-200 rounded-lg p-6 min-h-64">
+                        <div id="noResults" class="text-center text-gray-500">
+                            <i class="fas fa-image text-3xl mb-3"></i>
+                            <p>上传图片后将显示测试结果</p>
+                        </div>
+                        <div id="resultsContent" class="hidden">
+                            <!-- 结果图片 -->
+                            <div class="mb-4">
+                                <img id="resultImg" class="max-w-full rounded-lg shadow-md">
+                            </div>
+                            <!-- 检测结果 -->
+                            <div id="detectionResults" class="space-y-2">
+                                <!-- 动态填充 -->
+                            </div>
+                        </div>
+                        <div id="loadingResults" class="hidden text-center">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                            <p class="mt-2 text-gray-600">正在处理...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -171,6 +256,10 @@
                 </td>
                 <td class="px-6 py-5 whitespace-nowrap">
                     <div class="flex items-center space-x-2">
+                        <button onclick="testAlgorithm(${a.id})" class="px-3 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all font-medium text-sm flex items-center space-x-1">
+                            <i class="fas fa-play"></i>
+                            <span>测试</span>
+                        </button>
                         <button onclick="editAlgorithm(${a.id})" class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all font-medium text-sm flex items-center space-x-1">
                             <i class="fas fa-edit"></i>
                             <span>编辑</span>
@@ -259,6 +348,249 @@
             loadAlgorithms();
         } catch (error) {
             showMessage('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    // 测试相关函数
+    let currentTestAlgorithm = null;
+    let selectedImage = null;
+
+    function testAlgorithm(id) {
+        const algorithm = algorithms.find(a => a.id === id);
+        if (!algorithm) return;
+
+        currentTestAlgorithm = algorithm;
+        
+        // 更新模态框标题
+        document.getElementById('testModalTitle').textContent = `测试算法: ${algorithm.name}`;
+        document.getElementById('testModalSubtitle').textContent = `算法ID: ${algorithm.id} | 插件模块: ${algorithm.plugin_module || '无'}`;
+        
+        // 显示算法信息
+        const algorithmInfo = document.getElementById('algorithmInfo');
+        algorithmInfo.innerHTML = `
+            <div><strong>名称:</strong> ${algorithm.name}</div>
+            <div><strong>标签:</strong> ${algorithm.label_name}</div>
+            <div><strong>间隔:</strong> ${algorithm.interval_seconds}秒</div>
+            <div><strong>插件:</strong> ${algorithm.plugin_module || '无'}</div>
+        `;
+        
+        // 重置状态
+        resetTestModal();
+        document.getElementById('testModal').classList.remove('hidden');
+        
+        // 初始化文件上传
+        initializeFileUpload();
+    }
+
+    function resetTestModal() {
+        selectedImage = null;
+        document.getElementById('uploadArea').classList.remove('hidden');
+        document.getElementById('imagePreview').classList.add('hidden');
+        document.getElementById('noResults').classList.remove('hidden');
+        document.getElementById('resultsContent').classList.add('hidden');
+        document.getElementById('loadingResults').classList.add('hidden');
+        document.getElementById('imageInput').value = '';
+    }
+
+    function closeTestModal() {
+        document.getElementById('testModal').classList.add('hidden');
+        resetTestModal();
+    }
+
+    // 标记是否已经初始化过文件上传
+    let fileUploadInitialized = false;
+
+    function initializeFileUpload() {
+        // 如果已经初始化过，直接返回
+        if (fileUploadInitialized) {
+            return;
+        }
+        
+        const dropZone = document.getElementById('dropZone');
+        const imageInput = document.getElementById('imageInput');
+        
+        // 点击上传
+        dropZone.addEventListener('click', () => {
+            imageInput.click();
+        });
+        
+        // 文件选择
+        imageInput.addEventListener('change', handleFileSelect);
+        
+        // 拖拽上传
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-green-400', 'bg-green-50');
+        });
+        
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-green-400', 'bg-green-50');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-green-400', 'bg-green-50');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect({ target: { files: files } });
+            }
+        });
+        
+        // 标记为已初始化
+        fileUploadInitialized = true;
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        // 验证文件类型
+        if (!file.type.startsWith('image/')) {
+            showMessage('请选择图片文件', 'error');
+            return;
+        }
+        
+        // 验证文件大小 (最大10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            showMessage('图片文件过大，请选择小于10MB的图片', 'error');
+            return;
+        }
+        
+        selectedImage = file;
+        
+        // 显示预览
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('uploadArea').classList.add('hidden');
+            document.getElementById('imagePreview').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function removeImage(event) {
+        // 阻止事件冒泡，防止触发dropZone的点击事件
+        if (event) {
+            event.stopPropagation();
+        }
+        
+        selectedImage = null;
+        document.getElementById('uploadArea').classList.remove('hidden');
+        document.getElementById('imagePreview').classList.add('hidden');
+        document.getElementById('imageInput').value = '';
+    }
+
+    async function runTest(event) {
+        // 阻止事件冒泡，防止触发dropZone的点击事件
+        if (event) {
+            event.stopPropagation();
+        }
+        
+        if (!selectedImage || !currentTestAlgorithm) return;
+        
+        // 显示加载状态
+        document.getElementById('loadingResults').classList.remove('hidden');
+        document.getElementById('noResults').classList.add('hidden');
+        document.getElementById('resultsContent').classList.add('hidden');
+        
+        try {
+            // 创建FormData
+            const formData = new FormData();
+            formData.append('image', selectedImage);
+            formData.append('algorithm_id', currentTestAlgorithm.id);
+            
+            // 发送测试请求
+            const response = await fetch('/api/algorithms/test', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            // 显示结果
+            displayTestResults(result);
+            
+        } catch (error) {
+            console.error('测试失败:', error);
+            showMessage('测试失败: ' + error.message, 'error');
+            
+            // 恢复初始状态
+            document.getElementById('loadingResults').classList.add('hidden');
+            document.getElementById('noResults').classList.remove('hidden');
+        }
+    }
+
+    function displayTestResults(result) {
+        const loadingResults = document.getElementById('loadingResults');
+        const noResults = document.getElementById('noResults');
+        const resultsContent = document.getElementById('resultsContent');
+        
+        loadingResults.classList.add('hidden');
+        
+        if (result.success) {
+            noResults.classList.add('hidden');
+            resultsContent.classList.remove('hidden');
+            
+            // 显示结果图片
+            const resultImg = document.getElementById('resultImg');
+            if (result.result_image) {
+                resultImg.src = result.result_image;
+                resultImg.alt = '测试结果';
+            } else {
+                resultImg.src = document.getElementById('previewImg').src;
+                resultImg.alt = '原始图片';
+            }
+            
+            // 显示检测结果
+            const detectionResults = document.getElementById('detectionResults');
+            if (result.detections && result.detections.length > 0) {
+                detectionResults.innerHTML = `
+                    <div class="mb-3">
+                        <h5 class="font-semibold text-gray-800">检测结果 (${result.detections.length}个目标)</h5>
+                    </div>
+                    ${result.detections.map((det, index) => `
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <div class="font-medium text-blue-800">目标 ${index + 1}</div>
+                                    <div class="text-sm text-blue-600 mt-1">
+                                        <div>类型: ${det.label_name || 'Object'}</div>
+                                        <div>置信度: ${(det.confidence * 100).toFixed(1)}%</div>
+                                        <div>位置: (${Math.round(det.box[0])}, ${Math.round(det.box[1])}) - (${Math.round(det.box[2])}, ${Math.round(det.box[3])})</div>
+                                        ${det.stages ? `
+                                            <div class="mt-2">
+                                                <div class="text-xs text-blue-500 font-medium">多阶段检测:</div>
+                                                ${det.stages.map(stage => `
+                                                    <div class="text-xs text-blue-500 ml-2">
+                                                        ${stage.label_name}: ${(stage.confidence * 100).toFixed(1)}%
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+            } else {
+                detectionResults.innerHTML = `
+                    <div class="text-center text-gray-500 py-4">
+                        <i class="fas fa-search text-2xl mb-2"></i>
+                        <p>未检测到任何目标</p>
+                    </div>
+                `;
+            }
+        } else {
+            noResults.classList.remove('hidden');
+            resultsContent.classList.add('hidden');
+            showMessage('测试失败: ' + (result.error || '未知错误'), 'error');
         }
     }
 

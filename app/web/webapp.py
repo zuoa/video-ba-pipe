@@ -1,11 +1,17 @@
 import os
+import tempfile
+import base64
 from datetime import datetime
 from pathlib import Path
+import cv2
+import numpy as np
+from werkzeug.utils import secure_filename
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH
+from app.plugin_manager import PluginManager
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
@@ -82,6 +88,126 @@ def delete_algorithm(id):
         return jsonify({'message': 'Algorithm deleted'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
+
+@app.route('/api/algorithms/test', methods=['POST'])
+def test_algorithm():
+    """算法测试API端点"""
+    try:
+        # 检查是否有上传的图片
+        if 'image' not in request.files:
+            return jsonify({'success': False, 'error': '没有上传图片'}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        
+        # 检查算法ID
+        algorithm_id = request.form.get('algorithm_id')
+        if not algorithm_id:
+            return jsonify({'success': False, 'error': '缺少算法ID'}), 400
+        
+        try:
+            algorithm_id = int(algorithm_id)
+        except ValueError:
+            return jsonify({'success': False, 'error': '无效的算法ID'}), 400
+        
+        # 获取算法配置
+        try:
+            algorithm = Algorithm.get_by_id(algorithm_id)
+        except Algorithm.DoesNotExist:
+            return jsonify({'success': False, 'error': '算法不存在'}), 404
+        
+        # 验证文件类型
+        if not file.content_type.startswith('image/'):
+            return jsonify({'success': False, 'error': '只支持图片文件'}), 400
+        
+        # 保存上传的图片到临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_file:
+            file.save(temp_file.name)
+            temp_image_path = temp_file.name
+        
+        try:
+            # 读取图片
+            image = cv2.imread(temp_image_path)
+            if image is None:
+                return jsonify({'success': False, 'error': '无法读取图片文件'}), 400
+
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+            # 调整图片大小，宽高至少640
+            h, w = image.shape[:2]
+            if w < 640 or h < 640:
+                scale = max(640 / w, 640 / h)
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                app.logger.info(f"已调整图片大小为: {new_w}x{new_h}")
+
+
+            # 获取插件管理器实例
+            plugins_path = os.path.join(os.path.dirname(__file__), '..', 'plugins')
+            plugin_manager = PluginManager(plugins_path)
+            
+            # 获取算法类（通过模块名查找）
+            algorithm_class = plugin_manager.get_algorithm_class_by_module(algorithm.plugin_module)
+            if not algorithm_class:
+                return jsonify({'success': False, 'error': f'无法找到算法插件: {algorithm.plugin_module}'}), 400
+
+
+            full_config = {
+                "name": algorithm.name,
+                "label_name": algorithm.label_name,
+                "label_color": algorithm.label_color,
+                "ext_config": algorithm.ext_config_json,
+                "models_config": algorithm.models_config,
+                "interval_seconds": algorithm.interval_seconds,
+            }
+            
+            # 创建算法实例并处理图片
+            algo_instance = algorithm_class(full_config)
+            results = algo_instance.process(image)
+            
+            # 处理结果
+            detections = results.get('detections', [])
+            
+            # 生成可视化结果（无论是否有检测结果都生成）
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_result:
+                result_image_path = temp_result.name
+            
+            # 生成可视化结果
+            algo_instance.visualize(
+                image,
+                detections, 
+                save_path=result_image_path,
+                label_color=full_config.get('label_color', '#FF0000')
+            )
+            
+            # 准备返回结果
+            response_data = {
+                'success': True,
+                'detections': detections,
+                'detection_count': len(detections)
+            }
+            
+            # 转换结果图片为base64
+            if result_image_path and os.path.exists(result_image_path):
+                with open(result_image_path, 'rb') as f:
+                    result_image_data = base64.b64encode(f.read()).decode('utf-8')
+                    response_data['result_image'] = f'data:image/jpeg;base64,{result_image_data}'
+                
+                # 清理临时结果文件
+                os.unlink(result_image_path)
+            
+            return jsonify(response_data)
+            
+        finally:
+            # 清理临时上传文件
+            if os.path.exists(temp_image_path):
+                os.unlink(temp_image_path)
+                
+    except Exception as e:
+        app.logger.error(f"算法测试失败: {str(e)}")
+        return jsonify({'success': False, 'error': f'测试失败: {str(e)}'}), 500
 
 # Task API
 @app.route('/api/tasks', methods=['GET'])
