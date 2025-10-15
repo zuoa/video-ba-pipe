@@ -405,6 +405,24 @@ def get_alert_types():
     alert_types = Alert.select(Alert.alert_type).distinct().order_by(Alert.alert_type)
     return jsonify([at.alert_type for at in alert_types])
 
+@app.route('/api/alerts/today-count', methods=['GET'])
+def get_today_alerts_count():
+    """获取今日告警数量"""
+    from datetime import datetime, date
+    
+    # 获取今天的开始和结束时间
+    today = date.today()
+    start_of_day = datetime.combine(today, datetime.min.time())
+    end_of_day = datetime.combine(today, datetime.max.time())
+    
+    # 查询今日告警数量
+    count = Alert.select().where(
+        (Alert.alert_time >= start_of_day) & 
+        (Alert.alert_time <= end_of_day)
+    ).count()
+    
+    return jsonify({'count': count})
+
 # ========== 图片服务接口 ==========
 
 @app.route('/api/image/<path:file_path>', methods=['GET'])

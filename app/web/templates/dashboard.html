@@ -188,17 +188,16 @@
             algorithms = await apiRequest('/api/algorithms');
             document.getElementById('totalAlgorithms').textContent = algorithms.length;
 
-            // 加载告警
-            const alertsResponse = await apiRequest('/api/alerts?page=1&per_page=5');
+            // 并行加载告警数据和今日告警数量
+            const [alertsResponse, todayAlertsResponse] = await Promise.all([
+                apiRequest('/api/alerts?page=1&per_page=5'),
+                apiRequest('/api/alerts/today-count')
+            ]);
+            
             alerts = alertsResponse.data;
             
-            // 计算今日告警
-            const today = new Date().toDateString();
-            const todayAlertsCount = alerts.filter(a => {
-                const alertDate = new Date(a.alert_time).toDateString();
-                return alertDate === today;
-            }).length;
-            document.getElementById('todayAlerts').textContent = todayAlertsCount;
+            // 使用API返回的准确今日告警数量
+            document.getElementById('todayAlerts').textContent = todayAlertsResponse.count;
 
             // 渲染最近告警
             renderRecentAlerts();
