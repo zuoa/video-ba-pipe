@@ -129,6 +129,44 @@
         </form>
     </div>
 </div>
+
+<!-- 图片预览模态框 -->
+<div id="imagePreviewModal" class="hidden fixed inset-0 bg-black bg-opacity-75 image-preview-backdrop overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+    <div class="relative max-w-5xl mx-auto p-4">
+        <div class="relative bg-white rounded-2xl shadow-2xl p-4 image-preview-modal">
+            <button onclick="closeImagePreview()" class="absolute -top-4 -right-4 w-10 h-10 bg-white hover:bg-gray-100 text-gray-600 rounded-full shadow-lg flex items-center justify-center transition-all z-10">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+            <div class="text-center">
+                <img id="previewImage" src="" alt="预览图片" class="max-w-full max-h-[80vh] rounded-lg shadow-lg">
+                <p id="previewSourceCode" class="mt-4 text-gray-600 font-medium"></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .image-preview-backdrop {
+        backdrop-filter: blur(5px);
+    }
+    
+    .image-preview-modal {
+        animation: zoomIn 0.3s ease-out;
+    }
+    
+    @keyframes zoomIn {
+        from {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -206,11 +244,16 @@
                     </div>
                 </td>
                 <td class="px-6 py-5 whitespace-nowrap">
-                    <div class="flex flex-col">
-                        <span class="text-sm font-medium text-gray-800">${t.source_name || '未命名'}</span>
-                        <span class="text-xs text-gray-500 mt-0.5">
-                            <i class="fas fa-code mr-1 text-gray-400"></i>${t.source_code}
-                        </span>
+                    <div class="flex items-center space-x-2">
+                        <div class="flex flex-col flex-1">
+                            <span class="text-sm font-medium text-gray-800">${t.source_name || '未命名'}</span>
+                            <span class="text-xs text-gray-500 mt-0.5">
+                                <i class="fas fa-code mr-1 text-gray-400"></i>${t.source_code}
+                            </span>
+                        </div>
+                        <button onclick="showImagePreview('${t.source_code}')" class="w-8 h-8 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-all flex items-center justify-center">
+                            <i class="fas fa-image text-sm"></i>
+                        </button>
                     </div>
                 </td>
                 <td class="px-6 py-5 whitespace-nowrap">
@@ -345,6 +388,45 @@
             showMessage('删除失败: ' + error.message, 'error');
         }
     }
+
+    function showImagePreview(sourceCode) {
+        const modal = document.getElementById('imagePreviewModal');
+        const image = document.getElementById('previewImage');
+        const sourceCodeText = document.getElementById('previewSourceCode');
+        
+        // 设置图片源和源代码
+        image.src = `/api/image/snapshots/${sourceCode}.jpg`;
+        sourceCodeText.textContent = `源代码: ${sourceCode}`;
+        
+        // 处理图片加载错误
+        image.onerror = function() {
+            image.alt = '无法加载预览图片';
+            sourceCodeText.textContent = `源代码: ${sourceCode} (无预览图片)`;
+            showMessage('无法加载预览图片', 'warning');
+        };
+        
+        // 显示模态框
+        modal.classList.remove('hidden');
+    }
+
+    function closeImagePreview() {
+        const modal = document.getElementById('imagePreviewModal');
+        modal.classList.add('hidden');
+    }
+
+    // 点击背景关闭预览
+    document.getElementById('imagePreviewModal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeImagePreview();
+        }
+    });
+
+    // ESC键关闭预览
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeImagePreview();
+        }
+    });
 
     loadData();
 </script>
