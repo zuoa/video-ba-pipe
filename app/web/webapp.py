@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
 from app.plugin_manager import PluginManager
+from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
@@ -395,6 +396,17 @@ def create_alert():
             alert_image=data.get('alert_image'),
             alert_video=data.get('alert_video')
         )
+        
+        # 发布预警消息到RabbitMQ
+        try:
+            alert_message = format_alert_message(alert)
+            if publish_alert_to_rabbitmq(alert_message):
+                print(f"预警消息已成功发布到RabbitMQ: {alert.id}")
+            else:
+                print(f"预警消息发布到RabbitMQ失败: {alert.id}")
+        except Exception as e:
+            print(f"发布预警消息到RabbitMQ时发生错误: {e}")
+        
         return jsonify({'id': alert.id, 'message': 'Alert created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400

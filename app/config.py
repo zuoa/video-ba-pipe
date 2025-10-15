@@ -51,3 +51,26 @@ RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '60'))
 # ============ 告警抑制配置 ============
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警
 ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '20'))
+
+# ============ RabbitMQ配置 ============
+# RabbitMQ服务器地址
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', '10.0.4.15')
+RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
+RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'rabbit')
+RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'cv2025@)@%')
+RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', '/')
+
+# 预警消息队列配置
+RABBITMQ_ALERT_QUEUE = os.getenv('RABBITMQ_ALERT_QUEUE', 'video_alerts')
+RABBITMQ_ALERT_EXCHANGE = os.getenv('RABBITMQ_ALERT_EXCHANGE', 'video_alerts')
+RABBITMQ_ALERT_ROUTING_KEY = os.getenv('RABBITMQ_ALERT_ROUTING_KEY', 'alert')
+
+# Topic模式配置
+RABBITMQ_EXCHANGE_TYPE = os.getenv('RABBITMQ_EXCHANGE_TYPE', 'topic')  # topic 或 direct
+RABBITMQ_ALERT_TOPIC_PATTERN = os.getenv('RABBITMQ_ALERT_TOPIC_PATTERN', 'video.alert.*')
+
+# RabbitMQ连接超时设置（秒）
+RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30'))
+
+# 是否启用RabbitMQ预警发布
+RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'true').lower() in ('true', '1', 'yes')

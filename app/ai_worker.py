@@ -20,6 +20,7 @@ from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
+from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.plugin_manager import PluginManager
 
 
@@ -188,7 +189,7 @@ def main(args):
                                 alert_video="",
                             )
                             logger.info(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
-                            
+
                             # 启动视频录制（如果启用）
                             if video_recorder:
                                 try:
@@ -207,6 +208,16 @@ def main(args):
                                     logger.info(f"[AIWorker] 已启动视频录制任务，预计保存到: {video_path}")
                                 except Exception as rec_err:
                                     logger.error(f"[AIWorker] 启动视频录制失败: {rec_err}", exc_info=True)
+
+                            # 发布预警消息到RabbitMQ
+                            try:
+                                alert_message = format_alert_message(alert)
+                                if publish_alert_to_rabbitmq(alert_message):
+                                    logger.info(f"[AIWorker] 预警消息已成功发布到RabbitMQ: {alert.id}")
+                                else:
+                                    logger.warning(f"[AIWorker] 预警消息发布到RabbitMQ失败: {alert.id}")
+                            except Exception as e:
+                                logger.error(f"[AIWorker] 发布预警消息到RabbitMQ时发生错误: {e}")
 
                     except Exception as exc:
                         logger.info(f"[AIWorker] 错误：算法 {algo_id} 在处理过程中发生异常: {exc}")

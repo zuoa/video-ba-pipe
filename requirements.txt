@@ -4,3 +4,4 @@ opencv-python
 peewee
 ultralytics
 flask
+pika
