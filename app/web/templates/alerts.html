@@ -130,12 +130,27 @@
                     <i class="fas fa-bell"></i>
                 </div>
                 <h3 class="text-2xl font-bold text-gray-800">告警详情</h3>
+                <span id="alertNavigationInfo" class="text-sm text-gray-500 font-medium"></span>
             </div>
-            <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            </button>
+            <div class="flex items-center space-x-2">
+                <!-- 导航按钮 -->
+                <button id="prevAlertBtn" onclick="navigateAlert(-1)" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed" title="上一条告警 (←)">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                </button>
+                <button id="nextAlertBtn" onclick="navigateAlert(1)" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed" title="下一条告警 (→)">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+                <!-- 关闭按钮 -->
+                <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all" title="关闭 (Esc)">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div id="alertDetailContent" class="space-y-6">
@@ -196,6 +211,7 @@
     let perPage = 20;
     let totalPages = 1;
     let totalRecords = 0;
+    let currentAlertIndex = -1; // 当前显示的告警在alerts数组中的索引
 
     // 图片查看器相关变量
     let currentZoom = 1;
@@ -706,7 +722,15 @@
     }
 
     function showAlertDetail(id) {
-        const alert = alerts.find(a => a.id === id);
+        const alertIndex = alerts.findIndex(a => a.id === id);
+        if (alertIndex === -1) return;
+        
+        currentAlertIndex = alertIndex;
+        displayAlertDetail(alertIndex);
+    }
+
+    function displayAlertDetail(alertIndex) {
+        const alert = alerts[alertIndex];
         if (!alert) return;
 
         const task = tasks.find(t => t.id === alert.task_id);
@@ -719,6 +743,12 @@
             minute: '2-digit',
             second: '2-digit'
         });
+
+        // 更新导航信息
+        updateNavigationInfo(alertIndex);
+        
+        // 更新导航按钮状态
+        updateNavigationButtons(alertIndex);
 
         const alertTypeColors = {
             'warning': 'from-yellow-400 to-orange-500',
@@ -810,10 +840,66 @@
         `;
 
         document.getElementById('alertDetailModal').classList.remove('hidden');
+        
+        // 添加键盘事件监听器
+        document.addEventListener('keydown', handleModalKeyDown);
     }
 
     function closeDetailModal() {
         document.getElementById('alertDetailModal').classList.add('hidden');
+        
+        // 移除键盘事件监听器
+        document.removeEventListener('keydown', handleModalKeyDown);
+        currentAlertIndex = -1;
+    }
+
+    function updateNavigationInfo(alertIndex) {
+        const navInfo = document.getElementById('alertNavigationInfo');
+        if (navInfo) {
+            navInfo.textContent = `(${alertIndex + 1} / ${alerts.length})`;
+        }
+    }
+
+    function updateNavigationButtons(alertIndex) {
+        const prevBtn = document.getElementById('prevAlertBtn');
+        const nextBtn = document.getElementById('nextAlertBtn');
+        
+        if (prevBtn) {
+            prevBtn.disabled = alertIndex === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = alertIndex === alerts.length - 1;
+        }
+    }
+
+    function navigateAlert(direction) {
+        if (currentAlertIndex === -1) return;
+        
+        const newIndex = currentAlertIndex + direction;
+        if (newIndex >= 0 && newIndex < alerts.length) {
+            currentAlertIndex = newIndex;
+            displayAlertDetail(newIndex);
+        }
+    }
+
+    function handleModalKeyDown(e) {
+        // 只在模态框打开时处理键盘事件
+        const modal = document.getElementById('alertDetailModal');
+        if (modal.classList.contains('hidden')) return;
+        
+        switch(e.key) {
+            case 'Escape':
+                closeDetailModal();
+                break;
+            case 'ArrowLeft':
+                e.preventDefault();
+                navigateAlert(-1);
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                navigateAlert(1);
+                break;
+        }
     }
 
     // 初始化
