@@ -66,8 +66,14 @@ class TargetDetector(BaseAlgorithm):
                     })
         else:
             # 2) 查找被所有模型共同检测到的目标组
-            iou_thresh = 0.4  # 对于关联性检测，IoU可以适当放宽
-            detection_groups = find_multimodel_groups(stages_results, iou_threshold=iou_thresh)
+            for model_name, res in stages_results.items():
+                logger.info(f"模型 '{model_name}' 检测到 {len(res.get('result').boxes)} 个目标")
+                for box in res.get('result').boxes:
+                    logger.info(f"  - 目标: 类别 {int(box.cls[0])}, 置信度 {float(box.conf[0]):.2f}, 坐标 {box.xyxy[0].tolist()}")
+
+
+            # expand_width和expand_height配置从各个模型的配置中读取
+            detection_groups = find_multimodel_groups(stages_results)
 
             # 3) 处理结果
             if detection_groups:
@@ -110,14 +116,4 @@ class TargetDetector(BaseAlgorithm):
                         'stages': stages_info
                     })
 
-        # 3) 只检测人
-        # people_results = None
-        # try:
-        #     people_results = self.model.predict(frame, save=False, classes=[0], conf=confidence_threshold)
-        # except Exception as e:
-        #     logger.warn(f"[] person_model.predict 出错: {e}")
-        #
-        # if people_results:
-        #     return {'detections': people_results[0]}
-        # logger.info(detections)
         return {'detections': detections}
