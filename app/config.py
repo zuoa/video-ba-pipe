@@ -37,20 +37,20 @@ IS_EXTREME_DECODE_MODE = os.getenv('IS_Extreme_DECODE_MODE', 'true').lower() in 
 RECORDING_ENABLED = os.getenv('RECORDING_ENABLED', 'true').lower() in ('true', '1', 'yes')
 
 # 录制预警前的时长（秒）
-PRE_ALERT_DURATION = int(os.getenv('PRE_ALERT_DURATION', '10'))
+PRE_ALERT_DURATION = int(os.getenv('PRE_ALERT_DURATION', '5'))
 
 # 录制预警后的时长（秒）
-POST_ALERT_DURATION = int(os.getenv('POST_ALERT_DURATION', '10'))
+POST_ALERT_DURATION = int(os.getenv('POST_ALERT_DURATION', '5'))
 
 # 录制视频的帧率
 RECORDING_FPS = int(os.getenv('RECORDING_FPS', '5'))
 
 # RingBuffer缓冲时长（秒）- 需要足够大以容纳PRE_ALERT_DURATION
-RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '60'))
+RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '30'))
 
 # ============ 告警抑制配置 ============
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警
-ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '20'))
+ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '10'))
 
 # ============ RabbitMQ配置 ============
 # RabbitMQ服务器地址

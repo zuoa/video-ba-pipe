@@ -153,8 +153,30 @@ class VideoRingBuffer:
 
             # 写入帧数据
             offset = self._get_frame_offset(write_idx)
-            frame_bytes = frame.astype(np.uint8).tobytes()
-            self.shm.buf[offset:offset + self.frame_size] = frame_bytes
+            
+            # 确保帧是uint8类型且是C连续的（内存布局连续）
+            frame_data = np.ascontiguousarray(frame, dtype=np.uint8)
+            
+            # Validate size
+            expected_size = int(np.prod(self.frame_shape))
+            actual_size = frame_data.size
+            if actual_size != expected_size:
+                raise ValueError(
+                    f"Frame size {actual_size} doesn't match "
+                    f"expected {expected_size}. Frame shape: {frame.shape}, "
+                    f"expected shape: {self.frame_shape}"
+                )
+            
+            # 使用numpy数组视图直接写入共享内存
+            # 创建一个指向共享内存的numpy数组视图
+            shm_array = np.ndarray(
+                shape=(self.frame_size,),
+                dtype=np.uint8,
+                buffer=self.shm.buf,
+                offset=offset
+            )
+            # 将帧数据展平并复制
+            shm_array[:] = frame_data.ravel()
             
             # 写入时间戳
             self._write_timestamp(write_idx, timestamp)

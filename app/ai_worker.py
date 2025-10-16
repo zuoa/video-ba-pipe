@@ -14,6 +14,7 @@ from app.config import (
     PRE_ALERT_DURATION, 
     POST_ALERT_DURATION, 
     RECORDING_FPS,
+    RINGBUFFER_DURATION,
     ALERT_SUPPRESSION_DURATION
 )
 from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
@@ -34,7 +35,14 @@ def main(args):
 
     logger.info(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
 
-    buffer = VideoRingBuffer(name=buffer_name, create=False)
+    # 连接到共享内存缓冲区（必须使用与创建时相同的参数）
+    buffer = VideoRingBuffer(
+        name=buffer_name, 
+        create=False,
+        fps=RECORDING_FPS,
+        duration_seconds=RINGBUFFER_DURATION
+    )
+    logger.info(f"已连接到缓冲区: {buffer_name} (fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity})")
 
     shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
     resource_tracker.unregister(shm_name, 'shared_memory')

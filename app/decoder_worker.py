@@ -67,9 +67,15 @@ class DecoderWorker:
     def setup(self):
         """初始化所有组件"""
         try:
-            # 连接到共享内存缓冲区
-            self.buffer = VideoRingBuffer(name=self.buffer_name, create=False)
-            logger.info(f"已连接到缓冲区: {self.buffer_name}")
+            # 连接到共享内存缓冲区（必须使用与创建时相同的参数）
+            from app.config import RINGBUFFER_DURATION, RECORDING_FPS
+            self.buffer = VideoRingBuffer(
+                name=self.buffer_name, 
+                create=False,
+                fps=RECORDING_FPS,
+                duration_seconds=RINGBUFFER_DURATION
+            )
+            logger.info(f"已连接到缓冲区: {self.buffer_name} (fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={self.buffer.capacity})")
 
             # 注销资源跟踪器(避免进程退出时的警告)
             shm_name = self.buffer_name if os.name == 'nt' else f"/{self.buffer_name}"
