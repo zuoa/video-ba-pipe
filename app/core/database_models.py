@@ -48,6 +48,9 @@ class Task(BaseModel):
     source_code = pw.CharField(max_length=255, unique=True)
     source_name = pw.CharField(max_length=255, null=True)
     source_url = pw.TextField()
+    source_decode_width = pw.IntegerField(default=960)
+    source_decode_height = pw.IntegerField(default=540)
+    source_fps = pw.IntegerField(default=10)
     buffer_name = pw.CharField(max_length=255, default='video_buffer')
 
     status = pw.CharField(default='STOPPED')

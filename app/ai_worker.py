@@ -39,10 +39,11 @@ def main(args):
     buffer = VideoRingBuffer(
         name=buffer_name, 
         create=False,
-        fps=RECORDING_FPS,
+        frame_shape=(task.source_decode_height, task.source_decode_width, 3),  # 使用任务的宽高参数
+        fps=task.source_fps,  # 使用任务的FPS参数
         duration_seconds=RINGBUFFER_DURATION
     )
-    logger.info(f"已连接到缓冲区: {buffer_name} (fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity})")
+    logger.info(f"已连接到缓冲区: {buffer_name} (fps={task.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}, frame_shape={buffer.frame_shape})")
 
     shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
     resource_tracker.unregister(shm_name, 'shared_memory')

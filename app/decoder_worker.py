@@ -64,18 +64,30 @@ class DecoderWorker:
         self.last_snapshot_time = 0
         self.snapshot_interval = SNAPSHOT_INTERVAL
 
-    def setup(self):
+    def setup(self, task=None):
         """初始化所有组件"""
         try:
             # 连接到共享内存缓冲区（必须使用与创建时相同的参数）
             from app.config import RINGBUFFER_DURATION, RECORDING_FPS
+            
+            # 如果提供了task参数，使用task的参数，否则使用默认配置
+            if task:
+                fps = task.source_fps
+                frame_shape = (task.source_decode_height, task.source_decode_width, 3)
+                logger.info(f"使用任务参数: fps={fps}, frame_shape={frame_shape}")
+            else:
+                fps = RECORDING_FPS
+                frame_shape = (1080, 1920, 3)  # 默认形状
+                logger.info(f"使用默认配置: fps={fps}, frame_shape={frame_shape}")
+            
             self.buffer = VideoRingBuffer(
                 name=self.buffer_name, 
                 create=False,
-                fps=RECORDING_FPS,
+                frame_shape=frame_shape,
+                fps=fps,
                 duration_seconds=RINGBUFFER_DURATION
             )
-            logger.info(f"已连接到缓冲区: {self.buffer_name} (fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={self.buffer.capacity})")
+            logger.info(f"已连接到缓冲区: {self.buffer_name} (fps={fps}, duration={RINGBUFFER_DURATION}s, capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape})")
 
             # 注销资源跟踪器(避免进程退出时的警告)
             shm_name = self.buffer_name if os.name == 'nt' else f"/{self.buffer_name}"
@@ -96,8 +108,17 @@ class DecoderWorker:
             # 初始化解码器
             decoder_type = self.decoder_config.get('type', 'ffmpeg_sw')
             decoder_id = self.decoder_config.get('id', 401)
-            width = self.decoder_config.get('width', 1920)
-            height = self.decoder_config.get('height', 1080)
+            
+            # 如果提供了task参数，使用task的宽高参数，否则使用配置参数
+            if task:
+                width = task.source_decode_width
+                height = task.source_decode_height
+                logger.info(f"使用任务解码参数: width={width}, height={height}")
+            else:
+                width = self.decoder_config.get('width', 1920)
+                height = self.decoder_config.get('height', 1080)
+                logger.info(f"使用配置解码参数: width={width}, height={height}")
+            
             input_format = self.decoder_config.get('input_format', 'h264')
             output_format = self.decoder_config.get('output_format', 'rgb24')
 
@@ -358,7 +379,7 @@ def main(args):
     signal.signal(signal.SIGTERM, worker.signal_handler)
 
     try:
-        worker.setup()
+        worker.setup(task=task)  # 传递task参数
         worker.start()
     except Exception as e:
         logger.error(f"工作进程异常退出: {e}", exc_info=True)

@@ -19,25 +19,28 @@ class Orchestrator:
     def _start_task(self, task: Task):
         print(f"  -> 正在启动任务 ID {task.id}: {task.name}")
 
-        # 创建共享内存环形缓冲区（使用配置的FPS和时长）
+        # 创建共享内存环形缓冲区（使用任务参数）
         task_buffer_name = f"{task.buffer_name}.{task.id}"
         buffer = VideoRingBuffer(
             name=task_buffer_name, 
             create=True,
-            fps=RECORDING_FPS,  # 使用录制帧率
+            frame_shape=(task.source_decode_height, task.source_decode_width, 3),  # 使用任务的宽高参数
+            fps=task.source_fps,  # 使用任务的FPS参数
             duration_seconds=RINGBUFFER_DURATION  # 使用配置的缓冲时长
         )
         self.buffers[task.id] = buffer
         
-        logger.info(f"创建RingBuffer: fps={RECORDING_FPS}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧")
+        logger.info(f"创建RingBuffer: fps={task.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
 
-        # 启动解码器工作进程（使用fps采样模式）
+        # 启动解码器工作进程（使用fps采样模式和任务参数）
         decoder_args = [
             'python', 'decoder_worker.py', 
             '--url', task.source_url,  
             '--task-id', str(task.id), 
             '--sample-mode', 'fps',  # 改为fps模式
-            '--sample-fps', str(RECORDING_FPS)  # 使用配置的录制帧率
+            '--sample-fps', str(task.source_fps),  # 使用任务的FPS参数
+            '--width', str(task.source_decode_width),  # 使用任务的宽度参数
+            '--height', str(task.source_decode_height)  # 使用任务的高度参数
         ]
         logger.info(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
