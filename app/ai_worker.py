@@ -22,6 +22,7 @@ from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.window_detector import get_window_detector
 from app.plugin_manager import PluginManager
 
 
@@ -62,6 +63,9 @@ def main(args):
 
     # 1. 初始化插件管理器
     plugin_manager = PluginManager()
+    
+    # 1.5 初始化时间窗口检测器
+    window_detector = get_window_detector()
 
     # 2. 从数据库获取此工作者被指定的算法配置
     algo_id_list = args.algo_ids.split(',')
@@ -93,6 +97,10 @@ def main(args):
         algorithms[algo_id] = algorithm
 
         algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
+    
+    # 加载所有算法的时间窗口配置
+    for algo_id in algorithms.keys():
+        window_detector.load_config(task_id, algo_id)
 
     # 为每个算法维护处理时间和告警时间
     algo_last_process_time = {algo_id: 0 for algo_id in algorithms.keys()}
@@ -156,19 +164,58 @@ def main(args):
                     try:
                         # 获取算法的处理结果
                         result = future.result()
-                        logger.info(f"[AIWorker] 收到来自算法 {algo_id} 的处理结果。")
+                        has_detection = bool(result and result.get("detections"))
+                        
+                        # 记录检测结果到时间窗口（无论是否检测到都记录）
+                        window_detector.add_record(
+                            task_id=task_id,
+                            algorithm_id=algo_id,
+                            timestamp=frame_timestamp,
+                            has_detection=has_detection
+                        )
+                        
+                        logger.info(f"[AIWorker] 收到来自算法 {algo_id} 的处理结果，检测到目标: {has_detection}")
 
                         # 根据结果进行后续操作，例如可视化
-                        if result and result.get("detections"):
+                        if has_detection:
                             
                             # 记录触发时间
                             trigger_time = time.time()
+                            
+                            # 检查时间窗口条件
+                            window_passed, window_stats = window_detector.check_condition(
+                                task_id=task_id,
+                                algorithm_id=algo_id,
+                                current_time=trigger_time
+                            )
+                            
+                            if not window_passed:
+                                # 未满足窗口条件，不触发告警
+                                if window_stats:
+                                    logger.info(
+                                        f"[AIWorker] 算法 {algo_id} 检测到目标，但窗口条件未满足 "
+                                        f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
+                                        f"比例: {window_stats['detection_ratio']:.2%}, "
+                                        f"连续: {window_stats['max_consecutive']} 次)，跳过本次告警"
+                                    )
+                                else:
+                                    logger.info(f"[AIWorker] 算法 {algo_id} 检测到目标，但窗口条件未满足，跳过本次告警")
+                                continue
+                            
+                            # 满足窗口条件，记录日志
+                            if window_stats:
+                                logger.info(
+                                    f"[AIWorker] 算法 {algo_id} 满足窗口条件 "
+                                    f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
+                                    f"比例: {window_stats['detection_ratio']:.2%}, "
+                                    f"连续: {window_stats['max_consecutive']} 次)"
+                                )
                             
                             # 告警抑制检查
                             time_since_last_alert = trigger_time - algo_last_alert_time[algo_id]
                             if time_since_last_alert < ALERT_SUPPRESSION_DURATION:
                                 logger.info(
-                                    f"[AIWorker] 算法 {algo_id} 检测到目标，但处于告警抑制期 "
+                                    f"[AIWorker] 算法 {algo_id} 满足窗口条件，但处于告警抑制期 "
                                     f"(距上次告警 {time_since_last_alert:.1f}秒，需 {ALERT_SUPPRESSION_DURATION}秒)，跳过本次告警"
                                 )
                                 continue

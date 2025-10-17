@@ -69,14 +69,14 @@
                 </div>
 
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">源代码 *</label>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">视频源编码 *</label>
                     <input type="text" id="sourceCode" required class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
                 </div>
             </div>
 
             <div class="grid grid-cols-2 gap-6">
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">源名称</label>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">视频源名称</label>
                     <input type="text" id="sourceName" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
                 </div>
 
@@ -86,9 +86,74 @@
                 </div>
             </div>
 
+            <!-- 解码配置 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
+                    <i class="fas fa-cog mr-2 text-gray-700"></i>
+                    解码配置
+                </h4>
+                
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">
+                            解码宽度
+                            <span class="text-gray-500 font-normal">视频解码宽度</span>
+                        </label>
+                        <input type="number" id="sourceDecodeWidth" value="960" min="160" max="4096" step="16" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">
+                            解码高度
+                            <span class="text-gray-500 font-normal">视频解码高度</span>
+                        </label>
+                        <input type="number" id="sourceDecodeHeight" value="540" min="90" max="2160" step="16" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">
+                            解码帧率
+                            <span class="text-gray-500 font-normal">解码输出帧率</span>
+                        </label>
+                        <input type="number" id="sourceFps" value="10" min="1" max="60" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
+                    <div class="flex items-start">
+                        <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                        <div class="text-xs text-blue-700">
+                            <p class="font-semibold mb-1">解码配置说明：</p>
+                            <div class="space-y-1">
+                                <p><strong>宽度/高度：</strong>建议设置为16的倍数，以优化解码性能</p>
+                                <p><strong>帧率：</strong>较低的帧率可减少CPU/GPU负载，提高处理效率</p>
+                                <p><strong>预设：</strong>720p@10fps, 1080p@8fps, 480p@15fps</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">源地址 *</label>
-                <input type="text" id="sourceUrl" required class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
+                <div class="flex space-x-2">
+                    <input type="text" id="sourceUrl" required class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
+                    <button type="button" onclick="detectStreamInfo()" id="detectBtn" class="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-search" id="detectIcon"></i>
+                        <span id="detectText">检测</span>
+                    </button>
+                </div>
+                <div id="streamInfo" class="mt-2 hidden">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="flex items-center space-x-2 text-sm">
+                            <i class="fas fa-info-circle text-blue-500"></i>
+                            <span class="text-blue-700 font-medium">流信息：</span>
+                            <span id="streamResolution" class="text-blue-600"></span>
+                            <span class="text-blue-500">|</span>
+                            <span id="streamFps" class="text-blue-600"></span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="grid grid-cols-2 gap-6">
@@ -115,6 +180,73 @@
                     关联算法
                 </h4>
                 <div id="algorithmsList" class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50 custom-scrollbar">
+                </div>
+            </div>
+
+            <!-- 时间窗口检测配置 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
+                    <i class="fas fa-clock mr-2 text-gray-700"></i>
+                    时间窗口检测配置（误报抑制）
+                </h4>
+                
+                <div class="mb-4">
+                    <label class="flex items-center p-3 bg-white rounded-lg hover:shadow-sm transition-all cursor-pointer border border-gray-200">
+                        <input type="checkbox" id="enableWindowCheck" class="w-5 h-5 text-black border-gray-300 rounded focus:ring-black mr-3" onchange="toggleWindowConfig()">
+                        <div>
+                            <span class="text-gray-700 text-sm font-semibold block">启用时间窗口检测</span>
+                            <span class="text-gray-500 text-xs">在时间窗口内多次检测确认后才触发告警，减少误报</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="windowConfigFields" class="space-y-4 hidden">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                窗口大小（秒）
+                                <span class="text-gray-500 font-normal">在此时间内统计检测</span>
+                            </label>
+                            <input type="number" id="windowSize" value="30" min="5" max="300" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                预警模式
+                                <span class="text-gray-500 font-normal">判断方式</span>
+                            </label>
+                            <select id="windowMode" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm bg-white" onchange="updateThresholdLabel()">
+                                <option value="ratio">占比模式</option>
+                                <option value="count">次数模式</option>
+                                <option value="consecutive">连续模式</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">
+                            <span id="thresholdLabel">预警阈值（检测占比）</span>
+                            <span class="text-gray-500 font-normal" id="thresholdDesc">达到此比例触发告警</span>
+                        </label>
+                        <input type="number" id="windowThreshold" value="0.3" step="0.1" min="0" max="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        <p class="text-xs text-gray-500 mt-1" id="thresholdHint">
+                            占比模式：0-1之间，如0.3表示30%的帧检测到才告警
+                        </p>
+                    </div>
+
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="flex items-start">
+                            <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                            <div class="text-xs text-blue-700">
+                                <p class="font-semibold mb-1">预设模板：</p>
+                                <div class="space-y-1">
+                                    <p><strong>保守模式：</strong>窗口60秒，占比50%（低误报）</p>
+                                    <p><strong>平衡模式：</strong>窗口30秒，占比30%（推荐）</p>
+                                    <p><strong>敏感模式：</strong>窗口20秒，次数3次（快速响应）</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -285,11 +417,64 @@
         `).join('') || '<p class="text-gray-500 text-sm">暂无可用算法</p>';
     }
 
+    function toggleWindowConfig() {
+        const enabled = document.getElementById('enableWindowCheck').checked;
+        const fields = document.getElementById('windowConfigFields');
+        if (enabled) {
+            fields.classList.remove('hidden');
+        } else {
+            fields.classList.add('hidden');
+        }
+    }
+
+    function updateThresholdLabel() {
+        const mode = document.getElementById('windowMode').value;
+        const label = document.getElementById('thresholdLabel');
+        const desc = document.getElementById('thresholdDesc');
+        const hint = document.getElementById('thresholdHint');
+        const input = document.getElementById('windowThreshold');
+        
+        if (mode === 'ratio') {
+            label.textContent = '预警阈值（检测占比）';
+            desc.textContent = '达到此比例触发告警';
+            hint.textContent = '占比模式：0-1之间，如0.3表示30%的帧检测到才告警';
+            input.step = '0.1';
+            input.min = '0';
+            input.max = '1';
+            input.value = '0.3';
+        } else if (mode === 'count') {
+            label.textContent = '预警阈值（检测次数）';
+            desc.textContent = '达到此次数触发告警';
+            hint.textContent = '次数模式：整数，如5表示窗口内检测到5次就告警';
+            input.step = '1';
+            input.min = '1';
+            input.max = '100';
+            input.value = '5';
+        } else if (mode === 'consecutive') {
+            label.textContent = '预警阈值（连续次数）';
+            desc.textContent = '连续检测到此次数触发告警';
+            hint.textContent = '连续模式：整数，如3表示连续3次检测到就告警';
+            input.step = '1';
+            input.min = '1';
+            input.max = '50';
+            input.value = '3';
+        }
+    }
+
     function showCreateModal() {
         document.getElementById('modalTitle').textContent = '添加任务';
         document.getElementById('taskForm').reset();
         document.getElementById('taskId').value = '';
         document.getElementById('enabled').checked = true;
+        document.getElementById('sourceDecodeWidth').value = '960';
+        document.getElementById('sourceDecodeHeight').value = '540';
+        document.getElementById('sourceFps').value = '10';
+        document.getElementById('enableWindowCheck').checked = false;
+        document.getElementById('windowConfigFields').classList.add('hidden');
+        document.getElementById('windowSize').value = '30';
+        document.getElementById('windowMode').value = 'ratio';
+        document.getElementById('windowThreshold').value = '0.3';
+        updateThresholdLabel();
         renderAlgorithmsList();
         document.getElementById('taskModal').classList.remove('hidden');
     }
@@ -304,9 +489,20 @@
         document.getElementById('sourceCode').value = task.source_code;
         document.getElementById('sourceName').value = task.source_name || '';
         document.getElementById('sourceUrl').value = task.source_url;
+        document.getElementById('sourceDecodeWidth').value = task.source_decode_width || 960;
+        document.getElementById('sourceDecodeHeight').value = task.source_decode_height || 540;
+        document.getElementById('sourceFps').value = task.source_fps || 10;
         document.getElementById('bufferName').value = task.buffer_name;
         document.getElementById('enabled').checked = task.enabled;
         document.getElementById('status').value = task.status;
+        
+        // 设置窗口检测配置
+        document.getElementById('enableWindowCheck').checked = task.enable_window_check || false;
+        document.getElementById('windowSize').value = task.window_size || 30;
+        document.getElementById('windowMode').value = task.window_mode || 'ratio';
+        document.getElementById('windowThreshold').value = task.window_threshold || 0.3;
+        updateThresholdLabel();
+        toggleWindowConfig();
 
         const linkedAlgorithms = taskAlgorithms
             .filter(ta => ta.task_id === id)
@@ -329,9 +525,16 @@
             source_code: document.getElementById('sourceCode').value,
             source_name: document.getElementById('sourceName').value || null,
             source_url: document.getElementById('sourceUrl').value,
+            source_decode_width: parseInt(document.getElementById('sourceDecodeWidth').value),
+            source_decode_height: parseInt(document.getElementById('sourceDecodeHeight').value),
+            source_fps: parseInt(document.getElementById('sourceFps').value),
             buffer_name: document.getElementById('bufferName').value,
             enabled: document.getElementById('enabled').checked,
-            status: document.getElementById('status').value
+            status: document.getElementById('status').value,
+            enable_window_check: document.getElementById('enableWindowCheck').checked,
+            window_size: parseInt(document.getElementById('windowSize').value),
+            window_mode: document.getElementById('windowMode').value,
+            window_threshold: parseFloat(document.getElementById('windowThreshold').value)
         };
 
         const selectedAlgorithms = Array.from(document.querySelectorAll('.algorithm-checkbox:checked'))
@@ -427,6 +630,64 @@
             closeImagePreview();
         }
     });
+
+    // 检测流信息功能
+    async function detectStreamInfo() {
+        const url = document.getElementById('sourceUrl').value.trim();
+        if (!url) {
+            showMessage('请先输入源地址', 'warning');
+            return;
+        }
+
+        const detectBtn = document.getElementById('detectBtn');
+        const detectIcon = document.getElementById('detectIcon');
+        const detectText = document.getElementById('detectText');
+        const streamInfo = document.getElementById('streamInfo');
+
+        // 设置按钮为加载状态
+        detectBtn.disabled = true;
+        detectIcon.className = 'fas fa-spinner fa-spin';
+        detectText.textContent = '检测中...';
+
+        try {
+            const response = await fetch('/api/stream/detect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url: url })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // 显示检测结果
+                document.getElementById('streamResolution').textContent = `${result.width}x${result.height}`;
+                document.getElementById('streamFps').textContent = `${result.fps} FPS`;
+                streamInfo.classList.remove('hidden');
+                
+                // 自动填充解码配置（可选）
+                if (confirm('是否使用检测到的流信息自动填充解码配置？')) {
+                    document.getElementById('sourceDecodeWidth').value = result.width;
+                    document.getElementById('sourceDecodeHeight').value = result.height;
+                    document.getElementById('sourceFps').value = Math.min(Math.max(result.fps, 1), 30); // 限制在1-30fps之间
+                }
+                
+                showMessage('流信息检测成功', 'success');
+            } else {
+                showMessage('检测失败: ' + result.error, 'error');
+                streamInfo.classList.add('hidden');
+            }
+        } catch (error) {
+            showMessage('检测失败: ' + error.message, 'error');
+            streamInfo.classList.add('hidden');
+        } finally {
+            // 恢复按钮状态
+            detectBtn.disabled = false;
+            detectIcon.className = 'fas fa-search';
+            detectText.textContent = '检测';
+        }
+    }
 
     loadData();
 </script>

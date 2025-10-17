@@ -3,10 +3,57 @@ import json
 from app.core.database_models import db, Algorithm, Task, TaskAlgorithm, Alert
 
 
+def migrate_window_detection_fields():
+    """迁移：添加时间窗口检测字段"""
+    cursor = db.cursor()
+    
+    # 检查并添加Task表的窗口检测字段
+    task_fields_to_add = [
+        ('enable_window_check', 'INTEGER DEFAULT 0'),
+        ('window_size', 'INTEGER DEFAULT 30'),
+        ('window_mode', 'VARCHAR(20) DEFAULT "ratio"'),
+        ('window_threshold', 'REAL DEFAULT 0.3'),
+    ]
+    
+    for field_name, field_def in task_fields_to_add:
+        try:
+            cursor.execute(f'ALTER TABLE task ADD COLUMN {field_name} {field_def}')
+            print(f"已添加 Task.{field_name} 字段")
+        except Exception as e:
+            if 'duplicate column name' in str(e).lower():
+                pass  # 字段已存在，跳过
+            else:
+                print(f"添加 Task.{field_name} 字段时出错: {e}")
+    
+    # 检查并添加TaskAlgorithm表的窗口检测字段
+    task_algo_fields_to_add = [
+        ('enable_window_check', 'INTEGER'),
+        ('window_size', 'INTEGER'),
+        ('window_mode', 'VARCHAR(20)'),
+        ('window_threshold', 'REAL'),
+    ]
+    
+    for field_name, field_def in task_algo_fields_to_add:
+        try:
+            cursor.execute(f'ALTER TABLE taskalgorithm ADD COLUMN {field_name} {field_def}')
+            print(f"已添加 TaskAlgorithm.{field_name} 字段")
+        except Exception as e:
+            if 'duplicate column name' in str(e).lower():
+                pass  # 字段已存在，跳过
+            else:
+                print(f"添加 TaskAlgorithm.{field_name} 字段时出错: {e}")
+    
+    db.commit()
+    print("时间窗口检测字段迁移完成")
+
+
 def setup_database():
     # 连接数据库并创建表
     db.connect()
     db.create_tables([Algorithm, Task, TaskAlgorithm, Alert], safe=True)
+    
+    # 迁移：添加时间窗口检测字段（如果不存在）
+    migrate_window_detection_fields()
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
     # 这样脚本就可以重复运行而不会出错

@@ -6,6 +6,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 from werkzeug.utils import secure_filename
+import subprocess
+import json
+import threading
+import time
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 
@@ -13,6 +17,7 @@ from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
 from app.plugin_manager import PluginManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.window_detector import get_window_detector
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
@@ -233,6 +238,9 @@ def get_tasks():
         'source_code': t.source_code,
         'source_name': t.source_name,
         'source_url': t.source_url,
+        'source_decode_width': t.source_decode_width,
+        'source_decode_height': t.source_decode_height,
+        'source_fps': t.source_fps,
         'buffer_name': t.buffer_name,
         'status': t.status,
         'decoder_pid': t.decoder_pid,
@@ -250,10 +258,17 @@ def get_task(id):
             'source_code': task.source_code,
             'source_name': task.source_name,
             'source_url': task.source_url,
+            'source_decode_width': task.source_decode_width,
+            'source_decode_height': task.source_decode_height,
+            'source_fps': task.source_fps,
             'buffer_name': task.buffer_name,
             'status': task.status,
             'decoder_pid': task.decoder_pid,
-            'ai_pid': task.ai_pid
+            'ai_pid': task.ai_pid,
+            'enable_window_check': task.enable_window_check,
+            'window_size': task.window_size,
+            'window_mode': task.window_mode,
+            'window_threshold': task.window_threshold
         })
     except Task.DoesNotExist:
         return jsonify({'error': 'Task not found'}), 404
@@ -268,10 +283,17 @@ def create_task():
             source_code=data['source_code'],
             source_name=data.get('source_name'),
             source_url=data['source_url'],
+            source_decode_width=data.get('source_decode_width', 960),
+            source_decode_height=data.get('source_decode_height', 540),
+            source_fps=data.get('source_fps', 10),
             buffer_name=data.get('buffer_name', 'video_buffer'),
             status=data.get('status', 'STOPPED'),
             decoder_pid=data.get('decoder_pid'),
-            ai_pid=data.get('ai_pid')
+            ai_pid=data.get('ai_pid'),
+            enable_window_check=data.get('enable_window_check', False),
+            window_size=data.get('window_size', 30),
+            window_mode=data.get('window_mode', 'ratio'),
+            window_threshold=data.get('window_threshold', 0.3)
         )
         return jsonify({'id': task.id, 'message': 'Task created'}), 201
     except Exception as e:
@@ -287,11 +309,29 @@ def update_task(id):
         task.source_code = data.get('source_code', task.source_code)
         task.source_name = data.get('source_name', task.source_name)
         task.source_url = data.get('source_url', task.source_url)
+        task.source_decode_width = data.get('source_decode_width', task.source_decode_width)
+        task.source_decode_height = data.get('source_decode_height', task.source_decode_height)
+        task.source_fps = data.get('source_fps', task.source_fps)
         task.buffer_name = data.get('buffer_name', task.buffer_name)
         task.status = data.get('status', task.status)
         task.decoder_pid = data.get('decoder_pid', task.decoder_pid)
         task.ai_pid = data.get('ai_pid', task.ai_pid)
+        task.enable_window_check = data.get('enable_window_check', task.enable_window_check)
+        task.window_size = data.get('window_size', task.window_size)
+        task.window_mode = data.get('window_mode', task.window_mode)
+        task.window_threshold = data.get('window_threshold', task.window_threshold)
         task.save()
+        
+        # 通知WindowDetector重新加载配置
+        try:
+            window_detector = get_window_detector()
+            # 为该任务的所有算法重新加载配置
+            task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.task == id)
+            for ta in task_algorithms:
+                window_detector.reload_config(id, str(ta.algorithm.id))
+        except Exception as e:
+            app.logger.warning(f"重新加载窗口配置失败: {e}")
+        
         return jsonify({'message': 'Task updated'})
     except Task.DoesNotExist:
         return jsonify({'error': 'Task not found'}), 404
@@ -434,6 +474,89 @@ def get_today_alerts_count():
     ).count()
     
     return jsonify({'count': count})
+
+# ========== 时间窗口检测API ==========
+
+@app.route('/api/window/stats/<int:task_id>/<algorithm_id>', methods=['GET'])
+def get_window_stats(task_id, algorithm_id):
+    """获取指定任务和算法的窗口统计信息"""
+    try:
+        window_detector = get_window_detector()
+        stats = window_detector.get_stats(task_id, algorithm_id)
+        
+        # 判断当前状态
+        if stats['config']['enable']:
+            mode = stats['config']['mode']
+            threshold = stats['config']['threshold']
+            
+            if mode == 'count':
+                passed = stats['detection_count'] >= threshold
+            elif mode == 'ratio':
+                passed = stats['detection_ratio'] >= threshold
+            elif mode == 'consecutive':
+                passed = stats['max_consecutive'] >= threshold
+            else:
+                passed = False
+            
+            stats['status'] = 'above_threshold' if passed else 'below_threshold'
+        else:
+            stats['status'] = 'disabled'
+        
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/window/stats/<int:task_id>', methods=['GET'])
+def get_task_window_stats(task_id):
+    """获取指定任务的所有算法窗口统计信息"""
+    try:
+        window_detector = get_window_detector()
+        
+        # 获取该任务的所有算法
+        task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.task == task_id)
+        
+        result = []
+        for ta in task_algorithms:
+            algorithm_id = str(ta.algorithm.id)
+            stats = window_detector.get_stats(task_id, algorithm_id)
+            
+            # 添加算法信息
+            stats['algorithm_id'] = ta.algorithm.id
+            stats['algorithm_name'] = ta.algorithm.name
+            
+            # 判断当前状态
+            if stats['config']['enable']:
+                mode = stats['config']['mode']
+                threshold = stats['config']['threshold']
+                
+                if mode == 'count':
+                    passed = stats['detection_count'] >= threshold
+                elif mode == 'ratio':
+                    passed = stats['detection_ratio'] >= threshold
+                elif mode == 'consecutive':
+                    passed = stats['max_consecutive'] >= threshold
+                else:
+                    passed = False
+                
+                stats['status'] = 'above_threshold' if passed else 'below_threshold'
+            else:
+                stats['status'] = 'disabled'
+            
+            result.append(stats)
+        
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/window/memory', methods=['GET'])
+def get_window_memory_usage():
+    """获取窗口检测器的内存使用情况"""
+    try:
+        window_detector = get_window_detector()
+        memory_info = window_detector.get_memory_usage()
+        return jsonify(memory_info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ========== 图片服务接口 ==========
 
@@ -592,6 +715,164 @@ def get_video(file_path):
     except Exception as e:
         app.logger.error(f"Error serving video {file_path}: {str(e)}")
         abort(500, description="Internal server error")
+
+# ========== 流检测API ==========
+
+@app.route('/api/stream/detect', methods=['POST'])
+def detect_stream_info():
+    """检测视频流的分辨率和帧率"""
+    try:
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({'success': False, 'error': '缺少URL参数'}), 400
+        
+        # 使用ffprobe检测流信息
+        try:
+            # 根据URL类型构建不同的ffprobe命令
+            if url.startswith('rtsp://'):
+                # RTSP流需要特殊参数
+                cmd = [
+                    'ffprobe',
+                    '-print_format', 'json',
+                    '-show_streams',
+                    '-select_streams', 'v:0',
+                    '-rtsp_transport', 'tcp',  # 使用TCP传输
+                    '-timeout', '5000000',   # 5秒超时（微秒）
+                    '-analyzeduration', '2000000',  # 分析时长2秒
+                    '-probesize', '2000000',  # 探测大小2MB
+                    url
+                ]
+            elif url.startswith('rtmp://'):
+                # RTMP流
+                cmd = [
+                    'ffprobe',
+                    '-v', 'quiet',
+                    '-print_format', 'json',
+                    '-show_streams',
+                    '-select_streams', 'v:0',
+                    '-analyzeduration', '1000000',
+                    '-probesize', '1000000',
+                    url
+                ]
+            else:
+                # HTTP/HTTPS/文件等其他类型
+                cmd = [
+                    'ffprobe',
+                    '-v', 'quiet',
+                    '-print_format', 'json',
+                    '-show_streams',
+                    '-select_streams', 'v:0',
+                    '-analyzeduration', '2000000',  # 分析时长2秒
+                    '-probesize', '2000000',  # 探测大小2MB
+                    url
+                ]
+            
+            # 设置超时时间（15秒，给RTSP流更多时间）
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=15,
+                check=False  # 不自动抛出异常，我们手动处理
+            )
+            
+            # 检查stderr是否有错误信息
+            if result.returncode != 0:
+                error_output = result.stderr.strip() if result.stderr else '未知错误'
+                app.logger.error(f"ffprobe失败 (返回码 {result.returncode}): {error_output}")
+                
+                # 解析常见错误并提供更友好的提示
+                if '503 ServerUnavailable' in error_output:
+                    return jsonify({'success': False, 'error': 'RTSP服务器不可用（503），请检查摄像头是否在线或是否被其他客户端占用'}), 400
+                elif '401 Unauthorized' in error_output or 'Authentication' in error_output:
+                    return jsonify({'success': False, 'error': '认证失败，请检查用户名和密码是否正确'}), 400
+                elif 'Connection refused' in error_output:
+                    return jsonify({'success': False, 'error': '连接被拒绝，请检查IP地址和端口是否正确'}), 400
+                elif 'Connection timed out' in error_output or 'timeout' in error_output.lower():
+                    return jsonify({'success': False, 'error': '连接超时，请检查网络连接或摄像头是否可达'}), 400
+                elif 'No route to host' in error_output:
+                    return jsonify({'success': False, 'error': '无法到达主机，请检查网络配置'}), 400
+                else:
+                    return jsonify({'success': False, 'error': f'ffprobe执行失败: {error_output}'}), 400
+            
+            # 解析JSON输出
+            if not result.stdout.strip():
+                return jsonify({'success': False, 'error': 'ffprobe未返回任何数据，请检查URL是否正确'}), 400
+                
+            probe_data = json.loads(result.stdout)
+            
+            # 调试信息
+            app.logger.info(f"ffprobe成功，流数量: {len(probe_data.get('streams', []))}")
+            if result.stderr:
+                app.logger.debug(f"ffprobe stderr: {result.stderr}")
+            
+            if not probe_data.get('streams'):
+                # 如果没有找到视频流，尝试获取所有流信息
+                if probe_data.get('format'):
+                    format_info = probe_data['format']
+                    return jsonify({
+                        'success': False, 
+                        'error': f'未找到视频流。格式信息: {format_info.get("format_name", "unknown")}, 时长: {format_info.get("duration", "unknown")}秒'
+                    }), 400
+                else:
+                    return jsonify({'success': False, 'error': '无法解析流信息，请检查URL是否可访问'}), 400
+            
+            stream = probe_data['streams'][0]
+            
+            # 提取分辨率和帧率信息
+            width = stream.get('width', 0)
+            height = stream.get('height', 0)
+            
+            # 尝试获取帧率
+            fps = 0
+            if 'r_frame_rate' in stream:
+                # 解析分数形式的帧率，如 "30/1"
+                fps_str = stream['r_frame_rate']
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    fps = float(fps_str)
+            
+            # 如果无法获取帧率，尝试使用avg_frame_rate
+            if fps == 0 and 'avg_frame_rate' in stream:
+                fps_str = stream['avg_frame_rate']
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    fps = float(fps_str)
+            
+            # 如果仍然无法获取帧率，尝试使用fps
+            if fps == 0 and 'fps' in stream:
+                fps = float(stream['fps'])
+            
+            if width == 0 or height == 0:
+                return jsonify({'success': False, 'error': '无法获取视频分辨率'}), 400
+            
+            return jsonify({
+                'success': True,
+                'width': int(width),
+                'height': int(height),
+                'fps': round(fps, 2) if fps > 0 else 0,
+                'codec': stream.get('codec_name', 'unknown'),
+                'duration': stream.get('duration', 0)
+            })
+            
+        except subprocess.TimeoutExpired:
+            return jsonify({'success': False, 'error': '检测超时（15秒），请检查URL是否可访问或网络连接是否正常'}), 400
+        except FileNotFoundError:
+            return jsonify({'success': False, 'error': 'ffprobe未安装，请安装FFmpeg: brew install ffmpeg'}), 400
+        except json.JSONDecodeError as e:
+            return jsonify({'success': False, 'error': f'解析ffprobe输出失败: {str(e)}'}), 400
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'检测过程中发生错误: {str(e)}'}), 400
+            
+    except Exception as e:
+        app.logger.error(f"流检测失败: {str(e)}")
+        return jsonify({'success': False, 'error': f'检测失败: {str(e)}'}), 500
 
 # ========== 管理后台页面路由 ==========
 
