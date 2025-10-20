@@ -414,7 +414,10 @@ def get_alerts():
             'alert_message': a.alert_message,
             'alert_image': a.alert_image,
             'alert_image_ori': a.alert_image_ori,
-            'alert_video': a.alert_video
+            'alert_video': a.alert_video,
+            'detection_count': a.detection_count,
+            'window_stats': a.window_stats,
+            'detection_images': a.detection_images
         } for a in alerts],
         'pagination': {
             'page': page,

@@ -254,9 +254,10 @@ class DecoderWorker:
                             written_count += 1
                             error_count = 0  # 重置错误计数
 
-                            logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
-
-                            self.snapshot(frame)
+                            # logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
+                            if frame_count % 100 == 0:
+                                logger.info(f"已解码 {frame_count} 帧, 写入 {written_count} 帧, 跳过 {skipped_count} 帧")
+                                self.snapshot(frame)
                         else:
                             skipped_count += 1
 

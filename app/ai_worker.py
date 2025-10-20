@@ -166,13 +166,45 @@ def main(args):
                         result = future.result()
                         has_detection = bool(result and result.get("detections"))
                         
-                        # 记录检测结果到时间窗口（无论是否检测到都记录）
-                        window_detector.add_record(
-                            task_id=task_id,
-                            algorithm_id=algo_id,
-                            timestamp=frame_timestamp,
-                            has_detection=has_detection
-                        )
+                        # 检查是否启用了窗口检测，只有启用时才记录
+                        window_config = window_detector.configs.get((task_id, algo_id))
+                        if window_config is None:
+                            window_detector.load_config(task_id, algo_id)
+                            window_config = window_detector.configs.get((task_id, algo_id))
+                        
+                        # 获取算法名称和标签颜色（在条件判断之前定义，确保后续代码可以访问）
+                        algorithm_name = algorithm_datamap[algo_id].get('name')
+                        label_color = algorithm_datamap[algo_id].get('label_color', '#FF0000')
+                        
+                        # 只有启用窗口检测时才记录检测结果
+                        if window_config and window_config.get('enable', False):
+                            # 如果检测到目标，先保存图片
+                            image_path = None
+                            if has_detection:
+                                
+                                # 生成图片路径
+                                img_path = f"{source_code}/{algorithm_name}/det_{int(frame_timestamp)}.jpg"
+                                img_path_absolute = os.path.join(FRAME_SAVE_PATH, img_path)
+                                
+                                # 保存检测图片
+                                algorithms[algo_id].visualize(latest_frame, result.get("detections"), 
+                                                            save_path=img_path_absolute, label_color=label_color)
+                                
+                                # 保存原始图片
+                                img_ori_path = f"{img_path}.ori.jpg"
+                                img_ori_path_absolute = os.path.join(FRAME_SAVE_PATH, img_ori_path)
+                                save_frame(latest_frame, img_ori_path_absolute)
+                                
+                                image_path = img_path
+                                logger.info(f"[AIWorker] 检测到目标，已保存图片: {img_path}")
+                            
+                            window_detector.add_record(
+                                task_id=task_id,
+                                algorithm_id=algo_id,
+                                timestamp=frame_timestamp,
+                                has_detection=has_detection,
+                                image_path=image_path
+                            )
                         
                         logger.info(f"[AIWorker] 收到来自算法 {algo_id} 的处理结果，检测到目标: {has_detection}")
 
@@ -223,28 +255,92 @@ def main(args):
                             # 更新最后告警时间
                             algo_last_alert_time[algo_id] = trigger_time
 
-                            # 检测目标可视化并保存
-                            filepath = f"{source_code}/{algorithm_datamap[algo_id].get('name')}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
-                            filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
-                            label_color = algorithm_datamap[algo_id].get('label_color', '#FF0000')
-                            algorithms[algo_id].visualize(latest_frame, result.get("detections"), save_path=filepath_absolute, label_color=label_color)
+                            # 获取窗口内的检测记录
+                            detection_records = window_detector.get_detection_records(
+                                task_id=task_id,
+                                algorithm_id=algo_id,
+                                current_time=trigger_time
+                            )
+                            
+                            logger.info(f"[AIWorker] 窗口内检测到 {len(detection_records)} 次目标")
 
-                            # 保存原始图片
-                            filepath_ori = f"{filepath}.ori.jpg"
-                            filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
-                            save_frame(latest_frame, filepath_ori_absolute)
+                            # 构建检测序列图片信息
+                            detection_images = []
+                            
+                            # 使用已保存的检测图片路径
+                            for i, (timestamp, has_detection, image_path) in enumerate(detection_records):
+                                if has_detection and image_path:
+                                    # 构建原始图片路径
+                                    img_ori_path = f"{image_path}.ori.jpg"
+                                    
+                                    detection_images.append({
+                                        'image_path': image_path,
+                                        'image_ori_path': img_ori_path,
+                                        'timestamp': timestamp,
+                                        'detection_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+                                    })
+                            
+                            # 如果没有检测记录，保存当前检测
+                            if not detection_images:
+                                filepath = f"{source_code}/{algorithm_name}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+                                filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
+                                algorithms[algo_id].visualize(latest_frame, result.get("detections"), 
+                                                            save_path=filepath_absolute, label_color=label_color)
+                                
+                                filepath_ori = f"{filepath}.ori.jpg"
+                                filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
+                                save_frame(latest_frame, filepath_ori_absolute)
+                                
+                                detection_images.append({
+                                    'image_path': filepath,
+                                    'image_ori_path': filepath_ori,
+                                    'timestamp': frame_timestamp
+                                })
+
+                            # 构建alert_message，包含时间窗口检测信息
+                            alert_message = ""
+                            if window_stats:
+                                # 时间窗口检测启用且通过，记录详细信息
+                                window_config = window_detector.configs.get((task_id, algo_id), {})
+                                window_mode = window_config.get('mode', 'unknown')
+                                window_threshold = window_config.get('threshold', 0)
+                                window_size = window_config.get('window_size', 0)
+                                
+                                # 构建时间窗口检测信息
+                                window_info = (
+                                    f"时间窗口检测通过 - "
+                                    f"模式: {window_mode}, "
+                                    f"阈值: {window_threshold}, "
+                                    f"窗口大小: {window_size}秒, "
+                                    f"检测帧数: {window_stats['detection_count']}/{window_stats['total_count']}, "
+                                    f"检测比例: {window_stats['detection_ratio']:.2%}, "
+                                    f"最大连续: {window_stats['max_consecutive']}次"
+                                )
+                                alert_message = window_info
+                                logger.info(f"[AIWorker] 记录时间窗口检测信息到alert_message: {alert_message}")
+                            else:
+                                # 时间窗口检测未启用，不记录信息（保持为空）
+                                alert_message = ""
+                                logger.info(f"[AIWorker] 时间窗口检测未启用，alert_message保持为空")
 
                             # 创建Alert记录
+                            import json
+                            main_image = detection_images[-1]['image_path'] if detection_images else ""
+                            main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
+                            
                             alert = Alert.create(
                                 task=task,
                                 alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
                                 alert_type=algorithm_datamap[algo_id].get('name'),
-                                alert_message='',
-                                alert_image=filepath,
-                                alert_image_ori=filepath_ori,
+                                alert_message=alert_message,
+                                alert_image=main_image,
+                                alert_image_ori=main_image_ori,
                                 alert_video="",
+                                detection_count=len(detection_images),
+                                window_stats=json.dumps(window_stats) if window_stats else None,
+                                detection_images=json.dumps(detection_images) if detection_images else None
                             )
-                            logger.info(f"[AIWorker] 算法 {algo_id} 触发警报，结果已保存到 {filepath}。")
+                            logger.info(f"[AIWorker] 算法 {algo_id} 触发警报，检测序列包含 {len(detection_images)} 张图片。")
 
                             # 启动视频录制（如果启用）
                             if video_recorder:

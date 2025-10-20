@@ -705,6 +705,16 @@
                         <p class="text-sm text-gray-600 line-clamp-2 leading-relaxed">${a.alert_message}</p>
                     </div>
                     
+                    <!-- 时间窗口检测信息 -->
+                    ${a.detection_count > 1 ? `
+                    <div class="mb-4">
+                        <div class="flex items-center px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                            <i class="fas fa-layer-group text-blue-600 mr-2"></i>
+                            <span class="text-sm font-medium text-blue-800">时间窗口检测: ${a.detection_count} 次检测</span>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
                     <!-- 底部信息 -->
                     <div class="flex items-center justify-between pt-3 border-t border-gray-100">
                         <div class="flex items-center text-xs text-gray-500">
@@ -794,6 +804,52 @@
                 </h5>
                 <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">${alert.alert_message}</p>
             </div>
+
+            ${alert.detection_count > 1 ? `
+            <div class="bg-blue-50 rounded-2xl p-6 mb-6 border border-blue-200">
+                <h5 class="font-bold text-blue-800 mb-4 flex items-center">
+                    <i class="fas fa-layer-group mr-2 text-blue-600"></i>
+                    时间窗口检测 (${alert.detection_count} 次检测)
+                </h5>
+                ${alert.window_stats ? `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div class="bg-white rounded-lg p-3 border border-blue-200">
+                        <div class="text-sm text-blue-600 font-medium">检测帧数</div>
+                        <div class="text-lg font-bold text-blue-800">${JSON.parse(alert.window_stats).detection_count}/${JSON.parse(alert.window_stats).total_count}</div>
+                    </div>
+                    <div class="bg-white rounded-lg p-3 border border-blue-200">
+                        <div class="text-sm text-blue-600 font-medium">检测比例</div>
+                        <div class="text-lg font-bold text-blue-800">${(JSON.parse(alert.window_stats).detection_ratio * 100).toFixed(1)}%</div>
+                    </div>
+                    <div class="bg-white rounded-lg p-3 border border-blue-200">
+                        <div class="text-sm text-blue-600 font-medium">最大连续</div>
+                        <div class="text-lg font-bold text-blue-800">${JSON.parse(alert.window_stats).max_consecutive} 次</div>
+                    </div>
+                </div>
+                ` : ''}
+                ${alert.detection_images ? `
+                <div class="mt-4">
+                    <h6 class="text-sm font-semibold text-blue-700 mb-3">检测图片序列</h6>
+                    <div class="grid grid-cols-8  gap-3">
+                        ${JSON.parse(alert.detection_images).map((img, index) => {
+                            const detectionTime = img.detection_time || new Date(img.timestamp * 1000).toLocaleString('zh-CN');
+                            return `
+                        <div class="bg-white rounded-lg p-2 border border-blue-200 hover:shadow-md transition-shadow">
+                            <img src="/api/image/frames/${img.image_path}" alt="检测 ${index + 1}" 
+                                 class="w-full h-24 object-cover rounded cursor-pointer hover:opacity-90 transition-opacity"
+                                 onclick="openImageViewer('/api/image/frames/${img.image_path}')">
+                            <div class="text-xs text-blue-600 mt-1 text-center">
+                                <div class="font-medium">第${index + 1}次检测</div>
+                                <div class="text-xs text-gray-500 mt-1 truncate" title="${detectionTime}">${detectionTime}</div>
+                            </div>
+                        </div>
+                        `;
+                        }).join('')}
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            ` : ''}
 
             ${(alert.alert_image || alert.alert_video) ? `
             <div>

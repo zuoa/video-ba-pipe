@@ -91,3 +91,8 @@ class Alert(BaseModel):
     alert_image = pw.TextField(null=True)
     alert_image_ori = pw.TextField(null=True)
     alert_video = pw.TextField(null=True)
+    
+    # 检测序列相关字段
+    detection_count = pw.IntegerField(default=1)  # 本次序列中的检测次数
+    window_stats = pw.TextField(null=True)  # 窗口统计信息（JSON字符串）
+    detection_images = pw.TextField(null=True)  # 历史检测图片路径（JSON数组）

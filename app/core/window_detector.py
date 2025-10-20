@@ -42,18 +42,14 @@ class WindowDetector:
             # 获取Task配置
             task = Task.get_by_id(task_id)
             
-            # 获取TaskAlgorithm配置
-            task_algo = TaskAlgorithm.get(
-                (TaskAlgorithm.task == task_id) & 
-                (TaskAlgorithm.algorithm == algorithm_id)
-            )
+
             
             # 优先使用算法级别配置，NULL则使用Task级别配置
             config = {
-                'enable': task_algo.enable_window_check if task_algo.enable_window_check is not None else task.enable_window_check,
-                'window_size': task_algo.window_size if task_algo.window_size is not None else task.window_size,
-                'mode': task_algo.window_mode if task_algo.window_mode is not None else task.window_mode,
-                'threshold': task_algo.window_threshold if task_algo.window_threshold is not None else task.window_threshold,
+                'enable': task.enable_window_check,
+                'window_size': task.window_size,
+                'mode': task.window_mode,
+                'threshold': task.window_threshold,
             }
             
             self.configs[key] = config
@@ -69,7 +65,7 @@ class WindowDetector:
                 'threshold': 0.3
             }
     
-    def add_record(self, task_id: int, algorithm_id: str, timestamp: float, has_detection: bool):
+    def add_record(self, task_id: int, algorithm_id: str, timestamp: float, has_detection: bool, image_path: str = None):
         """
         添加检测记录（轻量级操作）
         
@@ -78,6 +74,7 @@ class WindowDetector:
             algorithm_id: 算法ID
             timestamp: 帧时间戳
             has_detection: 是否检测到目标
+            image_path: 检测图片路径（仅在检测到目标时提供）
         """
         key = (task_id, algorithm_id)
         
@@ -85,8 +82,9 @@ class WindowDetector:
         if key not in self.buffers:
             self.buffers[key] = deque(maxlen=self.max_records_per_buffer)
         
-        # 添加记录（元组更轻量）
-        self.buffers[key].append((timestamp, has_detection))
+        # 添加记录（包含图片路径）
+        record = (timestamp, has_detection, image_path)
+        self.buffers[key].append(record)
         
         # 清除该算法的缓存
         if key in self.stats_cache:
@@ -167,7 +165,7 @@ class WindowDetector:
         
         # 过滤窗口内的记录
         window_records = [
-            (ts, detected) for ts, detected in records
+            (ts, detected, img_path) for ts, detected, img_path in records
             if ts >= window_start
         ]
         
@@ -176,7 +174,7 @@ class WindowDetector:
         
         # 统计
         total_count = len(window_records)
-        detection_count = sum(1 for _, detected in window_records if detected)
+        detection_count = sum(1 for _, detected, _ in window_records if detected)
         detection_ratio = detection_count / total_count if total_count > 0 else 0
         
         # 计算最大连续检测数
@@ -197,7 +195,7 @@ class WindowDetector:
         max_count = 0
         current_count = 0
         
-        for _, detected in records:
+        for _, detected, _ in records:
             if detected:
                 current_count += 1
                 max_count = max(max_count, current_count)
@@ -289,6 +287,63 @@ class WindowDetector:
             'estimated_memory_mb': round(estimated_memory_mb, 2),
             'cache_count': len(self.stats_cache)
         }
+    
+    def get_window_records(self, task_id: int, algorithm_id: str, current_time: float) -> list:
+        """
+        获取窗口内的所有检测记录
+        
+        Args:
+            task_id: 任务ID
+            algorithm_id: 算法ID
+            current_time: 当前时间戳
+            
+        Returns:
+            窗口内的检测记录列表 [(timestamp, has_detection), ...]
+        """
+        key = (task_id, algorithm_id)
+        
+        if key not in self.buffers:
+            return []
+        
+        # 确保配置已加载
+        if key not in self.configs:
+            self.load_config(task_id, algorithm_id)
+        
+        config = self.configs[key]
+        window_size = config['window_size']
+        window_start = current_time - window_size
+        
+        records = self.buffers[key]
+        
+        # 过滤窗口内的记录
+        window_records = [
+            (ts, detected, img_path) for ts, detected, img_path in records
+            if ts >= window_start
+        ]
+        
+        return window_records
+    
+    def get_detection_records(self, task_id: int, algorithm_id: str, current_time: float) -> list:
+        """
+        获取窗口内检测到目标的记录（用于保存图片）
+        
+        Args:
+            task_id: 任务ID
+            algorithm_id: 算法ID
+            current_time: 当前时间戳
+            
+        Returns:
+            检测到目标的记录列表 [(timestamp, has_detection), ...]
+        """
+        window_records = self.get_window_records(task_id, algorithm_id, current_time)
+        
+        # 只返回检测到目标的记录
+        detection_records = [
+            (ts, detected, img_path) for ts, detected, img_path in window_records
+            if detected
+        ]
+        
+        return detection_records
     
     def _empty_stats(self) -> dict:
         """返回空统计"""
