@@ -895,6 +895,10 @@ def admin_tasks():
 def admin_alerts():
     return render_template('alerts.html')
 
+@app.route('/admin/gpu-calculator')
+def admin_gpu_calculator():
+    return render_template('gpu_benchmark.html')
+
 @app.route('/api/upload/model', methods=['POST'])
 def upload_model_file():
     try:

@@ -167,6 +167,7 @@
             color: white;
             padding: 30px;
             border-radius: 15px;
+            margin-top: 30px;
             margin-bottom: 30px;
             display: none;
             border: 2px solid #444;
@@ -303,6 +304,7 @@
         }
 
         .info-box {
+            margin-top: 30px;
             background: #e3f2fd;
             border-left: 4px solid #2196f3;
             padding: 20px;
@@ -337,54 +339,76 @@
     <div class="container">
         <div class="header">
             <h1>GPU需求计算器</h1>
-            <p>根据视频需求计算所需GPU卡数量  @YuJian</p>
+            <p style="color: #9999ff;">根据视频需求计算所需GPU卡数量，仅作理论参考，还需要<span style="color: #FF0000;font-weight: bold;"> 综合考虑网络、IO、并行抢占等 </span>各类影响因素</span></p>
         </div>
 
         <div class="content">
             <div class="form-section">
                 <h2>视频参数配置</h2>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="streams">视频路数</label>
-                        <input type="number" id="streams" value="64" min="1" max="1000" step="1">
-                    </div>
+                
+                <!-- 基础视频参数组 -->
+                <div style="margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; font-size: 1.2em; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">基础视频参数</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="streams">视频路数</label>
+                            <input type="number" id="streams" value="100" min="1" max="1000" step="1">
+                        </div>
 
-                    <div class="form-group">
-                        <label for="resolution">视频分辨率</label>
-                        <select id="resolution">
-                            <option value="1">640×640 (标准检测)</option>
-                            <option value="1.27">1280×720 (720p HD)</option>
-                            <option value="1.5">800×800</option>
-                            <option value="2.25">960×960</option>
-                            <option value="3.04" selected>1920×1080 (1080p Full HD)</option>
-                            <option value="2.8">1080×1080</option>
-                            <option value="4">1280×1280</option>
-                            <option value="6.25">1600×1600</option>
-                        </select>
-                    </div>
+                        <div class="form-group">
+                            <label for="resolution">视频分辨率</label>
+                            <select id="resolution">
+                                <option value="1">640×640 (标准检测)</option>
+                                <option value="1.27">1280×720 (720p HD)</option>
+                                <option value="1.5">800×800</option>
+                                <option value="2.25">960×960</option>
+                                <option value="3.04" selected>1920×1080 (1080p Full HD)</option>
+                                <option value="2.8">1080×1080</option>
+                                <option value="4">1280×1280</option>
+                                <option value="6.25">1600×1600</option>
+                            </select>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="fps">目标FPS</label>
-                        <input type="number" id="fps" value="10" min="1" max="60" step="1">
+                        <div class="form-group">
+                            <label for="fps">目标FPS</label>
+                            <input type="number" id="fps" value="1" min="1" max="60" step="1">
+                        </div>
                     </div>
+                </div>
 
-                    <div class="form-group">
-                        <label for="model">YOLOv8模型</label>
-                        <select id="model">
-                            <option value="8.7" selected>YOLOv8n (8.7 GFLOPs) - 超轻量</option>
-                            <option value="28.6">YOLOv8s (28.6 GFLOPs) - 轻量</option>
-                            <option value="78.9">YOLOv8m (78.9 GFLOPs) - 中等</option>
-                            <option value="165.2">YOLOv8l (165.2 GFLOPs) - 大型</option>
-                            <option value="257.8">YOLOv8x (257.8 GFLOPs) - 超大型</option>
-                        </select>
+                <!-- AI模型参数组 -->
+                <div style="margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; font-size: 1.2em; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">AI模型参数</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="model">YOLOv8模型</label>
+                            <select id="model">
+                                <option value="8.7" selected>YOLOv8n (8.7 GFLOPs) - 超轻量</option>
+                                <option value="28.6">YOLOv8s (28.6 GFLOPs) - 轻量</option>
+                                <option value="78.9">YOLOv8m (78.9 GFLOPs) - 中等</option>
+                                <option value="165.2">YOLOv8l (165.2 GFLOPs) - 大型</option>
+                                <option value="257.8">YOLOv8x (257.8 GFLOPs) - 超大型</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="modelQuantity">模型数量</label>
+                            <input type="number" id="modelQuantity" value="1" min="1" max="10" step="1">
+                        </div>
                     </div>
+                </div>
 
-                    <div class="form-group">
-                        <label for="videoDecode">是否包含视频流解码</label>
-                        <select id="videoDecode">
-                            <option value="false" selected>否 - 仅AI推理</option>
-                            <option value="true">是 - 包含H264解码</option>
-                        </select>
+                <!-- 解码参数组 -->
+                <div>
+                    <h3 style="color: #333; margin-bottom: 20px; font-size: 1.2em; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">视频解码参数</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="videoDecode">是否包含视频流解码</label>
+                            <select id="videoDecode">
+                                <option value="false" selected>否 - 仅AI推理</option>
+                                <option value="true">是 - 包含H264解码</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -488,6 +512,7 @@
                     <li><strong>视频路数：</strong>需要同时处理的视频流数量</li>
                     <li><strong>视频分辨率：</strong>输入到模型的图像尺寸，影响计算量</li>
                     <li><strong>目标FPS：</strong>每路视频的处理帧率</li>
+                    <li><strong>模型数量：</strong>每路视频需要运行的模型数量，多个模型会按顺序执行</li>
                     <li><strong>是否包含视频流解码：</strong>选择是否需要在GPU上进行H264视频解码</li>
                     <li><strong>解码分辨率：</strong>H264视频流的原始分辨率，影响解码算力需求</li>
                     <li><strong>解码帧率：</strong>H264视频流的原始帧率</li>
@@ -495,7 +520,7 @@
                     <li><strong>GPU利用率：</strong>实际GPU算力利用效率，受驱动、框架等影响，通常70-85%</li>
                     <li><strong>Batch并行效率：</strong>多路视频批处理的效率系数，通常80-90%</li>
                     <li><strong>后处理开销：</strong>NMS、跟踪等后处理算法占用的额外计算资源</li>
-                    <li><strong>计算结果：</strong>显示了不同GPU型号所需的卡数，建议选择卡数为整数且性价比高的方案</li>
+                    <li><strong>计算结果：</strong>显示了不同GPU型号所需的卡数和单张运行周期，建议选择卡数为整数且性价比高的方案</li>
                 </ul>
                 <h4 style="margin-top: 15px; color: #1976d2;">H264解码算力说明</h4>
                 <ul>
@@ -558,6 +583,7 @@
         function calculate() {
             const streams = parseInt(document.getElementById('streams').value);
             const modelFlops = parseFloat(document.getElementById('model').value);
+            const modelQuantity = parseInt(document.getElementById('modelQuantity').value);
             const resolution = parseFloat(document.getElementById('resolution').value);
             const fps = parseInt(document.getElementById('fps').value);
             const utilization = parseFloat(document.getElementById('utilization').value) / 100;
@@ -583,7 +609,8 @@
             }
 
             // 计算单路视频所需算力 (TFLOPS) - AI推理 + 解码
-            const aiPowerPerStream = (modelFlops * resolution * fps) / 1000;
+            // 考虑模型数量：每个模型都需要运行一次
+            const aiPowerPerStream = (modelFlops * resolution * fps * modelQuantity) / 1000;
             const singleStreamPower = aiPowerPerStream + decodePowerPerStream;
 
             // 计算总算力需求
@@ -602,8 +629,8 @@
                 
                 step1Html = `
                     <strong>AI推理算力:</strong><br>
-                    AI算力 = (模型FLOPs × 分辨率系数 × FPS) / 1000<br>
-                    = (${modelFlops} × ${resolution} × ${fps}) / 1000<br>
+                    AI算力 = (模型FLOPs × 分辨率系数 × FPS × 模型数量) / 1000<br>
+                    = (${modelFlops} × ${resolution} × ${fps} × ${modelQuantity}) / 1000<br>
                     = <span class="highlight">${aiPowerPerStream.toFixed(3)} TFLOPS</span><br><br>
                     
                     <strong>H264解码算力:</strong><br>
@@ -618,8 +645,8 @@
                 `;
             } else {
                 step1Html = `
-                    单路算力 = (模型FLOPs × 分辨率系数 × FPS) / 1000<br>
-                    = (${modelFlops} × ${resolution} × ${fps}) / 1000<br>
+                    单路算力 = (模型FLOPs × 分辨率系数 × FPS × 模型数量) / 1000<br>
+                    = (${modelFlops} × ${resolution} × ${fps} × ${modelQuantity}) / 1000<br>
                     = <span class="highlight">${singleStreamPower.toFixed(3)} TFLOPS</span>
                 `;
             }
@@ -650,6 +677,9 @@
                 const availablePower = spec.fp16 * efficiencyFactor;
                 const cardsNeeded = totalPowerNeeded / availablePower;
                 const cardsNeededCeil = Math.ceil(cardsNeeded);
+                
+                // 计算单张GPU运行周期（秒）
+                const singleGpuPeriod = totalPowerNeeded / availablePower;
 
                 return `
                     <div class="gpu-card">
@@ -665,6 +695,10 @@
                         <div class="spec">
                             <span class="spec-label">单卡支持路数</span>
                             <span class="spec-value">${Math.floor(availablePower / singleStreamPower)} 路</span>
+                        </div>
+                        <div class="spec">
+                            <span class="spec-label">单张运行周期</span>
+                            <span class="spec-value">${singleGpuPeriod.toFixed(2)} 秒</span>
                         </div>
                         <div class="card-count">
                             <div class="card-count-label">所需卡数</div>
@@ -690,7 +724,8 @@
                 处理 <span class="highlight">${streams} 路</span>视频流，
                 分辨率 <span class="highlight">${resolutionName}</span>，
                 帧率 <span class="highlight">${fps} FPS</span>，
-                使用 <span class="highlight">${modelName}</span>模型，`;
+                使用 <span class="highlight">${modelName}</span>模型，
+                模型数量 <span class="highlight">${modelQuantity} 个</span>，`;
             
             if (videoDecode && decodePowerPerStream > 0) {
                 const decodeResolutionName = document.getElementById('decodeResolution').selectedOptions[0].text.split('(')[0].trim();

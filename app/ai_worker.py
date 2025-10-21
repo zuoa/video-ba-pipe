@@ -297,8 +297,7 @@ def main(args):
                                     'timestamp': frame_timestamp
                                 })
 
-                            # 构建alert_message，包含时间窗口检测信息
-                            alert_message = ""
+
                             if window_stats:
                                 # 时间窗口检测启用且通过，记录详细信息
                                 window_config = window_detector.configs.get((task_id, algo_id), {})
@@ -316,11 +315,9 @@ def main(args):
                                     f"检测比例: {window_stats['detection_ratio']:.2%}, "
                                     f"最大连续: {window_stats['max_consecutive']}次"
                                 )
-                                alert_message = window_info
-                                logger.info(f"[AIWorker] 记录时间窗口检测信息到alert_message: {alert_message}")
+                                logger.info(f"[AIWorker] 记录时间窗口检测信息: {window_info}")
                             else:
                                 # 时间窗口检测未启用，不记录信息（保持为空）
-                                alert_message = ""
                                 logger.info(f"[AIWorker] 时间窗口检测未启用，alert_message保持为空")
 
                             # 创建Alert记录
@@ -332,7 +329,7 @@ def main(args):
                                 task=task,
                                 alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
                                 alert_type=algorithm_datamap[algo_id].get('name'),
-                                alert_message=alert_message,
+                                alert_message="",
                                 alert_image=main_image,
                                 alert_image_ori=main_image_ori,
                                 alert_video="",
