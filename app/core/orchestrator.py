@@ -97,9 +97,16 @@ class Orchestrator:
         running_tasks = Task.select().where(Task.status == 'RUNNING')
         for task in running_tasks:
             if task.id in self.running_processes:
-                if self.running_processes[task.id]['decoder'].poll() is not None or  self.running_processes[task.id]['ai'].poll() is not None :
-                    logger.warn(f"🚨 任务 ID {task.id} 的某个工作进程已退出！")
-                    print(f"[警告] 任务 ID {task.id} 的某个工作进程已退出！")
+                need_reboot = False
+                if self.running_processes[task.id]['decoder'].poll() is not None :
+                    logger.warn(f"🚨 任务 ID {task.id} 的解码器工作进程已退出！")
+                    need_reboot = True
+
+                if self.running_processes[task.id]['ai'].poll() is not None:
+                    logger.warn(f"🚨 任务 ID {task.id} 的AI工作进程已退出！")
+                    need_reboot = True
+
+                if need_reboot:
                     task.status = 'FAILED'
                     task.save()
                     # 可以在这里触发停止和重启逻辑
