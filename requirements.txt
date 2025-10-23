@@ -5,3 +5,4 @@ peewee
 ultralytics
 flask
 pika
+gunicorn
