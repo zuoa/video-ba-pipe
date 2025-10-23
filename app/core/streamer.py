@@ -115,6 +115,7 @@ class BaseStreamer(ABC):
 
         command = self._build_command()
         try:
+            logger.info(f"启动 {self.__class__.__name__} 进程，命令: {' '.join(command)}")
             self.process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
