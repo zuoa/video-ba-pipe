@@ -78,7 +78,7 @@ ENV TZ=Asia/Shanghai
 ENV PYTHONPATH="/app:$PYTHONPATH"
 
 # 设置入口点
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["./entrypoint.sh"]
 
 # 标签信息
 LABEL maintainer="Video BA Pipe Team" \
