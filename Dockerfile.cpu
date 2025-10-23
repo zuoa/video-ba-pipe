@@ -60,6 +60,8 @@ RUN mkdir -p /app/app/data/db \
     /app/app/data/snapshots \
     /app/app/data/logs
 
+RUN chmod +x /app/app/entrypoint.sh
+
 # 设置数据卷
 VOLUME ["/app/app/data"]
 
@@ -76,7 +78,7 @@ ENV TZ=Asia/Shanghai
 ENV PYTHONPATH="/app:$PYTHONPATH"
 
 # 设置入口点
-ENTRYPOINT ["python", "-u", "main.py"]
+ENTRYPOINT ["entrypoint.sh"]
 
 # 标签信息
 LABEL maintainer="Video BA Pipe Team" \
