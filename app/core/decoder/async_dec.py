@@ -31,6 +31,7 @@ class AsyncFFmpegDecoder(BaseDecoder):
     def _initialize(self) -> bool:
         """重写初始化方法，以启动线程。"""
         command = self._build_ffmpeg_command()
+        logger.info(f"启动FFmpeg解码器进程，命令: {' '.join(command)}")
         try:
             self._ffmpeg_process = subprocess.Popen(
                 command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10 ** 8
