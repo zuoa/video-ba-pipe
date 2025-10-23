@@ -135,6 +135,7 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
         # 将输入参数放在 -i pipe:0 之前
         input_args = [
             '-skip_frame', 'nokey',  # 跳过非关键帧
+            '-fflags', '+genpts+discardcorrupt'
             '-f', self.config.get('input_format', 'h264'),
         ]
 
