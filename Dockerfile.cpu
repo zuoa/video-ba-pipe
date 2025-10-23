@@ -1,0 +1,81 @@
+# ============================================
+# Video BA Pipe - CPU版本
+# 适用于无GPU的测试和开发环境
+# ============================================
+
+# 使用官方Python 3.10 slim镜像
+FROM python:3.10-slim-bullseye
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # OpenCV依赖
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
+    # FFmpeg和视频编解码
+    ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    # 其他工具
+    wget \
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 升级pip
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# 先安装PyTorch（CPU版本）
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY app/ /app/app/
+COPY env.example /app/.env.example
+
+# 创建必要的数据目录
+RUN mkdir -p /app/app/data/db \
+    /app/app/data/frames \
+    /app/app/data/videos \
+    /app/app/data/models \
+    /app/app/data/snapshots \
+    /app/app/data/logs
+
+# 设置数据卷
+VOLUME ["/app/app/data"]
+
+# 暴露端口（如果有Web服务）
+EXPOSE 5000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+# 设置入口点
+ENTRYPOINT ["python", "-m", "app.main"]
+
+# 标签信息
+LABEL maintainer="Video BA Pipe Team" \
+      version="1.0" \
+      description="Video Behavior Analysis Pipeline - CPU Version" \
+      gpu.enabled="false"
+
