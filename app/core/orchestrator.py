@@ -91,6 +91,7 @@ class Orchestrator:
             (Task.enabled == False) & (Task.status == 'RUNNING')
         )
         for task in tasks_to_stop:
+            logger.info(f"任务 ID {task.id} 被禁用，正在停止...")
             self._stop_task(task)
 
         # 健康检查
@@ -98,12 +99,15 @@ class Orchestrator:
         for task in running_tasks:
             if task.id in self.running_processes:
                 need_reboot = False
-                if self.running_processes[task.id]['decoder'].poll() is not None :
-                    logger.warn(f"🚨 任务 ID {task.id} 的解码器工作进程已退出！")
+
+                exit_code = self.running_processes[task.id]['decoder'].poll()
+                if exit_code is not None :
+                    logger.warn(f"🚨 任务 ID {task.id} 的解码器工作进程已退出:{exit_code}！")
                     need_reboot = True
 
-                if self.running_processes[task.id]['ai'].poll() is not None:
-                    logger.warn(f"🚨 任务 ID {task.id} 的AI工作进程已退出！")
+                exit_code = self.running_processes[task.id]['ai'].poll()
+                if exit_code is not None:
+                    logger.warn(f"🚨 任务 ID {task.id} 的AI工作进程已退出:{exit_code}！")
                     need_reboot = True
 
                 if need_reboot:
