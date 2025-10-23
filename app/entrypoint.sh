@@ -25,4 +25,4 @@ python main.py &
 echo "Starting Gunicorn..."
 # 用 exec "$@" 来执行 CMD 中指定的命令，或者直接启动 Gunicorn
 # exec "$@"
-gunicorn  -w 4 --bind 0.0.0.0:7082 web.webapp:app # 根据您的应用调整
+gunicorn  -w 4 --bind 0.0.0.0:5000 web.webapp:app # 根据您的应用调整
