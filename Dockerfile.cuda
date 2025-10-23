@@ -1,0 +1,88 @@
+# ============================================
+# Video BA Pipe - CUDA/GPU 版本
+# 适用于支持NVIDIA GPU的生产环境
+# ============================================
+
+# 使用官方NVIDIA CUDA基础镜像
+# CUDA 11.8 + cuDNN 8 + Ubuntu 22.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    # OpenCV依赖
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
+    # FFmpeg和视频编解码
+    ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    # 其他工具
+    wget \
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 升级pip
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# 先安装PyTorch（CUDA版本）
+# 使用CUDA 11.8对应的PyTorch版本
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY app/ /app/app/
+COPY env.example /app/.env.example
+
+# 创建必要的数据目录
+RUN mkdir -p /app/app/data/db \
+    /app/app/data/frames \
+    /app/app/data/videos \
+    /app/app/data/models \
+    /app/app/data/snapshots \
+    /app/app/data/logs
+
+# 设置数据卷
+VOLUME ["/app/app/data"]
+
+# 暴露端口（如果有Web服务）
+EXPOSE 5000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import sys; sys.exit(0)" || exit 1
+
+# 设置入口点
+ENTRYPOINT ["python3", "-m", "app.main"]
+
+# 标签信息
+LABEL maintainer="Video BA Pipe Team" \
+      version="1.0" \
+      description="Video Behavior Analysis Pipeline - CUDA/GPU Version" \
+      gpu.enabled="true"
+
