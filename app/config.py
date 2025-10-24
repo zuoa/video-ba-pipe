@@ -29,7 +29,7 @@ os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 
 
 # 极速解码模式，每次取最新的帧，扔掉所有老的帧
-IS_EXTREME_DECODE_MODE = os.getenv('IS_Extreme_DECODE_MODE', 'true').lower() in ('true', '1', 'yes')
+IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in ('true', '1', 'yes')
 
 
 # ============ 视频录制配置 ============

@@ -717,7 +717,7 @@ def get_video(file_path):
         
     except Exception as e:
         app.logger.error(f"Error serving video {file_path}: {str(e)}")
-        abort(500, description="Internal server error")
+        abort(500, description=f"Error serving video {file_path}: {str(e)}")
 
 # ========== 流检测API ==========
 
