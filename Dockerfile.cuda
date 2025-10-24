@@ -67,6 +67,8 @@ RUN mkdir -p /app/app/data/db \
     /app/app/data/snapshots \
     /app/app/data/logs
 
+RUN chmod +x /app/app/entrypoint.sh
+
 # 设置数据卷
 VOLUME ["/app/app/data"]
 
@@ -77,8 +79,13 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python3 -c "import sys; sys.exit(0)" || exit 1
 
+WORKDIR /app/app
+
+ENV TZ=Asia/Shanghai
+ENV PYTHONPATH="/app:$PYTHONPATH"
+
 # 设置入口点
-ENTRYPOINT ["python3", "-m", "app.main"]
+ENTRYPOINT ["./entrypoint.sh"]
 
 # 标签信息
 LABEL maintainer="Video BA Pipe Team" \
