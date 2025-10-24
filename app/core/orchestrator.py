@@ -17,10 +17,7 @@ class Orchestrator:
         db.connect()  # 在初始化时连接数据库
 
         ## 清理之前可能遗留的运行状态
-        query = Task.update(status='STOPPED', decoder_pid=None, ai_pid=None).where(Task.status == 'RUNNING')
-        query.execute()
-
-
+        Task.update(status='STOPPED', decoder_pid=None, ai_pid=None).execute()
 
     def _start_task(self, task: Task):
         print(f"  -> 正在启动任务 ID {task.id}: {task.name}")
