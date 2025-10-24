@@ -7,7 +7,7 @@ from collections import deque
 from typing import Dict, Tuple, Optional
 
 from app import logger
-from app.core.database_models import Task, TaskAlgorithm
+from app.core.database_models import Algorithm
 
 
 class WindowDetector:
@@ -34,22 +34,20 @@ class WindowDetector:
     def load_config(self, task_id: int, algorithm_id: str):
         """
         从数据库加载窗口配置
-        优先使用TaskAlgorithm的配置，如果为NULL则使用Task的配置
+        从Algorithm表读取时间窗口配置
         """
         key = (task_id, algorithm_id)
         
         try:
-            # 获取Task配置
-            task = Task.get_by_id(task_id)
+            # 获取Algorithm配置
+            algorithm = Algorithm.get_by_id(algorithm_id)
             
-
-            
-            # 优先使用算法级别配置，NULL则使用Task级别配置
+            # 从算法表读取配置
             config = {
-                'enable': task.enable_window_check,
-                'window_size': task.window_size,
-                'mode': task.window_mode,
-                'threshold': task.window_threshold,
+                'enable': algorithm.enable_window_check,
+                'window_size': algorithm.window_size,
+                'mode': algorithm.window_mode,
+                'threshold': algorithm.window_threshold,
             }
             
             self.configs[key] = config

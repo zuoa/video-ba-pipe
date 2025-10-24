@@ -47,7 +47,11 @@ def get_algorithms():
         'interval_seconds': a.interval_seconds,
         'ext_config_json': a.ext_config_json,
         'plugin_module': a.plugin_module,
-        'label_name': a.label_name
+        'label_name': a.label_name,
+        'enable_window_check': a.enable_window_check,
+        'window_size': a.window_size,
+        'window_mode': a.window_mode,
+        'window_threshold': a.window_threshold
     } for a in algorithms])
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
@@ -61,7 +65,11 @@ def get_algorithm(id):
             'interval_seconds': algorithm.interval_seconds,
             'ext_config_json': algorithm.ext_config_json,
             'plugin_module': algorithm.plugin_module,
-            'label_name': algorithm.label_name
+            'label_name': algorithm.label_name,
+            'enable_window_check': algorithm.enable_window_check,
+            'window_size': algorithm.window_size,
+            'window_mode': algorithm.window_mode,
+            'window_threshold': algorithm.window_threshold
         })
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -76,7 +84,11 @@ def create_algorithm():
             interval_seconds=data.get('interval_seconds', 1),
             ext_config_json=data.get('ext_config_json', '{}'),
             plugin_module=data.get('plugin_module'),
-            label_name=data.get('label_name', 'Object')
+            label_name=data.get('label_name', 'Object'),
+            enable_window_check=data.get('enable_window_check', False),
+            window_size=data.get('window_size', 30),
+            window_mode=data.get('window_mode', 'ratio'),
+            window_threshold=data.get('window_threshold', 0.3)
         )
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
     except Exception as e:
@@ -93,7 +105,22 @@ def update_algorithm(id):
         algorithm.ext_config_json = data.get('ext_config_json', algorithm.ext_config_json)
         algorithm.plugin_module = data.get('plugin_module', algorithm.plugin_module)
         algorithm.label_name = data.get('label_name', algorithm.label_name)
+        algorithm.enable_window_check = data.get('enable_window_check', algorithm.enable_window_check)
+        algorithm.window_size = data.get('window_size', algorithm.window_size)
+        algorithm.window_mode = data.get('window_mode', algorithm.window_mode)
+        algorithm.window_threshold = data.get('window_threshold', algorithm.window_threshold)
         algorithm.save()
+        
+        # 通知WindowDetector重新加载配置
+        try:
+            window_detector = get_window_detector()
+            # 为使用该算法的所有任务重新加载配置
+            task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.algorithm == id)
+            for ta in task_algorithms:
+                window_detector.reload_config(ta.task.id, str(id))
+        except Exception as e:
+            app.logger.warning(f"重新加载窗口配置失败: {e}")
+        
         return jsonify({'message': 'Algorithm updated'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -264,11 +291,7 @@ def get_task(id):
             'buffer_name': task.buffer_name,
             'status': task.status,
             'decoder_pid': task.decoder_pid,
-            'ai_pid': task.ai_pid,
-            'enable_window_check': task.enable_window_check,
-            'window_size': task.window_size,
-            'window_mode': task.window_mode,
-            'window_threshold': task.window_threshold
+            'ai_pid': task.ai_pid
         })
     except Task.DoesNotExist:
         return jsonify({'error': 'Task not found'}), 404
@@ -289,11 +312,7 @@ def create_task():
             buffer_name=data.get('buffer_name', 'video_buffer'),
             status=data.get('status', 'STOPPED'),
             decoder_pid=data.get('decoder_pid'),
-            ai_pid=data.get('ai_pid'),
-            enable_window_check=data.get('enable_window_check', False),
-            window_size=data.get('window_size', 30),
-            window_mode=data.get('window_mode', 'ratio'),
-            window_threshold=data.get('window_threshold', 0.3)
+            ai_pid=data.get('ai_pid')
         )
         return jsonify({'id': task.id, 'message': 'Task created'}), 201
     except Exception as e:
@@ -316,21 +335,7 @@ def update_task(id):
         task.status = data.get('status', task.status)
         task.decoder_pid = data.get('decoder_pid', task.decoder_pid)
         task.ai_pid = data.get('ai_pid', task.ai_pid)
-        task.enable_window_check = data.get('enable_window_check', task.enable_window_check)
-        task.window_size = data.get('window_size', task.window_size)
-        task.window_mode = data.get('window_mode', task.window_mode)
-        task.window_threshold = data.get('window_threshold', task.window_threshold)
         task.save()
-        
-        # 通知WindowDetector重新加载配置
-        try:
-            window_detector = get_window_detector()
-            # 为该任务的所有算法重新加载配置
-            task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.task == id)
-            for ta in task_algorithms:
-                window_detector.reload_config(id, str(ta.algorithm.id))
-        except Exception as e:
-            app.logger.warning(f"重新加载窗口配置失败: {e}")
         
         return jsonify({'message': 'Task updated'})
     except Task.DoesNotExist:

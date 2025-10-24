@@ -33,6 +33,12 @@ class Algorithm(BaseModel):
     plugin_module = pw.CharField(max_length=255, null=True)
     label_name = pw.CharField(default='Object')
     label_color = pw.CharField(default='#FF0000')
+    
+    # 时间窗口检测配置
+    enable_window_check = pw.BooleanField(default=False)
+    window_size = pw.IntegerField(default=30)  # 时间窗口大小（秒）
+    window_mode = pw.CharField(default='ratio')  # 预警模式: 'count', 'ratio', 'consecutive'
+    window_threshold = pw.FloatField(default=0.3)  # 预警阈值
 
     @property
     def models_config(self):
@@ -56,12 +62,6 @@ class Task(BaseModel):
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
     ai_pid = pw.IntegerField(null=True)
-    
-    # 时间窗口检测配置
-    enable_window_check = pw.BooleanField(default=False)
-    window_size = pw.IntegerField(default=30)  # 时间窗口大小（秒）
-    window_mode = pw.CharField(default='ratio')  # 预警模式: 'count', 'ratio', 'consecutive'
-    window_threshold = pw.FloatField(default=0.3)  # 预警阈值
 
 
 # 3. 引入中间表 TaskAlgorithm 模型

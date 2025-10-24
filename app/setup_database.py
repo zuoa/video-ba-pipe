@@ -3,8 +3,40 @@ import json
 from app.core.database_models import db, Algorithm, Task, TaskAlgorithm, Alert
 
 
+def migrate_window_detection_to_algorithm():
+    """迁移：将时间窗口检测字段从Task移动到Algorithm"""
+    cursor = db.cursor()
+    
+    print("开始迁移时间窗口配置到Algorithm表...")
+    
+    # 1. 检查并添加Algorithm表的窗口检测字段
+    algorithm_fields_to_add = [
+        ('enable_window_check', 'INTEGER DEFAULT 0'),
+        ('window_size', 'INTEGER DEFAULT 30'),
+        ('window_mode', 'VARCHAR(20) DEFAULT "ratio"'),
+        ('window_threshold', 'REAL DEFAULT 0.3'),
+    ]
+    
+    for field_name, field_def in algorithm_fields_to_add:
+        try:
+            cursor.execute(f'ALTER TABLE algorithm ADD COLUMN {field_name} {field_def}')
+            print(f"已添加 Algorithm.{field_name} 字段")
+        except Exception as e:
+            if 'duplicate column name' in str(e).lower():
+                print(f"Algorithm.{field_name} 字段已存在，跳过")
+            else:
+                print(f"添加 Algorithm.{field_name} 字段时出错: {e}")
+    
+    db.commit()
+    
+    # 2. 可选：从Task表删除时间窗口字段（SQLite不支持DROP COLUMN，需要重建表）
+    # 由于SQLite的限制，这里我们不删除字段，只是标记为废弃
+    print("注意：Task表的时间窗口字段已废弃，但因SQLite限制未删除")
+    print("时间窗口检测字段迁移完成")
+
+
 def migrate_window_detection_fields():
-    """迁移：添加时间窗口检测字段"""
+    """迁移：添加时间窗口检测字段（旧版本，保留用于向后兼容）"""
     cursor = db.cursor()
     
     # 检查并添加Task表的窗口检测字段
@@ -44,7 +76,7 @@ def migrate_window_detection_fields():
                 print(f"添加 TaskAlgorithm.{field_name} 字段时出错: {e}")
     
     db.commit()
-    print("时间窗口检测字段迁移完成")
+    print("时间窗口检测字段迁移完成（旧版本）")
 
 
 def setup_database():
@@ -52,8 +84,8 @@ def setup_database():
     db.connect()
     db.create_tables([Algorithm, Task, TaskAlgorithm, Alert], safe=True)
     
-    # 迁移：添加时间窗口检测字段（如果不存在）
-    migrate_window_detection_fields()
+    # 迁移：将时间窗口检测字段移到Algorithm表
+    migrate_window_detection_to_algorithm()
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
     # 这样脚本就可以重复运行而不会出错

@@ -101,6 +101,73 @@
                 <textarea id="modelJson" class="hidden">{}</textarea>
             </div>
 
+            <!-- 时间窗口检测配置 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
+                    <i class="fas fa-clock mr-2 text-gray-700"></i>
+                    时间窗口检测配置（误报抑制）
+                </h4>
+                
+                <div class="mb-4">
+                    <label class="flex items-center p-3 bg-white rounded-lg hover:shadow-sm transition-all cursor-pointer border border-gray-200">
+                        <input type="checkbox" id="enableWindowCheck" class="w-5 h-5 text-black border-gray-300 rounded focus:ring-black mr-3" onchange="toggleAlgoWindowConfig()">
+                        <div>
+                            <span class="text-gray-700 text-sm font-semibold block">启用时间窗口检测</span>
+                            <span class="text-gray-500 text-xs">在时间窗口内多次检测确认后才触发告警，减少误报</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="algoWindowConfigFields" class="space-y-4 hidden">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                窗口大小（秒）
+                                <span class="text-gray-500 font-normal">在此时间内统计检测</span>
+                            </label>
+                            <input type="number" id="windowSize" value="30" min="5" max="300" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                预警模式
+                                <span class="text-gray-500 font-normal">判断方式</span>
+                            </label>
+                            <select id="windowMode" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm bg-white" onchange="updateAlgoThresholdLabel()">
+                                <option value="ratio">占比模式</option>
+                                <option value="count">次数模式</option>
+                                <option value="consecutive">连续模式</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">
+                            <span id="algoThresholdLabel">预警阈值（检测占比）</span>
+                            <span class="text-gray-500 font-normal" id="algoThresholdDesc">达到此比例触发告警</span>
+                        </label>
+                        <input type="number" id="windowThreshold" value="0.3" step="0.1" min="0" max="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        <p class="text-xs text-gray-500 mt-1" id="algoThresholdHint">
+                            占比模式：0-1之间，如0.3表示30%的帧检测到才告警
+                        </p>
+                    </div>
+
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="flex items-start">
+                            <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                            <div class="text-xs text-blue-800">
+                                <p class="font-semibold mb-1">说明</p>
+                                <ul class="list-disc list-inside space-y-1 text-blue-700">
+                                    <li><strong>占比模式</strong>：检测帧数/总帧数 ≥ 阈值，适合间歇性检测</li>
+                                    <li><strong>次数模式</strong>：检测帧数 ≥ 阈值，适合快速响应</li>
+                                    <li><strong>连续模式</strong>：最大连续检测次数 ≥ 阈值，适合持续性检测</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2 flex items-center">
                     <i class="fas fa-cog mr-2 text-gray-700"></i>
@@ -320,6 +387,12 @@
         document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
         document.getElementById('extConfigJson').value = '{}';
         renderPluginModuleSelect('');
+        // 初始化时间窗口配置
+        document.getElementById('enableWindowCheck').checked = false;
+        document.getElementById('windowSize').value = 30;
+        document.getElementById('windowMode').value = 'ratio';
+        document.getElementById('windowThreshold').value = 0.3;
+        document.getElementById('algoWindowConfigFields').classList.add('hidden');
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
 
@@ -343,6 +416,19 @@
         renderModels();
         document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
         document.getElementById('extConfigJson').value = algorithm.ext_config_json;
+        
+        // 加载时间窗口配置
+        document.getElementById('enableWindowCheck').checked = algorithm.enable_window_check || false;
+        document.getElementById('windowSize').value = algorithm.window_size || 30;
+        document.getElementById('windowMode').value = algorithm.window_mode || 'ratio';
+        document.getElementById('windowThreshold').value = algorithm.window_threshold || 0.3;
+        if (algorithm.enable_window_check) {
+            document.getElementById('algoWindowConfigFields').classList.remove('hidden');
+        } else {
+            document.getElementById('algoWindowConfigFields').classList.add('hidden');
+        }
+        updateAlgoThresholdLabel();
+        
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
 
@@ -362,7 +448,12 @@
             interval_seconds: parseFloat(document.getElementById('intervalSeconds').value),
             plugin_module: (document.getElementById('pluginModuleSelect').value || null),
             model_json: document.getElementById('modelJson').value,
-            ext_config_json: document.getElementById('extConfigJson').value
+            ext_config_json: document.getElementById('extConfigJson').value,
+            // 时间窗口配置
+            enable_window_check: document.getElementById('enableWindowCheck').checked,
+            window_size: parseInt(document.getElementById('windowSize').value),
+            window_mode: document.getElementById('windowMode').value,
+            window_threshold: parseFloat(document.getElementById('windowThreshold').value)
         };
 
         try {
@@ -789,6 +880,51 @@
             noResults.classList.remove('hidden');
             resultsContent.classList.add('hidden');
             showMessage('测试失败: ' + (result.error || '未知错误'), 'error');
+        }
+    }
+
+    // ========== 时间窗口配置 ==========
+    function toggleAlgoWindowConfig() {
+        const enabled = document.getElementById('enableWindowCheck').checked;
+        const configFields = document.getElementById('algoWindowConfigFields');
+        if (enabled) {
+            configFields.classList.remove('hidden');
+        } else {
+            configFields.classList.add('hidden');
+        }
+    }
+
+    function updateAlgoThresholdLabel() {
+        const mode = document.getElementById('windowMode').value;
+        const thresholdLabel = document.getElementById('algoThresholdLabel');
+        const thresholdDesc = document.getElementById('algoThresholdDesc');
+        const thresholdInput = document.getElementById('windowThreshold');
+        const thresholdHint = document.getElementById('algoThresholdHint');
+        
+        if (mode === 'ratio') {
+            thresholdLabel.textContent = '预警阈值（检测占比）';
+            thresholdDesc.textContent = '达到此比例触发告警';
+            thresholdInput.min = '0';
+            thresholdInput.max = '1';
+            thresholdInput.step = '0.1';
+            thresholdInput.value = '0.3';
+            thresholdHint.textContent = '占比模式：0-1之间，如0.3表示30%的帧检测到才告警';
+        } else if (mode === 'count') {
+            thresholdLabel.textContent = '预警阈值（检测次数）';
+            thresholdDesc.textContent = '检测次数达到此值触发告警';
+            thresholdInput.min = '1';
+            thresholdInput.max = '100';
+            thresholdInput.step = '1';
+            thresholdInput.value = '5';
+            thresholdHint.textContent = '次数模式：正整数，如5表示检测到5次就告警';
+        } else if (mode === 'consecutive') {
+            thresholdLabel.textContent = '预警阈值（连续次数）';
+            thresholdDesc.textContent = '连续检测次数达到此值触发告警';
+            thresholdInput.min = '1';
+            thresholdInput.max = '100';
+            thresholdInput.step = '1';
+            thresholdInput.value = '3';
+            thresholdHint.textContent = '连续模式：正整数，如3表示连续检测到3次才告警';
         }
     }
 
