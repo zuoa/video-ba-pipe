@@ -33,11 +33,18 @@ class PluginManager:
                     # 通过查找'app'目录在路径中的位置来确定
                     path_parts = normalized_path.split(os.sep)
                     try:
-                        app_index = path_parts.index('app')
-                        # 从app开始重建相对路径
-                        relative_parts = path_parts[app_index:]
-                        module_name = '.'.join(relative_parts) + '.' + filename[:-3]
-                    except ValueError:
+                        # 找到最后一个'app'的索引（处理 /app/app/plugins 这种情况）
+                        app_indices = [i for i, part in enumerate(path_parts) if part == 'app']
+                        if app_indices:
+                            # 使用最后一个'app'作为起点
+                            app_index = app_indices[-1]
+                            # 从app开始重建相对路径
+                            relative_parts = path_parts[app_index:]
+                            module_name = '.'.join(relative_parts) + '.' + filename[:-3]
+                        else:
+                            # 如果路径中没有'app'，则使用最后两个目录
+                            module_name = '.'.join(path_parts[-2:]) + '.' + filename[:-3]
+                    except (ValueError, IndexError):
                         # 如果路径中没有'app'，则使用最后两个目录
                         module_name = '.'.join(path_parts[-2:]) + '.' + filename[:-3]
                 else:
