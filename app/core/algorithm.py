@@ -42,12 +42,14 @@ class BaseAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def process(self, frame: np.ndarray) -> dict:
+    def process(self, frame: np.ndarray, roi_regions: list = None) -> dict:
         """
         处理单帧图像的核心方法。
 
         Args:
             frame (np.ndarray): 从环形缓冲区读取的原始视频帧 (RGB格式)。
+            roi_regions (list): ROI热区配置，格式为 [{"points": [[x1,y1], [x2,y2], ...], "name": "区域1"}]
+                               如果为None或空列表，则使用全画面检测。
 
         Returns:
             dict: 结构化的检测结果。例如：
@@ -55,6 +57,83 @@ class BaseAlgorithm(ABC):
                   如果没有检测到任何东西，应返回一个空的结果结构，例如 {'detections': []}。
         """
         pass
+    
+    @staticmethod
+    def create_roi_mask(frame_shape: tuple, roi_regions: list) -> np.ndarray:
+        """
+        根据ROI热区配置创建掩码
+        
+        Args:
+            frame_shape: 图像形状 (height, width, channels)
+            roi_regions: ROI热区配置列表
+            
+        Returns:
+            mask: 二值掩码，热区内为255，热区外为0
+        """
+        if not roi_regions:
+            # 如果没有ROI配置，返回全白掩码（全画面检测）
+            return np.ones((frame_shape[0], frame_shape[1]), dtype=np.uint8) * 255
+        
+        # 创建黑色掩码
+        mask = np.zeros((frame_shape[0], frame_shape[1]), dtype=np.uint8)
+        
+        # 在每个ROI区域绘制白色多边形
+        for region in roi_regions:
+            points = region.get('points', [])
+            if len(points) >= 3:
+                # 转换为numpy数组
+                pts = np.array(points, dtype=np.int32)
+                # 填充多边形
+                cv2.fillPoly(mask, [pts], 255)
+        
+        return mask
+    
+    @staticmethod
+    def apply_roi_mask(frame: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """
+        将ROI掩码应用到图像上
+        
+        Args:
+            frame: 原始图像
+            mask: ROI掩码
+            
+        Returns:
+            masked_frame: 应用掩码后的图像
+        """
+        # 将掩码应用到每个通道
+        masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
+        return masked_frame
+    
+    @staticmethod
+    def filter_detections_by_roi(detections: list, mask: np.ndarray) -> list:
+        """
+        根据ROI掩码过滤检测结果，只保留中心点在ROI内的检测
+        
+        Args:
+            detections: 检测结果列表
+            mask: ROI掩码
+            
+        Returns:
+            filtered_detections: 过滤后的检测结果
+        """
+        if mask is None:
+            return detections
+        
+        filtered = []
+        for det in detections:
+            box = det.get('box', [])
+            if len(box) >= 4:
+                # 计算边界框中心点
+                center_x = int((box[0] + box[2]) / 2)
+                center_y = int((box[1] + box[3]) / 2)
+                
+                # 检查中心点是否在ROI内
+                if (0 <= center_y < mask.shape[0] and 
+                    0 <= center_x < mask.shape[1] and 
+                    mask[center_y, center_x] > 0):
+                    filtered.append(det)
+        
+        return filtered
 
     @staticmethod
     def hex_to_bgr(hex_color):
@@ -70,16 +149,28 @@ class BaseAlgorithm(ABC):
         return (b, g, r)  # OpenCV使用BGR格式
 
     @staticmethod
-    def visualize(img, results, save_path=None, label_color='#FF0000'):
+    def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None):
         """
         可视化检测结果
         :param img: 原始图像
         :param results: 检测结果列表
         :param save_path: 保存路径
         :param label_color: 标签颜色（十六进制格式）
+        :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域
         """
         img_vis = img.copy()
         img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
+
+        # 如果有ROI掩码，在图像上绘制ROI区域轮廓
+        if roi_mask is not None:
+            # 找到ROI区域的轮廓
+            contours, _ = cv2.findContours(roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # 绘制半透明的ROI区域
+            roi_overlay = img_vis.copy()
+            cv2.drawContours(roi_overlay, contours, -1, (0, 255, 255), -1)  # 黄色填充
+            cv2.addWeighted(img_vis, 0.9, roi_overlay, 0.1, 0, img_vis)
+            # 绘制ROI边界线
+            cv2.drawContours(img_vis, contours, -1, (0, 255, 255), 2)  # 黄色边线
 
         # 转换主标签颜色
         main_color = BaseAlgorithm.hex_to_bgr(label_color)

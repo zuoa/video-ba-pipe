@@ -17,7 +17,7 @@ from app.config import (
     RINGBUFFER_DURATION,
     ALERT_SUPPRESSION_DURATION
 )
-from app.core.database_models import Algorithm, Task, Alert  # 导入 Algorithm 模型
+from app.core.database_models import Algorithm, Task, Alert, TaskAlgorithm  # 导入 Algorithm 模型
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
@@ -71,6 +71,7 @@ def main(args):
     algo_id_list = args.algo_ids.split(',')
     algorithms = {}
     algorithm_datamap = {}
+    algorithm_roi_configs = {}  # 存储每个算法的ROI配置
 
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
@@ -82,7 +83,23 @@ def main(args):
             logger.error(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
             return
 
-        # 4. 实例化算法插件
+        # 4. 加载ROI配置
+        try:
+            task_algorithm = TaskAlgorithm.get(
+                (TaskAlgorithm.task == task_id) & 
+                (TaskAlgorithm.algorithm == algo_id)
+            )
+            roi_config = task_algorithm.roi_config
+            algorithm_roi_configs[algo_id] = roi_config
+            if roi_config:
+                logger.info(f"[AIWorker:{os.getpid()}] 算法 {algo_id} 已加载 {len(roi_config)} 个ROI热区")
+            else:
+                logger.info(f"[AIWorker:{os.getpid()}] 算法 {algo_id} 未配置ROI热区，将使用全画面检测")
+        except TaskAlgorithm.DoesNotExist:
+            logger.warning(f"[AIWorker:{os.getpid()}] 未找到任务-算法关联记录，将使用全画面检测")
+            algorithm_roi_configs[algo_id] = []
+
+        # 5. 实例化算法插件
         # 将数据库中的配置（model_path, config_json）传递给插件
         full_config = {
             "name": algo_config_db.name,
@@ -155,7 +172,7 @@ def main(args):
                 
                 logger.debug(f"\n[AIWorker] 收到第 {frame_count} 帧，提交给 {len(algos_to_process)} 个算法处理...")
                 future_to_algo = {
-                    executor.submit(algo.process, latest_frame.copy()): aid
+                    executor.submit(algo.process, latest_frame.copy(), algorithm_roi_configs.get(aid, [])): aid
                     for aid, algo in algos_to_process.items()
                 }
 
@@ -165,6 +182,7 @@ def main(args):
                         # 获取算法的处理结果
                         result = future.result()
                         has_detection = bool(result and result.get("detections"))
+                        roi_mask = result.get('roi_mask')  # 获取ROI掩码用于可视化
                         
                         # 检查是否启用了窗口检测，只有启用时才记录
                         window_config = window_detector.configs.get((task_id, algo_id))
@@ -186,9 +204,10 @@ def main(args):
                                 img_path = f"{source_code}/{algorithm_name}/det_{int(frame_timestamp)}.jpg"
                                 img_path_absolute = os.path.join(FRAME_SAVE_PATH, img_path)
                                 
-                                # 保存检测图片
+                                # 保存检测图片（包含ROI区域可视化）
                                 algorithms[algo_id].visualize(latest_frame, result.get("detections"), 
-                                                            save_path=img_path_absolute, label_color=label_color)
+                                                            save_path=img_path_absolute, label_color=label_color,
+                                                            roi_mask=roi_mask)
                                 
                                 # 保存原始图片
                                 img_ori_path = f"{img_path}.ori.jpg"
@@ -285,7 +304,8 @@ def main(args):
                                 filepath = f"{source_code}/{algorithm_name}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
                                 filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
                                 algorithms[algo_id].visualize(latest_frame, result.get("detections"), 
-                                                            save_path=filepath_absolute, label_color=label_color)
+                                                            save_path=filepath_absolute, label_color=label_color,
+                                                            roi_mask=roi_mask)
                                 
                                 filepath_ori = f"{filepath}.ori.jpg"
                                 filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)

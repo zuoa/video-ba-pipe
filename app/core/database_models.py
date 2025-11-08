@@ -74,12 +74,21 @@ class TaskAlgorithm(BaseModel):
     # 可以在关联表中存储与这次关联相关的额外信息，例如：
     priority = pw.IntegerField(default=0)  # 例如，这个算法在这个任务中的优先级
     config_override_json = pw.TextField(default='{}') # 对该算法在这个任务中的特定配置
+    roi_regions = pw.TextField(default='[]')  # 热区配置，JSON数组格式：[{"points": [[x1,y1], [x2,y2], ...], "name": "区域1"}]
 
     class Meta:
         # 确保一个任务不会重复关联同一个算法
         indexes = (
             (('task', 'algorithm'), True),
         )
+    
+    @property
+    def roi_config(self):
+        """提供一个方便的方法来获取解析后的ROI配置"""
+        try:
+            return json.loads(self.roi_regions)
+        except:
+            return []
 
 
 class Alert(BaseModel):

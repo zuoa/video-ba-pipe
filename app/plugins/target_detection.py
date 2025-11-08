@@ -26,10 +26,26 @@ class TargetDetector(BaseAlgorithm):
             self.models.append(YOLO(model.get('path')))
             logger.info(f"[{self.name}] 模型{model.get('path')}加载成功。")
 
-    def process(self, frame: np.ndarray) -> dict:
+    def process(self, frame: np.ndarray, roi_regions: list = None) -> dict:
 
         frame = frame.copy()
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        # 创建ROI掩码
+        roi_mask = self.create_roi_mask(frame.shape, roi_regions) if roi_regions else None
+        
+        # ROI应用模式：
+        # 'post_filter' - 检测后过滤（推荐，精度高）
+        # 'pre_mask' - 检测前应用掩码（可能影响检测效果，但可以提升性能）
+        roi_mode = self.config.get('roi_mode', 'post_filter')
+        
+        if roi_mode == 'pre_mask' and roi_mask is not None:
+            # 在检测前应用掩码，ROI外的区域变黑
+            frame_to_detect = self.apply_roi_mask(frame, roi_mask)
+            logger.info(f"[{self.name}] 使用pre_mask模式：检测前应用ROI掩码")
+        else:
+            # 使用原始图像进行检测，在检测后过滤结果
+            frame_to_detect = frame
 
         confidence_threshold = 0.7  # 默认置信度阈值
         stages_results = {}
@@ -37,7 +53,7 @@ class TargetDetector(BaseAlgorithm):
         for model_cfg, model in zip(self.config.get('models_config', {}).get("models", []), self.models):
             conf_thresh = model_cfg.get('confidence', confidence_threshold)
             try:
-                results = model.predict(frame, save=False, classes=[model_cfg.get('class', 0)], conf=conf_thresh)
+                results = model.predict(frame_to_detect, save=False, classes=[model_cfg.get('class', 0)], conf=conf_thresh)
                 if results and len(results) > 0:
                     stages_results[model_cfg.get('name')] = {}
                     stages_results[model_cfg.get('name')]['result'] = results[0]
@@ -116,4 +132,12 @@ class TargetDetector(BaseAlgorithm):
                         'stages': stages_info
                     })
 
-        return {'detections': detections}
+        # 应用ROI过滤（仅在post_filter模式下需要）
+        if roi_mode == 'post_filter' and roi_mask is not None and len(detections) > 0:
+            original_count = len(detections)
+            detections = self.filter_detections_by_roi(detections, roi_mask)
+            filtered_count = original_count - len(detections)
+            if filtered_count > 0:
+                logger.info(f"[{self.name}] ROI后过滤：移除了 {filtered_count} 个ROI区域外的检测")
+
+        return {'detections': detections, 'roi_mask': roi_mask}

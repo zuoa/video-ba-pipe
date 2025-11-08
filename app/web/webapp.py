@@ -359,8 +359,24 @@ def get_task_algorithms():
         'task_id': ta.task.id,
         'algorithm_id': ta.algorithm.id,
         'priority': ta.priority,
-        'config_override_json': ta.config_override_json
+        'config_override_json': ta.config_override_json,
+        'roi_regions': ta.roi_regions
     } for ta in tas])
+
+@app.route('/api/task-algorithms/<int:id>', methods=['GET'])
+def get_task_algorithm(id):
+    try:
+        ta = TaskAlgorithm.get_by_id(id)
+        return jsonify({
+            'id': ta.id,
+            'task_id': ta.task.id,
+            'algorithm_id': ta.algorithm.id,
+            'priority': ta.priority,
+            'config_override_json': ta.config_override_json,
+            'roi_regions': ta.roi_regions
+        })
+    except TaskAlgorithm.DoesNotExist:
+        return jsonify({'error': 'TaskAlgorithm not found'}), 404
 
 @app.route('/api/task-algorithms', methods=['POST'])
 def create_task_algorithm():
@@ -370,11 +386,28 @@ def create_task_algorithm():
             task=data['task_id'],
             algorithm=data['algorithm_id'],
             priority=data.get('priority', 0),
-            config_override_json=data.get('config_override_json', '{}')
+            config_override_json=data.get('config_override_json', '{}'),
+            roi_regions=data.get('roi_regions', '[]')
         )
         return jsonify({'id': ta.id, 'message': 'TaskAlgorithm created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/task-algorithms/<int:id>', methods=['PUT'])
+def update_task_algorithm(id):
+    data = request.json
+    try:
+        ta = TaskAlgorithm.get_by_id(id)
+        if 'priority' in data:
+            ta.priority = data['priority']
+        if 'config_override_json' in data:
+            ta.config_override_json = data['config_override_json']
+        if 'roi_regions' in data:
+            ta.roi_regions = data['roi_regions']
+        ta.save()
+        return jsonify({'message': 'TaskAlgorithm updated'})
+    except TaskAlgorithm.DoesNotExist:
+        return jsonify({'error': 'TaskAlgorithm not found'}), 404
 
 @app.route('/api/task-algorithms/<int:id>', methods=['DELETE'])
 def delete_task_algorithm(id):
@@ -903,6 +936,27 @@ def admin_alerts():
 @app.route('/admin/gpu-calculator')
 def admin_gpu_calculator():
     return render_template('gpu_benchmark.html')
+
+@app.route('/admin/roi-config')
+def admin_roi_config():
+    return render_template('roi_config.html')
+
+# 添加简短的路由别名
+@app.route('/tasks')
+def tasks():
+    return render_template('tasks.html')
+
+@app.route('/algorithms')
+def algorithms():
+    return render_template('algorithms.html')
+
+@app.route('/alerts')
+def alerts():
+    return render_template('alerts.html')
+
+@app.route('/roi-config')
+def roi_config():
+    return render_template('roi_config.html')
 
 @app.route('/api/upload/model', methods=['POST'])
 def upload_model_file():

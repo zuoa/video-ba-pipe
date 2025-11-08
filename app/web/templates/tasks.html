@@ -406,15 +406,37 @@
 
     function renderAlgorithmsList(selectedAlgorithmIds = []) {
         const container = document.getElementById('algorithmsList');
-        container.innerHTML = algorithms.map(a => `
-            <label class="flex items-center hover:bg-gray-50 p-2 rounded">
-                <input type="checkbox"
-                    value="${a.id}"
-                    ${selectedAlgorithmIds.includes(a.id) ? 'checked' : ''}
-                    class="mr-2 algorithm-checkbox">
-                <span class="text-sm">${a.name} (${a.label_name})</span>
-            </label>
-        `).join('') || '<p class="text-gray-500 text-sm">暂无可用算法</p>';
+        const taskId = document.getElementById('taskId').value;
+        
+        container.innerHTML = algorithms.map(a => {
+            const isSelected = selectedAlgorithmIds.includes(a.id);
+            // 查找对应的TaskAlgorithm记录
+            const ta = taskAlgorithms.find(t => t.task_id == taskId && t.algorithm_id == a.id);
+            const taId = ta ? ta.id : null;
+            
+            return `
+            <div class="flex items-center justify-between hover:bg-gray-50 p-2 rounded border border-gray-100">
+                <label class="flex items-center flex-1">
+                    <input type="checkbox"
+                        value="${a.id}"
+                        ${isSelected ? 'checked' : ''}
+                        class="mr-2 algorithm-checkbox">
+                    <span class="text-sm">${a.name} (${a.label_name})</span>
+                </label>
+                ${isSelected && taId ? `
+                    <button type="button" onclick="configROI(${taskId}, ${a.id}, ${taId})" 
+                        class="ml-2 px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded transition-all flex items-center space-x-1"
+                        title="配置热区">
+                        <i class="fas fa-draw-polygon"></i>
+                        <span>热区</span>
+                    </button>
+                ` : ''}
+            </div>
+        `}).join('') || '<p class="text-gray-500 text-sm">暂无可用算法</p>';
+    }
+    
+    function configROI(taskId, algorithmId, taId) {
+        window.location.href = `/roi-config?task_id=${taskId}&algorithm_id=${algorithmId}&ta_id=${taId}`;
     }
 
     function toggleWindowConfig() {
