@@ -1,0 +1,582 @@
+{% extends "base.html" %}
+
+{% block title %}热区配置{% endblock %}
+{% block page_title %}热区配置{% endblock %}
+{% block page_subtitle %}配置算法检测的热区范围{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex items-center mb-8">
+        <button onclick="goBack()" class="mr-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all flex items-center space-x-2">
+            <i class="fas fa-arrow-left"></i>
+            <span>返回</span>
+        </button>
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white shadow-lg">
+                <i class="fas fa-draw-polygon text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800" id="pageTitle">热区配置</h3>
+                <p class="text-sm text-gray-500" id="taskInfo">任务: 加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 左侧：绘制区域 -->
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-lg font-semibold text-gray-800">视频画面</h4>
+                        <div class="flex space-x-2">
+                            <button onclick="clearCurrentDrawing()" class="px-3 py-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 transition-all text-sm">
+                                <i class="fas fa-undo mr-1"></i>清除当前
+                            </button>
+                            <button onclick="clearAllRegions()" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all text-sm">
+                                <i class="fas fa-trash mr-1"></i>清除全部
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="relative border-2 border-gray-200 rounded-lg overflow-hidden" style="max-height: 600px;">
+                        <canvas id="roiCanvas" class="cursor-crosshair"></canvas>
+                    </div>
+                    
+                    <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div class="flex items-start">
+                            <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                            <div class="text-xs text-blue-700">
+                                <p class="font-semibold mb-1">绘制说明：</p>
+                                <ul class="space-y-1 list-disc list-inside">
+                                    <li>点击画面添加热区顶点，至少需要3个点</li>
+                                    <li>双击或点击"完成绘制"完成当前热区</li>
+                                    <li>可以绘制多个热区，每个热区独立检测</li>
+                                    <li>如果不配置热区，默认使用全帧画面检测</li>
+                                    <li>右侧可以管理和命名热区</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：热区列表和控制 -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-lg font-semibold text-gray-800">热区列表</h4>
+                        <button onclick="startNewRegion()" id="startDrawBtn" class="px-3 py-2 btn-primary text-white rounded-lg transition-all text-sm">
+                            <i class="fas fa-plus mr-1"></i>新建热区
+                        </button>
+                    </div>
+                    
+                    <div id="regionsList" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+                        <p class="text-gray-500 text-sm text-center py-4">暂无热区</p>
+                    </div>
+
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <button onclick="saveROIConfig()" class="w-full px-4 py-3 btn-primary text-white rounded-lg font-medium shadow-lg flex items-center justify-center space-x-2">
+                            <i class="fas fa-save"></i>
+                            <span>保存热区配置</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 预设模板（可选） -->
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 mt-6">
+                <div class="p-6">
+                    <h4 class="text-md font-semibold text-gray-800 mb-4">快速模板</h4>
+                    <div class="space-y-2">
+                        <button onclick="applyTemplate('full')" class="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-all text-sm text-left">
+                            <i class="fas fa-expand mr-2"></i>全画面检测
+                        </button>
+                        <button onclick="applyTemplate('center')" class="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-all text-sm text-left">
+                            <i class="fas fa-square mr-2"></i>中心区域
+                        </button>
+                        <button onclick="applyTemplate('bottom')" class="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-all text-sm text-left">
+                            <i class="fas fa-level-down-alt mr-2"></i>下半区域
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重命名热区模态框 -->
+<div id="renameModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-20 mx-auto p-8 border border-gray-200 w-96 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-gray-800">重命名热区</h3>
+            <button onclick="closeRenameModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-semibold mb-2">热区名称</label>
+            <input type="text" id="regionNameInput" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black">
+        </div>
+        <div class="flex justify-end space-x-3">
+            <button onclick="closeRenameModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all">
+                取消
+            </button>
+            <button onclick="confirmRename()" class="px-4 py-2 btn-primary text-white rounded-lg">
+                确定
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    #roiCanvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // URL参数解析
+    const urlParams = new URLSearchParams(window.location.search);
+    const taskId = urlParams.get('task_id');
+    const algorithmId = urlParams.get('algorithm_id');
+    const taskAlgorithmId = urlParams.get('ta_id');
+    
+    // Canvas和绘制状态
+    let canvas, ctx;
+    let canvasImage = null;
+    let regions = [];  // 所有已完成的热区
+    let currentPoints = [];  // 当前正在绘制的点
+    let isDrawing = false;
+    let imageWidth = 0;
+    let imageHeight = 0;
+    let currentEditingIndex = -1;
+
+    // 颜色配置
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
+    
+    async function init() {
+        if (!taskId || !algorithmId) {
+            showMessage('缺少必要参数', 'error');
+            setTimeout(() => window.history.back(), 2000);
+            return;
+        }
+        
+        canvas = document.getElementById('roiCanvas');
+        ctx = canvas.getContext('2d');
+        
+        // 加载任务信息
+        await loadTaskInfo();
+        
+        // 加载视频快照
+        await loadSnapshot();
+        
+        // 加载已有的ROI配置
+        await loadROIConfig();
+        
+        // 设置事件监听
+        setupEventListeners();
+    }
+    
+    async function loadTaskInfo() {
+        try {
+            const task = await apiRequest(`/api/tasks/${taskId}`);
+            const algorithm = await apiRequest(`/api/algorithms/${algorithmId}`);
+            document.getElementById('taskInfo').textContent = 
+                `任务: ${task.name} | 算法: ${algorithm.name}`;
+        } catch (error) {
+            console.error('加载任务信息失败:', error);
+        }
+    }
+    
+    async function loadSnapshot() {
+        try {
+            const task = await apiRequest(`/api/tasks/${taskId}`);
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            img.onload = function() {
+                imageWidth = img.width;
+                imageHeight = img.height;
+                
+                // 设置canvas尺寸
+                canvas.width = imageWidth;
+                canvas.height = imageHeight;
+                
+                canvasImage = img;
+                redrawCanvas();
+            };
+            
+            img.onerror = function() {
+                showMessage('无法加载视频快照，将使用空白画布', 'warning');
+                // 使用默认尺寸
+                canvas.width = 1920;
+                canvas.height = 1080;
+                imageWidth = 1920;
+                imageHeight = 1080;
+                redrawCanvas();
+            };
+            
+            img.src = `/api/image/snapshots/${task.source_code}.jpg?t=${Date.now()}`;
+        } catch (error) {
+            console.error('加载快照失败:', error);
+            showMessage('加载快照失败', 'error');
+        }
+    }
+    
+    async function loadROIConfig() {
+        if (!taskAlgorithmId) return;
+        
+        try {
+            const response = await apiRequest(`/api/task-algorithms/${taskAlgorithmId}`);
+            if (response.roi_regions) {
+                regions = JSON.parse(response.roi_regions);
+                renderRegionsList();
+                redrawCanvas();
+            }
+        } catch (error) {
+            console.error('加载ROI配置失败:', error);
+        }
+    }
+    
+    function setupEventListeners() {
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('dblclick', handleCanvasDblClick);
+        canvas.addEventListener('mousemove', handleCanvasMouseMove);
+    }
+    
+    function handleCanvasClick(e) {
+        if (!isDrawing) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width));
+        const y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height));
+        
+        currentPoints.push([x, y]);
+        redrawCanvas();
+    }
+    
+    function handleCanvasDblClick(e) {
+        if (!isDrawing || currentPoints.length < 3) {
+            showMessage('至少需要3个点才能完成热区绘制', 'warning');
+            return;
+        }
+        
+        e.preventDefault();
+        finishCurrentRegion();
+    }
+    
+    function handleCanvasMouseMove(e) {
+        if (!isDrawing || currentPoints.length === 0) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width));
+        const y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height));
+        
+        redrawCanvas();
+        
+        // 绘制当前鼠标位置的预览线
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(currentPoints[currentPoints.length - 1][0], currentPoints[currentPoints.length - 1][1]);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    
+    function redrawCanvas() {
+        // 清空画布
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 绘制背景图片
+        if (canvasImage) {
+            ctx.drawImage(canvasImage, 0, 0, imageWidth, imageHeight);
+        } else {
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // 绘制已完成的热区
+        regions.forEach((region, index) => {
+            drawRegion(region.points, colors[index % colors.length], region.name, false);
+        });
+        
+        // 绘制当前正在绘制的热区
+        if (currentPoints.length > 0) {
+            drawRegion(currentPoints, '#00FF00', '绘制中...', true);
+        }
+    }
+    
+    function drawRegion(points, color, name, isDrawing) {
+        if (points.length === 0) return;
+        
+        // 绘制填充区域
+        ctx.fillStyle = color + '40';  // 添加透明度
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i][0], points[i][1]);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // 绘制边框
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // 绘制顶点
+        ctx.fillStyle = color;
+        points.forEach(point => {
+            ctx.beginPath();
+            ctx.arc(point[0], point[1], 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // 绘制名称标签
+        if (points.length > 0 && name) {
+            const labelX = points[0][0];
+            const labelY = points[0][1] - 10;
+            
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#000';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.strokeText(name, labelX, labelY);
+            ctx.fillText(name, labelX, labelY);
+        }
+    }
+    
+    function startNewRegion() {
+        if (isDrawing) {
+            showMessage('请先完成当前热区的绘制', 'warning');
+            return;
+        }
+        
+        isDrawing = true;
+        currentPoints = [];
+        document.getElementById('startDrawBtn').classList.add('opacity-50', 'cursor-not-allowed');
+        document.getElementById('startDrawBtn').disabled = true;
+        showMessage('开始绘制热区，双击完成', 'info');
+    }
+    
+    function finishCurrentRegion() {
+        if (currentPoints.length < 3) {
+            showMessage('至少需要3个点才能完成热区', 'warning');
+            return;
+        }
+        
+        const regionName = `区域 ${regions.length + 1}`;
+        regions.push({
+            points: [...currentPoints],
+            name: regionName
+        });
+        
+        currentPoints = [];
+        isDrawing = false;
+        document.getElementById('startDrawBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+        document.getElementById('startDrawBtn').disabled = false;
+        
+        renderRegionsList();
+        redrawCanvas();
+        showMessage('热区绘制完成', 'success');
+    }
+    
+    function clearCurrentDrawing() {
+        if (currentPoints.length === 0) {
+            showMessage('当前没有正在绘制的热区', 'info');
+            return;
+        }
+        
+        currentPoints = [];
+        isDrawing = false;
+        document.getElementById('startDrawBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+        document.getElementById('startDrawBtn').disabled = false;
+        redrawCanvas();
+        showMessage('已清除当前绘制', 'info');
+    }
+    
+    function clearAllRegions() {
+        if (regions.length === 0) {
+            showMessage('当前没有热区', 'info');
+            return;
+        }
+        
+        if (!confirm('确定要清除所有热区吗？')) return;
+        
+        regions = [];
+        currentPoints = [];
+        isDrawing = false;
+        document.getElementById('startDrawBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+        document.getElementById('startDrawBtn').disabled = false;
+        renderRegionsList();
+        redrawCanvas();
+        showMessage('已清除所有热区', 'info');
+    }
+    
+    function renderRegionsList() {
+        const container = document.getElementById('regionsList');
+        
+        if (regions.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">暂无热区</p>';
+            return;
+        }
+        
+        container.innerHTML = regions.map((region, index) => {
+            const color = colors[index % colors.length];
+            return `
+                <div class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition-all">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-4 h-4 rounded" style="background-color: ${color}"></div>
+                            <span class="text-sm font-medium text-gray-800">${region.name}</span>
+                        </div>
+                        <div class="flex space-x-1">
+                            <button onclick="renameRegion(${index})" class="p-1 text-blue-600 hover:bg-blue-50 rounded" title="重命名">
+                                <i class="fas fa-edit text-xs"></i>
+                            </button>
+                            <button onclick="deleteRegion(${index})" class="p-1 text-red-600 hover:bg-red-50 rounded" title="删除">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${region.points.length} 个顶点
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    function renameRegion(index) {
+        currentEditingIndex = index;
+        document.getElementById('regionNameInput').value = regions[index].name;
+        document.getElementById('renameModal').classList.remove('hidden');
+    }
+    
+    function closeRenameModal() {
+        document.getElementById('renameModal').classList.add('hidden');
+        currentEditingIndex = -1;
+    }
+    
+    function confirmRename() {
+        const newName = document.getElementById('regionNameInput').value.trim();
+        if (!newName) {
+            showMessage('请输入热区名称', 'warning');
+            return;
+        }
+        
+        regions[currentEditingIndex].name = newName;
+        renderRegionsList();
+        redrawCanvas();
+        closeRenameModal();
+        showMessage('重命名成功', 'success');
+    }
+    
+    function deleteRegion(index) {
+        if (!confirm(`确定要删除"${regions[index].name}"吗？`)) return;
+        
+        regions.splice(index, 1);
+        renderRegionsList();
+        redrawCanvas();
+        showMessage('热区已删除', 'success');
+    }
+    
+    function applyTemplate(type) {
+        if (isDrawing) {
+            showMessage('请先完成当前热区的绘制', 'warning');
+            return;
+        }
+        
+        const width = canvas.width;
+        const height = canvas.height;
+        let points = [];
+        let name = '';
+        
+        switch (type) {
+            case 'full':
+                points = [[0, 0], [width, 0], [width, height], [0, height]];
+                name = '全画面';
+                break;
+            case 'center':
+                const margin = Math.min(width, height) * 0.2;
+                points = [
+                    [margin, margin],
+                    [width - margin, margin],
+                    [width - margin, height - margin],
+                    [margin, height - margin]
+                ];
+                name = '中心区域';
+                break;
+            case 'bottom':
+                points = [[0, height / 2], [width, height / 2], [width, height], [0, height]];
+                name = '下半区域';
+                break;
+        }
+        
+        regions.push({ points, name });
+        renderRegionsList();
+        redrawCanvas();
+        showMessage(`已添加"${name}"模板`, 'success');
+    }
+    
+    async function saveROIConfig() {
+        if (!taskAlgorithmId) {
+            showMessage('无法保存：缺少task-algorithm关联ID', 'error');
+            return;
+        }
+        
+        try {
+            const data = {
+                roi_regions: JSON.stringify(regions)
+            };
+            
+            await apiRequest(`/api/task-algorithms/${taskAlgorithmId}`, 'PUT', data);
+            showMessage('热区配置保存成功', 'success');
+            
+            // 延迟返回
+            setTimeout(() => {
+                goBack();
+            }, 1000);
+        } catch (error) {
+            showMessage('保存失败: ' + error.message, 'error');
+        }
+    }
+    
+    function goBack() {
+        window.location.href = '/tasks';
+    }
+    
+    // 页面加载时初始化
+    window.addEventListener('load', init);
+</script>
+{% endblock %}
+

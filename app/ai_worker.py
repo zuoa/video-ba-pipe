@@ -76,9 +76,11 @@ def main(args):
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
         plugin_module = algo_config_db.plugin_module
+        script_type = getattr(algo_config_db, 'script_type', 'plugin')  # 新增：获取脚本类型
 
         # 3. 从插件管理器获取对应的算法类
-        AlgorithmClass = plugin_manager.get_algorithm_class(plugin_module)
+        # plugin_module 存储的是模块名（如 'script_algorithm'），需要用 get_algorithm_class_by_module
+        AlgorithmClass = plugin_manager.get_algorithm_class_by_module(plugin_module)
         if not AlgorithmClass:
             logger.error(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
             return
@@ -86,7 +88,7 @@ def main(args):
         # 4. 加载ROI配置
         try:
             task_algorithm = TaskAlgorithm.get(
-                (TaskAlgorithm.task == task_id) & 
+                (TaskAlgorithm.task == task_id) &
                 (TaskAlgorithm.algorithm == algo_id)
             )
             roi_config = task_algorithm.roi_config
@@ -102,13 +104,26 @@ def main(args):
         # 5. 实例化算法插件
         # 将数据库中的配置（model_path, config_json）传递给插件
         full_config = {
+            "id": algo_id,  # 新增：算法ID，用于Hook
             "name": algo_config_db.name,
             "label_name": algo_config_db.label_name,
             "label_color": algo_config_db.label_color,
             "ext_config": algo_config_db.ext_config_json,
             "models_config": algo_config_db.models_config,
             "interval_seconds": algo_config_db.interval_seconds,
+            "task_id": task_id,  # 新增：任务ID
         }
+
+        # 新增：如果是脚本类型，添加脚本相关配置
+        if script_type == 'script':
+            full_config.update({
+                "script_path": getattr(algo_config_db, 'script_path', None),
+                "entry_function": getattr(algo_config_db, 'entry_function', 'process'),
+                "runtime_timeout": getattr(algo_config_db, 'runtime_timeout', 30),
+                "memory_limit_mb": getattr(algo_config_db, 'memory_limit_mb', 512),
+            })
+            logger.info(f"[AIWorker:{os.getpid()}] 加载脚本类型算法: {algo_config_db.name}, 路径: {full_config.get('script_path')}")
+
         algorithm = AlgorithmClass(full_config)
         logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {buffer_name}")
         algorithms[algo_id] = algorithm
@@ -181,6 +196,7 @@ def main(args):
                     try:
                         # 获取算法的处理结果
                         result = future.result()
+                        logger.info(result)
                         has_detection = bool(result and result.get("detections"))
                         roi_mask = result.get('roi_mask')  # 获取ROI掩码用于可视化
                         

@@ -1,0 +1,582 @@
+{% extends "base.html" %}
+
+{% block title %}模型管理{% endblock %}
+{% block page_title %}模型管理{% endblock %}
+{% block page_subtitle %}管理和上传AI模型文件{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-8">
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white shadow-lg">
+                <i class="fas fa-cube text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">模型库</h3>
+                <p class="text-sm text-gray-500" id="modelCount">共 0 个模型</p>
+            </div>
+        </div>
+        <button onclick="showUploadModal()" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
+            <i class="fas fa-upload"></i>
+            <span>上传模型</span>
+        </button>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="bg-white rounded-2xl shadow-lg p-4 mb-6 border border-gray-100">
+        <div class="flex flex-wrap gap-4 items-center">
+            <div class="flex-1 min-w-64">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" id="searchInput" placeholder="搜索模型名称或描述..."
+                        class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent">
+                </div>
+            </div>
+            <div>
+                <select id="typeFilter" class="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white">
+                    <option value="">所有类型</option>
+                </select>
+            </div>
+            <div>
+                <select id="frameworkFilter" class="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white">
+                    <option value="">所有框架</option>
+                </select>
+            </div>
+            <div>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="enabledOnly" class="w-4 h-4 text-black border-gray-300 rounded focus:ring-black">
+                    <span class="text-sm text-gray-700">仅显示启用</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模型网格 -->
+    <div id="modelsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- 动态渲染模型卡片 -->
+    </div>
+</div>
+
+<!-- 上传模态框 -->
+<div id="uploadModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 md:w-2/3 lg:w-1/2 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white">
+                    <i class="fas fa-upload"></i>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-800">上传模型</h3>
+            </div>
+            <button onclick="closeUploadModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <form id="uploadForm" onsubmit="handleUpload(event)" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">模型名称 *</label>
+                    <input type="text" id="modelName" required class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black" placeholder="例如: YOLOv8n Person">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">版本</label>
+                    <input type="text" id="modelVersion" value="v1.0" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">模型类型 *</label>
+                    <select id="modelType" required class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white">
+                        <option value="YOLO">YOLO</option>
+                        <option value="ONNX">ONNX</option>
+                        <option value="TensorRT">TensorRT</option>
+                        <option value="PyTorch">PyTorch</option>
+                        <option value="TFLite">TFLite</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">框架 *</label>
+                    <select id="modelFramework" required class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white">
+                        <option value="ultralytics">ultralytics</option>
+                        <option value="onnx">onnx</option>
+                        <option value="pytorch">pytorch</option>
+                        <option value="tensorrt">tensorrt</option>
+                        <option value="tflite">tflite</option>
+                        <option value="custom">custom</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">模型文件 *</label>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                    <input type="file" id="modelFile" accept=".pt,.pth,.onnx,.engine,.bin,.tflite,.xml,.param,.json" class="hidden" required onchange="handleFileSelect(this)">
+                    <div id="uploadArea" class="cursor-pointer" onclick="document.getElementById('modelFile').click()">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                        <p class="text-gray-600 mb-1">点击或拖拽上传模型文件</p>
+                        <p class="text-xs text-gray-500">支持 .pt, .onnx, .engine 等格式</p>
+                    </div>
+                    <div id="fileInfo" class="hidden">
+                        <i class="fas fa-file text-4xl text-green-500 mb-3"></i>
+                        <p id="fileName" class="text-gray-800 font-medium"></p>
+                        <p id="fileSize" class="text-sm text-gray-500"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">输入尺寸</label>
+                <input type="text" id="inputShape" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black" placeholder="例如: 640x640">
+            </div>
+
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">描述</label>
+                <textarea id="modelDescription" rows="3" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black" placeholder="模型功能描述、适用场景等..."></textarea>
+            </div>
+
+            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                <button type="button" onclick="closeUploadModal()" class="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-all">
+                    取消
+                </button>
+                <button type="submit" class="px-6 py-3 btn-primary text-white font-medium rounded-xl shadow-lg">
+                    <i class="fas fa-upload mr-2"></i>上传
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div id="detailModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 md:w-2/3 lg:w-1/2 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center text-white">
+                    <i class="fas fa-info-circle"></i>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-800">模型详情</h3>
+            </div>
+            <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div id="detailContent" class="space-y-4">
+            <!-- 动态填充 -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let models = [];
+let filteredModels = [];
+
+// API 请求辅助函数
+async function apiRequest(url, method = 'GET', data = null) {
+    const options = { method };
+    if (data) {
+        if (method === 'GET') {
+            url += '?' + new URLSearchParams(data);
+        } else {
+            options.headers = { 'Content-Type': 'application/json' };
+            options.body = JSON.stringify(data);
+        }
+    }
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+}
+
+// 加载模型列表
+async function loadModels() {
+    try {
+        const type = document.getElementById('typeFilter').value;
+        const framework = document.getElementById('frameworkFilter').value;
+        const enabled = document.getElementById('enabledOnly').checked;
+        const search = document.getElementById('searchInput').value;
+
+        const params = {};
+        if (type) params.type = type;
+        if (framework) params.framework = framework;
+        if (enabled) params.enabled = 'true';
+        if (search) params.search = search;
+
+        const result = await apiRequest('/api/models', 'GET', params);
+        models = result.models || [];
+        filteredModels = models;
+
+        document.getElementById('modelCount').textContent = `共 ${models.length} 个模型`;
+        renderModels();
+        loadFilters();
+    } catch (error) {
+        showMessage('加载模型列表失败: ' + error.message, 'error');
+    }
+}
+
+// 加载筛选器选项
+async function loadFilters() {
+    try {
+        const [typesResult, frameworksResult] = await Promise.all([
+            apiRequest('/api/models/types'),
+            apiRequest('/api/models/frameworks')
+        ]);
+
+        const typeSelect = document.getElementById('typeFilter');
+        const frameworkSelect = document.getElementById('frameworkFilter');
+
+        // 保存当前选择
+        const currentType = typeSelect.value;
+        const currentFramework = frameworkSelect.value;
+
+        // 更新类型选项
+        typeSelect.innerHTML = '<option value="">所有类型</option>' +
+            typesResult.types.map(t => `<option value="${t}">${t}</option>`).join('');
+        typeSelect.value = currentType;
+
+        // 更新框架选项
+        frameworkSelect.innerHTML = '<option value="">所有框架</option>' +
+            frameworksResult.frameworks.map(f => `<option value="${f}">${f}</option>`).join('');
+        frameworkSelect.value = currentFramework;
+    } catch (error) {
+        console.error('加载筛选器失败:', error);
+    }
+}
+
+// 渲染模型卡片
+function renderModels() {
+    const grid = document.getElementById('modelsGrid');
+
+    if (filteredModels.length === 0) {
+        grid.innerHTML = `
+            <div class="col-span-full text-center py-16">
+                <i class="fas fa-cube text-6xl text-gray-300 mb-4"></i>
+                <p class="text-gray-500 text-lg">暂无模型</p>
+                <p class="text-gray-400 text-sm mt-2">点击"上传模型"按钮添加第一个模型</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = filteredModels.map(model => `
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 card-hover">
+            <div class="p-6">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-12 h-12 bg-gradient-to-br from-black to-gray-700 rounded-xl flex items-center justify-center text-white shadow-lg">
+                            <i class="fas fa-cube text-lg"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-800 text-lg">${escapeHtml(model.name)}</h4>
+                            <p class="text-xs text-gray-500">${escapeHtml(model.version)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <span class="status-badge ${model.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}">
+                            ${model.enabled ? '启用' : '禁用'}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="space-y-2 text-sm text-gray-600">
+                    <div class="flex items-center justify-between">
+                        <span>类型:</span>
+                        <span class="font-medium text-gray-800">${escapeHtml(model.model_type)}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span>框架:</span>
+                        <span class="font-medium text-gray-800">${escapeHtml(model.framework)}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span>文件大小:</span>
+                        <span class="font-medium text-gray-800">${model.file_size_mb} MB</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span>使用次数:</span>
+                        <span class="font-medium text-gray-800">${model.usage_count}</span>
+                    </div>
+                    ${model.input_shape ? `
+                    <div class="flex items-center justify-between">
+                        <span>输入尺寸:</span>
+                        <span class="font-medium text-gray-800">${escapeHtml(model.input_shape)}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                ${model.description ? `
+                <p class="mt-4 text-sm text-gray-600 line-clamp-2">${escapeHtml(model.description)}</p>
+                ` : ''}
+
+                ${model.tags && model.tags.length > 0 ? `
+                <div class="mt-3 flex flex-wrap gap-2">
+                    ${model.tags.map(tag => `<span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">${escapeHtml(tag)}</span>`).join('')}
+                </div>
+                ` : ''}
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <div class="text-xs text-gray-500">
+                    <i class="fas fa-clock mr-1"></i>
+                    ${formatDate(model.created_at)}
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="viewModel(${model.id})" class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all text-sm font-medium">
+                        <i class="fas fa-eye mr-1"></i>详情
+                    </button>
+                    <button onclick="copyModelPath(${model.id})" class="px-3 py-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-all text-sm font-medium">
+                        <i class="fas fa-copy mr-1"></i>复制路径
+                    </button>
+                    ${model.usage_count === 0 ? `
+                    <button onclick="deleteModel(${model.id})" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all text-sm font-medium">
+                        <i class="fas fa-trash mr-1"></i>删除
+                    </button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 显示上传模态框
+function showUploadModal() {
+    document.getElementById('uploadModal').classList.remove('hidden');
+    document.getElementById('uploadForm').reset();
+    document.getElementById('uploadArea').classList.remove('hidden');
+    document.getElementById('fileInfo').classList.add('hidden');
+}
+
+// 关闭上传模态框
+function closeUploadModal() {
+    document.getElementById('uploadModal').classList.add('hidden');
+}
+
+// 处理文件选择
+function handleFileSelect(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = formatFileSize(file.size);
+    document.getElementById('uploadArea').classList.add('hidden');
+    document.getElementById('fileInfo').classList.remove('hidden');
+}
+
+// 处理上传
+async function handleUpload(event) {
+    event.preventDefault();
+
+    const formData = new FormData();
+    formData.append('name', document.getElementById('modelName').value);
+    formData.append('version', document.getElementById('modelVersion').value);
+    formData.append('model_type', document.getElementById('modelType').value);
+    formData.append('framework', document.getElementById('modelFramework').value);
+    formData.append('description', document.getElementById('modelDescription').value);
+    formData.append('input_shape', document.getElementById('inputShape').value);
+
+    const fileInput = document.getElementById('modelFile');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        showMessage('请选择模型文件', 'error');
+        return;
+    }
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        showMessage('正在上传模型...', 'info');
+
+        const response = await fetch('/api/models', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+
+        showMessage('模型上传成功！');
+        closeUploadModal();
+        loadModels();
+    } catch (error) {
+        showMessage('上传失败: ' + error.message, 'error');
+    }
+}
+
+// 查看模型详情
+async function viewModel(modelId) {
+    try {
+        const result = await apiRequest(`/api/models/${modelId}`);
+        const model = result.model;
+
+        const content = document.getElementById('detailContent');
+        content.innerHTML = `
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">模型名称</label>
+                    <p class="text-lg font-semibold text-gray-800">${escapeHtml(model.name)}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">版本</label>
+                    <p class="text-lg font-semibold text-gray-800">${escapeHtml(model.version)}</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">类型</label>
+                    <p class="font-medium text-gray-800">${escapeHtml(model.model_type)}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">框架</label>
+                    <p class="font-medium text-gray-800">${escapeHtml(model.framework)}</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">文件名</label>
+                    <p class="font-mono text-sm text-gray-800 bg-gray-50 p-2 rounded">${escapeHtml(model.filename)}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">文件大小</label>
+                    <p class="font-medium text-gray-800">${model.file_size_mb} MB</p>
+                </div>
+            </div>
+
+            ${model.input_shape ? `
+            <div>
+                <label class="text-xs text-gray-500 uppercase tracking-wide">输入尺寸</label>
+                <p class="font-medium text-gray-800">${escapeHtml(model.input_shape)}</p>
+            </div>
+            ` : ''}
+
+            ${model.description ? `
+            <div>
+                <label class="text-xs text-gray-500 uppercase tracking-wide">描述</label>
+                <p class="text-gray-700">${escapeHtml(model.description)}</p>
+            </div>
+            ` : ''}
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">下载次数</label>
+                    <p class="font-medium text-gray-800">${model.download_count}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 uppercase tracking-wide">使用次数</label>
+                    <p class="font-medium text-gray-800">${model.usage_count}</p>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-xs text-gray-500 uppercase tracking-wide">上传时间</label>
+                <p class="text-gray-700">${formatDate(model.created_at)}</p>
+            </div>
+
+            <div class="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                <button onclick="copyModelPath(${model.id})" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-all">
+                    <i class="fas fa-copy mr-2"></i>复制路径
+                </button>
+                <button onclick="downloadModel(${model.id})" class="px-4 py-2 btn-primary text-white rounded-lg font-medium shadow-lg">
+                    <i class="fas fa-download mr-2"></i>下载模型
+                </button>
+            </div>
+        `;
+
+        document.getElementById('detailModal').classList.remove('hidden');
+    } catch (error) {
+        showMessage('加载模型详情失败: ' + error.message, 'error');
+    }
+}
+
+// 关闭详情模态框
+function closeDetailModal() {
+    document.getElementById('detailModal').classList.add('hidden');
+}
+
+// 复制模型路径
+async function copyModelPath(modelId) {
+    try {
+        const result = await apiRequest(`/api/models/${modelId}`);
+        const path = result.model.file_path;
+
+        await navigator.clipboard.writeText(path);
+        showMessage('模型路径已复制到剪贴板');
+    } catch (error) {
+        showMessage('复制失败: ' + error.message, 'error');
+    }
+}
+
+// 下载模型
+async function downloadModel(modelId) {
+    try {
+        window.open(`/api/models/${modelId}/download`, '_blank');
+    } catch (error) {
+        showMessage('下载失败: ' + error.message, 'error');
+    }
+}
+
+// 删除模型
+async function deleteModel(modelId) {
+    if (!confirm('确定要删除这个模型吗？此操作不可恢复。')) return;
+
+    try {
+        await apiRequest(`/api/models/${modelId}`, 'DELETE');
+        showMessage('模型删除成功');
+        loadModels();
+    } catch (error) {
+        showMessage('删除失败: ' + error.message, 'error');
+    }
+}
+
+// 工具函数
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('zh-CN');
+}
+
+function showMessage(message, type = 'success') {
+    // 简单的消息提示
+    alert(message);
+}
+
+// 事件监听
+document.getElementById('typeFilter').addEventListener('change', loadModels);
+document.getElementById('frameworkFilter').addEventListener('change', loadModels);
+document.getElementById('enabledOnly').addEventListener('change', loadModels);
+document.getElementById('searchInput').addEventListener('input', debounce(loadModels, 300));
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// 初始化
+loadModels();
+</script>
+{% endblock %}

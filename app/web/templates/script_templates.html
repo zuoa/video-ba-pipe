@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}脚本模板{% endblock %}
+{% block page_title %}脚本模板库{% endblock %}
+{% block page_subtitle %}快速开始使用模板创建检测脚本{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- 顶部操作栏 -->
+    <div class="flex justify-between items-center mb-8">
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white shadow-lg">
+                <i class="fas fa-file-code text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">模板库</h3>
+                <p class="text-sm text-gray-500" id="templateCount">共 0 个模板</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <a href="/scripts" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center space-x-2">
+                <i class="fas fa-arrow-left"></i>
+                <span>返回脚本管理</span>
+            </a>
+            <button onclick="loadTemplates()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center space-x-2">
+                <i class="fas fa-sync"></i>
+                <span>刷新</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 模板列表 -->
+    <div id="templatesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="col-span-full flex justify-center py-12">
+            <i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i>
+        </div>
+    </div>
+</div>
+
+<!-- 查看模板模态框 -->
+<div id="viewTemplateModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 shadow-2xl rounded-2xl bg-white">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white">
+                    <i class="fas fa-file-code"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-800" id="templateTitle">模板名称</h3>
+                    <p class="text-sm text-gray-500" id="templatePath"></p>
+                </div>
+            </div>
+            <button onclick="closeViewModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <div class="mb-6">
+            <pre class="bg-gray-900 p-4 rounded-lg overflow-auto text-sm"><code id="templateContent" class="language-python"></code></pre>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+            <button onclick="closeViewModal()" class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                关闭
+            </button>
+            <button onclick="useTemplate()" class="px-6 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center space-x-2">
+                <i class="fas fa-copy"></i>
+                <span>使用此模板</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let templates = [];
+let currentTemplate = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadTemplates();
+});
+
+// 加载模板列表
+async function loadTemplates() {
+    document.getElementById('templatesContainer').innerHTML = `
+        <div class="col-span-full flex justify-center py-12">
+            <i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i>
+        </div>
+    `;
+
+    try {
+        const response = await fetch('/api/scripts/templates');
+        const data = await response.json();
+
+        if (data.success) {
+            templates = data.templates;
+            displayTemplates();
+            updateTemplateCount(templates.length);
+        } else {
+            showError('加载模板失败: ' + data.error);
+        }
+    } catch (error) {
+        showError('加载失败，请检查网络连接');
+        console.error(error);
+    }
+}
+
+// 显示模板列表
+function displayTemplates() {
+    if (templates.length === 0) {
+        document.getElementById('templatesContainer').innerHTML = `
+            <div class="col-span-full">
+                <div class="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+                    <i class="fas fa-info-circle text-3xl text-blue-400 mb-4"></i>
+                    <p class="text-blue-700">暂无可用模板</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    templates.forEach(function(template) {
+        html += `
+            <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-xl transition-shadow">
+                <div class="p-6">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-file-code text-gray-600"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="text-lg font-semibold text-gray-800">${template.name}</h4>
+                            <p class="text-sm text-gray-500">
+                                <code class="text-xs bg-gray-100 px-2 py-1 rounded">${template.path}</code>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="viewTemplate('${template.name}')"
+                                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+                            <i class="fas fa-eye"></i>
+                            <span>查看</span>
+                        </button>
+                        <button onclick="useTemplateDirect('${template.name}')"
+                                class="flex-1 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2">
+                            <i class="fas fa-copy"></i>
+                            <span>使用</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    document.getElementById('templatesContainer').innerHTML = html;
+}
+
+// 查看模板
+function viewTemplate(name) {
+    const template = templates.find(t => t.name === name);
+    if (!template) return;
+
+    currentTemplate = template;
+
+    document.getElementById('templateTitle').textContent = name;
+    document.getElementById('templatePath').textContent = template.path;
+    document.getElementById('templateContent').textContent = template.content;
+    document.getElementById('viewTemplateModal').classList.remove('hidden');
+
+    // 应用 Prism.js 代码高亮
+    Prism.highlightAll();
+}
+
+// 关闭查看模态框
+function closeViewModal() {
+    document.getElementById('viewTemplateModal').classList.add('hidden');
+}
+
+// 使用模板（从模态框）
+function useTemplate() {
+    if (!currentTemplate) return;
+    window.location.href = `/scripts?template=${encodeURIComponent(currentTemplate.name)}`;
+}
+
+// 直接使用模板
+function useTemplateDirect(name) {
+    window.location.href = `/scripts?template=${encodeURIComponent(name)}`;
+}
+
+// 更新模板计数
+function updateTemplateCount(count) {
+    document.getElementById('templateCount').textContent = `共 ${count} 个模板`;
+}
+
+// 显示错误
+function showError(message) {
+    document.getElementById('templatesContainer').innerHTML = `
+        <div class="col-span-full">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-400 mb-4"></i>
+                <p class="text-red-700">${message}</p>
+            </div>
+        </div>
+    `;
+}
+
+// 添加代码显示样式
+const codeStyle = document.createElement('style');
+codeStyle.textContent = `
+    pre[class*="language-"] {
+        margin: 0;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        max-height: 500px;
+        overflow: auto;
+    }
+    code[class*="language-"] {
+        font-size: 13px;
+        line-height: 1.5;
+    }
+`;
+document.head.appendChild(codeStyle);
+</script>
+{% endblock %}

@@ -6,6 +6,19 @@
     <title>{% block title %}管理后台{% endblock %} - 视频行为分析系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- CodeMirror - 代码编辑器 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/monokai.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/closebrackets.min.js"></script>
+
+    <!-- Prism.js - 代码高亮显示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
@@ -133,8 +146,14 @@
                     <a href="/admin/tasks" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/tasks' %}active text-black{% endif %}">
                         <i class="fas fa-tasks mr-2"></i>任务管理
                     </a>
+                    <a href="/models" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/models', '/admin/models'] %}active text-black{% endif %}">
+                        <i class="fas fa-cube mr-2"></i>模型管理
+                    </a>
                     <a href="/admin/algorithms" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/algorithms' %}active text-black{% endif %}">
                         <i class="fas fa-brain mr-2"></i>算法管理
+                    </a>
+                    <a href="/scripts" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/scripts', '/admin/scripts'] %}active text-black{% endif %}">
+                        <i class="fas fa-code mr-2"></i>脚本管理
                     </a>
                     <a href="/admin/alerts" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/alerts' %}active text-black{% endif %}">
                         <i class="fas fa-bell mr-2"></i>告警记录
@@ -143,10 +162,6 @@
 
                 <!-- 右侧操作 -->
                 <div class="flex items-center space-x-3">
-                    <div class="relative hidden sm:block">
-                        <input type="text" placeholder="搜索..." class="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all w-48">
-                        <i class="fas fa-search absolute left-3 top-2.5 text-gray-400 text-sm"></i>
-                    </div>
                     <button class="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                         <i class="fas fa-bell"></i>
                         <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>

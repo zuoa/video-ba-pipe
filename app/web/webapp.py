@@ -13,15 +13,24 @@ import time
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 
-from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert
+from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert, MLModel
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
 from app.plugin_manager import PluginManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
+from app.setup_database import setup_database
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
+
+# 初始化数据库（如果不存在则创建所有表）
+try:
+    setup_database()
+    app.logger.info("数据库初始化完成")
+except Exception as e:
+    app.logger.error(f"数据库初始化失败: {e}")
+    # 不阻止应用启动，让应用继续运行并在后续操作中报告错误
 
 # ========== API 端点 ==========
 
@@ -32,9 +41,16 @@ def list_plugin_modules():
         plugins_path = os.path.join(os.path.dirname(__file__), '..', 'plugins')
         plugin_manager = PluginManager(plugins_path)
         modules = sorted(list(plugin_manager.algorithms_by_module.keys()))
+
+        # 确保 script_algorithm 始终在列表中
+        if 'script_algorithm' not in modules:
+            modules.append('script_algorithm')
+            modules = sorted(modules)
+
         return jsonify({'modules': modules})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # 即使出错也返回 script_algorithm
+        return jsonify({'modules': ['script_algorithm']})
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
@@ -44,6 +60,7 @@ def get_algorithms():
         'id': a.id,
         'name': a.name,
         'model_json': a.model_json,
+        'model_ids': getattr(a, 'model_ids', '[]'),  # 模型ID列表
         'interval_seconds': a.interval_seconds,
         'ext_config_json': a.ext_config_json,
         'plugin_module': a.plugin_module,
@@ -51,7 +68,13 @@ def get_algorithms():
         'enable_window_check': a.enable_window_check,
         'window_size': a.window_size,
         'window_mode': a.window_mode,
-        'window_threshold': a.window_threshold
+        'window_threshold': a.window_threshold,
+        # 脚本相关字段
+        'script_type': getattr(a, 'script_type', 'plugin'),
+        'script_path': getattr(a, 'script_path', None),
+        'entry_function': getattr(a, 'entry_function', 'process'),
+        'runtime_timeout': getattr(a, 'runtime_timeout', 30),
+        'memory_limit_mb': getattr(a, 'memory_limit_mb', 512)
     } for a in algorithms])
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
@@ -62,6 +85,7 @@ def get_algorithm(id):
             'id': algorithm.id,
             'name': algorithm.name,
             'model_json': algorithm.model_json,
+            'model_ids': getattr(algorithm, 'model_ids', '[]'),  # 模型ID列表
             'interval_seconds': algorithm.interval_seconds,
             'ext_config_json': algorithm.ext_config_json,
             'plugin_module': algorithm.plugin_module,
@@ -69,7 +93,13 @@ def get_algorithm(id):
             'enable_window_check': algorithm.enable_window_check,
             'window_size': algorithm.window_size,
             'window_mode': algorithm.window_mode,
-            'window_threshold': algorithm.window_threshold
+            'window_threshold': algorithm.window_threshold,
+            # 脚本相关字段
+            'script_type': getattr(algorithm, 'script_type', 'plugin'),
+            'script_path': getattr(algorithm, 'script_path', None),
+            'entry_function': getattr(algorithm, 'entry_function', 'process'),
+            'runtime_timeout': getattr(algorithm, 'runtime_timeout', 30),
+            'memory_limit_mb': getattr(algorithm, 'memory_limit_mb', 512)
         })
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -78,9 +108,11 @@ def get_algorithm(id):
 def create_algorithm():
     data = request.json
     try:
+        # 创建算法
         algorithm = Algorithm.create(
             name=data['name'],
             model_json=data.get('model_json', '{}'),
+            model_ids=data.get('model_ids', '[]'),  # 模型ID列表
             interval_seconds=data.get('interval_seconds', 1),
             ext_config_json=data.get('ext_config_json', '{}'),
             plugin_module=data.get('plugin_module'),
@@ -88,8 +120,28 @@ def create_algorithm():
             enable_window_check=data.get('enable_window_check', False),
             window_size=data.get('window_size', 30),
             window_mode=data.get('window_mode', 'ratio'),
-            window_threshold=data.get('window_threshold', 0.3)
+            window_threshold=data.get('window_threshold', 0.3),
+            # 脚本相关字段
+            script_type=data.get('script_type', 'plugin'),
+            script_path=data.get('script_path'),
+            entry_function=data.get('entry_function', 'process'),
+            runtime_timeout=data.get('runtime_timeout', 30),
+            memory_limit_mb=data.get('memory_limit_mb', 512)
         )
+        
+        # 更新模型使用计数
+        try:
+            import json
+            model_ids = json.loads(data.get('model_ids', '[]'))
+            for model_id in model_ids:
+                try:
+                    model = MLModel.get_by_id(model_id)
+                    model.increment_usage()
+                except MLModel.DoesNotExist:
+                    app.logger.warning(f"模型 {model_id} 不存在")
+        except Exception as e:
+            app.logger.error(f"更新模型使用计数失败: {e}")
+        
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -99,6 +151,36 @@ def update_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
         data = request.json
+        
+        # 处理模型ID的变更
+        import json
+        if 'model_ids' in data:
+            old_model_ids = set(algorithm.model_id_list)
+            new_model_ids = set(json.loads(data.get('model_ids', '[]')))
+            
+            # 计算需要增加和减少使用计数的模型
+            added_models = new_model_ids - old_model_ids
+            removed_models = old_model_ids - new_model_ids
+            
+            # 增加新添加模型的使用计数
+            for model_id in added_models:
+                try:
+                    model = MLModel.get_by_id(model_id)
+                    model.increment_usage()
+                except MLModel.DoesNotExist:
+                    app.logger.warning(f"模型 {model_id} 不存在")
+            
+            # 减少移除模型的使用计数
+            for model_id in removed_models:
+                try:
+                    model = MLModel.get_by_id(model_id)
+                    model.decrement_usage()
+                except MLModel.DoesNotExist:
+                    app.logger.warning(f"模型 {model_id} 不存在")
+            
+            algorithm.model_ids = data['model_ids']
+        
+        # 更新其他字段
         algorithm.name = data.get('name', algorithm.name)
         algorithm.model_json = data.get('model_json', algorithm.model_json)
         algorithm.interval_seconds = data.get('interval_seconds', algorithm.interval_seconds)
@@ -109,6 +191,17 @@ def update_algorithm(id):
         algorithm.window_size = data.get('window_size', algorithm.window_size)
         algorithm.window_mode = data.get('window_mode', algorithm.window_mode)
         algorithm.window_threshold = data.get('window_threshold', algorithm.window_threshold)
+        # 脚本相关字段
+        if 'script_type' in data:
+            algorithm.script_type = data['script_type']
+        if 'script_path' in data:
+            algorithm.script_path = data['script_path']
+        if 'entry_function' in data:
+            algorithm.entry_function = data['entry_function']
+        if 'runtime_timeout' in data:
+            algorithm.runtime_timeout = data['runtime_timeout']
+        if 'memory_limit_mb' in data:
+            algorithm.memory_limit_mb = data['memory_limit_mb']
         algorithm.save()
         
         # 通知WindowDetector重新加载配置
@@ -129,7 +222,20 @@ def update_algorithm(id):
 def delete_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
-        algorithm.delete_instance()
+        
+        # 减少关联模型的使用计数
+        try:
+            for model_id in algorithm.model_id_list:
+                try:
+                    model = MLModel.get_by_id(model_id)
+                    model.decrement_usage()
+                except MLModel.DoesNotExist:
+                    app.logger.warning(f"模型 {model_id} 不存在")
+        except Exception as e:
+            app.logger.error(f"减少模型使用计数失败: {e}")
+        
+        # 使用 recursive=True 确保级联删除相关记录
+        algorithm.delete_instance(recursive=True)
         return jsonify({'message': 'Algorithm deleted'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -345,7 +451,8 @@ def update_task(id):
 def delete_task(id):
     try:
         task = Task.get_by_id(id)
-        task.delete_instance()
+        # 使用 recursive=True 确保级联删除相关记录（Alert、TaskAlgorithm等）
+        task.delete_instance(recursive=True)
         return jsonify({'message': 'Task deleted'})
     except Task.DoesNotExist:
         return jsonify({'error': 'Task not found'}), 404
@@ -413,7 +520,8 @@ def update_task_algorithm(id):
 def delete_task_algorithm(id):
     try:
         ta = TaskAlgorithm.get_by_id(id)
-        ta.delete_instance()
+        # 使用 recursive=True 确保级联删除相关记录
+        ta.delete_instance(recursive=True)
         return jsonify({'message': 'TaskAlgorithm deleted'})
     except TaskAlgorithm.DoesNotExist:
         return jsonify({'error': 'TaskAlgorithm not found'}), 404
@@ -958,6 +1066,35 @@ def alerts():
 def roi_config():
     return render_template('roi_config.html')
 
+# ========== 脚本管理页面路由 ==========
+
+@app.route('/scripts')
+def scripts():
+    """脚本管理页面"""
+    return render_template('scripts.html')
+
+@app.route('/scripts/templates')
+def script_templates():
+    """脚本模板页面"""
+    return render_template('script_templates.html')
+
+@app.route('/admin/scripts')
+def admin_scripts():
+    """脚本管理页面（管理后台路径）"""
+    return render_template('scripts.html')
+
+# ========== 模型管理页面路由 ==========
+
+@app.route('/models')
+def models():
+    """模型管理页面"""
+    return render_template('models.html')
+
+@app.route('/admin/models')
+def admin_models():
+    """模型管理页面（管理后台路径）"""
+    return render_template('models.html')
+
 @app.route('/api/upload/model', methods=['POST'])
 def upload_model_file():
     try:
@@ -998,6 +1135,22 @@ def upload_model_file():
     except Exception as e:
         app.logger.error(f"模型上传失败: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ========== 注册脚本管理API ==========
+try:
+    from app.web.api.scripts import register_scripts_api
+    register_scripts_api(app)
+    app.logger.info("脚本管理API已注册")
+except ImportError as e:
+    app.logger.warning(f"脚本管理API注册失败: {e}")
+
+# ========== 注册模型管理API ==========
+try:
+    from app.web.api.models import register_models_api
+    register_models_api(app)
+    app.logger.info("模型管理API已注册")
+except ImportError as e:
+    app.logger.warning(f"模型管理API注册失败: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)
