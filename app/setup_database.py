@@ -2,7 +2,7 @@ import json
 
 from app.core.database_models import (
     db, Algorithm, Task, TaskAlgorithm, Alert,
-    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel
+    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel, DetectorTemplate
 )
 
 
@@ -19,6 +19,7 @@ def setup_database():
         TaskAlgorithm,
         Alert,
         # 脚本支持相关表
+        DetectorTemplate,
         ScriptVersion,
         Hook,
         AlgorithmHook,

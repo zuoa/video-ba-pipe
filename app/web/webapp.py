@@ -15,7 +15,6 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 
 from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert, MLModel
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
-from app.plugin_manager import PluginManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
@@ -37,20 +36,11 @@ except Exception as e:
 # Plugin API
 @app.route('/api/plugins/modules', methods=['GET'])
 def list_plugin_modules():
-    try:
-        plugins_path = os.path.join(os.path.dirname(__file__), '..', 'plugins')
-        plugin_manager = PluginManager(plugins_path)
-        modules = sorted(list(plugin_manager.algorithms_by_module.keys()))
-
-        # 确保 script_algorithm 始终在列表中
-        if 'script_algorithm' not in modules:
-            modules.append('script_algorithm')
-            modules = sorted(modules)
-
-        return jsonify({'modules': modules})
-    except Exception as e:
-        # 即使出错也返回 script_algorithm
-        return jsonify({'modules': ['script_algorithm']})
+    """
+    返回可用的插件模块列表
+    由于系统已迁移到统一脚本接口，始终返回 script_algorithm
+    """
+    return jsonify({'modules': ['script_algorithm']})
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
@@ -59,22 +49,18 @@ def get_algorithms():
     return jsonify([{
         'id': a.id,
         'name': a.name,
-        'model_json': a.model_json,
-        'model_ids': getattr(a, 'model_ids', '[]'),  # 模型ID列表
+        'script_path': a.script_path,
+        'script_config': a.script_config,
+        'detector_template_id': a.detector_template_id,
         'interval_seconds': a.interval_seconds,
-        'ext_config_json': a.ext_config_json,
-        'plugin_module': a.plugin_module,
+        'runtime_timeout': a.runtime_timeout,
+        'memory_limit_mb': a.memory_limit_mb,
         'label_name': a.label_name,
+        'label_color': a.label_color,
         'enable_window_check': a.enable_window_check,
         'window_size': a.window_size,
         'window_mode': a.window_mode,
-        'window_threshold': a.window_threshold,
-        # 脚本相关字段
-        'script_type': getattr(a, 'script_type', 'plugin'),
-        'script_path': getattr(a, 'script_path', None),
-        'entry_function': getattr(a, 'entry_function', 'process'),
-        'runtime_timeout': getattr(a, 'runtime_timeout', 30),
-        'memory_limit_mb': getattr(a, 'memory_limit_mb', 512)
+        'window_threshold': a.window_threshold
     } for a in algorithms])
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
@@ -84,22 +70,18 @@ def get_algorithm(id):
         return jsonify({
             'id': algorithm.id,
             'name': algorithm.name,
-            'model_json': algorithm.model_json,
-            'model_ids': getattr(algorithm, 'model_ids', '[]'),  # 模型ID列表
+            'script_path': algorithm.script_path,
+            'script_config': algorithm.script_config,
+            'detector_template_id': algorithm.detector_template_id,
             'interval_seconds': algorithm.interval_seconds,
-            'ext_config_json': algorithm.ext_config_json,
-            'plugin_module': algorithm.plugin_module,
+            'runtime_timeout': algorithm.runtime_timeout,
+            'memory_limit_mb': algorithm.memory_limit_mb,
             'label_name': algorithm.label_name,
+            'label_color': algorithm.label_color,
             'enable_window_check': algorithm.enable_window_check,
             'window_size': algorithm.window_size,
             'window_mode': algorithm.window_mode,
-            'window_threshold': algorithm.window_threshold,
-            # 脚本相关字段
-            'script_type': getattr(algorithm, 'script_type', 'plugin'),
-            'script_path': getattr(algorithm, 'script_path', None),
-            'entry_function': getattr(algorithm, 'entry_function', 'process'),
-            'runtime_timeout': getattr(algorithm, 'runtime_timeout', 30),
-            'memory_limit_mb': getattr(algorithm, 'memory_limit_mb', 512)
+            'window_threshold': algorithm.window_threshold
         })
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -108,39 +90,26 @@ def get_algorithm(id):
 def create_algorithm():
     data = request.json
     try:
+        # 验证必填字段
+        if not data.get('script_path'):
+            return jsonify({'error': '缺少必填字段: script_path'}), 400
+        
         # 创建算法
         algorithm = Algorithm.create(
             name=data['name'],
-            model_json=data.get('model_json', '{}'),
-            model_ids=data.get('model_ids', '[]'),  # 模型ID列表
+            script_path=data['script_path'],
+            script_config=data.get('script_config', '{}'),
+            detector_template_id=data.get('detector_template_id'),
             interval_seconds=data.get('interval_seconds', 1),
-            ext_config_json=data.get('ext_config_json', '{}'),
-            plugin_module=data.get('plugin_module'),
-            label_name=data.get('label_name', 'Object'),
+            runtime_timeout=data.get('runtime_timeout', 30),
+            memory_limit_mb=data.get('memory_limit_mb', 512),
             enable_window_check=data.get('enable_window_check', False),
             window_size=data.get('window_size', 30),
             window_mode=data.get('window_mode', 'ratio'),
             window_threshold=data.get('window_threshold', 0.3),
-            # 脚本相关字段
-            script_type=data.get('script_type', 'plugin'),
-            script_path=data.get('script_path'),
-            entry_function=data.get('entry_function', 'process'),
-            runtime_timeout=data.get('runtime_timeout', 30),
-            memory_limit_mb=data.get('memory_limit_mb', 512)
+            label_name=data.get('label_name', 'Object'),
+            label_color=data.get('label_color', '#FF0000')
         )
-        
-        # 更新模型使用计数
-        try:
-            import json
-            model_ids = json.loads(data.get('model_ids', '[]'))
-            for model_id in model_ids:
-                try:
-                    model = MLModel.get_by_id(model_id)
-                    model.increment_usage()
-                except MLModel.DoesNotExist:
-                    app.logger.warning(f"模型 {model_id} 不存在")
-        except Exception as e:
-            app.logger.error(f"更新模型使用计数失败: {e}")
         
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
     except Exception as e:
@@ -295,27 +264,32 @@ def test_algorithm():
                 app.logger.info(f"已调整图片大小为: {new_w}x{new_h}")
 
 
-            # 获取插件管理器实例
-            plugins_path = os.path.join(os.path.dirname(__file__), '..', 'plugins')
-            plugin_manager = PluginManager(plugins_path)
+            # 使用统一的脚本算法类
+            from app.plugins.script_algorithm import ScriptAlgorithm
             
-            # 获取算法类（通过模块名查找）
-            algorithm_class = plugin_manager.get_algorithm_class_by_module(algorithm.plugin_module)
-            if not algorithm_class:
-                return jsonify({'success': False, 'error': f'无法找到算法插件: {algorithm.plugin_module}'}), 400
-
-
+            # 准备算法配置
+            script_config = algorithm.config_dict  # 从 script_config 字段解析
+            
             full_config = {
+                "id": algorithm.id,
                 "name": algorithm.name,
                 "label_name": algorithm.label_name,
                 "label_color": algorithm.label_color,
-                "ext_config": algorithm.ext_config_json,
-                "models_config": algorithm.models_config,
                 "interval_seconds": algorithm.interval_seconds,
+                "task_id": 0,  # 测试模式，使用虚拟任务ID
+                
+                # 脚本执行相关配置
+                "script_path": algorithm.script_path,
+                "entry_function": 'process',
+                "runtime_timeout": algorithm.runtime_timeout,
+                "memory_limit_mb": algorithm.memory_limit_mb,
             }
             
+            # 合并脚本配置
+            full_config.update(script_config)
+            
             # 创建算法实例并处理图片
-            algo_instance = algorithm_class(full_config)
+            algo_instance = ScriptAlgorithm(full_config)
             results = algo_instance.process(image)
             
             # 处理结果
@@ -1058,6 +1032,16 @@ def tasks():
 def algorithms():
     return render_template('algorithms.html')
 
+@app.route('/algorithm-wizard')
+def algorithm_wizard():
+    """算法配置向导"""
+    return render_template('algorithm_wizard.html')
+
+@app.route('/test-templates')
+def test_templates():
+    """测试检测器模板API"""
+    return render_template('test_templates.html')
+
 @app.route('/alerts')
 def alerts():
     return render_template('alerts.html')
@@ -1151,6 +1135,38 @@ try:
     app.logger.info("模型管理API已注册")
 except ImportError as e:
     app.logger.warning(f"模型管理API注册失败: {e}")
+
+# ========== 注册检测器模板API ==========
+try:
+    from app.web.api.detector_templates import register_detector_templates_api
+    register_detector_templates_api(app)
+    app.logger.info("检测器模板API已注册")
+    
+    # 自动初始化系统模板（如果不存在）
+    try:
+        from app.core.database_models import DetectorTemplate
+        
+        # 检查是否已有系统模板
+        existing_templates = DetectorTemplate.select().where(DetectorTemplate.is_system == True).count()
+        
+        if existing_templates == 0:
+            app.logger.info("检测到没有系统模板，开始自动初始化...")
+            
+            # 调用初始化逻辑（为了避免循环导入，这里使用 with app.test_client()）
+            with app.test_client() as client:
+                response = client.post('/api/detector-templates/init-system-templates')
+                if response.status_code == 200:
+                    data = response.get_json()
+                    app.logger.info(f"系统模板初始化成功: 创建 {data.get('created', 0)} 个, 更新 {data.get('updated', 0)} 个")
+                else:
+                    app.logger.warning(f"系统模板初始化失败: {response.status_code}")
+        else:
+            app.logger.info(f"已存在 {existing_templates} 个系统模板，跳过初始化")
+    except Exception as e:
+        app.logger.warning(f"系统模板自动初始化失败: {e}")
+        
+except ImportError as e:
+    app.logger.warning(f"检测器模板API注册失败: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)

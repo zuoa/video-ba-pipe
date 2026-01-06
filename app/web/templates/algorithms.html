@@ -16,10 +16,16 @@
                 <p class="text-sm text-gray-500" id="algorithmCount">共 0 个算法</p>
             </div>
         </div>
-        <button onclick="showCreateModal()" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
-            <i class="fas fa-plus"></i>
-            <span>添加算法</span>
-        </button>
+        <div class="flex space-x-3">
+            <button onclick="window.location.href='/algorithm-wizard'" class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl hover:from-blue-700 hover:to-blue-800 transition-all">
+                <i class="fas fa-magic"></i>
+                <span>配置向导</span>
+            </button>
+            <button onclick="showCreateModal()" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
+                <i class="fas fa-plus"></i>
+                <span>快速添加</span>
+            </button>
+        </div>
     </div>
 
     <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">

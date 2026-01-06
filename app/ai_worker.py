@@ -23,7 +23,7 @@ from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
-from app.plugin_manager import PluginManager
+from app.plugins.script_algorithm import ScriptAlgorithm
 
 
 def main(args):
@@ -61,10 +61,7 @@ def main(args):
         )
         logger.info(f"[AIWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
 
-    # 1. 初始化插件管理器
-    plugin_manager = PluginManager()
-    
-    # 1.5 初始化时间窗口检测器
+    # 1. 初始化时间窗口检测器
     window_detector = get_window_detector()
 
     # 2. 从数据库获取此工作者被指定的算法配置
@@ -75,15 +72,6 @@ def main(args):
 
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
-        plugin_module = algo_config_db.plugin_module
-        script_type = getattr(algo_config_db, 'script_type', 'plugin')  # 新增：获取脚本类型
-
-        # 3. 从插件管理器获取对应的算法类
-        # plugin_module 存储的是模块名（如 'script_algorithm'），需要用 get_algorithm_class_by_module
-        AlgorithmClass = plugin_manager.get_algorithm_class_by_module(plugin_module)
-        if not AlgorithmClass:
-            logger.error(f"[AIWorker:{os.getpid()}] 错误：找不到名为 '{plugin_module}' 的算法插件。")
-            return
 
         # 4. 加载ROI配置
         try:
@@ -102,30 +90,33 @@ def main(args):
             algorithm_roi_configs[algo_id] = []
 
         # 5. 实例化算法插件
-        # 将数据库中的配置（model_path, config_json）传递给插件
+        # 将数据库中的配置传递给脚本算法插件
+        # 合并 script_config (JSON) 和额外的字段
+        script_config = algo_config_db.config_dict  # 从 script_config 字段解析
+        
         full_config = {
-            "id": algo_id,  # 新增：算法ID，用于Hook
+            "id": algo_id,  # 算法ID，用于Hook
             "name": algo_config_db.name,
             "label_name": algo_config_db.label_name,
             "label_color": algo_config_db.label_color,
-            "ext_config": algo_config_db.ext_config_json,
-            "models_config": algo_config_db.models_config,
             "interval_seconds": algo_config_db.interval_seconds,
-            "task_id": task_id,  # 新增：任务ID
+            "task_id": task_id,  # 任务ID
+            
+            # 脚本执行相关配置
+            "script_path": algo_config_db.script_path,
+            "entry_function": 'process',  # 固定使用 process 作为入口函数
+            "runtime_timeout": algo_config_db.runtime_timeout,
+            "memory_limit_mb": algo_config_db.memory_limit_mb,
         }
+        
+        # 合并脚本配置（传给 init() 函数）
+        full_config.update(script_config)
+        
+        logger.info(f"[AIWorker:{os.getpid()}] 加载算法: {algo_config_db.name}, 脚本路径: {algo_config_db.script_path}")
 
-        # 新增：如果是脚本类型，添加脚本相关配置
-        if script_type == 'script':
-            full_config.update({
-                "script_path": getattr(algo_config_db, 'script_path', None),
-                "entry_function": getattr(algo_config_db, 'entry_function', 'process'),
-                "runtime_timeout": getattr(algo_config_db, 'runtime_timeout', 30),
-                "memory_limit_mb": getattr(algo_config_db, 'memory_limit_mb', 512),
-            })
-            logger.info(f"[AIWorker:{os.getpid()}] 加载脚本类型算法: {algo_config_db.name}, 路径: {full_config.get('script_path')}")
-
-        algorithm = AlgorithmClass(full_config)
-        logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{plugin_module}'，开始处理 {buffer_name}")
+        # 使用统一的 ScriptAlgorithm 类
+        algorithm = ScriptAlgorithm(full_config)
+        logger.info(f"[AIWorker:{os.getpid()}] 已加载算法 '{algo_config_db.name}' (ID: {algo_id})，开始处理 {buffer_name}")
         algorithms[algo_id] = algorithm
 
         algorithm_datamap[algo_id] = model_to_dict(algo_config_db)
@@ -137,9 +128,6 @@ def main(args):
     # 为每个算法维护处理时间和告警时间
     algo_last_process_time = {algo_id: 0 for algo_id in algorithms.keys()}
     algo_last_alert_time = {algo_id: 0 for algo_id in algorithms.keys()}
-    
-    check_interval = 10  # 每10秒检查一次插件更新
-    last_check_time = time.time()
 
     logger.info(f"[AIWorker:{os.getpid()}] 算法处理间隔配置:")
     for algo_id in algorithms.keys():
@@ -152,11 +140,6 @@ def main(args):
         last_processed_frame_time = 0  # 记录上次处理的帧时间，避免重复处理
         
         while True:
-            # 热重载检查
-            if time.time() - last_check_time > check_interval:
-                plugin_manager.check_for_updates()
-                # 可以在这里添加逻辑：如果当前算法被更新，则重新实例化
-                last_check_time = time.time()
 
             # 使用 peek 而不是 read，避免消费 RingBuffer 中的历史帧
             # 这样可以保证录制功能能获取到完整的历史帧

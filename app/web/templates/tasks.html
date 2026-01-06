@@ -62,124 +62,168 @@
         <form id="taskForm" onsubmit="handleSubmit(event)" class="space-y-6">
             <input type="hidden" id="taskId">
 
-            <div class="grid grid-cols-2 gap-6">
-                <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">任务名称 *</label>
-                    <input type="text" id="name" required class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
-                </div>
-
-                <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">视频源编码 *</label>
-                    <input type="text" id="sourceCode" required class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-6">
-                <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">视频源名称</label>
-                    <input type="text" id="sourceName" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
-                </div>
-
-                <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">缓冲区名称</label>
-                    <input type="text" id="bufferName" value="video_buffer" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
-                </div>
-            </div>
-
-            <!-- 解码配置 -->
+            <!-- 基本信息 -->
             <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
                 <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
-                    <i class="fas fa-cog mr-2 text-gray-700"></i>
-                    解码配置
+                    <i class="fas fa-info-circle mr-2 text-gray-700"></i>
+                    基本信息
                 </h4>
                 
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-2">
-                            解码宽度
-                            <span class="text-gray-500 font-normal">视频解码宽度</span>
+                        <label class="block text-gray-700 text-sm font-semibold mb-2">
+                            视频源编码 *
+                            <span class="text-gray-500 text-xs font-normal">唯一标识符</span>
                         </label>
-                        <input type="number" id="sourceDecodeWidth" value="960" min="160" max="4096" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        <input type="text" id="sourceCode" required 
+                            oninput="updateBufferName()" 
+                            placeholder="例如: cam001"
+                            class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
                     </div>
 
                     <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-2">
-                            解码高度
-                            <span class="text-gray-500 font-normal">视频解码高度</span>
+                        <label class="block text-gray-700 text-sm font-semibold mb-2">
+                            视频源名称 *
+                            <span class="text-gray-500 text-xs font-normal">任务显示名称</span>
                         </label>
-                        <input type="number" id="sourceDecodeHeight" value="540" min="90" max="2160" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
-                    </div>
-
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-2">
-                            解码帧率
-                            <span class="text-gray-500 font-normal">解码输出帧率</span>
-                        </label>
-                        <input type="number" id="sourceFps" value="10" min="1" max="60" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        <input type="text" id="sourceName" required 
+                            placeholder="例如: 一号摄像头"
+                            class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
                     </div>
                 </div>
 
-                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
-                    <div class="flex items-start">
-                        <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
-                        <div class="text-xs text-blue-700">
-                            <p class="font-semibold mb-1">解码配置说明：</p>
-                            <div class="space-y-1">
-                                <p><strong>宽度/高度：</strong>设置视频解码的分辨率，可根据实际需要调整</p>
-                                <p><strong>帧率：</strong>较低的帧率可减少CPU/GPU负载，提高处理效率</p>
-                                <p><strong>预设：</strong>720p@10fps, 1080p@8fps, 480p@15fps</p>
+                <div class="mt-4">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2 flex items-center">
+                        缓冲区名称
+                        <span class="text-gray-500 text-xs font-normal ml-2">62进制编码，纯英文数字</span>
+                        <span class="ml-auto text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            <i class="fas fa-magic mr-1"></i>自动生成
+                        </span>
+                    </label>
+                    <input type="text" id="bufferName" readonly 
+                        class="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed font-mono">
+                    <p class="text-xs text-gray-500 mt-1">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        基于视频源编码自动生成，确保唯一性且纯英文数字
+                    </p>
+                </div>
+            </div>
+
+            <!-- 视频源配置 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
+                    <i class="fas fa-video mr-2 text-gray-700"></i>
+                    视频源配置
+                </h4>
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">源地址 *</label>
+                    <div class="flex space-x-2">
+                        <input type="text" id="sourceUrl" required 
+                            placeholder="rtsp://192.168.1.100:554/stream"
+                            class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
+                        <button type="button" onclick="detectStreamInfo()" id="detectBtn" class="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fas fa-search" id="detectIcon"></i>
+                            <span id="detectText">检测</span>
+                        </button>
+                    </div>
+                    <div id="streamInfo" class="mt-2 hidden">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <div class="flex items-center space-x-2 text-sm">
+                                <i class="fas fa-info-circle text-blue-500"></i>
+                                <span class="text-blue-700 font-medium">流信息：</span>
+                                <span id="streamResolution" class="text-blue-600"></span>
+                                <span class="text-blue-500">|</span>
+                                <span id="streamFps" class="text-blue-600"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <h5 class="text-gray-700 text-xs font-semibold mb-3 flex items-center">
+                        <i class="fas fa-cog mr-2 text-gray-600"></i>
+                        解码参数
+                    </h5>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                解码宽度
+                                <span class="text-gray-500 font-normal">px</span>
+                            </label>
+                            <input type="number" id="sourceDecodeWidth" value="960" min="160" max="4096" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                解码高度
+                                <span class="text-gray-500 font-normal">px</span>
+                            </label>
+                            <input type="number" id="sourceDecodeHeight" value="540" min="90" max="2160" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-700 text-xs font-semibold mb-2">
+                                解码帧率
+                                <span class="text-gray-500 font-normal">fps</span>
+                            </label>
+                            <input type="number" id="sourceFps" value="10" min="1" max="60" step="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
+                        <div class="flex items-start">
+                            <i class="fas fa-lightbulb text-blue-500 mr-2 mt-0.5"></i>
+                            <div class="text-xs text-blue-700">
+                                <p class="font-semibold mb-1">提示：</p>
+                                <div class="space-y-1">
+                                    <p>• 点击"检测"按钮可自动获取流信息</p>
+                                    <p>• 较低的分辨率和帧率能提高处理效率</p>
+                                    <p>• 常用预设: 960x540@10fps (推荐) | 1920x1080@8fps | 640x360@15fps</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div>
-                <label class="block text-gray-700 text-sm font-semibold mb-2">源地址 *</label>
-                <div class="flex space-x-2">
-                    <input type="text" id="sourceUrl" required class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
-                    <button type="button" onclick="detectStreamInfo()" id="detectBtn" class="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="fas fa-search" id="detectIcon"></i>
-                        <span id="detectText">检测</span>
-                    </button>
-                </div>
-                <div id="streamInfo" class="mt-2 hidden">
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div class="flex items-center space-x-2 text-sm">
-                            <i class="fas fa-info-circle text-blue-500"></i>
-                            <span class="text-blue-700 font-medium">流信息：</span>
-                            <span id="streamResolution" class="text-blue-600"></span>
-                            <span class="text-blue-500">|</span>
-                            <span id="streamFps" class="text-blue-600"></span>
-                        </div>
+            <!-- 任务控制 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 class="text-gray-700 text-sm font-semibold mb-4 flex items-center">
+                    <i class="fas fa-toggle-on mr-2 text-gray-700"></i>
+                    任务控制
+                </h4>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="flex items-center p-3 bg-white rounded-lg hover:shadow-sm transition-all cursor-pointer border border-gray-200">
+                            <input type="checkbox" id="enabled" checked class="w-5 h-5 text-black border-gray-300 rounded focus:ring-black mr-3">
+                            <div>
+                                <span class="text-gray-700 text-sm font-semibold block">启用任务</span>
+                                <span class="text-gray-500 text-xs">任务是否激活</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-xs font-semibold mb-2">任务状态</label>
+                        <select id="status" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all bg-white">
+                            <option value="STOPPED">停止</option>
+                            <option value="RUNNING">运行中</option>
+                            <option value="ERROR">错误</option>
+                        </select>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-6">
-                <div>
-                    <label class="flex items-center p-4 bg-gray-100 rounded-lg hover:shadow-md transition-all cursor-pointer">
-                        <input type="checkbox" id="enabled" checked class="w-5 h-5 text-black border-gray-300 rounded focus:ring-black mr-3">
-                        <span class="text-gray-700 text-sm font-semibold">启用任务</span>
-                    </label>
-                </div>
-
-                <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">状态</label>
-                    <select id="status" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all bg-white">
-                        <option value="STOPPED">停止</option>
-                        <option value="RUNNING">运行中</option>
-                        <option value="ERROR">错误</option>
-                    </select>
-                </div>
-            </div>
-
-            <div>
+            <!-- 关联算法 -->
+            <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
                 <h4 class="text-gray-700 text-sm font-semibold mb-3 flex items-center">
                     <i class="fas fa-brain mr-2 text-gray-700"></i>
                     关联算法
+                    <span class="ml-auto text-xs text-gray-500 font-normal">选择要使用的算法</span>
                 </h4>
-                <div id="algorithmsList" class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50 custom-scrollbar">
+                <div id="algorithmsList" class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-white custom-scrollbar">
                 </div>
             </div>
 
@@ -408,6 +452,16 @@
         const container = document.getElementById('algorithmsList');
         const taskId = document.getElementById('taskId').value;
         
+        if (algorithms.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-gray-500 py-4">
+                    <i class="fas fa-info-circle text-2xl mb-2"></i>
+                    <p class="text-sm">暂无可用算法，请先创建算法</p>
+                </div>
+            `;
+            return;
+        }
+        
         container.innerHTML = algorithms.map(a => {
             const isSelected = selectedAlgorithmIds.includes(a.id);
             // 查找对应的TaskAlgorithm记录
@@ -415,24 +469,32 @@
             const taId = ta ? ta.id : null;
             
             return `
-            <div class="flex items-center justify-between hover:bg-gray-50 p-2 rounded border border-gray-100">
-                <label class="flex items-center flex-1">
+            <div class="flex items-center justify-between hover:bg-gray-50 p-3 rounded-lg border ${isSelected ? 'border-blue-300 bg-blue-50' : 'border-gray-200'} transition-all">
+                <label class="flex items-center flex-1 cursor-pointer">
                     <input type="checkbox"
                         value="${a.id}"
                         ${isSelected ? 'checked' : ''}
-                        class="mr-2 algorithm-checkbox">
-                    <span class="text-sm">${a.name} (${a.label_name})</span>
+                        class="w-4 h-4 text-black border-gray-300 rounded focus:ring-black mr-3 algorithm-checkbox">
+                    <div class="flex items-center">
+                        <i class="fas fa-brain mr-2 ${isSelected ? 'text-blue-600' : 'text-gray-400'}"></i>
+                        <div>
+                            <span class="text-sm font-medium ${isSelected ? 'text-blue-800' : 'text-gray-700'}">${a.name}</span>
+                            <span class="text-xs text-gray-500 ml-2">
+                                <i class="fas fa-tag mr-1"></i>${a.label_name}
+                            </span>
+                        </div>
+                    </div>
                 </label>
                 ${isSelected && taId ? `
                     <button type="button" onclick="configROI(${taskId}, ${a.id}, ${taId})" 
-                        class="ml-2 px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded transition-all flex items-center space-x-1"
+                        class="ml-2 px-3 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded-lg transition-all flex items-center space-x-1"
                         title="配置热区">
                         <i class="fas fa-draw-polygon"></i>
                         <span>热区</span>
                     </button>
                 ` : ''}
             </div>
-        `}).join('') || '<p class="text-gray-500 text-sm">暂无可用算法</p>';
+        `}).join('');
     }
     
     function configROI(taskId, algorithmId, taId) {
@@ -483,6 +545,54 @@
         }
     }
 
+    // 62进制编码字符集
+    const base62Chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    
+    // 字符串哈希函数 (简单的哈希算法)
+    function hashString(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash);
+    }
+    
+    // 转换为62进制
+    function toBase62(num) {
+        if (num === 0) return base62Chars[0];
+        
+        let result = '';
+        while (num > 0) {
+            result = base62Chars[num % 62] + result;
+            num = Math.floor(num / 62);
+        }
+        return result;
+    }
+    
+    // 对字符串进行62进制编码
+    function encodeToBase62(str) {
+        const hash = hashString(str);
+        const encoded = toBase62(hash);
+        // 确保至少6位，不足的用0补齐
+        return encoded.padStart(6, '0');
+    }
+    
+    // 自动生成缓冲区名称
+    function updateBufferName() {
+        const sourceCode = document.getElementById('sourceCode').value.trim();
+        const bufferName = document.getElementById('bufferName');
+        
+        if (sourceCode) {
+            // 格式: buffer_{62进制编码}
+            const encoded = encodeToBase62(sourceCode);
+            bufferName.value = `buffer_${encoded}`;
+        } else {
+            bufferName.value = '';
+        }
+    }
+
     function showCreateModal() {
         document.getElementById('modalTitle').textContent = '添加任务';
         document.getElementById('taskForm').reset();
@@ -491,6 +601,7 @@
         document.getElementById('sourceDecodeWidth').value = '960';
         document.getElementById('sourceDecodeHeight').value = '540';
         document.getElementById('sourceFps').value = '10';
+        document.getElementById('bufferName').value = '';  // 清空缓冲区名称
         document.getElementById('enableWindowCheck').checked = false;
         document.getElementById('windowConfigFields').classList.add('hidden');
         document.getElementById('windowSize').value = '30';
@@ -507,9 +618,9 @@
 
         document.getElementById('modalTitle').textContent = '编辑任务';
         document.getElementById('taskId').value = task.id;
-        document.getElementById('name').value = task.name;
         document.getElementById('sourceCode').value = task.source_code;
-        document.getElementById('sourceName').value = task.source_name || '';
+        // 使用 source_name 作为主名称,如果为空则使用 name
+        document.getElementById('sourceName').value = task.source_name || task.name;
         document.getElementById('sourceUrl').value = task.source_url;
         document.getElementById('sourceDecodeWidth').value = task.source_decode_width || 960;
         document.getElementById('sourceDecodeHeight').value = task.source_decode_height || 540;
@@ -542,15 +653,24 @@
         event.preventDefault();
 
         const id = document.getElementById('taskId').value;
+        const sourceName = document.getElementById('sourceName').value;
+        
+        // 验证缓冲区名称已生成
+        const bufferName = document.getElementById('bufferName').value;
+        if (!bufferName) {
+            showMessage('缓冲区名称未生成，请填写视频源编码', 'error');
+            return;
+        }
+        
         const data = {
-            name: document.getElementById('name').value,
+            name: sourceName,  // 使用 sourceName 作为任务名称
             source_code: document.getElementById('sourceCode').value,
-            source_name: document.getElementById('sourceName').value || null,
+            source_name: sourceName,
             source_url: document.getElementById('sourceUrl').value,
             source_decode_width: parseInt(document.getElementById('sourceDecodeWidth').value),
             source_decode_height: parseInt(document.getElementById('sourceDecodeHeight').value),
             source_fps: parseInt(document.getElementById('sourceFps').value),
-            buffer_name: document.getElementById('bufferName').value,
+            buffer_name: bufferName,
             enabled: document.getElementById('enabled').checked,
             status: document.getElementById('status').value,
             enable_window_check: document.getElementById('enableWindowCheck').checked,

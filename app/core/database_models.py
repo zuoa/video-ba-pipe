@@ -27,43 +27,37 @@ class BaseModel(pw.Model):
 
 class Algorithm(BaseModel):
     name = pw.CharField(unique=True)
-    model_json = pw.TextField(default='{}')
+    
+    # === 脚本配置 ===
+    script_path = pw.TextField()  # 脚本路径（必需）
+    script_config = pw.TextField(default='{}')  # 脚本配置JSON（传给init()）
+    detector_template_id = pw.IntegerField(null=True)  # 关联的检测器模板ID（可选）
+    
+    # === 执行配置 ===
     interval_seconds = pw.DoubleField(default=1)
-    ext_config_json = pw.TextField(default='{}')
-    plugin_module = pw.CharField(max_length=255, null=True)
-    label_name = pw.CharField(default='Object')
-    label_color = pw.CharField(default='#FF0000')
-
-    # 时间窗口检测配置
+    runtime_timeout = pw.IntegerField(default=30)  # 运行超时（秒）
+    memory_limit_mb = pw.IntegerField(default=512)  # 内存限制（MB）
+    
+    # === 时间窗口检测配置 ===
     enable_window_check = pw.BooleanField(default=False)
     window_size = pw.IntegerField(default=30)  # 时间窗口大小（秒）
     window_mode = pw.CharField(default='ratio')  # 预警模式: 'count', 'ratio', 'consecutive'
     window_threshold = pw.FloatField(default=0.3)  # 预警阈值
-
-    # 脚本支持字段
-    script_type = pw.CharField(default='plugin')  # 'plugin', 'script', 'external'
-    script_path = pw.TextField(null=True)  # 脚本路径（相对于USER_SCRIPTS_ROOT）
-    entry_function = pw.CharField(default='process')  # 入口函数名
-    script_version = pw.CharField(default='v1.0')  # 脚本版本
-    runtime_timeout = pw.IntegerField(default=30)  # 运行超时（秒）
-    memory_limit_mb = pw.IntegerField(default=512)  # 内存限制（MB）
+    
+    # === UI配置 ===
+    label_name = pw.CharField(default='Object')
+    label_color = pw.CharField(default='#FF0000')
+    
+    # === Hook配置 ===
     enabled_hooks = pw.TextField(null=True)  # 启用的Hook列表（JSON）
 
-    # 模型选择字段
-    model_ids = pw.TextField(default='[]')  # 关联的模型ID列表（JSON数组）
-
     @property
-    def models_config(self):
-        """提供一个方便的方法来获取解析后的JSON配置"""
-        return json.loads(self.model_json)
-    
-    @property
-    def model_id_list(self):
-        """获取解析后的模型ID列表"""
+    def config_dict(self):
+        """获取解析后的脚本配置"""
         try:
-            return json.loads(self.model_ids) if self.model_ids else []
+            return json.loads(self.script_config) if self.script_config else {}
         except:
-            return []
+            return {}
 
 
 # 2. 定义 Task 模型 (移除 ForeignKeyField)
@@ -202,6 +196,53 @@ class ScriptExecutionLog(BaseModel):
     result_count = pw.IntegerField(default=0)
     frame_timestamp = pw.FloatField(null=True)
     executed_at = pw.DateTimeField()
+
+
+# ==================== 检测器模板表 ====================
+
+class DetectorTemplate(BaseModel):
+    """检测器模板 - 预设配置"""
+    id = pw.AutoField()
+    name = pw.CharField(unique=True)            # "人员检测-高精度"
+    description = pw.TextField(null=True)       # 描述
+    script_path = pw.TextField()                # 脚本路径（相对于USER_SCRIPTS_ROOT）
+    config_preset = pw.TextField(default='{}')  # 预设配置（JSON）
+    category = pw.CharField(default='detection') # 类别：detection/tracking/classification/custom
+    tags = pw.TextField(default='[]')           # 标签（JSON数组）
+    is_system = pw.BooleanField(default=False)  # 是否系统模板
+    is_enabled = pw.BooleanField(default=True)  # 是否启用
+    icon = pw.CharField(null=True)              # 图标（emoji或class名）
+    
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='system')
+    
+    # 统计信息
+    usage_count = pw.IntegerField(default=0)    # 使用次数
+
+    class Meta:
+        table_name = 'detector_templates'
+    
+    @property
+    def config_dict(self):
+        """获取解析后的配置"""
+        try:
+            return json.loads(self.config_preset) if self.config_preset else {}
+        except:
+            return {}
+    
+    @property
+    def tags_list(self):
+        """获取解析后的标签列表"""
+        try:
+            return json.loads(self.tags) if self.tags else []
+        except:
+            return []
+    
+    def increment_usage(self):
+        """增加使用计数"""
+        self.usage_count += 1
+        self.save()
 
 
 # ==================== 模型管理相关表 ====================
