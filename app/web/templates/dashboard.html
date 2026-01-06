@@ -229,7 +229,7 @@
 
         container.innerHTML = alerts.slice(0, 5).map(a => {
             const task = tasks.find(t => t.id === a.task_id);
-            const taskName = task ? `${task.source_name} #${task.source_code}` : task.name;
+            const taskName = task ? `${task.name} #${task.source_code}` : `任务 #${a.task_id}`;
             const bgColor = alertTypeColors[a.alert_type.toLowerCase()] || 'bg-gray-500';
             const time = new Date(a.alert_time).toLocaleString('zh-CN', {
                 month: '2-digit',
