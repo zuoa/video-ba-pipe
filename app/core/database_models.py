@@ -75,7 +75,7 @@ class VideoSource(BaseModel):
 
     @property
     def buffer_name(self):
-        return f'video_buffer.{self.id}'
+        return f'video_buffer.{self.source_code}'
 
 
 # 兼容别名

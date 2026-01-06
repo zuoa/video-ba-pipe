@@ -179,7 +179,7 @@
     async function loadDashboardData() {
         try {
             // 加载任务
-            tasks = await apiRequest('/api/tasks');
+            tasks = await apiRequest('/api/video-sources');
             const runningTasksCount = tasks.filter(t => t.status === 'RUNNING').length;
             document.getElementById('totalTasks').textContent = tasks.length;
             document.getElementById('runningTasks').textContent = runningTasksCount;

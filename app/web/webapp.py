@@ -173,16 +173,6 @@ def update_algorithm(id):
             algorithm.memory_limit_mb = data['memory_limit_mb']
         algorithm.save()
         
-        # 通知WindowDetector重新加载配置
-        try:
-            window_detector = get_window_detector()
-            # 为使用该算法的所有任务重新加载配置
-            task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.algorithm == id)
-            for ta in task_algorithms:
-                window_detector.reload_config(ta.task.id, str(id))
-        except Exception as e:
-            app.logger.warning(f"重新加载窗口配置失败: {e}")
-        
         return jsonify({'message': 'Algorithm updated'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -276,7 +266,7 @@ def test_algorithm():
                 "label_name": algorithm.label_name,
                 "label_color": algorithm.label_color,
                 "interval_seconds": algorithm.interval_seconds,
-                "task_id": 0,  # 测试模式，使用虚拟任务ID
+                "source_id": 0,  # 测试模式，使用虚拟视频源ID
                 
                 # 脚本执行相关配置
                 "script_path": algorithm.script_path,
@@ -334,8 +324,7 @@ def test_algorithm():
         app.logger.error(f"算法测试失败: {str(e)}")
         return jsonify({'success': False, 'error': f'测试失败: {str(e)}'}), 500
 
-# VideoSource API (保留 /api/tasks 路由兼容)
-@app.route('/api/tasks', methods=['GET'])
+# VideoSource API
 @app.route('/api/video-sources', methods=['GET'])
 def get_video_sources():
     sources = VideoSource.select()
@@ -353,7 +342,6 @@ def get_video_sources():
         'decoder_pid': s.decoder_pid
     } for s in sources])
 
-@app.route('/api/tasks/<int:id>', methods=['GET'])
 @app.route('/api/video-sources/<int:id>', methods=['GET'])
 def get_video_source(id):
     try:
@@ -374,7 +362,6 @@ def get_video_source(id):
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
 
-@app.route('/api/tasks', methods=['POST'])
 @app.route('/api/video-sources', methods=['POST'])
 def create_video_source():
     data = request.json
@@ -394,7 +381,6 @@ def create_video_source():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/tasks/<int:id>', methods=['PUT'])
 @app.route('/api/video-sources/<int:id>', methods=['PUT'])
 def update_video_source(id):
     try:
@@ -415,7 +401,6 @@ def update_video_source(id):
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
 
-@app.route('/api/tasks/<int:id>', methods=['DELETE'])
 @app.route('/api/video-sources/<int:id>', methods=['DELETE'])
 def delete_video_source(id):
     try:
@@ -428,15 +413,15 @@ def delete_video_source(id):
 # Alert API
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
-    task_id = request.args.get('task_id')
+    source_id = request.args.get('source_id') or request.args.get('task_id')  # 兼容旧参数
     alert_type = request.args.get('alert_type')
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 30))
     
     # 构建查询
     query = Alert.select()
-    if task_id:
-        query = query.where(Alert.video_source == task_id)
+    if source_id:
+        query = query.where(Alert.video_source == source_id)
     if alert_type:
         query = query.where(Alert.alert_type == alert_type)
     
@@ -453,7 +438,8 @@ def get_alerts():
     return jsonify({
         'data': [{
             'id': a.id,
-            'task_id': a.video_source.id,
+            'source_id': a.video_source.id,
+            'task_id': a.video_source.id,  # 兼容旧字段
             'alert_time': a.alert_time.isoformat(),
             'alert_type': a.alert_type,
             'alert_message': a.alert_message,
@@ -476,8 +462,9 @@ def get_alerts():
 def create_alert():
     data = request.json
     try:
+        source_id = data.get('source_id') or data.get('task_id')  # 兼容旧参数
         alert = Alert.create(
-            task=data['task_id'],
+            video_source=source_id,
             alert_time=datetime.fromisoformat(data.get('alert_time', datetime.now().isoformat())),
             alert_type=data['alert_type'],
             alert_message=data['alert_message'],
@@ -525,12 +512,12 @@ def get_today_alerts_count():
 
 # ========== 时间窗口检测API ==========
 
-@app.route('/api/window/stats/<int:task_id>/<algorithm_id>', methods=['GET'])
-def get_window_stats(task_id, algorithm_id):
-    """获取指定任务和算法的窗口统计信息"""
+@app.route('/api/window/stats/<int:source_id>/<algorithm_id>', methods=['GET'])
+def get_window_stats(source_id, algorithm_id):
+    """获取指定视频源和算法的窗口统计信息"""
     try:
         window_detector = get_window_detector()
-        stats = window_detector.get_stats(task_id, algorithm_id)
+        stats = window_detector.get_stats(source_id, algorithm_id)
         
         # 判断当前状态
         if stats['config']['enable']:
@@ -554,45 +541,13 @@ def get_window_stats(task_id, algorithm_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/window/stats/<int:task_id>', methods=['GET'])
-def get_task_window_stats(task_id):
-    """获取指定任务的所有算法窗口统计信息"""
+@app.route('/api/window/stats/<int:source_id>', methods=['GET'])
+def get_source_window_stats(source_id):
+    """获取指定视频源的所有算法窗口统计信息"""
     try:
-        window_detector = get_window_detector()
-        
-        # 获取该任务的所有算法
-        task_algorithms = TaskAlgorithm.select().where(TaskAlgorithm.task == task_id)
-        
-        result = []
-        for ta in task_algorithms:
-            algorithm_id = str(ta.algorithm.id)
-            stats = window_detector.get_stats(task_id, algorithm_id)
-            
-            # 添加算法信息
-            stats['algorithm_id'] = ta.algorithm.id
-            stats['algorithm_name'] = ta.algorithm.name
-            
-            # 判断当前状态
-            if stats['config']['enable']:
-                mode = stats['config']['mode']
-                threshold = stats['config']['threshold']
-                
-                if mode == 'count':
-                    passed = stats['detection_count'] >= threshold
-                elif mode == 'ratio':
-                    passed = stats['detection_ratio'] >= threshold
-                elif mode == 'consecutive':
-                    passed = stats['max_consecutive'] >= threshold
-                else:
-                    passed = False
-                
-                stats['status'] = 'above_threshold' if passed else 'below_threshold'
-            else:
-                stats['status'] = 'disabled'
-            
-            result.append(stats)
-        
-        return jsonify(result)
+        # 注意：此API需要工作流系统来管理视频源和算法的关联
+        # 目前返回空列表
+        return jsonify([])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

@@ -36,7 +36,7 @@ class VideoRecorder:
     
     def start_recording(
         self, 
-        task_id: int,
+        source_id: int,
         alert_id: int,
         trigger_time: float,
         pre_seconds: float,
@@ -47,7 +47,7 @@ class VideoRecorder:
         开始录制视频（异步）
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             alert_id: 预警ID
             trigger_time: 触发时间戳
             pre_seconds: 录制触发前N秒
@@ -63,7 +63,7 @@ class VideoRecorder:
             output_filename = f"alert_{alert_id}_{timestamp_str}.mp4"
         
         # 构建完整路径
-        output_path = os.path.join(self.save_dir, str(task_id), output_filename)
+        output_path = os.path.join(self.save_dir, str(source_id), output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         # 检查是否已有相同的录制任务
@@ -79,7 +79,7 @@ class VideoRecorder:
             'pre_seconds': pre_seconds,
             'post_seconds': post_seconds,
             'output_path': output_path,
-            'relative_path': f"{task_id}/{output_filename}",
+            'relative_path': f"{source_id}/{output_filename}",
             'status': 'starting',
             'thread': None
         }
@@ -360,16 +360,16 @@ class VideoRecorderManager:
         if self._initialized:
             return
         
-        self.recorders = {}  # task_id -> VideoRecorder
+        self.recorders = {}  # source_id -> VideoRecorder
         self._initialized = True
     
-    def get_recorder(self, task_id: int, buffer: VideoRingBuffer, 
+    def get_recorder(self, source_id: int, buffer: VideoRingBuffer, 
                      save_dir: str, fps: int = 10) -> VideoRecorder:
         """
-        获取或创建指定任务的录制器
+        获取或创建指定视频源的录制器
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             buffer: VideoRingBuffer实例
             save_dir: 保存目录
             fps: 视频帧率
@@ -377,13 +377,13 @@ class VideoRecorderManager:
         Returns:
             VideoRecorder实例
         """
-        if task_id not in self.recorders:
-            self.recorders[task_id] = VideoRecorder(buffer, save_dir, fps)
+        if source_id not in self.recorders:
+            self.recorders[source_id] = VideoRecorder(buffer, save_dir, fps)
         
-        return self.recorders[task_id]
+        return self.recorders[source_id]
     
-    def cleanup_recorder(self, task_id: int):
-        """清理指定任务的录制器"""
-        if task_id in self.recorders:
-            del self.recorders[task_id]
+    def cleanup_recorder(self, source_id: int):
+        """清理指定视频源的录制器"""
+        if source_id in self.recorders:
+            del self.recorders[source_id]
 

@@ -14,13 +14,13 @@ class WindowDetector:
     """纯内存时间窗口检测器"""
     
     def __init__(self):
-        # 检测记录缓冲区: {(task_id, algo_id): deque([(timestamp, has_detection), ...])}
+        # 检测记录缓冲区: {(source_id, algo_id): deque([(timestamp, has_detection), ...])}
         self.buffers: Dict[Tuple[int, str], deque] = {}
         
-        # 配置缓存: {(task_id, algo_id): config_dict}
+        # 配置缓存: {(source_id, algo_id): config_dict}
         self.configs: Dict[Tuple[int, str], dict] = {}
         
-        # 统计缓存（避免重复计算）: {(task_id, algo_id): (cache_time, stats)}
+        # 统计缓存（避免重复计算）: {(source_id, algo_id): (cache_time, stats)}
         self.stats_cache: Dict[Tuple[int, str], Tuple[float, dict]] = {}
         self.cache_ttl = 0.5  # 缓存有效期0.5秒
         
@@ -31,12 +31,12 @@ class WindowDetector:
         # 内存限制
         self.max_records_per_buffer = 3000  # 每个缓冲区最多3000条记录
         
-    def load_config(self, task_id: int, algorithm_id: str):
+    def load_config(self, source_id: int, algorithm_id: str):
         """
         从数据库加载窗口配置
         从Algorithm表读取时间窗口配置
         """
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         
         try:
             # 获取Algorithm配置
@@ -51,10 +51,10 @@ class WindowDetector:
             }
             
             self.configs[key] = config
-            logger.info(f"[WindowDetector] 加载配置 Task={task_id}, Algo={algorithm_id}: {config}")
+            logger.info(f"[WindowDetector] 加载配置 Source={source_id}, Algo={algorithm_id}: {config}")
             
         except Exception as e:
-            logger.error(f"[WindowDetector] 加载配置失败 Task={task_id}, Algo={algorithm_id}: {e}")
+            logger.error(f"[WindowDetector] 加载配置失败 Source={source_id}, Algo={algorithm_id}: {e}")
             # 使用默认配置
             self.configs[key] = {
                 'enable': False,
@@ -63,18 +63,18 @@ class WindowDetector:
                 'threshold': 0.3
             }
     
-    def add_record(self, task_id: int, algorithm_id: str, timestamp: float, has_detection: bool, image_path: str = None):
+    def add_record(self, source_id: int, algorithm_id: str, timestamp: float, has_detection: bool, image_path: str = None):
         """
         添加检测记录（轻量级操作）
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             algorithm_id: 算法ID
             timestamp: 帧时间戳
             has_detection: 是否检测到目标
             image_path: 检测图片路径（仅在检测到目标时提供）
         """
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         
         # 初始化缓冲区
         if key not in self.buffers:
@@ -91,23 +91,23 @@ class WindowDetector:
         # 定期清理
         self._periodic_cleanup()
     
-    def check_condition(self, task_id: int, algorithm_id: str, current_time: float) -> Tuple[bool, Optional[dict]]:
+    def check_condition(self, source_id: int, algorithm_id: str, current_time: float) -> Tuple[bool, Optional[dict]]:
         """
         检查是否满足窗口条件
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             algorithm_id: 算法ID
             current_time: 当前时间戳
             
         Returns:
             (是否通过, 窗口统计信息)
         """
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         
         # 确保配置已加载
         if key not in self.configs:
-            self.load_config(task_id, algorithm_id)
+            self.load_config(source_id, algorithm_id)
         
         config = self.configs[key]
         
@@ -221,12 +221,12 @@ class WindowDetector:
         
         self.last_cleanup = current_time
     
-    def get_stats(self, task_id: int, algorithm_id: str, current_time: Optional[float] = None) -> dict:
+    def get_stats(self, source_id: int, algorithm_id: str, current_time: Optional[float] = None) -> dict:
         """
         获取当前窗口统计（用于监控面板）
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             algorithm_id: 算法ID
             current_time: 当前时间戳，None则使用当前时间
             
@@ -236,11 +236,11 @@ class WindowDetector:
         if current_time is None:
             current_time = time.time()
         
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         
         # 确保配置已加载
         if key not in self.configs:
-            self.load_config(task_id, algorithm_id)
+            self.load_config(source_id, algorithm_id)
         
         config = self.configs[key]
         stats = self._get_window_stats(key, current_time, config)
@@ -250,25 +250,25 @@ class WindowDetector:
         
         return stats
     
-    def clear_buffer(self, task_id: int, algorithm_id: str):
+    def clear_buffer(self, source_id: int, algorithm_id: str):
         """清空指定的缓冲区"""
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         if key in self.buffers:
             self.buffers[key].clear()
-            logger.info(f"[WindowDetector] 清空缓冲区 Task={task_id}, Algo={algorithm_id}")
+            logger.info(f"[WindowDetector] 清空缓冲区 Source={source_id}, Algo={algorithm_id}")
         if key in self.stats_cache:
             del self.stats_cache[key]
         if key in self.configs:
             del self.configs[key]
     
-    def reload_config(self, task_id: int, algorithm_id: str):
+    def reload_config(self, source_id: int, algorithm_id: str):
         """重新加载配置（配置变更时调用）"""
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         if key in self.configs:
             del self.configs[key]
         if key in self.stats_cache:
             del self.stats_cache[key]
-        self.load_config(task_id, algorithm_id)
+        self.load_config(source_id, algorithm_id)
     
     def get_memory_usage(self) -> dict:
         """获取内存使用情况"""
@@ -286,26 +286,26 @@ class WindowDetector:
             'cache_count': len(self.stats_cache)
         }
     
-    def get_window_records(self, task_id: int, algorithm_id: str, current_time: float) -> list:
+    def get_window_records(self, source_id: int, algorithm_id: str, current_time: float) -> list:
         """
         获取窗口内的所有检测记录
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             algorithm_id: 算法ID
             current_time: 当前时间戳
             
         Returns:
             窗口内的检测记录列表 [(timestamp, has_detection), ...]
         """
-        key = (task_id, algorithm_id)
+        key = (source_id, algorithm_id)
         
         if key not in self.buffers:
             return []
         
         # 确保配置已加载
         if key not in self.configs:
-            self.load_config(task_id, algorithm_id)
+            self.load_config(source_id, algorithm_id)
         
         config = self.configs[key]
         window_size = config['window_size']
@@ -321,19 +321,19 @@ class WindowDetector:
         
         return window_records
     
-    def get_detection_records(self, task_id: int, algorithm_id: str, current_time: float) -> list:
+    def get_detection_records(self, source_id: int, algorithm_id: str, current_time: float) -> list:
         """
         获取窗口内检测到目标的记录（用于保存图片）
         
         Args:
-            task_id: 任务ID
+            source_id: 视频源ID
             algorithm_id: 算法ID
             current_time: 当前时间戳
             
         Returns:
             检测到目标的记录列表 [(timestamp, has_detection), ...]
         """
-        window_records = self.get_window_records(task_id, algorithm_id, current_time)
+        window_records = self.get_window_records(source_id, algorithm_id, current_time)
         
         # 只返回检测到目标的记录
         detection_records = [

@@ -27,12 +27,12 @@ from app.plugins.script_algorithm import ScriptAlgorithm
 
 
 def main(args):
-    task_id = args.task_id
+    source_id = args.source_id
 
-    task = VideoSource.get_by_id(task_id)
+    task = VideoSource.get_by_id(source_id)
     source_code = task.source_code
     source_name = task.source_name
-    buffer_name = f"{task.buffer_name}.{task.id}"
+    buffer_name = task.buffer_name
 
     logger.info(f"[AIWorker:{os.getpid()}] 启动，处理视频源 {source_name} (ID: {source_code})")
 
@@ -54,7 +54,7 @@ def main(args):
     if RECORDING_ENABLED:
         recorder_manager = VideoRecorderManager()
         video_recorder = recorder_manager.get_recorder(
-            task_id=task_id,
+            source_id=source_id,
             buffer=buffer,
             save_dir=VIDEO_SAVE_PATH,
             fps=RECORDING_FPS
@@ -73,21 +73,9 @@ def main(args):
     for algo_id in algo_id_list:
         algo_config_db = Algorithm.get_by_id(algo_id)
 
-        # 4. 加载ROI配置
-        try:
-            task_algorithm = TaskAlgorithm.get(
-                (TaskAlgorithm.task == task_id) &
-                (TaskAlgorithm.algorithm == algo_id)
-            )
-            roi_config = task_algorithm.roi_config
-            algorithm_roi_configs[algo_id] = roi_config
-            if roi_config:
-                logger.info(f"[AIWorker:{os.getpid()}] 算法 {algo_id} 已加载 {len(roi_config)} 个ROI热区")
-            else:
-                logger.info(f"[AIWorker:{os.getpid()}] 算法 {algo_id} 未配置ROI热区，将使用全画面检测")
-        except TaskAlgorithm.DoesNotExist:
-            logger.warning(f"[AIWorker:{os.getpid()}] 未找到任务-算法关联记录，将使用全画面检测")
-            algorithm_roi_configs[algo_id] = []
+        # 4. ROI配置（暂时使用全画面检测）
+        algorithm_roi_configs[algo_id] = []
+        logger.info(f"[AIWorker:{os.getpid()}] 算法 {algo_id} 未配置ROI热区，将使用全画面检测")
 
         # 5. 实例化算法插件
         # 将数据库中的配置传递给脚本算法插件
@@ -100,7 +88,7 @@ def main(args):
             "label_name": algo_config_db.label_name,
             "label_color": algo_config_db.label_color,
             "interval_seconds": algo_config_db.interval_seconds,
-            "task_id": task_id,  # 任务ID
+            "source_id": source_id,  # 视频源ID
             
             # 脚本执行相关配置
             "script_path": algo_config_db.script_path,
@@ -123,7 +111,7 @@ def main(args):
     
     # 加载所有算法的时间窗口配置
     for algo_id in algorithms.keys():
-        window_detector.load_config(task_id, algo_id)
+        window_detector.load_config(source_id, algo_id)
 
     # 为每个算法维护处理时间和告警时间
     algo_last_process_time = {algo_id: 0 for algo_id in algorithms.keys()}
@@ -184,10 +172,10 @@ def main(args):
                         roi_mask = result.get('roi_mask')  # 获取ROI掩码用于可视化
                         
                         # 检查是否启用了窗口检测，只有启用时才记录
-                        window_config = window_detector.configs.get((task_id, algo_id))
+                        window_config = window_detector.configs.get((source_id, algo_id))
                         if window_config is None:
-                            window_detector.load_config(task_id, algo_id)
-                            window_config = window_detector.configs.get((task_id, algo_id))
+                            window_detector.load_config(source_id, algo_id)
+                            window_config = window_detector.configs.get((source_id, algo_id))
                         
                         # 获取算法名称和标签颜色（在条件判断之前定义，确保后续代码可以访问）
                         algorithm_name = algorithm_datamap[algo_id].get('name')
@@ -217,7 +205,7 @@ def main(args):
                                 logger.info(f"[AIWorker] 检测到目标，已保存图片: {img_path}")
                             
                             window_detector.add_record(
-                                task_id=task_id,
+                                source_id=source_id,
                                 algorithm_id=algo_id,
                                 timestamp=frame_timestamp,
                                 has_detection=has_detection,
@@ -234,7 +222,7 @@ def main(args):
                             
                             # 检查时间窗口条件
                             window_passed, window_stats = window_detector.check_condition(
-                                task_id=task_id,
+                                source_id=source_id,
                                 algorithm_id=algo_id,
                                 current_time=trigger_time
                             )
@@ -275,7 +263,7 @@ def main(args):
 
                             # 获取窗口内的检测记录
                             detection_records = window_detector.get_detection_records(
-                                task_id=task_id,
+                                source_id=source_id,
                                 algorithm_id=algo_id,
                                 current_time=trigger_time
                             )
@@ -319,7 +307,7 @@ def main(args):
 
                             if window_stats:
                                 # 时间窗口检测启用且通过，记录详细信息
-                                window_config = window_detector.configs.get((task_id, algo_id), {})
+                                window_config = window_detector.configs.get((source_id, algo_id), {})
                                 window_mode = window_config.get('mode', 'unknown')
                                 window_threshold = window_config.get('threshold', 0)
                                 window_size = window_config.get('window_size', 0)
@@ -345,7 +333,7 @@ def main(args):
                             main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
                             
                             alert = Alert.create(
-                                task=task,
+                                video_source=task,
                                 alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
                                 alert_type=algorithm_datamap[algo_id].get('name'),
                                 alert_message="",
@@ -362,7 +350,7 @@ def main(args):
                             if video_recorder:
                                 try:
                                     video_path = video_recorder.start_recording(
-                                        task_id=task_id,
+                                        source_id=source_id,
                                         alert_id=alert.id,
                                         trigger_time=trigger_time,
                                         pre_seconds=PRE_ALERT_DURATION,
@@ -399,6 +387,6 @@ if __name__ == '__main__':
     logger.info("=== AI 工作者启动 ===")
     parser = argparse.ArgumentParser()
     parser.add_argument('--algo-ids', required=True, help="要加载的算法名称")
-    parser.add_argument('--task-id', required=True, help="任务ID")
+    parser.add_argument('--source-id', required=True, help="视频源ID")
     args = parser.parse_args()
     main(args)

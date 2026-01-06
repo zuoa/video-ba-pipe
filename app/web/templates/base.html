@@ -119,6 +119,41 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: #1a1a1a;
         }
+
+        .dropdown {
+            position: relative;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            min-width: 150px;
+            margin-top: 0.5rem;
+            z-index: 100;
+        }
+
+        .dropdown-menu.show {
+            display: block;
+        }
+
+        .dropdown-item {
+            display: block;
+            padding: 0.5rem 1rem;
+            color: #374151;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-item:hover {
+            background: #f3f4f6;
+            color: #000;
+        }
     </style>
     {% block styles %}{% endblock %}
 </head>
@@ -146,17 +181,24 @@
                     <a href="/admin/video-sources" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/admin/tasks', '/admin/video-sources', '/tasks', '/video-sources'] %}active text-black{% endif %}">
                         <i class="fas fa-video mr-2"></i>视频源
                     </a>
+                    <div class="dropdown" id="algorithmDropdown">
+                        <span class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors cursor-pointer {% if request.path in ['/models', '/admin/models', '/admin/algorithms', '/scripts', '/admin/scripts'] %}active text-black{% endif %}" onclick="toggleDropdown(event)">
+                            <i class="fas fa-brain mr-2"></i>算法管理<i class="fas fa-chevron-down ml-1 text-xs"></i>
+                        </span>
+                        <div class="dropdown-menu" id="algorithmMenu">
+                            <a href="/models" class="dropdown-item">
+                                <i class="fas fa-cube mr-2"></i>模型管理
+                            </a>
+                            <a href="/scripts" class="dropdown-item">
+                                <i class="fas fa-code mr-2"></i>脚本管理
+                            </a>
+                            <a href="/admin/algorithms" class="dropdown-item">
+                                <i class="fas fa-brain mr-2"></i>算法管理
+                            </a>
+                        </div>
+                    </div>
                     <a href="/workflows" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/workflows', '/admin/workflows'] %}active text-black{% endif %}">
-                        <i class="fas fa-project-diagram mr-2"></i>工作流
-                    </a>
-                    <a href="/models" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/models', '/admin/models'] %}active text-black{% endif %}">
-                        <i class="fas fa-cube mr-2"></i>模型管理
-                    </a>
-                    <a href="/admin/algorithms" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/algorithms' %}active text-black{% endif %}">
-                        <i class="fas fa-brain mr-2"></i>算法管理
-                    </a>
-                    <a href="/scripts" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/scripts', '/admin/scripts'] %}active text-black{% endif %}">
-                        <i class="fas fa-code mr-2"></i>脚本管理
+                        <i class="fas fa-project-diagram mr-2"></i>算法编排
                     </a>
                     <a href="/admin/alerts" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/alerts' %}active text-black{% endif %}">
                         <i class="fas fa-bell mr-2"></i>告警记录
@@ -198,6 +240,22 @@
     </main>
 
     <script>
+        // 下拉菜单控制
+        function toggleDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('algorithmMenu');
+            menu.classList.toggle('show');
+        }
+
+        // 点击其他区域关闭下拉菜单
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('algorithmDropdown');
+            const menu = document.getElementById('algorithmMenu');
+            if (dropdown && !dropdown.contains(event.target)) {
+                menu.classList.remove('show');
+            }
+        });
+
         // 通用的 API 请求函数
         async function apiRequest(url, method = 'GET', data = null) {
             const options = {

@@ -206,7 +206,7 @@
     
     async function loadTaskInfo() {
         try {
-            const task = await apiRequest(`/api/tasks/${taskId}`);
+            const task = await apiRequest(`/api/video-sources/${taskId}`);
             const algorithm = await apiRequest(`/api/algorithms/${algorithmId}`);
             document.getElementById('taskInfo').textContent = 
                 `任务: ${task.name} | 算法: ${algorithm.name}`;
@@ -217,7 +217,7 @@
     
     async function loadSnapshot() {
         try {
-            const task = await apiRequest(`/api/tasks/${taskId}`);
+            const task = await apiRequest(`/api/video-sources/${taskId}`);
             const img = new Image();
             img.crossOrigin = 'anonymous';
             

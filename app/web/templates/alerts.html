@@ -444,7 +444,7 @@
 
     async function loadTasks() {
         try {
-            tasks = await apiRequest('/api/tasks');
+            tasks = await apiRequest('/api/video-sources');
             const select = document.getElementById('taskFilter');
             tasks.forEach(t => {
                 const option = document.createElement('option');

@@ -1,22 +1,55 @@
 import signal
 import subprocess
+import threading
 import time
+from queue import Queue
 
 from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import RINGBUFFER_DURATION, RECORDING_FPS
-from app.core.database_models import db, VideoSource
+from app.core.database_models import db, VideoSource, Workflow
 from app.core.ringbuffer import VideoRingBuffer
+
+
+class OutputReader(threading.Thread):
+    """持续读取子进程输出的线程"""
+    def __init__(self, process, workflow_id, stream_type='stdout'):
+        super().__init__(daemon=True)
+        self.process = process
+        self.workflow_id = workflow_id
+        self.stream_type = stream_type
+        self.stream = getattr(process, stream_type)
+        self.running = True
+
+    def run(self):
+        """持续读取并输出日志"""
+        try:
+            for line in iter(self.stream.readline, ''):
+                if not self.running:
+                    break
+                if line:
+                    log_msg = line.rstrip('\n\r')
+                    if self.stream_type == 'stderr':
+                        logger.error(f"[Workflow-{self.workflow_id}] {log_msg}")
+                    else:
+                        logger.info(f"[Workflow-{self.workflow_id}] {log_msg}")
+        except Exception as e:
+            if self.running:
+                logger.warning(f"[Workflow-{self.workflow_id}] 读取{self.stream_type}时出错: {e}")
+
+    def stop(self):
+        """停止读取线程"""
+        self.running = False
 
 
 class Orchestrator:
     def __init__(self):
         self.running_processes = {}
+        self.workflow_processes = {}
         self.buffers = {}
-        db.connect()  # 在初始化时连接数据库
+        db.connect()
 
-        ## 清理之前可能遗留的运行状态
         VideoSource.update(status='STOPPED', decoder_pid=None).execute()
 
     def _start_source(self, source: VideoSource):
@@ -100,19 +133,154 @@ class Orchestrator:
                     source.status = 'FAILED'
                     source.save()
                     self._stop_source(source)
+    
+    def _start_workflow(self, workflow: Workflow):
+        logger.info(f"  -> 正在启动工作流 ID {workflow.id}: {workflow.name}")
+        
+        workflow_data = workflow.data_dict
+        logger.debug(f"工作流数据: {workflow_data}")
+        nodes = workflow_data.get('nodes', [])
+        
+        source_node = None
+        for node in nodes:
+            if node.get('type') == 'source':
+                source_node = node
+                break
+        
+        if not source_node:
+            logger.error(f"工作流 {workflow.id} 没有视频源节点，跳过启动")
+            return
+        
+        source_id = source_node.get('dataId')
+        if not source_id:
+            logger.error(f"工作流 {workflow.id} 的视频源节点未配置dataId，跳过启动")
+            return
+        
+        try:
+            source = VideoSource.get_by_id(source_id)
+            if source.status != 'RUNNING':
+                logger.warning(f"工作流 {workflow.id} 的视频源 {source.name} (状态: {source.status}) 未运行，跳过启动")
+                return
+        except VideoSource.DoesNotExist:
+            logger.error(f"工作流 {workflow.id} 的视频源 ID {source_id} 不存在")
+            return
+        
+        import sys
+        workflow_args = [
+            sys.executable, '-u', 'workflow_worker.py',
+            '--workflow-id', str(workflow.id)
+        ]
+        logger.info(f"启动命令: {' '.join(workflow_args)}")
+        
+        try:
+            workflow_p = subprocess.Popen(
+                workflow_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1
+            )
+
+            # 启动输出读取线程
+            stdout_reader = OutputReader(workflow_p, workflow.id, 'stdout')
+            stderr_reader = OutputReader(workflow_p, workflow.id, 'stderr')
+            stdout_reader.start()
+            stderr_reader.start()
+
+            self.workflow_processes[workflow.id] = {
+                'process': workflow_p,
+                'source_id': source_id,
+                'stdout_reader': stdout_reader,
+                'stderr_reader': stderr_reader
+            }
+            logger.info(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}")
+
+            time.sleep(0.5)
+            exit_code = workflow_p.poll()
+            if exit_code is not None:
+                stdout_reader.stop()
+                stderr_reader.stop()
+                stdout, stderr = workflow_p.communicate()
+                logger.error(f"工作流 {workflow.id} 启动失败，退出码: {exit_code}")
+                logger.error(f"STDOUT: {stdout}")
+                logger.error(f"STDERR: {stderr}")
+                if workflow.id in self.workflow_processes:
+                    del self.workflow_processes[workflow.id]
+        except Exception as e:
+            logger.error(f"启动工作流 {workflow.id} 时发生异常: {e}", exc_info=True)
+    
+    def _stop_workflow(self, workflow: Workflow):
+        logger.info(f"  -> 正在停止工作流 ID {workflow.id}: {workflow.name}")
+
+        if workflow.id in self.workflow_processes:
+            # 停止输出读取线程
+            if 'stdout_reader' in self.workflow_processes[workflow.id]:
+                self.workflow_processes[workflow.id]['stdout_reader'].stop()
+            if 'stderr_reader' in self.workflow_processes[workflow.id]:
+                self.workflow_processes[workflow.id]['stderr_reader'].stop()
+
+            # 终止进程
+            self.workflow_processes[workflow.id]['process'].terminate()
+            del self.workflow_processes[workflow.id]
+    
+    def manage_workflows(self):
+        active_workflows = Workflow.select().where(Workflow.is_active == True)
+        logger.debug(f"检测到 {active_workflows.count()} 个激活的工作流")
+        
+        for workflow in active_workflows:
+            if workflow.id not in self.workflow_processes:
+                logger.info(f"发现新的激活工作流: {workflow.name} (ID: {workflow.id})")
+                self._start_workflow(workflow)
+        
+        inactive_workflows = Workflow.select().where(Workflow.is_active == False)
+        for workflow in inactive_workflows:
+            if workflow.id in self.workflow_processes:
+                logger.info(f"工作流 ID {workflow.id} 已停用，正在停止...")
+                self._stop_workflow(workflow)
+        
+        for workflow_id in list(self.workflow_processes.keys()):
+            process_info = self.workflow_processes[workflow_id]
+            exit_code = process_info['process'].poll()
+            if exit_code is not None:
+                logger.warning(f"🚨 工作流 ID {workflow_id} 的进程已退出: {exit_code}")
+
+                # 停止输出读取线程
+                if 'stdout_reader' in process_info:
+                    process_info['stdout_reader'].stop()
+                if 'stderr_reader' in process_info:
+                    process_info['stderr_reader'].stop()
+
+                try:
+                    stdout, stderr = process_info['process'].communicate(timeout=1)
+                    if stderr:
+                        logger.error(f"工作流 {workflow_id} 错误输出: {stderr}")
+                except:
+                    pass
+
+                del self.workflow_processes[workflow_id]
 
     def run(self):
-        print("🚀 编排器启动，开始动态管理视频源...")
+        print("🚀 编排器启动，开始动态管理视频源和工作流...")
         while True:
             self.manage_sources()
+            self.manage_workflows()
             time.sleep(5)
 
     def stop(self):
-        print("\n优雅地关闭所有正在运行的视频源...")
+        print("\n优雅地关闭所有正在运行的工作流和视频源...")
+        
+        for workflow_id in list(self.workflow_processes.keys()):
+            try:
+                workflow = Workflow.get_by_id(workflow_id)
+                self._stop_workflow(workflow)
+            except:
+                pass
+        
         for source in VideoSource.select().where(VideoSource.status == 'RUNNING'):
             self._stop_source(source)
+        
         db.close()
-        print("所有视频源已停止。")
+        print("所有工作流和视频源已停止。")
 
 
 if __name__ == "__main__":

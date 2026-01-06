@@ -221,10 +221,10 @@ def format_alert_message(alert) -> Dict[str, Any]:
     """
     return {
         'alert_id': alert.id,
-        'task_id': alert.task.id,
-        'task_name': alert.task.name,
-        'task_source_name': alert.task.source_name,
-        'task_source_code': alert.task.source_code,
+        'source_id': alert.video_source.id,
+        'source_name': alert.video_source.name,
+        'source_display_name': alert.video_source.source_name,
+        'source_code': alert.video_source.source_code,
         'alert_time': alert.alert_time.isoformat() if hasattr(alert.alert_time, 'isoformat') else str(alert.alert_time),
         'alert_type': alert.alert_type,
         'alert_message': alert.alert_message,

@@ -90,7 +90,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         # 1. 执行pre_detect Hooks
         if self.algorithm_id:
             modified_frame, should_skip = self.hook_manager.execute_pre_detect_hooks(
-                self.algorithm_id, frame, self.config.get('task_id', 0)
+                self.algorithm_id, frame, self.config.get('source_id', 0)
             )
 
             if should_skip:
@@ -145,7 +145,7 @@ class ScriptAlgorithm(BaseAlgorithm):
             # 4. 执行post_detect Hooks
             if self.algorithm_id:
                 filtered_detections, should_skip = self.hook_manager.execute_post_detect_hooks(
-                    self.algorithm_id, detections, frame, self.config.get('task_id', 0)
+                    self.algorithm_id, detections, frame, self.config.get('source_id', 0)
                 )
 
                 if should_skip:

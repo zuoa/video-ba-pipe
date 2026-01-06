@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}工作流管理{% endblock %}
-{% block page_title %}工作流管理{% endblock %}
-{% block page_subtitle %}可视化配置视频分析工作流{% endblock %}
+{% block title %}算法编排管理{% endblock %}
+{% block page_title %}算法编排管理{% endblock %}
+{% block page_subtitle %}可视化配置视频分析算法编排{% endblock %}
 
 {% block content %}
 <div class="max-w-full mx-auto">
-    <!-- 工作流列表 -->
+    <!-- 算法编排列表 -->
     <div id="workflowList" class="mb-6">
         <div class="flex justify-between items-center mb-4">
             <div class="flex items-center space-x-4">
@@ -14,13 +14,13 @@
                     <i class="fas fa-project-diagram text-xl"></i>
                 </div>
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-800">工作流列表</h3>
-                    <p class="text-sm text-gray-500" id="workflowCount">共 0 个工作流</p>
+                    <h3 class="text-lg font-semibold text-gray-800">算法编排列表</h3>
+                    <p class="text-sm text-gray-500" id="workflowCount">共 0 个算法编排</p>
                 </div>
             </div>
             <button onclick="showCreateModal()" class="btn-primary text-white px-6 py-3 rounded-lg font-medium shadow-lg flex items-center space-x-2 hover:shadow-xl">
                 <i class="fas fa-plus"></i>
-                <span>新建工作流</span>
+                <span>新建算法编排</span>
             </button>
         </div>
 
@@ -44,11 +44,11 @@
     </div>
 </div>
 
-<!-- 创建/编辑工作流模态框 -->
+<!-- 创建/编辑算法编排模态框 -->
 <div id="workflowModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50 backdrop-blur-sm">
     <div class="relative top-10 mx-auto p-8 border border-gray-200 w-11/12 md:w-1/2 shadow-2xl rounded-2xl bg-white">
         <div class="flex justify-between items-center mb-6">
-            <h3 class="text-2xl font-bold text-gray-800" id="modalTitle">新建工作流</h3>
+            <h3 class="text-2xl font-bold text-gray-800" id="modalTitle">新建算法编排</h3>
             <button onclick="closeWorkflowModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-2 transition-all">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -60,14 +60,14 @@
             <input type="hidden" id="workflowId">
             
             <div>
-                <label class="block text-gray-700 text-sm font-semibold mb-2">工作流名称 *</label>
-                <input type="text" id="workflowName" required placeholder="例如: 门口监控工作流"
+                <label class="block text-gray-700 text-sm font-semibold mb-2">算法编排名称 *</label>
+                <input type="text" id="workflowName" required placeholder="例如: 门口监控算法编排"
                     class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all">
             </div>
 
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">描述</label>
-                <textarea id="workflowDescription" rows="3" placeholder="描述工作流的用途"
+                <textarea id="workflowDescription" rows="3" placeholder="描述算法编排的用途"
                     class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"></textarea>
             </div>
 
@@ -83,7 +83,7 @@
     </div>
 </div>
 
-<!-- 工作流编辑器模态框 -->
+<!-- 算法编排编辑器模态框 -->
 <div id="editorModal" class="hidden fixed inset-0 bg-black bg-opacity-50 overflow-hidden h-full w-full z-50">
     <div class="relative w-full h-full bg-white">
         <!-- 编辑器头部 -->
@@ -91,8 +91,8 @@
             <div class="flex items-center space-x-4">
                 <i class="fas fa-project-diagram text-2xl"></i>
                 <div>
-                    <h3 class="text-xl font-bold" id="editorTitle">工作流编辑器</h3>
-                    <p class="text-sm text-gray-300" id="editorSubtitle">拖拽组件到画布，连线配置工作流</p>
+                    <h3 class="text-xl font-bold" id="editorTitle">算法编排编辑器</h3>
+                    <p class="text-sm text-gray-300" id="editorSubtitle">拖拽组件到画布，连线配置算法编排</p>
                 </div>
             </div>
             <div class="flex items-center space-x-2">
@@ -201,7 +201,7 @@
                     <div id="emptyState" class="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div class="text-center text-gray-400">
                             <i class="fas fa-mouse-pointer text-6xl mb-4"></i>
-                            <p class="text-lg font-medium">从左侧拖拽组件到此处开始配置工作流</p>
+                            <p class="text-lg font-medium">从左侧拖拽组件到此处开始配置算法编排</p>
                         </div>
                     </div>
                 </div>
@@ -230,7 +230,7 @@
                 <!-- 测试面板 -->
                 <div id="testPanel" class="hidden">
                     <h4 class="text-sm font-bold text-gray-700 mb-4 flex items-center">
-                        <i class="fas fa-flask mr-2"></i>工作流测试
+                        <i class="fas fa-flask mr-2"></i>算法编排测试
                     </h4>
                     
                     <!-- 图片来源选择 -->
@@ -573,7 +573,7 @@
         document.getElementById('testResults').classList.add('hidden');
     }
 
-    // 运行工作流测试
+    // 运行算法编排测试
     async function runWorkflowTest() {
         if (!testImageData) {
             showMessage('请先上传测试图片', 'warning');
@@ -581,14 +581,14 @@
         }
         
         if (nodes.length === 0) {
-            showMessage('工作流为空，请先添加节点', 'warning');
+            showMessage('算法编排为空，请先添加节点', 'warning');
             return;
         }
         
-        // 验证工作流
+        // 验证算法编排
         const validation = validateWorkflow();
         if (!validation.valid) {
-            showMessage('工作流配置错误: ' + validation.error, 'error');
+            showMessage('算法编排配置错误: ' + validation.error, 'error');
             return;
         }
         
@@ -618,7 +618,7 @@
         }
     }
 
-    // 验证工作流配置
+    // 验证算法编排配置
     function validateWorkflow() {
         // 检查是否有源节点
         const sourceNodes = nodes.filter(n => n.type === 'source');
@@ -647,7 +647,7 @@
         });
     }
 
-    // 执行工作流测试（模拟）
+    // 执行算法编排测试（模拟）
     async function executeWorkflowTest() {
         const executionOrder = getExecutionOrder();
         const results = {
@@ -997,20 +997,20 @@
         document.getElementById('testResults').classList.remove('hidden');
     }
 
-    // 加载工作流列表
+    // 加载算法编排列表
     async function loadWorkflows() {
         try {
             workflows = await apiRequest('/api/workflows');
             renderWorkflowsTable();
         } catch (error) {
-            showMessage('加载工作流失败: ' + error.message, 'error');
+            showMessage('加载算法编排失败: ' + error.message, 'error');
         }
     }
 
     function renderWorkflowsTable() {
         const tbody = document.getElementById('workflowsTable');
         const count = document.getElementById('workflowCount');
-        count.textContent = `共 ${workflows.length} 个工作流`;
+        count.textContent = `共 ${workflows.length} 个算法编排`;
         
         tbody.innerHTML = workflows.map(w => `
             <tr class="hover:bg-gray-50 transition-all duration-200">
@@ -1058,7 +1058,7 @@
     }
 
     function showCreateModal() {
-        document.getElementById('modalTitle').textContent = '新建工作流';
+        document.getElementById('modalTitle').textContent = '新建算法编排';
         document.getElementById('workflowForm').reset();
         document.getElementById('workflowId').value = '';
         document.getElementById('workflowModal').classList.remove('hidden');
@@ -1081,7 +1081,7 @@
                 workflow_data: { nodes: [], connections: [] }
             });
             
-            showMessage('工作流创建成功');
+            showMessage('算法编排创建成功');
             closeWorkflowModal();
             await loadWorkflows();
             
@@ -1098,13 +1098,13 @@
             resources = await apiRequest('/api/workflows/resources');
             
             document.getElementById('editorTitle').textContent = currentWorkflow.name;
-            document.getElementById('editorSubtitle').textContent = currentWorkflow.description || '配置工作流';
+            document.getElementById('editorSubtitle').textContent = currentWorkflow.description || '配置算法编排';
             
             // 初始化画布
             nodes = currentWorkflow.workflow_data?.nodes || [];
             connections = currentWorkflow.workflow_data?.connections || [];
             
-            console.log('加载工作流数据:', {
+            console.log('加载算法编排数据:', {
                 nodes: nodes.length,
                 connections: connections.length,
                 workflow_data: currentWorkflow.workflow_data
@@ -1636,7 +1636,7 @@
             }
         };
         
-        console.log('保存工作流数据:', {
+        console.log('保存算法编排数据:', {
             nodes: nodes.length,
             connections: connections.length,
             data: saveData
@@ -1645,7 +1645,7 @@
         try {
             await apiRequest(`/api/workflows/${currentWorkflow.id}`, 'PUT', saveData);
             
-            showMessage('工作流保存成功');
+            showMessage('算法编排保存成功');
         } catch (error) {
             showMessage('保存失败: ' + error.message, 'error');
         }
@@ -1654,7 +1654,7 @@
     async function activateWorkflow(id) {
         try {
             await apiRequest(`/api/workflows/${id}/activate`, 'POST');
-            showMessage('工作流已激活');
+            showMessage('算法编排已激活');
             loadWorkflows();
         } catch (error) {
             showMessage('激活失败: ' + error.message, 'error');
@@ -1664,7 +1664,7 @@
     async function deactivateWorkflow(id) {
         try {
             await apiRequest(`/api/workflows/${id}/deactivate`, 'POST');
-            showMessage('工作流已停用');
+            showMessage('算法编排已停用');
             loadWorkflows();
         } catch (error) {
             showMessage('停用失败: ' + error.message, 'error');
@@ -1672,11 +1672,11 @@
     }
 
     async function deleteWorkflow(id) {
-        if (!confirm('确定要删除这个工作流吗？此操作不可撤销。')) return;
+        if (!confirm('确定要删除这个算法编排吗？此操作不可撤销。')) return;
         
         try {
             await apiRequest(`/api/workflows/${id}`, 'DELETE');
-            showMessage('工作流删除成功');
+            showMessage('算法编排删除成功');
             loadWorkflows();
         } catch (error) {
             showMessage('删除失败: ' + error.message, 'error');

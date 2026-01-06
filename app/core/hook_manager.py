@@ -64,7 +64,7 @@ class Hook:
         执行Hook
 
         Args:
-            context: 上下文数据，包含 frame, task_id, algorithm_id 等
+            context: 上下文数据，包含 frame, source_id, algorithm_id 等
 
         Returns:
             Hook执行结果
@@ -267,21 +267,21 @@ class HookManager:
 
         return results
 
-    def execute_pre_detect_hooks(self, algorithm_id: int, frame, task_id: int) -> tuple:
+    def execute_pre_detect_hooks(self, algorithm_id: int, frame, source_id: int) -> tuple:
         """
         执行pre_detect Hook（特殊处理，可以修改frame）
 
         Args:
             algorithm_id: 算法ID
             frame: 输入帧
-            task_id: 任务ID
+            source_id: 视频源ID
 
         Returns:
             (modified_frame, should_skip)
         """
         context = {
             'frame': frame,
-            'task_id': task_id,
+            'source_id': source_id,
             'algorithm_id': algorithm_id,
             'hook_point': 'pre_detect'
         }
@@ -299,7 +299,7 @@ class HookManager:
         algorithm_id: int,
         detections: list,
         frame,
-        task_id: int
+        source_id: int
     ) -> tuple:
         """
         执行post_detect Hook（可以过滤/增强detections）
@@ -308,7 +308,7 @@ class HookManager:
             algorithm_id: 算法ID
             detections: 检测结果列表
             frame: 原始帧
-            task_id: 任务ID
+            source_id: 视频源ID
 
         Returns:
             (filtered_detections, should_skip)
@@ -316,7 +316,7 @@ class HookManager:
         context = {
             'detections': detections,
             'frame': frame,
-            'task_id': task_id,
+            'source_id': source_id,
             'algorithm_id': algorithm_id,
             'hook_point': 'post_detect',
             'detection_count': len(detections)
