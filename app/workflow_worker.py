@@ -30,6 +30,7 @@ from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData
 
 
 class WorkflowExecutor:
@@ -38,7 +39,7 @@ class WorkflowExecutor:
         self.workflow = Workflow.get_by_id(workflow_id)
         self.workflow_data = self.workflow.data_dict
         
-        self.nodes = {n['id']: n for n in self.workflow_data.get('nodes', [])}
+        self.nodes = {n['id']: create_node_data(n) for n in self.workflow_data.get('nodes', [])}
         self.connections = self.workflow_data.get('connections', [])
         
         self.source_node = None
@@ -74,24 +75,24 @@ class WorkflowExecutor:
             from_id = conn['from']
             to_id = conn['to']
             condition = conn.get('condition')
-            
+
             self.execution_graph[from_id].append({
                 'target': to_id,
                 'condition': condition
             })
-        
+
         for node_id, node in self.nodes.items():
-            if node['type'] == 'source':
+            if node.node_type == 'source':
                 self.source_node = node
                 break
     
     def _init_resources(self):
         if not self.source_node:
             raise ValueError("Workflow must have a source node")
-        
-        source_id = self.source_node.get('dataId')
+
+        source_id = self.source_node.data_id
         if not source_id:
-            raise ValueError("Source node must have dataId")
+            raise ValueError("Source node must have data_id")
         
         self.video_source = VideoSource.get_by_id(source_id)
         buffer_name = self.video_source.buffer_name
@@ -121,8 +122,8 @@ class WorkflowExecutor:
             logger.info(f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
         
         for node_id, node in self.nodes.items():
-            if node['type'] == 'algorithm':
-                algo_id = node.get('dataId')
+            if node.node_type == 'algorithm':
+                algo_id = node.data_id
                 if algo_id:
                     algo = Algorithm.get_by_id(algo_id)
                     
@@ -161,7 +162,7 @@ class WorkflowExecutor:
     
     def _get_parallel_branch_nodes(self):
         branch_nodes = []
-        for next_info in self.execution_graph.get(self.source_node['id'], []):
+        for next_info in self.execution_graph.get(self.source_node.node_id, []):
             next_id = next_info['target']
             if next_id in self.nodes:
                 branch_nodes.append(next_id)
@@ -171,15 +172,13 @@ class WorkflowExecutor:
         node = self.nodes.get(node_id)
         if not node:
             return 0
-        
-        node_data = node.get('data', {})
-        interval = node_data.get('interval_seconds')
-        if interval is not None:
-            return interval
-        
+
+        if isinstance(node, AlgorithmNodeData) and node.interval_seconds is not None:
+            return node.interval_seconds
+
         if node_id in self.algorithms:
             return self.algorithm_datamap[node_id].get('interval_seconds', 1)
-        
+
         return 0
     
     def _should_execute_node(self, node_id):
@@ -293,7 +292,7 @@ class WorkflowExecutor:
             logger.debug(f"[WorkflowWorker] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
             return None
         
-        node_type = node['type']
+        node_type = node.node_type
         handler = self.node_handlers.get(node_type)
         
         if not handler:
