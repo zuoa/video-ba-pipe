@@ -84,23 +84,8 @@
                 <select id="pluginModuleSelect" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all" onchange="togglePluginType()"></select>
             </div>
 
-            <!-- 模型列表配置（仅插件类型显示） -->
-            <div id="modelConfigSection">
-                <label class="block text-gray-700 text-sm font-semibold mb-2 flex items-center">
-                    <i class="fas fa-cubes mr-2 text-gray-700"></i>
-                    模型列表
-                </label>
-                <div id="modelsContainer" class="space-y-4">
-                    <!-- 动态渲染模型条目 -->
-                </div>
-                <div class="mt-3">
-                    <button type="button" onclick="addModelEntry()" class="px-3 py-2 bg-black text-white rounded-lg text-sm hover:bg-gray-800 transition-all">
-                        <i class="fas fa-plus mr-1"></i> 添加模型
-                    </button>
-                </div>
-                <!-- 保留隐藏域以兼容后端字段 -->
-                <textarea id="modelJson" class="hidden">{}</textarea>
-            </div>
+            <!-- 保留隐藏域以兼容后端字段 -->
+            <textarea id="modelJson" class="hidden">{}</textarea>
 
             <!-- 脚本配置（仅脚本类型显示） -->
             <div id="scriptConfigSection" class="hidden border border-gray-200 rounded-lg p-4 bg-blue-50">
@@ -144,28 +129,6 @@
                         <input type="number" id="memoryLimit" value="512" min="64" max="4096" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm">
                     </div>
 
-                    <!-- 模型选择器 -->
-                    <div class="bg-white rounded-lg p-3 border border-blue-200">
-                        <label class="block text-gray-700 text-xs font-semibold mb-2 flex items-center">
-                            <i class="fas fa-cube mr-2 text-blue-500"></i>
-                            选择模型（可选）
-                            <span class="text-gray-500 font-normal ml-2">从模型库中选择，将自动填充到扩展配置</span>
-                        </label>
-                        <div class="flex items-center space-x-2">
-                            <select id="modelSelect" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm bg-white">
-                                <option value="">-- 从模型库选择 --</option>
-                            </select>
-                            <button type="button" onclick="refreshModels()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm transition-all" title="刷新模型列表">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                            <button type="button" onclick="window.open('/models', '_blank')" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition-all">
-                                <i class="fas fa-plus mr-1"></i>上传模型
-                            </button>
-                        </div>
-                        <div id="selectedModelInfo" class="hidden mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-                            <!-- 选中的模型信息将显示在这里 -->
-                        </div>
-                    </div>
 
                     <div class="bg-white rounded-lg p-3 border border-blue-200">
                         <div class="flex items-start space-x-2">
@@ -372,9 +335,7 @@
 {% block scripts %}
 <script>
     let algorithms = [];
-    let modelsState = [];
     let pluginModules = [];
-    let availableModels = [];  // 从模型库获取的模型列表
 
     async function loadAlgorithms() {
         try {
@@ -413,16 +374,13 @@
     // 切换插件类型显示的配置区域
     function togglePluginType() {
         const pluginModule = document.getElementById('pluginModuleSelect').value;
-        const modelSection = document.getElementById('modelConfigSection');
         const scriptSection = document.getElementById('scriptConfigSection');
 
         if (pluginModule === 'script_algorithm') {
-            // 脚本类型：显示脚本配置，隐藏模型配置
-            modelSection.classList.add('hidden');
+            // 脚本类型：显示脚本配置
             scriptSection.classList.remove('hidden');
         } else {
-            // 插件类型：显示模型配置，隐藏脚本配置
-            modelSection.classList.remove('hidden');
+            // 插件类型：隐藏脚本配置
             scriptSection.classList.add('hidden');
         }
     }
@@ -494,10 +452,8 @@
         document.getElementById('modalTitle').textContent = '添加算法';
         document.getElementById('algorithmForm').reset();
         document.getElementById('algorithmId').value = '';
-        // 初始化空的模型列表
-        modelsState = [];
-        renderModels();
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
+        // 设置空的模型配置
+        document.getElementById('modelJson').value = JSON.stringify({ models: [] });
         document.getElementById('extConfigJson').value = '{}';
         renderPluginModuleSelect('');
         // 初始化时间窗口配置
@@ -506,8 +462,6 @@
         document.getElementById('windowMode').value = 'ratio';
         document.getElementById('windowThreshold').value = 0.3;
         document.getElementById('algoWindowConfigFields').classList.add('hidden');
-        // 加载模型库列表
-        loadAvailableModels();
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
 
@@ -528,30 +482,8 @@
         document.getElementById('runtimeTimeout').value = algorithm.runtime_timeout || 30;
         document.getElementById('memoryLimit').value = algorithm.memory_limit_mb || 512;
 
-        // 解析并渲染模型列表
-        // 优先使用 model_ids 字段，如果不存在则回退到 model_json
-        try {
-            const parsed = JSON.parse(algorithm.model_json || '{}');
-            modelsState = Array.isArray(parsed?.models) ? parsed.models : [];
-            
-            // 如果有 model_ids 字段，确保模型状态中包含 model_id
-            if (algorithm.model_ids) {
-                const modelIdList = JSON.parse(algorithm.model_ids);
-                if (Array.isArray(modelIdList) && modelIdList.length > 0) {
-                    // 为每个模型状态添加 model_id
-                    modelsState = modelsState.map((m, idx) => {
-                        if (idx < modelIdList.length) {
-                            return { ...m, model_id: modelIdList[idx] };
-                        }
-                        return m;
-                    });
-                }
-            }
-        } catch (e) {
-            modelsState = [];
-        }
-        
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
+        // 不再使用模型选择，直接设置空配置
+        document.getElementById('modelJson').value = JSON.stringify({ models: [] });
         document.getElementById('extConfigJson').value = algorithm.ext_config_json;
 
         // 加载时间窗口配置
@@ -566,112 +498,9 @@
         }
         updateAlgoThresholdLabel();
 
-        // 加载模型库列表，然后渲染模型
-        loadAvailableModels().then(() => {
-            renderModels();
-        });
-
         document.getElementById('algorithmModal').classList.remove('hidden');
     }
 
-    // 加载模型库中的可用模型
-    async function loadAvailableModels() {
-        try {
-            const result = await apiRequest('/api/models');
-            availableModels = result.models || [];
-            renderModelSelect();
-        } catch (error) {
-            console.error('加载模型库失败:', error);
-            availableModels = [];
-            renderModelSelect();
-        }
-    }
-
-    // 渲染模型选择下拉框
-    function renderModelSelect() {
-        const select = document.getElementById('modelSelect');
-        if (!select) return;
-
-        // 按类型分组
-        const grouped = {};
-        availableModels.forEach(model => {
-            if (!grouped[model.model_type]) {
-                grouped[model.model_type] = [];
-            }
-            grouped[model.model_type].push(model);
-        });
-
-        // 生成选项
-        let html = '<option value="">-- 从模型库选择 --</option>';
-        Object.keys(grouped).sort().forEach(type => {
-            html += `<optgroup label="${type}">`;
-            grouped[type].forEach(model => {
-                const selected = model.enabled ? '' : '(已禁用) ';
-                html += `<option value="${model.id}" data-path="${escapeHtml(model.file_path)}" data-info='${JSON.stringify(model)}'>${selected}${escapeHtml(model.name)} (${model.version})</option>`;
-            });
-            html += `</optgroup>`;
-        });
-
-        select.innerHTML = html;
-    }
-
-    // 刷新模型列表
-    function refreshModels() {
-        loadAvailableModels();
-        showMessage('模型列表已刷新');
-    }
-
-    // 模型选择事件
-    document.addEventListener('DOMContentLoaded', function() {
-        const modelSelect = document.getElementById('modelSelect');
-        if (modelSelect) {
-            modelSelect.addEventListener('change', function() {
-                const selectedOption = this.options[this.selectedIndex];
-                if (this.value) {
-                    // 获取选中的模型信息
-                    const modelInfo = JSON.parse(selectedOption.getAttribute('data-info'));
-                    const modelPath = selectedOption.getAttribute('data-path');
-
-                    // 显示模型信息
-                    const infoDiv = document.getElementById('selectedModelInfo');
-                    infoDiv.innerHTML = `
-                        <div class="font-semibold mb-1">${escapeHtml(modelInfo.name)} (${modelInfo.version})</div>
-                        <div class="text-xs text-gray-600">
-                            <span>类型: ${escapeHtml(modelInfo.model_type)}</span> |
-                            <span>框架: ${escapeHtml(modelInfo.framework)}</span> |
-                            <span>大小: ${modelInfo.file_size_mb}MB</span>
-                        </div>
-                        <div class="text-xs text-gray-500 mt-1">路径: ${escapeHtml(modelPath)}</div>
-                    `;
-                    infoDiv.classList.remove('hidden');
-
-                    // 自动填充到扩展配置
-                    try {
-                        let extConfig = {};
-                        const extConfigJson = document.getElementById('extConfigJson').value;
-                        if (extConfigJson && extConfigJson !== '{}') {
-                            extConfig = JSON.parse(extConfigJson);
-                        }
-
-                        // 设置模型路径
-                        extConfig.model_path = modelPath;
-
-                        // 如果有其他信息，也填充
-                        if (modelInfo.input_shape) {
-                            extConfig.input_shape = modelInfo.input_shape;
-                        }
-
-                        document.getElementById('extConfigJson').value = JSON.stringify(extConfig, null, 2);
-                    } catch (e) {
-                        console.error('更新扩展配置失败:', e);
-                    }
-                } else {
-                    // 清除模型信息
-                    document.getElementById('selectedModelInfo').classList.add('hidden');
-                }
-            });
-        }
-    });
 
     function closeModal() {
         document.getElementById('algorithmModal').classList.add('hidden');
@@ -683,13 +512,8 @@
         const id = document.getElementById('algorithmId').value;
         const pluginModule = document.getElementById('pluginModuleSelect').value;
 
-        // 提交前同步隐藏的 JSON 字段
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
-
-        // 提取模型ID列表
-        const modelIds = modelsState
-            .filter(m => m.model_id && m.model_id > 0)
-            .map(m => m.model_id);
+        // 提交前同步隐藏的 JSON 字段（不再使用模型选择，保持空配置）
+        document.getElementById('modelJson').value = JSON.stringify({ models: [] });
 
         const data = {
             name: document.getElementById('name').value,
@@ -697,7 +521,7 @@
             interval_seconds: parseFloat(document.getElementById('intervalSeconds').value),
             plugin_module: pluginModule || null,
             model_json: document.getElementById('modelJson').value,
-            model_ids: JSON.stringify(modelIds),  // 新增：模型ID列表
+            model_ids: JSON.stringify([]),  // 不再使用模型选择，传递空数组
             ext_config_json: document.getElementById('extConfigJson').value,
             // 时间窗口配置
             enable_window_check: document.getElementById('enableWindowCheck').checked,
@@ -717,13 +541,6 @@
             // 验证脚本路径
             if (!data.script_path) {
                 showMessage('请填写脚本路径', 'error');
-                return;
-            }
-        }
-
-        // 验证：如果是插件类型且没有选择模型，给出提示
-        if (pluginModule && pluginModule !== 'script_algorithm' && modelIds.length === 0) {
-            if (!confirm('未选择任何模型，确定要继续吗？')) {
                 return;
             }
         }
@@ -752,158 +569,7 @@
         }
     }
 
-    // ========== 模型列表编辑器 ==========
-    function renderModels() {
-        const container = document.getElementById('modelsContainer');
-        if (!container) return;
-        
-        container.innerHTML = modelsState.map((m, idx) => {
-            // 生成模型选择下拉框
-            let modelOptions = '<option value="">-- 选择模型 --</option>';
-            availableModels.forEach(model => {
-                const selected = m.model_id && m.model_id === model.id ? 'selected' : '';
-                const disabled = model.enabled ? '' : 'disabled';
-                const label = model.enabled ? '' : '(已禁用) ';
-                modelOptions += `<option value="${model.id}" ${selected} ${disabled}>${label}${escapeHtml(model.name)} (${model.version})</option>`;
-            });
-            
-            return `
-            <div class="border border-gray-200 rounded-xl p-4 bg-gray-50">
-                <div class="flex justify-between items-center mb-3">
-                    <div class="text-sm text-gray-700 font-semibold flex items-center">
-                        <i class="fas fa-cube mr-2 text-blue-500"></i>
-                        模型 ${idx + 1}
-                    </div>
-                    <button type="button" class="text-red-600 text-sm hover:bg-red-50 px-2 py-1 rounded transition-all" onclick="removeModelEntry(${idx})">
-                        <i class="fas fa-trash mr-1"></i>移除
-                    </button>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-gray-700 text-xs font-semibold mb-2 flex items-center">
-                            <i class="fas fa-database mr-1"></i>
-                            选择模型 *
-                            <button type="button" onclick="refreshModels(); renderModels();" class="ml-2 text-blue-600 hover:text-blue-800" title="刷新模型列表">
-                                <i class="fas fa-sync-alt text-xs"></i>
-                            </button>
-                        </label>
-                        <select class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black bg-white" onchange="updateModelField(${idx}, 'model_id', parseInt(this.value || '0')); onModelSelectChange(${idx}, this)">
-                            ${modelOptions}
-                        </select>
-                        ${m.model_id ? `
-                        <div class="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                            <div class="text-blue-800" id="modelInfo-${idx}">
-                                ${getModelInfoHtml(m.model_id)}
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">类别索引 (class)</label>
-                        <input type="number" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${Number.isFinite(m.class) ? m.class : 0}" oninput="updateModelField(${idx}, 'class', parseInt(this.value || '0'))">
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">置信度 (0-1)</label>
-                        <input type="number" step="0.01" min="0" max="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.confidence === 'number' ? m.confidence : 0.6}" oninput="updateModelField(${idx}, 'confidence', parseFloat(this.value || '0'))">
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">标签名称</label>
-                        <input type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${escapeHtml(m.label_name || 'Object')}" oninput="updateModelField(${idx}, 'label_name', this.value)">
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">标签颜色</label>
-                        <input type="color" class="w-16 h-10 p-0 border border-gray-200 rounded" value="${escapeColor(m.label_color || '#FF0000')}" oninput="updateModelField(${idx}, 'label_color', this.value)">
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">扩展宽度比例 (%)</label>
-                        <div class="flex items-center space-x-2">
-                            <input type="number" step="1" min="0" max="100" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.expand_width === 'number' ? Math.round((m.expand_width || 0) * 100) : 10}" oninput="updateModelPercentField(${idx}, 'expand_width', parseFloat(this.value || '0'))">
-                            <span class="text-gray-500 text-sm">%</span>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-xs font-semibold mb-1">扩展高度比例 (%)</label>
-                        <div class="flex items-center space-x-2">
-                            <input type="number" step="1" min="0" max="100" class="w-full px-3 py-2 border border-gray-200 rounded-lg" value="${typeof m.expand_height === 'number' ? Math.round((m.expand_height || 0) * 100) : 10}" oninput="updateModelPercentField(${idx}, 'expand_height', parseFloat(this.value || '0'))">
-                            <span class="text-gray-500 text-sm">%</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            `;
-        }).join('');
-        
-        // 同步隐藏 JSON
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
-    }
-    
-    // 获取模型信息HTML
-    function getModelInfoHtml(modelId) {
-        const model = availableModels.find(m => m.id === modelId);
-        if (!model) return '模型信息加载中...';
-        
-        return `
-            <div class="font-semibold text-blue-700">${escapeHtml(model.name)} (${model.version})</div>
-            <div class="text-blue-600 mt-1">
-                类型: ${escapeHtml(model.model_type)} | 
-                框架: ${escapeHtml(model.framework)} | 
-                大小: ${model.file_size_mb}MB
-            </div>
-            <div class="text-blue-500 mt-1 text-xs">路径: ${escapeHtml(model.file_path)}</div>
-        `;
-    }
-    
-    // 模型选择改变事件
-    function onModelSelectChange(idx, selectElement) {
-        const modelId = parseInt(selectElement.value);
-        if (modelId) {
-            const model = availableModels.find(m => m.id === modelId);
-            if (model) {
-                // 自动填充模型名称到标签名称（如果未设置）
-                if (!modelsState[idx].label_name || modelsState[idx].label_name === 'Object') {
-                    updateModelField(idx, 'label_name', model.name);
-                }
-                // 自动填充路径到模型状态
-                updateModelField(idx, 'path', model.file_path);
-            }
-        }
-        // 重新渲染以显示模型信息
-        renderModels();
-    }
-
-    function addModelEntry() {
-        modelsState.push({
-            model_id: null,  // 模型ID
-            path: '',        // 模型路径（自动从选择的模型填充）
-            class: 0,
-            confidence: 0.6,
-            label_name: 'Object',
-            label_color: '#FF0000',
-            expand_width: 0.1,
-            expand_height: 0.1
-        });
-        renderModels();
-    }
-
-    function removeModelEntry(index) {
-        modelsState.splice(index, 1);
-        renderModels();
-    }
-
-    function updateModelField(index, key, value) {
-        modelsState[index] = { ...modelsState[index], [key]: value };
-        // 不立即重绘，避免光标跳动；但同步 JSON
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
-    }
-
-    function updateModelPercentField(index, key, percentValue) {
-        let safe = isFinite(percentValue) ? percentValue : 0;
-        if (safe < 0) safe = 0; if (safe > 100) safe = 100;
-        const ratio = safe / 100;
-        modelsState[index] = { ...modelsState[index], [key]: ratio };
-        document.getElementById('modelJson').value = JSON.stringify({ models: modelsState });
-    }
-
+    // ========== 工具函数 ==========
     function escapeHtml(str) {
         if (typeof str !== 'string') return '';
         return str
@@ -912,11 +578,6 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
-    }
-
-    function escapeColor(val) {
-        // 简单校验颜色格式
-        return /^#([0-9a-fA-F]{6})$/.test(val || '') ? val : '#FF0000';
     }
 
     async function deleteAlgorithm(id) {
