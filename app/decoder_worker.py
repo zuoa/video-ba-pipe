@@ -14,7 +14,7 @@ from app.config import (
     IS_EXTREME_DECODE_MODE,
     RECORDING_FPS
 )
-from app.core.database_models import Task
+from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
@@ -64,17 +64,17 @@ class DecoderWorker:
         self.last_snapshot_time = 0
         self.snapshot_interval = SNAPSHOT_INTERVAL
 
-    def setup(self, task=None):
+    def setup(self, source=None):
         """初始化所有组件"""
         try:
             # 连接到共享内存缓冲区（必须使用与创建时相同的参数）
             from app.config import RINGBUFFER_DURATION, RECORDING_FPS
             
-            # 如果提供了task参数，使用task的参数，否则使用默认配置
-            if task:
-                fps = task.source_fps
-                frame_shape = (task.source_decode_height, task.source_decode_width, 3)
-                logger.info(f"使用任务参数: fps={fps}, frame_shape={frame_shape}")
+            # 如果提供了source参数，使用source的参数，否则使用默认配置
+            if source:
+                fps = source.source_fps
+                frame_shape = (source.source_decode_height, source.source_decode_width, 3)
+                logger.info(f"使用视频源参数: fps={fps}, frame_shape={frame_shape}")
             else:
                 fps = RECORDING_FPS
                 frame_shape = (1080, 1920, 3)  # 默认形状
@@ -109,11 +109,11 @@ class DecoderWorker:
             decoder_type = self.decoder_config.get('type', 'ffmpeg_sw')
             decoder_id = self.decoder_config.get('id', 401)
             
-            # 如果提供了task参数，使用task的宽高参数，否则使用配置参数
-            if task:
-                width = task.source_decode_width
-                height = task.source_decode_height
-                logger.info(f"使用任务解码参数: width={width}, height={height}")
+            # 如果提供了source参数，使用source的宽高参数，否则使用配置参数
+            if source:
+                width = source.source_decode_width
+                height = source.source_decode_height
+                logger.info(f"使用视频源解码参数: width={width}, height={height}")
             else:
                 width = self.decoder_config.get('width', 1920)
                 height = self.decoder_config.get('height', 1080)
@@ -329,12 +329,12 @@ def main(args):
 
     logger.info("启动 DECODER 工作进程")
 
-    task_id = args.task_id
+    source_id = args.source_id
 
-    task = Task.get_by_id(task_id)  # 确保任务存在，否则抛出异常
-    source_code = task.source_code
-    source_name = task.source_name
-    buffer_name = f"{task.buffer_name}.{task.id}"
+    source = VideoSource.get_by_id(source_id)
+    source_code = source.source_code
+    source_name = source.name
+    buffer_name = source.buffer_name
 
     source_info = {
         'code': source_code,
@@ -380,7 +380,7 @@ def main(args):
     signal.signal(signal.SIGTERM, worker.signal_handler)
 
     try:
-        worker.setup(task=task)  # 传递task参数
+        worker.setup(source=source)
         worker.start()
     except Exception as e:
         logger.error(f"工作进程异常退出: {e}", exc_info=True)
@@ -396,7 +396,7 @@ if __name__ == '__main__':
     # 必需参数
     parser.add_argument('--url', required=True,
                         help='流源地址 (RTSP URL、文件路径、HTTP-FLV URL、HLS URL等)')
-    parser.add_argument('--task-id', required=True, help='任务ID')
+    parser.add_argument('--source-id', required=True, help='视频源ID')
 
     # 流类型配置
     stream_group = parser.add_argument_group('流类型配置')

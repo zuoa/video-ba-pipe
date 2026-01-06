@@ -6,7 +6,7 @@ from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import RINGBUFFER_DURATION, RECORDING_FPS
-from app.core.database_models import db, Task, TaskAlgorithm  # 只需导入模型
+from app.core.database_models import db, VideoSource
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -17,120 +17,102 @@ class Orchestrator:
         db.connect()  # 在初始化时连接数据库
 
         ## 清理之前可能遗留的运行状态
-        Task.update(status='STOPPED', decoder_pid=None, ai_pid=None).execute()
+        VideoSource.update(status='STOPPED', decoder_pid=None).execute()
 
-    def _start_task(self, task: Task):
-        print(f"  -> 正在启动任务 ID {task.id}: {task.name}")
+    def _start_source(self, source: VideoSource):
+        print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
-        # 创建共享内存环形缓冲区（使用任务参数）
-        task_buffer_name = f"{task.buffer_name}.{task.id}"
+        # 创建共享内存环形缓冲区
         buffer = VideoRingBuffer(
-            name=task_buffer_name, 
+            name=source.buffer_name, 
             create=True,
-            frame_shape=(task.source_decode_height, task.source_decode_width, 3),  # 使用任务的宽高参数
-            fps=task.source_fps,  # 使用任务的FPS参数
-            duration_seconds=RINGBUFFER_DURATION  # 使用配置的缓冲时长
+            frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+            fps=source.source_fps,
+            duration_seconds=RINGBUFFER_DURATION
         )
-        self.buffers[task.id] = buffer
+        self.buffers[source.id] = buffer
         
-        logger.info(f"创建RingBuffer: fps={task.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
+        logger.info(f"创建RingBuffer: fps={source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
 
-        # 启动解码器工作进程（使用fps采样模式和任务参数）
+        # 启动解码器进程
         decoder_args = [
             'python', 'decoder_worker.py', 
-            '--url', task.source_url,  
-            '--task-id', str(task.id), 
-            '--sample-mode', 'fps',  # 改为fps模式
-            '--sample-fps', str(task.source_fps),  # 使用任务的FPS参数
-            '--width', str(task.source_decode_width),  # 使用任务的宽度参数
-            '--height', str(task.source_decode_height)  # 使用任务的高度参数
+            '--url', source.source_url,  
+            '--source-id', str(source.id), 
+            '--sample-mode', 'fps',
+            '--sample-fps', str(source.source_fps),
+            '--width', str(source.source_decode_width),
+            '--height', str(source.source_decode_height)
         ]
         logger.info(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
 
-        query = TaskAlgorithm.select().where(TaskAlgorithm.task == task)
+        source.status = 'RUNNING'
+        source.decoder_pid = decoder_p.pid
+        source.save()
 
-        ai_ids = []
-        for task_algorithm in query:
-            ai_ids.append(str(task_algorithm.algorithm.id))
+        self.running_processes[source.id] = {'decoder': decoder_p}
 
-        ai_args = ['python', 'ai_worker.py', '--algo-ids', str(','.join(ai_ids)), '--task-id', str(task.id)]
-        ai_p = subprocess.Popen(ai_args)
-        # 更新任务状态，就像操作一个普通Python对象一样
-        task.status = 'RUNNING'
-        task.decoder_pid = decoder_p.pid
-        task.ai_pid = ai_p.pid
-        task.save()  # .save() 会将更改写入数据库
+    def _stop_source(self, source: VideoSource):
+        print(f"  -> 正在停止视频源 ID {source.id}: {source.name}")
 
-        self.running_processes[task.id] = {'decoder': decoder_p, 'ai': ai_p}
+        if source.id in self.running_processes:
+            self.running_processes[source.id]['decoder'].terminate()
+            del self.running_processes[source.id]
 
-    def _stop_task(self, task: Task):
-        print(f"  -> 正在停止任务 ID {task.id}: {task.name}")
+        if source.id in self.buffers:
+            self.buffers[source.id].close()
+            self.buffers[source.id].unlink()
+            del self.buffers[source.id]
 
-        if task.id in self.running_processes:
-            self.running_processes[task.id]['decoder'].terminate()
-            self.running_processes[task.id]['ai'].terminate()
-            del self.running_processes[task.id]
+        source.status = 'STOPPED'
+        source.decoder_pid = None
+        source.save()
 
-        if task.id in self.buffers:
-            self.buffers[task.id].close()
-            self.buffers[task.id].unlink()
-            del self.buffers[task.id]
-
-        task.status = 'STOPPED'
-        task.decoder_pid = None
-        task.save()
-
-    def manage_tasks(self):
-        # 查找需要启动的任务 (查询变得非常直观)
-        tasks_to_start = Task.select().where(
-            (Task.enabled == True) & (Task.status == 'STOPPED')
+    def manage_sources(self):
+        # 查找需要启动的视频源
+        sources_to_start = VideoSource.select().where(
+            (VideoSource.enabled == True) & (VideoSource.status == 'STOPPED')
         )
-        for task in tasks_to_start:
-            self._start_task(task)
+        for source in sources_to_start:
+            self._start_source(source)
 
-        # 查找需要停止的任务
-        tasks_to_stop = Task.select().where(
-            (Task.enabled == False) & (Task.status == 'RUNNING')
+        # 查找需要停止的视频源
+        sources_to_stop = VideoSource.select().where(
+            (VideoSource.enabled == False) & (VideoSource.status == 'RUNNING')
         )
-        for task in tasks_to_stop:
-            logger.info(f"任务 ID {task.id} 被禁用，正在停止...")
-            self._stop_task(task)
+        for source in sources_to_stop:
+            logger.info(f"视频源 ID {source.id} 被禁用，正在停止...")
+            self._stop_source(source)
 
         # 健康检查
-        running_tasks = Task.select().where(Task.status == 'RUNNING')
-        for task in running_tasks:
-            if task.id in self.running_processes:
+        running_sources = VideoSource.select().where(VideoSource.status == 'RUNNING')
+        for source in running_sources:
+            if source.id in self.running_processes:
                 need_reboot = False
 
-                exit_code = self.running_processes[task.id]['decoder'].poll()
-                if exit_code is not None :
-                    logger.warn(f"🚨 任务 ID {task.id} 的解码器工作进程已退出:{exit_code}！")
-                    need_reboot = True
-
-                exit_code = self.running_processes[task.id]['ai'].poll()
+                exit_code = self.running_processes[source.id]['decoder'].poll()
                 if exit_code is not None:
-                    logger.warn(f"🚨 任务 ID {task.id} 的AI工作进程已退出:{exit_code}！")
+                    logger.warn(f"🚨 视频源 ID {source.id} 的解码器工作进程已退出:{exit_code}！")
                     need_reboot = True
 
                 if need_reboot:
-                    task.status = 'FAILED'
-                    task.save()
-                    # 可以在这里触发停止和重启逻辑
-                    self._stop_task(task)
+                    source.status = 'FAILED'
+                    source.save()
+                    self._stop_source(source)
 
     def run(self):
-        print("🚀 编排器启动 (Peewee 模式)，开始动态管理任务...")
+        print("🚀 编排器启动，开始动态管理视频源...")
         while True:
-            self.manage_tasks()
+            self.manage_sources()
             time.sleep(5)
 
     def stop(self):
-        print("\n优雅地关闭所有正在运行的任务...")
-        for task in Task.select().where(Task.status == 'RUNNING'):
-            self._stop_task(task)
-        db.close()  # 在退出时关闭数据库连接
-        print("所有任务已停止。")
+        print("\n优雅地关闭所有正在运行的视频源...")
+        for source in VideoSource.select().where(VideoSource.status == 'RUNNING'):
+            self._stop_source(source)
+        db.close()
+        print("所有视频源已停止。")
 
 
 if __name__ == "__main__":

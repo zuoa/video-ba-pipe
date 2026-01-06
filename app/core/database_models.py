@@ -60,54 +60,31 @@ class Algorithm(BaseModel):
             return {}
 
 
-# 2. 定义 Task 模型 (移除 ForeignKeyField)
-class Task(BaseModel):
+class VideoSource(BaseModel):
+    """视频源管理"""
     id = pw.AutoField()
     name = pw.CharField()
     enabled = pw.BooleanField(default=True)
     source_code = pw.CharField(max_length=255, unique=True)
-    source_name = pw.CharField(max_length=255, null=True)
     source_url = pw.TextField()
     source_decode_width = pw.IntegerField(default=960)
     source_decode_height = pw.IntegerField(default=540)
     source_fps = pw.IntegerField(default=10)
-    buffer_name = pw.CharField(max_length=255, default='video_buffer')
-
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
-    ai_pid = pw.IntegerField(null=True)
 
-
-# 3. 引入中间表 TaskAlgorithm 模型
-class TaskAlgorithm(BaseModel):
-    """
-    关联模型，用于实现 Task 和 Algorithm 之间的多对多关系
-    """
-    task = pw.ForeignKeyField(Task, backref='task_algorithms', on_delete='CASCADE')
-    algorithm = pw.ForeignKeyField(Algorithm, backref='task_algorithms', on_delete='CASCADE')
-    # 可以在关联表中存储与这次关联相关的额外信息，例如：
-    priority = pw.IntegerField(default=0)  # 例如，这个算法在这个任务中的优先级
-    config_override_json = pw.TextField(default='{}') # 对该算法在这个任务中的特定配置
-    roi_regions = pw.TextField(default='[]')  # 热区配置，JSON数组格式：[{"points": [[x1,y1], [x2,y2], ...], "name": "区域1"}]
-
-    class Meta:
-        # 确保一个任务不会重复关联同一个算法
-        indexes = (
-            (('task', 'algorithm'), True),
-        )
-    
     @property
-    def roi_config(self):
-        """提供一个方便的方法来获取解析后的ROI配置"""
-        try:
-            return json.loads(self.roi_regions)
-        except:
-            return []
+    def buffer_name(self):
+        return f'video_buffer.{self.id}'
+
+
+# 兼容别名
+Task = VideoSource
 
 
 class Alert(BaseModel):
     id = pw.AutoField()
-    task = pw.ForeignKeyField(Task, backref='alerts', on_delete='CASCADE')
+    video_source = pw.ForeignKeyField(VideoSource, backref='alerts', on_delete='CASCADE')
     alert_time = pw.DateTimeField()
     alert_type = pw.CharField()
     alert_message = pw.TextField(null=True)
@@ -116,9 +93,9 @@ class Alert(BaseModel):
     alert_video = pw.TextField(null=True)
     
     # 检测序列相关字段
-    detection_count = pw.IntegerField(default=1)  # 本次序列中的检测次数
-    window_stats = pw.TextField(null=True)  # 窗口统计信息（JSON字符串）
-    detection_images = pw.TextField(null=True)  # 历史检测图片路径（JSON数组)
+    detection_count = pw.IntegerField(default=1)
+    window_stats = pw.TextField(null=True)
+    detection_images = pw.TextField(null=True)
 
 
 # ==================== 脚本支持相关表 ====================
@@ -185,7 +162,7 @@ class AlgorithmHook(BaseModel):
 class ScriptExecutionLog(BaseModel):
     """脚本执行日志"""
     algorithm = pw.ForeignKeyField(Algorithm, backref='execution_logs', on_delete='CASCADE')
-    task = pw.ForeignKeyField(Task, backref='script_execution_logs', on_delete='CASCADE')
+    video_source = pw.ForeignKeyField(VideoSource, backref='script_execution_logs', on_delete='CASCADE')
     hook = pw.ForeignKeyField(Hook, backref='execution_logs', null=True, on_delete='SET NULL')
     script_path = pw.TextField()
     entry_function = pw.CharField()
@@ -303,3 +280,75 @@ class MLModel(BaseModel):
         if self.usage_count > 0:
             self.usage_count -= 1
             self.save()
+
+
+# ==================== 工作流配置表 ====================
+
+class Workflow(BaseModel):
+    """工作流配置表"""
+    id = pw.AutoField()
+    name = pw.CharField()                    # 工作流名称
+    description = pw.TextField(null=True)    # 描述
+    workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
+    is_active = pw.BooleanField(default=False)  # 是否激活
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'workflows'
+    
+    @property
+    def data_dict(self):
+        """获取解析后的工作流数据"""
+        try:
+            if not self.workflow_data:
+                return {}
+            return json.loads(self.workflow_data)
+        except Exception as e:
+            import logging
+            logging.error(f"解析工作流数据失败 (ID={self.id}): {e}, 原始数据: {self.workflow_data[:200]}")
+            return {}
+
+
+class WorkflowNode(BaseModel):
+    """工作流节点配置"""
+    id = pw.AutoField()
+    workflow = pw.ForeignKeyField(Workflow, backref='nodes', on_delete='CASCADE')
+    node_id = pw.CharField()                 # 节点ID（前端生成的UUID）
+    node_type = pw.CharField()               # 节点类型：source, algorithm, output, condition
+    node_data = pw.TextField(default='{}')  # 节点配置数据（JSON）
+    position_x = pw.FloatField(default=0)    # X坐标
+    position_y = pw.FloatField(default=0)    # Y坐标
+    
+    class Meta:
+        table_name = 'workflow_nodes'
+        indexes = (
+            (('workflow', 'node_id'), True),
+        )
+    
+    @property
+    def data_dict(self):
+        """获取解析后的节点数据"""
+        try:
+            return json.loads(self.node_data) if self.node_data else {}
+        except:
+            return {}
+
+
+class WorkflowConnection(BaseModel):
+    """工作流连线配置"""
+    id = pw.AutoField()
+    workflow = pw.ForeignKeyField(Workflow, backref='connections', on_delete='CASCADE')
+    from_node_id = pw.CharField()            # 源节点ID
+    to_node_id = pw.CharField()              # 目标节点ID
+    from_port = pw.CharField(default='output')  # 输出端口：output, true, false
+    to_port = pw.CharField(default='input')     # 输入端口：input
+    condition = pw.CharField(null=True)      # 条件：detected, not_detected, null
+    label = pw.CharField(null=True)          # 连线标签
+    
+    class Meta:
+        table_name = 'workflow_connections'
+        indexes = (
+            (('workflow', 'from_node_id', 'to_node_id'), False),
+        )

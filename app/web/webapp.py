@@ -13,7 +13,7 @@ import time
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 
-from app.core.database_models import Algorithm, Task, TaskAlgorithm, Alert, MLModel
+from app.core.database_models import Algorithm, VideoSource, Alert, MLModel
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
@@ -334,171 +334,96 @@ def test_algorithm():
         app.logger.error(f"算法测试失败: {str(e)}")
         return jsonify({'success': False, 'error': f'测试失败: {str(e)}'}), 500
 
-# Task API
+# VideoSource API (保留 /api/tasks 路由兼容)
 @app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    tasks = Task.select()
+@app.route('/api/video-sources', methods=['GET'])
+def get_video_sources():
+    sources = VideoSource.select()
     return jsonify([{
-        'id': t.id,
-        'name': t.name,
-        'enabled': t.enabled,
-        'source_code': t.source_code,
-        'source_name': t.source_name,
-        'source_url': t.source_url,
-        'source_decode_width': t.source_decode_width,
-        'source_decode_height': t.source_decode_height,
-        'source_fps': t.source_fps,
-        'buffer_name': t.buffer_name,
-        'status': t.status,
-        'decoder_pid': t.decoder_pid,
-        'ai_pid': t.ai_pid
-    } for t in tasks])
+        'id': s.id,
+        'name': s.name,
+        'enabled': s.enabled,
+        'source_code': s.source_code,
+        'source_url': s.source_url,
+        'source_decode_width': s.source_decode_width,
+        'source_decode_height': s.source_decode_height,
+        'source_fps': s.source_fps,
+        'buffer_name': s.buffer_name,
+        'status': s.status,
+        'decoder_pid': s.decoder_pid
+    } for s in sources])
 
 @app.route('/api/tasks/<int:id>', methods=['GET'])
-def get_task(id):
+@app.route('/api/video-sources/<int:id>', methods=['GET'])
+def get_video_source(id):
     try:
-        task = Task.get_by_id(id)
+        source = VideoSource.get_by_id(id)
         return jsonify({
-            'id': task.id,
-            'name': task.name,
-            'enabled': task.enabled,
-            'source_code': task.source_code,
-            'source_name': task.source_name,
-            'source_url': task.source_url,
-            'source_decode_width': task.source_decode_width,
-            'source_decode_height': task.source_decode_height,
-            'source_fps': task.source_fps,
-            'buffer_name': task.buffer_name,
-            'status': task.status,
-            'decoder_pid': task.decoder_pid,
-            'ai_pid': task.ai_pid
+            'id': source.id,
+            'name': source.name,
+            'enabled': source.enabled,
+            'source_code': source.source_code,
+            'source_url': source.source_url,
+            'source_decode_width': source.source_decode_width,
+            'source_decode_height': source.source_decode_height,
+            'source_fps': source.source_fps,
+            'buffer_name': source.buffer_name,
+            'status': source.status,
+            'decoder_pid': source.decoder_pid
         })
-    except Task.DoesNotExist:
-        return jsonify({'error': 'Task not found'}), 404
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
 
 @app.route('/api/tasks', methods=['POST'])
-def create_task():
+@app.route('/api/video-sources', methods=['POST'])
+def create_video_source():
     data = request.json
     try:
-        task = Task.create(
+        source = VideoSource.create(
             name=data['name'],
             enabled=data.get('enabled', True),
             source_code=data['source_code'],
-            source_name=data.get('source_name'),
             source_url=data['source_url'],
             source_decode_width=data.get('source_decode_width', 960),
             source_decode_height=data.get('source_decode_height', 540),
             source_fps=data.get('source_fps', 10),
-            buffer_name=data.get('buffer_name', 'video_buffer'),
             status=data.get('status', 'STOPPED'),
-            decoder_pid=data.get('decoder_pid'),
-            ai_pid=data.get('ai_pid')
+            decoder_pid=data.get('decoder_pid')
         )
-        return jsonify({'id': task.id, 'message': 'Task created'}), 201
+        return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/tasks/<int:id>', methods=['PUT'])
-def update_task(id):
+@app.route('/api/video-sources/<int:id>', methods=['PUT'])
+def update_video_source(id):
     try:
-        task = Task.get_by_id(id)
+        source = VideoSource.get_by_id(id)
         data = request.json
-        task.name = data.get('name', task.name)
-        task.enabled = data.get('enabled', task.enabled)
-        task.source_code = data.get('source_code', task.source_code)
-        task.source_name = data.get('source_name', task.source_name)
-        task.source_url = data.get('source_url', task.source_url)
-        task.source_decode_width = data.get('source_decode_width', task.source_decode_width)
-        task.source_decode_height = data.get('source_decode_height', task.source_decode_height)
-        task.source_fps = data.get('source_fps', task.source_fps)
-        task.buffer_name = data.get('buffer_name', task.buffer_name)
-        task.status = data.get('status', task.status)
-        task.decoder_pid = data.get('decoder_pid', task.decoder_pid)
-        task.ai_pid = data.get('ai_pid', task.ai_pid)
-        task.save()
+        source.name = data.get('name', source.name)
+        source.enabled = data.get('enabled', source.enabled)
+        source.source_code = data.get('source_code', source.source_code)
+        source.source_url = data.get('source_url', source.source_url)
+        source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
+        source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
+        source.source_fps = data.get('source_fps', source.source_fps)
+        source.status = data.get('status', source.status)
+        source.decoder_pid = data.get('decoder_pid', source.decoder_pid)
+        source.save()
         
-        return jsonify({'message': 'Task updated'})
-    except Task.DoesNotExist:
-        return jsonify({'error': 'Task not found'}), 404
+        return jsonify({'message': '视频源更新成功'})
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
 
 @app.route('/api/tasks/<int:id>', methods=['DELETE'])
-def delete_task(id):
+@app.route('/api/video-sources/<int:id>', methods=['DELETE'])
+def delete_video_source(id):
     try:
-        task = Task.get_by_id(id)
-        # 使用 recursive=True 确保级联删除相关记录（Alert、TaskAlgorithm等）
-        task.delete_instance(recursive=True)
-        return jsonify({'message': 'Task deleted'})
-    except Task.DoesNotExist:
-        return jsonify({'error': 'Task not found'}), 404
-
-# TaskAlgorithm API
-@app.route('/api/task-algorithms', methods=['GET'])
-def get_task_algorithms():
-    tas = TaskAlgorithm.select()
-    return jsonify([{
-        'id': ta.id,
-        'task_id': ta.task.id,
-        'algorithm_id': ta.algorithm.id,
-        'priority': ta.priority,
-        'config_override_json': ta.config_override_json,
-        'roi_regions': ta.roi_regions
-    } for ta in tas])
-
-@app.route('/api/task-algorithms/<int:id>', methods=['GET'])
-def get_task_algorithm(id):
-    try:
-        ta = TaskAlgorithm.get_by_id(id)
-        return jsonify({
-            'id': ta.id,
-            'task_id': ta.task.id,
-            'algorithm_id': ta.algorithm.id,
-            'priority': ta.priority,
-            'config_override_json': ta.config_override_json,
-            'roi_regions': ta.roi_regions
-        })
-    except TaskAlgorithm.DoesNotExist:
-        return jsonify({'error': 'TaskAlgorithm not found'}), 404
-
-@app.route('/api/task-algorithms', methods=['POST'])
-def create_task_algorithm():
-    data = request.json
-    try:
-        ta = TaskAlgorithm.create(
-            task=data['task_id'],
-            algorithm=data['algorithm_id'],
-            priority=data.get('priority', 0),
-            config_override_json=data.get('config_override_json', '{}'),
-            roi_regions=data.get('roi_regions', '[]')
-        )
-        return jsonify({'id': ta.id, 'message': 'TaskAlgorithm created'}), 201
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/task-algorithms/<int:id>', methods=['PUT'])
-def update_task_algorithm(id):
-    data = request.json
-    try:
-        ta = TaskAlgorithm.get_by_id(id)
-        if 'priority' in data:
-            ta.priority = data['priority']
-        if 'config_override_json' in data:
-            ta.config_override_json = data['config_override_json']
-        if 'roi_regions' in data:
-            ta.roi_regions = data['roi_regions']
-        ta.save()
-        return jsonify({'message': 'TaskAlgorithm updated'})
-    except TaskAlgorithm.DoesNotExist:
-        return jsonify({'error': 'TaskAlgorithm not found'}), 404
-
-@app.route('/api/task-algorithms/<int:id>', methods=['DELETE'])
-def delete_task_algorithm(id):
-    try:
-        ta = TaskAlgorithm.get_by_id(id)
-        # 使用 recursive=True 确保级联删除相关记录
-        ta.delete_instance(recursive=True)
-        return jsonify({'message': 'TaskAlgorithm deleted'})
-    except TaskAlgorithm.DoesNotExist:
-        return jsonify({'error': 'TaskAlgorithm not found'}), 404
+        source = VideoSource.get_by_id(id)
+        source.delete_instance(recursive=True)
+        return jsonify({'message': '视频源删除成功'})
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
 
 # Alert API
 @app.route('/api/alerts', methods=['GET'])
@@ -511,7 +436,7 @@ def get_alerts():
     # 构建查询
     query = Alert.select()
     if task_id:
-        query = query.where(Alert.task == task_id)
+        query = query.where(Alert.video_source == task_id)
     if alert_type:
         query = query.where(Alert.alert_type == alert_type)
     
@@ -528,7 +453,7 @@ def get_alerts():
     return jsonify({
         'data': [{
             'id': a.id,
-            'task_id': a.task.id,
+            'task_id': a.video_source.id,
             'alert_time': a.alert_time.isoformat(),
             'alert_type': a.alert_type,
             'alert_message': a.alert_message,
@@ -1008,8 +933,9 @@ def admin_algorithms():
     return render_template('algorithms.html')
 
 @app.route('/admin/tasks')
-def admin_tasks():
-    return render_template('tasks.html')
+@app.route('/admin/video-sources')
+def admin_video_sources():
+    return render_template('video_sources.html')
 
 @app.route('/admin/alerts')
 def admin_alerts():
@@ -1025,8 +951,9 @@ def admin_roi_config():
 
 # 添加简短的路由别名
 @app.route('/tasks')
-def tasks():
-    return render_template('tasks.html')
+@app.route('/video-sources')
+def video_sources():
+    return render_template('video_sources.html')
 
 @app.route('/algorithms')
 def algorithms():
@@ -1078,6 +1005,16 @@ def models():
 def admin_models():
     """模型管理页面（管理后台路径）"""
     return render_template('models.html')
+
+@app.route('/workflows')
+def workflows():
+    """工作流管理页面"""
+    return render_template('workflows.html')
+
+@app.route('/admin/workflows')
+def admin_workflows():
+    """工作流管理页面（管理后台路径）"""
+    return render_template('workflows.html')
 
 @app.route('/api/upload/model', methods=['POST'])
 def upload_model_file():
@@ -1141,6 +1078,14 @@ try:
     from app.web.api.detector_templates import register_detector_templates_api
     register_detector_templates_api(app)
     app.logger.info("检测器模板API已注册")
+except ImportError as e:
+    app.logger.warning(f"检测器模板API注册失败: {e}")
+
+# ========== 注册工作流管理API ==========
+try:
+    from app.web.api.workflows import register_workflows_api
+    register_workflows_api(app)
+    app.logger.info("工作流管理API已注册")
     
     # 自动初始化系统模板（如果不存在）
     try:

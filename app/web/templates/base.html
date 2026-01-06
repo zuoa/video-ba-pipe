@@ -143,8 +143,11 @@
                     <a href="/" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/' %}active text-black{% endif %}">
                         <i class="fas fa-home mr-2"></i>仪表盘
                     </a>
-                    <a href="/admin/tasks" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path == '/admin/tasks' %}active text-black{% endif %}">
-                        <i class="fas fa-tasks mr-2"></i>任务管理
+                    <a href="/admin/video-sources" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/admin/tasks', '/admin/video-sources', '/tasks', '/video-sources'] %}active text-black{% endif %}">
+                        <i class="fas fa-video mr-2"></i>视频源
+                    </a>
+                    <a href="/workflows" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/workflows', '/admin/workflows'] %}active text-black{% endif %}">
+                        <i class="fas fa-project-diagram mr-2"></i>工作流
                     </a>
                     <a href="/models" class="nav-item px-4 py-2 text-sm font-medium text-gray-700 hover:text-black transition-colors {% if request.path in ['/models', '/admin/models'] %}active text-black{% endif %}">
                         <i class="fas fa-cube mr-2"></i>模型管理

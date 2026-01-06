@@ -17,7 +17,7 @@ from app.config import (
     RINGBUFFER_DURATION,
     ALERT_SUPPRESSION_DURATION
 )
-from app.core.database_models import Algorithm, Task, Alert, TaskAlgorithm  # 导入 Algorithm 模型
+from app.core.database_models import Algorithm, VideoSource, Alert
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
@@ -29,7 +29,7 @@ from app.plugins.script_algorithm import ScriptAlgorithm
 def main(args):
     task_id = args.task_id
 
-    task = Task.get_by_id(task_id)  # 确保任务存在，否则抛出异常
+    task = VideoSource.get_by_id(task_id)
     source_code = task.source_code
     source_name = task.source_name
     buffer_name = f"{task.buffer_name}.{task.id}"

@@ -1,8 +1,9 @@
 import json
 
 from app.core.database_models import (
-    db, Algorithm, Task, TaskAlgorithm, Alert,
-    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel, DetectorTemplate
+    db, Algorithm, VideoSource, Alert,
+    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel, DetectorTemplate,
+    Workflow, WorkflowNode, WorkflowConnection
 )
 
 
@@ -14,9 +15,7 @@ def setup_database():
     db.create_tables([
         # 基础表
         Algorithm,
-        Task,
-        # 关联表
-        TaskAlgorithm,
+        VideoSource,
         Alert,
         # 脚本支持相关表
         DetectorTemplate,
@@ -25,7 +24,11 @@ def setup_database():
         AlgorithmHook,
         ScriptExecutionLog,
         # 模型管理表
-        MLModel
+        MLModel,
+        # 工作流表
+        Workflow,
+        WorkflowNode,
+        WorkflowConnection
     ], safe=True)
 
 
