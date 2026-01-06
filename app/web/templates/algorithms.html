@@ -461,7 +461,8 @@
         // 设置空的模型配置
         document.getElementById('modelJson').value = JSON.stringify({ models: [] });
         document.getElementById('extConfigJson').value = '{}';
-        renderPluginModuleSelect('');
+        // 默认选择 script_algorithm
+        renderPluginModuleSelect('script_algorithm');
         // 初始化时间窗口配置
         document.getElementById('enableWindowCheck').checked = false;
         document.getElementById('windowSize').value = 30;
@@ -480,7 +481,7 @@
         document.getElementById('name').value = algorithm.name;
         document.getElementById('labelName').value = algorithm.label_name;
         document.getElementById('intervalSeconds').value = algorithm.interval_seconds;
-        renderPluginModuleSelect(algorithm.plugin_module || '');
+        renderPluginModuleSelect(algorithm.plugin_module || 'script_algorithm');
 
         // 加载脚本配置（如果是脚本类型）
         document.getElementById('scriptPath').value = algorithm.script_path || '';
@@ -488,9 +489,16 @@
         document.getElementById('runtimeTimeout').value = algorithm.runtime_timeout || 30;
         document.getElementById('memoryLimit').value = algorithm.memory_limit_mb || 512;
 
+        // 解析并设置扩展配置
+        try {
+            const extConfig = algorithm.ext_config_json ? JSON.parse(algorithm.ext_config_json) : {};
+            document.getElementById('extConfigJson').value = JSON.stringify(extConfig, null, 2);
+        } catch (e) {
+            document.getElementById('extConfigJson').value = algorithm.ext_config_json || '{}';
+        }
+
         // 不再使用模型选择，直接设置空配置
         document.getElementById('modelJson').value = JSON.stringify({ models: [] });
-        document.getElementById('extConfigJson').value = algorithm.ext_config_json;
 
         // 加载时间窗口配置
         document.getElementById('enableWindowCheck').checked = algorithm.enable_window_check || false;
@@ -521,14 +529,24 @@
         // 提交前同步隐藏的 JSON 字段（不再使用模型选择，保持空配置）
         document.getElementById('modelJson').value = JSON.stringify({ models: [] });
 
+        // 验证并格式化 ext_config_json
+        let extConfigJson;
+        try {
+            const extConfigValue = document.getElementById('extConfigJson').value;
+            extConfigJson = JSON.parse(extConfigValue || '{}');
+        } catch (e) {
+            showMessage('扩展配置 JSON 格式错误: ' + e.message, 'error');
+            return;
+        }
+
         const data = {
             name: document.getElementById('name').value,
             label_name: document.getElementById('labelName').value,
             interval_seconds: parseFloat(document.getElementById('intervalSeconds').value),
-            plugin_module: pluginModule || null,
+            plugin_module: pluginModule || 'script_algorithm',
             model_json: document.getElementById('modelJson').value,
             model_ids: JSON.stringify([]),  // 不再使用模型选择，传递空数组
-            ext_config_json: document.getElementById('extConfigJson').value,
+            ext_config_json: JSON.stringify(extConfigJson),
             // 时间窗口配置
             enable_window_check: document.getElementById('enableWindowCheck').checked,
             window_size: parseInt(document.getElementById('windowSize').value),
@@ -549,15 +567,6 @@
                 showMessage('请填写脚本路径', 'error');
                 return;
             }
-        }
-
-        try {
-            // 验证 JSON
-            JSON.parse(data.model_json);
-            JSON.parse(data.ext_config_json);
-        } catch (e) {
-            showMessage('JSON 格式错误: ' + e.message, 'error');
-            return;
         }
 
         try {
@@ -880,7 +889,8 @@
     }
 
     Promise.all([loadAlgorithms(), loadPluginModules()]).then(() => {
-        // nothing
+        // 初始化完成，确保脚本配置区域默认显示
+        togglePluginType();
     });
 </script>
 {% endblock %}

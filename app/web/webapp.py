@@ -46,28 +46,36 @@ def list_plugin_modules():
 @app.route('/api/algorithms', methods=['GET'])
 def get_algorithms():
     algorithms = Algorithm.select()
-    return jsonify([{
-        'id': a.id,
-        'name': a.name,
-        'script_path': a.script_path,
-        'script_config': a.script_config,
-        'detector_template_id': a.detector_template_id,
-        'interval_seconds': a.interval_seconds,
-        'runtime_timeout': a.runtime_timeout,
-        'memory_limit_mb': a.memory_limit_mb,
-        'label_name': a.label_name,
-        'label_color': a.label_color,
-        'enable_window_check': a.enable_window_check,
-        'window_size': a.window_size,
-        'window_mode': a.window_mode,
-        'window_threshold': a.window_threshold
-    } for a in algorithms])
+    result = []
+    for a in algorithms:
+        algo_dict = {
+            'id': a.id,
+            'name': a.name,
+            'script_path': a.script_path,
+            'script_config': a.script_config,
+            'detector_template_id': a.detector_template_id,
+            'interval_seconds': a.interval_seconds,
+            'runtime_timeout': a.runtime_timeout,
+            'memory_limit_mb': a.memory_limit_mb,
+            'label_name': a.label_name,
+            'label_color': a.label_color,
+            'enable_window_check': a.enable_window_check,
+            'window_size': a.window_size,
+            'window_mode': a.window_mode,
+            'window_threshold': a.window_threshold
+        }
+        # 安全地添加可选字段
+        algo_dict['plugin_module'] = getattr(a, 'plugin_module', 'script_algorithm')
+        algo_dict['ext_config_json'] = getattr(a, 'ext_config_json', '{}')
+        algo_dict['entry_function'] = getattr(a, 'entry_function', 'process')
+        result.append(algo_dict)
+    return jsonify(result)
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
 def get_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
-        return jsonify({
+        algo_dict = {
             'id': algorithm.id,
             'name': algorithm.name,
             'script_path': algorithm.script_path,
@@ -82,7 +90,12 @@ def get_algorithm(id):
             'window_size': algorithm.window_size,
             'window_mode': algorithm.window_mode,
             'window_threshold': algorithm.window_threshold
-        })
+        }
+        # 安全地添加可选字段
+        algo_dict['plugin_module'] = getattr(algorithm, 'plugin_module', 'script_algorithm')
+        algo_dict['ext_config_json'] = getattr(algorithm, 'ext_config_json', '{}')
+        algo_dict['entry_function'] = getattr(algorithm, 'entry_function', 'process')
+        return jsonify(algo_dict)
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
 
@@ -120,62 +133,43 @@ def update_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
         data = request.json
-        
-        # 处理模型ID的变更
+
         import json
-        if 'model_ids' in data:
-            old_model_ids = set(algorithm.model_id_list)
-            new_model_ids = set(json.loads(data.get('model_ids', '[]')))
-            
-            # 计算需要增加和减少使用计数的模型
-            added_models = new_model_ids - old_model_ids
-            removed_models = old_model_ids - new_model_ids
-            
-            # 增加新添加模型的使用计数
-            for model_id in added_models:
-                try:
-                    model = MLModel.get_by_id(model_id)
-                    model.increment_usage()
-                except MLModel.DoesNotExist:
-                    app.logger.warning(f"模型 {model_id} 不存在")
-            
-            # 减少移除模型的使用计数
-            for model_id in removed_models:
-                try:
-                    model = MLModel.get_by_id(model_id)
-                    model.decrement_usage()
-                except MLModel.DoesNotExist:
-                    app.logger.warning(f"模型 {model_id} 不存在")
-            
-            algorithm.model_ids = data['model_ids']
-        
-        # 更新其他字段
+
+        # 更新基本字段
         algorithm.name = data.get('name', algorithm.name)
-        algorithm.model_json = data.get('model_json', algorithm.model_json)
         algorithm.interval_seconds = data.get('interval_seconds', algorithm.interval_seconds)
-        algorithm.ext_config_json = data.get('ext_config_json', algorithm.ext_config_json)
-        algorithm.plugin_module = data.get('plugin_module', algorithm.plugin_module)
         algorithm.label_name = data.get('label_name', algorithm.label_name)
         algorithm.enable_window_check = data.get('enable_window_check', algorithm.enable_window_check)
         algorithm.window_size = data.get('window_size', algorithm.window_size)
         algorithm.window_mode = data.get('window_mode', algorithm.window_mode)
         algorithm.window_threshold = data.get('window_threshold', algorithm.window_threshold)
+
         # 脚本相关字段
-        if 'script_type' in data:
-            algorithm.script_type = data['script_type']
         if 'script_path' in data:
             algorithm.script_path = data['script_path']
-        if 'entry_function' in data:
-            algorithm.entry_function = data['entry_function']
         if 'runtime_timeout' in data:
             algorithm.runtime_timeout = data['runtime_timeout']
         if 'memory_limit_mb' in data:
             algorithm.memory_limit_mb = data['memory_limit_mb']
+
+        # 处理扩展字段（如果数据库中有这些字段就更新，否则跳过）
+        ext_fields = ['plugin_module', 'ext_config_json', 'model_json', 'model_ids', 'script_type', 'entry_function']
+        for field in ext_fields:
+            if field in data and hasattr(algorithm, field):
+                try:
+                    setattr(algorithm, field, data[field])
+                except Exception as e:
+                    app.logger.warning(f"无法更新字段 {field}: {e}")
+
         algorithm.save()
-        
+
         return jsonify({'message': 'Algorithm updated'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
+    except Exception as e:
+        app.logger.error(f"更新算法失败 (ID={id}): {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/algorithms/<int:id>', methods=['DELETE'])
 def delete_algorithm(id):
