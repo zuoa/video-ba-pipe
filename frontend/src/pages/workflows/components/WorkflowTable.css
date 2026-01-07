@@ -1,0 +1,319 @@
+.workflow-table-wrapper {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.filter-left,
+.filter-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-icon {
+  color: #8c8c8c;
+  font-size: 14px;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #262626;
+}
+
+.filter-info {
+  font-size: 13px;
+  color: #8c8c8c;
+}
+
+.filter-count {
+  font-weight: 600;
+  color: #1890ff;
+  margin: 0 4px;
+}
+
+/* 批量操作栏 */
+.batch-actions-alert {
+  margin: 16px 24px;
+  border-radius: 8px;
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.batch-actions-alert .ant-alert-icon {
+  color: #1890ff;
+}
+
+.batch-actions-alert .ant-alert-message {
+  font-size: 14px;
+  color: #262626;
+}
+
+/* 表格样式 */
+.workflow-table {
+  padding: 0;
+}
+
+.workflow-table .ant-table {
+  font-size: 14px;
+}
+
+.workflow-table .ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+  color: #262626;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.workflow-table .ant-table-tbody > tr > td {
+  padding: 14px 16px;
+}
+
+.workflow-table .ant-table-tbody > tr:hover > td {
+  background: #fafafa;
+}
+
+/* 选中行的样式 */
+.workflow-table .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: #e6f7ff !important;
+}
+
+.workflow-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background: #bae7ff !important;
+}
+
+.workflow-table .ant-table-selection-column {
+  width: 50px;
+}
+
+/* ID 徽章 */
+.id-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* 名称单元格 */
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.name-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 8px;
+  color: white;
+  font-size: 18px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.name-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.name-text {
+  font-weight: 500;
+  color: #262626;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.name-desc {
+  font-size: 12px;
+  color: #8c8c8c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 视频源标签 */
+.source-tag {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* 状态样式 */
+.status-active {
+  color: #52c41a;
+  font-weight: 500;
+}
+
+.status-inactive {
+  color: #8c8c8c;
+  font-weight: 400;
+}
+
+/* 操作按钮 */
+.action-btn {
+  font-size: 13px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.action-btn-edit {
+  color: #1890ff;
+  border-color: #d9d9d9;
+}
+
+.action-btn-edit:hover {
+  color: #40a9ff;
+  border-color: #40a9ff;
+  background: #e6f7ff;
+}
+
+.action-btn-warning {
+  color: #faad14;
+  border-color: #d9d9d9;
+}
+
+.action-btn-warning:hover {
+  color: #ffc53d;
+  border-color: #ffc53d;
+  background: #fffbe6;
+}
+
+.action-btn-delete {
+  color: #f5222d;
+  border-color: #d9d9d9;
+}
+
+.action-btn-delete:hover {
+  color: #ff4d4f;
+  border-color: #ff4d4f;
+  background: #fff1f0;
+}
+
+/* 复选框样式 - 增强可见度 */
+.workflow-table .ant-checkbox-wrapper {
+  font-size: 13px;
+}
+
+.workflow-table .ant-checkbox-inner {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border-color: #d9d9d9;
+  border-width: 2px;
+}
+
+.workflow-table .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: #000000;
+  border-color: #000000;
+}
+
+.workflow-table .ant-checkbox-checked .ant-checkbox-inner::after {
+  border-color: white;
+  border-width: 2px;
+}
+
+.workflow-table .ant-checkbox:hover .ant-checkbox-inner,
+.workflow-table .ant-checkbox-input:focus + .ant-checkbox-inner {
+  border-color: #000000;
+}
+
+.workflow-table .ant-checkbox-indeterminate .ant-checkbox-inner {
+  background-color: #000000;
+  border-color: #000000;
+}
+
+.workflow-table .ant-checkbox-indeterminate .ant-checkbox-inner::after {
+  background-color: white;
+  height: 2px;
+}
+
+/* 表头复选框样式 */
+.workflow-table .ant-table-thead .ant-checkbox-inner {
+  background-color: #fafafa;
+}
+
+.workflow-table .ant-table-thead .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: #000000;
+  border-color: #000000;
+}
+
+.workflow-table .ant-table-thead .ant-checkbox:hover .ant-checkbox-inner {
+  border-color: #000000;
+}
+
+/* 分页样式 */
+.workflow-table .ant-pagination {
+  margin: 16px 24px;
+}
+
+.workflow-table .ant-pagination-item {
+  border-radius: 6px;
+  border-color: #d9d9d9;
+}
+
+.workflow-table .ant-pagination-item-active {
+  background-color: #000000;
+  border-color: #000000;
+}
+
+.workflow-table .ant-pagination-item-active a {
+  color: white;
+}
+
+.workflow-table .ant-pagination-prev,
+.workflow-table .ant-pagination-next {
+  border-radius: 6px;
+}
+
+.workflow-table .ant-pagination-prev:hover,
+.workflow-table .ant-pagination-next:hover {
+  border-color: #000000;
+}
+
+.workflow-table .ant-pagination-prev:hover .ant-pagination-item-link,
+.workflow-table .ant-pagination-next:hover .ant-pagination-item-link {
+  color: #000000;
+}
+
+/* 空状态 */
+.workflow-table .ant-empty {
+  padding: 40px 0;
+}
+
+.workflow-table .ant-empty-description {
+  color: #8c8c8c;
+  font-size: 14px;
+}

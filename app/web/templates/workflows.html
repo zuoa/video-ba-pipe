@@ -50,6 +50,28 @@
             </div>
         </div>
 
+        <!-- 视频源筛选器 -->
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-100">
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-filter text-gray-500"></i>
+                    <span class="text-sm font-medium text-gray-700">按视频源筛选</span>
+                </div>
+                <div class="flex-1">
+                    <select id="videoSourceFilter" onchange="filterWorkflowsBySource()"
+                        class="w-full max-w-md px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all text-sm">
+                        <option value="">全部视频源</option>
+                    </select>
+                </div>
+                <div id="filterInfo" class="text-sm text-gray-500 hidden">
+                    显示 <span id="filteredCount" class="font-semibold text-black">0</span> 个算法编排
+                </div>
+                <button onclick="clearSourceFilter()" id="clearFilterBtn" class="hidden px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-all">
+                    <i class="fas fa-times mr-1"></i>清除筛选
+                </button>
+            </div>
+        </div>
+
         <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
             <div class="overflow-x-auto custom-scrollbar">
                 <table class="min-w-full divide-y divide-gray-100">
@@ -1179,18 +1201,76 @@
     async function loadWorkflows() {
         try {
             workflows = await apiRequest('/api/workflows');
+            // 同时加载视频源列表用于筛选
+            await loadVideoSourcesForFilter();
             renderWorkflowsTable();
         } catch (error) {
             showMessage('加载算法编排失败: ' + error.message, 'error');
         }
     }
 
+    // 加载视频源列表用于筛选
+    async function loadVideoSourcesForFilter() {
+        try {
+            const sources = await apiRequest('/api/video-sources');
+            const select = document.getElementById('videoSourceFilter');
+            // 保留第一项"全部视频源"
+            select.innerHTML = '<option value="">全部视频源</option>';
+            sources.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.id;
+                option.textContent = `${s.name} (${s.source_code})`;
+                select.appendChild(option);
+            });
+        } catch (error) {
+            console.error('加载视频源列表失败:', error);
+        }
+    }
+
+    // 根据视频源筛选工作流
+    function filterWorkflowsBySource() {
+        renderWorkflowsTable();
+    }
+
+    // 清除视频源筛选
+    function clearSourceFilter() {
+        document.getElementById('videoSourceFilter').value = '';
+        filterWorkflowsBySource();
+    }
+
     function renderWorkflowsTable() {
         const tbody = document.getElementById('workflowsTable');
         const count = document.getElementById('workflowCount');
-        count.textContent = `共 ${workflows.length} 个算法编排`;
+        const filterValue = document.getElementById('videoSourceFilter').value;
 
-        tbody.innerHTML = workflows.map(w => `
+        // 筛选逻辑：如果选择了视频源，只显示包含该视频源的工作流
+        let filteredWorkflows = workflows;
+        if (filterValue) {
+            const sourceId = parseInt(filterValue);
+            filteredWorkflows = workflows.filter(w => {
+                const nodes = w.workflow_data?.nodes || [];
+                return nodes.some(n => n.type === 'source' && n.dataId === sourceId);
+            });
+        }
+
+        // 更新显示数量
+        count.textContent = filterValue
+            ? `筛选结果: ${filteredWorkflows.length} 个算法编排`
+            : `共 ${filteredWorkflows.length} 个算法编排`;
+
+        // 显示/隐藏筛选信息和清除按钮
+        const filterInfo = document.getElementById('filterInfo');
+        const clearFilterBtn = document.getElementById('clearFilterBtn');
+        if (filterValue) {
+            filterInfo.classList.remove('hidden');
+            clearFilterBtn.classList.remove('hidden');
+            document.getElementById('filteredCount').textContent = filteredWorkflows.length;
+        } else {
+            filterInfo.classList.add('hidden');
+            clearFilterBtn.classList.add('hidden');
+        }
+
+        tbody.innerHTML = filteredWorkflows.map(w => `
             <tr class="hover:bg-gray-50 transition-all duration-200">
                 <td class="px-4 py-5 text-center">
                     <input type="checkbox" class="workflow-checkbox w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"

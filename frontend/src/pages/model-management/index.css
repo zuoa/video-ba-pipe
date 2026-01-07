@@ -1,0 +1,91 @@
+.models-page {
+  padding: 24px;
+}
+
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  height: 36px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.upload-btn:hover {
+  background: linear-gradient(135deg, #333333 0%, #555555 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.upload-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.models-grid {
+  margin-top: 16px;
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .models-page {
+    padding: 16px;
+  }
+
+  .upload-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* 滚动条美化 */
+.models-page ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.models-page ::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.models-page ::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.models-page ::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* 卡片动画 */
+.models-grid .ant-col {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

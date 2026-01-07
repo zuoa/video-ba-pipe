@@ -1,0 +1,17 @@
+.dashboard-page {
+  padding: 0;
+  /* 不再使用 max-width 和居中模式 */
+  /* 不再使用背景色 */
+}
+
+/* 响应式调整 */
+@media (max-width: 576px) {
+  .dashboard-page {
+    padding: 0;
+  }
+}
+
+/* 确保全宽显示 */
+.dashboard-page > * {
+  width: 100%;
+}

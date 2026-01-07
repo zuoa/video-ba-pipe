@@ -1,0 +1,208 @@
+/* 编辑器 Modal 样式 */
+.workflow-editor-modal .ant-modal-content {
+  height: 100vh;
+  border-radius: 0;
+}
+
+.workflow-editor-modal .ant-modal-close {
+  display: none;
+}
+
+/* 编辑器头部 - 使用黑色主题 */
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  font-size: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.2;
+  color: white;
+}
+
+.header-subtitle {
+  font-size: 13px;
+  opacity: 0.85;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.header-right .ant-btn {
+  height: 38px;
+  padding: 0 20px;
+  font-size: 14px;
+  border-radius: 8px;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.header-right .ant-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: white;
+}
+
+.header-right .ant-btn-primary {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.header-right .ant-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.header-right .ant-btn.active {
+  background: white;
+  color: #000000;
+}
+
+/* 编辑器主体 */
+.editor-body {
+  display: flex;
+  height: calc(100vh - 88px);
+  overflow: hidden;
+}
+
+/* 画布 */
+.editor-canvas {
+  flex: 1;
+  position: relative;
+  background: #fafafa;
+}
+
+/* ReactFlow 样式覆盖 */
+.react-flow__node {
+  cursor: grab;
+}
+
+.react-flow__node.selected {
+  outline: none;
+}
+
+.react-flow__edge-path {
+  stroke: #b1b1b7;
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #000000;
+}
+
+.react-flow__controls {
+  bottom: 24px;
+  left: 24px;
+}
+
+.react-flow__controls-button {
+  background: white;
+  border: 1px solid #e8e8e8;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.react-flow__controls-button:hover {
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+}
+
+.react-flow__minimap {
+  bottom: 24px;
+  right: 24px;
+  width: 200px;
+  height: 150px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.react-flow__background {
+  background: #fafafa;
+}
+
+/* 右侧面板 */
+.editor-right-panel,
+.editor-properties {
+  width: 450px;
+  min-width: 450px;
+  max-width: 600px;
+  background: white;
+  border-left: 1px solid #f0f0f0;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+}
+
+.panel-tabs {
+  display: flex !important;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.panel-tab {
+  flex: 1;
+  padding: 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #8c8c8c;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.panel-tab:hover {
+  color: #262626;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.panel-tab.active {
+  color: #000000;
+  border-bottom-color: #000000;
+  background: white;
+}
+
+.panel-tab:focus {
+  outline: none;
+}

@@ -60,6 +60,7 @@ class WorkflowExecutor:
             'condition': self._handle_condition_node,
             'output': self._handle_output_node,
             'roi_draw': self._handle_roi_draw_node,
+            'alert': self._handle_output_node,
         }
         
         self._build_execution_graph()
@@ -116,7 +117,7 @@ class WorkflowExecutor:
         for conn in self.connections:
             from_id = conn['from']
             to_id = conn['to']
-            condition = conn.get('condition')
+            condition = conn.get('condition') or conn.get('from_port')
 
             self.execution_graph[from_id].append({
                 'target': to_id,
@@ -336,9 +337,9 @@ class WorkflowExecutor:
     def _evaluate_condition(self, condition, context):
         if not condition:
             return True
-        if condition == 'detected':
+        if condition == 'detected' or condition == 'true':
             return context.get('has_detection', False)
-        if condition == 'not_detected':
+        if condition == 'not_detected' or condition == 'false':
             return not context.get('has_detection', False)
         return True
     

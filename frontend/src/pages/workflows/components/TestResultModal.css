@@ -1,0 +1,369 @@
+/* 测试结果弹窗 */
+.test-result-modal .ant-modal-content {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.test-result-modal .ant-modal-header {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 24px;
+}
+
+.test-result-modal .ant-modal-body {
+  padding: 0;
+}
+
+/* 弹窗标题 */
+.modal-title {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.title-metric {
+  font-size: 14px;
+  color: #595959;
+}
+
+.title-metric strong {
+  color: #262626;
+  margin-left: 4px;
+}
+
+.title-status {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.title-status.success {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.title-status.error {
+  background: #fff2f0;
+  color: #ff4d4f;
+  border: 1px solid #ffccc7;
+}
+
+/* 布局 */
+.test-result-layout {
+  display: flex;
+  height: 100%;
+}
+
+.flow-container {
+  flex: 1;
+  position: relative;
+  background: #fafafa;
+}
+
+/* 节点详情面板 */
+.node-detail-panel {
+  width: 400px;
+  background: white;
+  border-left: 1px solid #f0f0f0;
+  overflow-y: auto;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+}
+
+.detail-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.detail-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.detail-content {
+  padding: 16px;
+}
+
+.detection-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.detection-item .confidence {
+  color: #52c41a;
+  font-weight: 500;
+}
+
+/* 自定义测试结果节点 */
+.test-result-node {
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #d9d9d9;
+  background: white;
+  min-width: 200px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.test-result-node:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.test-result-node.success {
+  border-color: #52c41a;
+  background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.test-result-node.error {
+  border-color: #ff4d4f;
+  background: linear-gradient(135deg, #fff2f0 0%, #ffffff 100%);
+}
+
+.test-result-node.pending {
+  border-color: #d9d9d9;
+  background: #fafafa;
+}
+
+.test-result-node.skipped {
+  border-color: #d9d9d9;
+  background: #fafafa;
+  opacity: 0.6;
+  filter: grayscale(0.5);
+}
+
+.test-result-node.selected {
+  box-shadow: 0 0 0 2px #1890ff;
+}
+
+/* 未执行节点的标记 */
+.node-skipped-badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+}
+
+/* Handle 样式 */
+.custom-handle {
+  width: 10px;
+  height: 10px;
+  background: #1890ff;
+  border: 2px solid white;
+  border-radius: 50%;
+}
+
+.custom-handle.handle-skipped {
+  background: #bfbfbf;
+}
+
+.custom-handle:hover {
+  width: 12px;
+  height: 12px;
+}
+
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.status-icon {
+  font-size: 16px;
+}
+
+.status-icon.success {
+  color: #52c41a;
+}
+
+.status-icon.error {
+  color: #ff4d4f;
+}
+
+.status-icon.pending {
+  color: #d9d9d9;
+}
+
+.status-icon.skipped {
+  color: #8c8c8c;
+}
+
+.node-label {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  color: #262626;
+}
+
+.node-type-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #8c8c8c;
+  font-weight: 500;
+}
+
+.node-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node-status {
+  align-self: flex-start;
+}
+
+.node-metric {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #595959;
+}
+
+.node-message {
+  font-size: 12px;
+  color: #262626;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.node-error {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #ff4d4f;
+}
+
+/* 边样式 */
+.test-result-flow .react-flow__edge {
+  cursor: default;
+}
+
+/* 边的样式 - 通过 edge 的 className */
+.test-result-flow .react-flow__edge.edge-executed path {
+  stroke: #52c41a !important;
+  stroke-width: 3 !important;
+}
+
+.test-result-flow .react-flow__edge.edge-skipped path {
+  stroke: #d9d9d9 !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 5 5 !important;
+}
+
+.test-result-flow .react-flow__edge.selected path {
+  stroke: #1890ff !important;
+}
+
+/* 边的箭头样式 */
+.test-result-flow .react-flow__edge.edge-executed .react-flow__arrow {
+  fill: #52c41a !important;
+}
+
+.test-result-flow .react-flow__edge.edge-skipped .react-flow__arrow {
+  fill: #d9d9d9 !important;
+}
+
+/* 边的动画 */
+.test-result-flow .react-flow__edge.edge-executed.animated path {
+  stroke-dasharray: 10 !important;
+  animation: dashdraw 1s linear infinite;
+}
+
+@keyframes dashdraw {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 未执行边的 X 标记 */
+.edge-skipped-mark {
+  background: rgba(255, 77, 79, 0.9);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(4px);
+}
+
+/* 确保边的容器也有正确的类 */
+.test-result-flow .edge-executed {
+  stroke: #52c41a;
+}
+
+.test-result-flow .edge-skipped {
+  stroke: #d9d9d9;
+}
+
+/* 滚动条 */
+.node-detail-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.node-detail-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.node-detail-panel::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.node-detail-panel::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* MiniMap 样式 */
+.test-result-flow .react-flow__minimap {
+  background: white;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+/* Controls 样式 */
+.test-result-flow .react-flow__controls {
+  bottom: 24px;
+  left: 24px;
+}
+
+.test-result-flow .react-flow__controls-button {
+  background: white;
+  border: 1px solid #e8e8e8;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.test-result-flow .react-flow__controls-button:hover {
+  background: #f5f5f5;
+}

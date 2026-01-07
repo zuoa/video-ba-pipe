@@ -1,0 +1,344 @@
+.property-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.property-panel-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #8c8c8c;
+  font-size: 14px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  background: linear-gradient(to bottom, #fafafa, #ffffff);
+}
+
+.panel-header .ant-space {
+  gap: 12px;
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+  letter-spacing: 0.3px;
+}
+
+.delete-btn {
+  color: #f5222d;
+  font-size: 13px;
+  border: 1px solid #ffccc7;
+  transition: all 0.3s ease;
+}
+
+.delete-btn:hover {
+  color: #ff4d4f;
+  background: #fff1f0;
+  border-color: #ff4d4f;
+}
+
+.property-tabs {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.property-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+  padding: 0 24px;
+  background: #fafafa;
+}
+
+.property-tabs .ant-tabs-tab {
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #595959;
+  transition: all 0.3s ease;
+}
+
+.property-tabs .ant-tabs-tab:hover {
+  color: #262626;
+}
+
+.property-tabs .ant-tabs-content {
+  padding: 20px 24px;
+  background: #ffffff;
+}
+
+.property-tabs .ant-tabs-tab-btn {
+  font-size: 14px;
+}
+
+.property-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #000000;
+  font-weight: 600;
+}
+
+.property-tabs .ant-tabs-ink-bar {
+  background-color: #000000;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.property-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.property-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.property-form .ant-form-item-label > label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+  letter-spacing: 0.2px;
+}
+
+.property-form .ant-input,
+.property-form .ant-input-number,
+.property-form .ant-select-selector {
+  font-size: 14px;
+  border-radius: 8px;
+  border-color: #d9d9d9;
+  transition: all 0.3s ease;
+}
+
+.property-form .ant-input:hover,
+.property-form .ant-input-number:hover,
+.property-form .ant-select-selector:hover {
+  border-color: #bfbfbf;
+}
+
+.property-form .ant-input:focus,
+.property-form .ant-input-number:focus,
+.property-form .ant-select-focused .ant-select-selector {
+  border-color: #000000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+}
+
+.property-form .ant-form-item-explain-error {
+  font-size: 12px;
+}
+
+.form-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 12px 0;
+}
+
+.form-actions {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.form-actions .ant-btn-primary {
+  background: #000000;
+  border-color: #000000;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.form-actions .ant-btn-primary:hover {
+  background: #333333;
+  border-color: #333333;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.info-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(to right, #e6f7ff, #f0f9ff);
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #096dd9;
+  line-height: 1.6;
+}
+
+.node-info {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.info-label {
+  color: #8c8c8c;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #262626;
+  font-weight: 600;
+}
+
+/* 滚动条样式 */
+.property-tabs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.property-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.property-tabs::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+.property-tabs::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* 配置区域样式 */
+.config-section {
+  margin-top: 12px;
+  padding: 16px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+.config-section-header {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.config-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+  letter-spacing: 0.2px;
+}
+
+.window-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+/* 选中视频源信息展示 */
+.selected-source-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: linear-gradient(to right, #f6ffed, #fcffe6);
+  border: 1px solid #d9f7be;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.selected-source-info .info-row {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.selected-source-info .info-label {
+  color: #595959;
+  font-weight: 500;
+  min-width: 50px;
+}
+
+.selected-source-info .info-value {
+  color: #262626;
+  font-weight: 600;
+  flex: 1;
+  word-break: break-all;
+}
+
+/* 视频源选择器触发区域 */
+.video-source-selector-trigger {
+  margin-bottom: 16px;
+}
+
+.current-source-card {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+  transition: all 0.3s ease;
+}
+
+.current-source-card:hover {
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
+}
+
+.source-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.source-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.source-card-details .detail-item {
+  display: flex;
+  align-items: flex-start;
+  font-size: 13px;
+}
+
+.source-card-details .detail-label {
+  color: #8c8c8c;
+  font-weight: 500;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.source-card-details .detail-value {
+  color: #262626;
+  font-weight: 600;
+  flex: 1;
+  word-break: break-all;
+}
+
+.source-card-details .detail-value.url-text {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #1890ff;
+}
+

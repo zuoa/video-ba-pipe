@@ -1,0 +1,43 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-weight: 500;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.3s;
+}
+
+.status-badge-small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.status-badge {
+  font-size: 13px;
+}
+
+.status-badge-large {
+  padding: 6px 16px;
+  font-size: 14px;
+}
+
+.status-icon {
+  margin-right: 6px;
+  font-size: 10px;
+}
+
+.status-animated .status-icon {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

@@ -1,0 +1,15 @@
+.empty-state {
+  padding: 80px 20px;
+  text-align: center;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .empty-state {
+    padding: 60px 16px;
+  }
+}

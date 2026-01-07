@@ -1,0 +1,628 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Form, Input, Select, Button, Empty, Tabs, Space, Tag, Switch, InputNumber, Typography } from 'antd';
+import {
+  SettingOutlined,
+  DeleteOutlined,
+  InfoCircleOutlined,
+  SearchOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons';
+import { getNodeTypes } from './nodes';
+import VideoSourceSelector from './VideoSourceSelector';
+import './PropertyPanel.css';
+
+const { TextArea } = Input;
+const { Option } = Select;
+const { Text } = Typography;
+
+export interface PropertyPanelProps {
+  node: any;
+  videoSources: any[];
+  onUpdate: (data: any) => void;
+  onDelete: () => void;
+}
+
+const PropertyPanel: React.FC<PropertyPanelProps> = ({
+  node,
+  videoSources,
+  onUpdate,
+  onDelete,
+}) => {
+  const [form] = Form.useForm();
+  const [activeTab, setActiveTab] = useState('basic');
+  const [selectorVisible, setSelectorVisible] = useState(false);
+
+  // 使用 useRef 而不是 useState，确保同步更新
+  const isUpdatingVideoSourceRef = useRef(false);
+
+  console.log('PropertyPanel render, node:', node);
+  console.log('Available videoSources:', videoSources);
+  console.log('onUpdate 函数:', onUpdate);
+  console.log('onUpdate 函数名:', onUpdate.name);
+
+  // 当 node 变化时，回显节点数据到表单
+  useEffect(() => {
+    if (node) {
+      const nodeConfig = node.data?.config || {};
+      const nodeType = node.data?.type || node.type;
+
+      console.log('🔄 PropertyPanel useEffect 触发');
+      console.log('📦 节点类型:', nodeType);
+      console.log('📋 节点数据:', node.data);
+      console.log('🎥 videoSourceId:', node.data.videoSourceId, 'videoSourceName:', node.data.videoSourceName);
+      console.log('🚫 isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
+
+      // 如果正在更新视频源，不要覆盖表单值
+      if (isUpdatingVideoSourceRef.current) {
+        console.log('⏸️ 跳过表单初始化，正在更新视频源');
+        isUpdatingVideoSourceRef.current = false; // 重置标志
+        return;
+      }
+
+      // 获取当前表单值，检查表单是否已经有值
+      const currentFormValues = form.getFieldsValue();
+      console.log('📝 当前表单值:', currentFormValues);
+
+      // 对于视频源节点，如果表单中已经有 videoSourceId，且与 node.data 中的一致，说明是同一次渲染，不需要重新初始化
+      if ((nodeType === 'videoSource' || nodeType === 'source') && currentFormValues.videoSourceId !== undefined) {
+        if (currentFormValues.videoSourceId == node.data.videoSourceId) {
+          console.log('⏸️ 表单值与节点数据一致，跳过重复初始化');
+          return;
+        }
+      }
+
+      // 根据节点类型设置不同的表单值
+      const formValues: any = {
+        label: node.data.label,
+        description: node.data.description || '',
+      };
+
+      // 根据节点类型回显特定字段
+      if (nodeType === 'videoSource' || nodeType === 'source') {
+        // 确保 videoSourceId 的类型与 videoSources 中的 id 类型一致
+        const sourceId = node.data.videoSourceId;
+        if (sourceId !== undefined && sourceId !== null) {
+          // 找到匹配的视频源来确认类型
+          const matchingSource = videoSources.find(s => s.id == sourceId); // 使用 == 宽松匹配
+          if (matchingSource) {
+            // 使用匹配到的源的id，确保类型一致
+            formValues.videoSourceId = matchingSource.id;
+            console.log('视频源匹配成功:', {
+              节点中的值: sourceId,
+              类型: typeof sourceId,
+              匹配源的id: matchingSource.id,
+              类型: typeof matchingSource.id,
+              视频源名称: matchingSource.name
+            });
+          } else {
+            console.warn('未找到匹配的视频源:', sourceId, '可用视频源:', videoSources);
+            formValues.videoSourceId = sourceId;
+          }
+        }
+      } else if (nodeType === 'algorithm') {
+        formValues.confidence = node.data.confidence || 0.5;
+
+        // 回显窗口检测配置
+        const windowDetection = nodeConfig.window_detection || {};
+        formValues.windowEnable = windowDetection.enable || false;
+        formValues.windowSize = windowDetection.window_size || 30;
+        formValues.windowMode = windowDetection.window_mode || 'ratio';
+        formValues.windowThreshold = windowDetection.window_threshold !== undefined
+          ? windowDetection.window_threshold
+          : 0.3;
+      } else if (nodeType === 'condition') {
+        formValues.conditionType = node.data.conditionType || 'detection';
+        formValues.targetCount = node.data.targetCount || 1;
+      } else if (nodeType === 'roi') {
+        formValues.roiMode = node.data.roiMode || 'postFilter';
+      } else if (nodeType === 'alert') {
+        formValues.alertLevel = node.data.alertLevel || 'info';
+        formValues.alertMessage = node.data.alertMessage || '检测到目标';
+      } else if (nodeType === 'record') {
+        formValues.recordDuration = node.data.recordDuration || 10;
+      }
+
+      form.setFieldsValue(formValues);
+      console.log('✅ 表单初始化完成');
+    }
+  }, [node, node?.data, node?.id, form]); // 移除 videoSources 依赖，避免不必要的重渲染
+
+  if (!node) {
+    return (
+      <div className="property-panel-empty">
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <Space direction="vertical" size="small">
+              <span style={{ fontSize: 14, color: '#262626', fontWeight: 500 }}>
+                点击节点查看属性
+              </span>
+              <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+                点击画布中的节点以编辑其属性
+              </span>
+            </Space>
+          }
+        />
+      </div>
+    );
+  }
+
+  const handleUpdate = async () => {
+    try {
+      const values = await form.validateFields();
+
+      console.log('🔧 handleUpdate - 表单验证值:', values);
+      console.log('🔧 handleUpdate - 当前节点数据:', node.data);
+
+      // 处理算法节点的窗口检测配置
+      const updatedData: any = { ...values };
+
+      // 特殊处理视频源节点：添加视频源名称和编码
+      const nodeType = node.data?.type || node.type;
+      if ((nodeType === 'videoSource' || nodeType === 'source') && values.videoSourceId) {
+        const selectedSource = videoSources.find(s => s.id == values.videoSourceId);
+        if (selectedSource) {
+          // 重要：也要更新 dataId，否则会被旧数据覆盖
+          updatedData.dataId = selectedSource.id;
+          updatedData.videoSourceName = selectedSource.name;
+          updatedData.videoSourceCode = selectedSource.source_code;
+          console.log('✅ 视频源节点更新:', {
+            id: selectedSource.id,
+            name: selectedSource.name,
+            source_code: selectedSource.source_code
+          });
+        } else {
+          console.warn('⚠️ 未找到选中的视频源, videoSourceId:', values.videoSourceId);
+        }
+      }
+
+      if (nodeType === 'algorithm') {
+        // 确保 config 对象存在
+        const config = node.data?.config || {};
+
+        // 更新窗口检测配置
+        if (values.windowEnable) {
+          config.window_detection = {
+            enable: true,
+            window_size: values.windowSize || 30,
+            window_mode: values.windowMode || 'ratio',
+            window_threshold: values.windowThreshold !== undefined ? values.windowThreshold : 0.3,
+          };
+        } else {
+          // 如果禁用，删除窗口检测配置
+          delete config.window_detection;
+        }
+
+        // 将 config 保存到 updatedData
+        updatedData.config = config;
+
+        // 移除临时字段
+        delete updatedData.windowEnable;
+        delete updatedData.windowSize;
+        delete updatedData.windowMode;
+        delete updatedData.windowThreshold;
+      }
+
+      console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
+      onUpdate(updatedData);
+    } catch (error) {
+      console.error('❌ Form validation failed:', error);
+    }
+  };
+
+  const getNodeConfigFields = () => {
+    const nodeType = node.data?.type || node.type;
+    console.log('getNodeConfigFields - 节点类型:', nodeType);
+    console.log('当前 videoSourceId:', node.data.videoSourceId, '类型:', typeof node.data.videoSourceId);
+    console.log('可用视频源:', videoSources);
+
+    switch (nodeType) {
+      case 'videoSource':
+      case 'source':
+        // 获取当前选中的视频源
+        const currentSourceId = node.data.videoSourceId;
+        const currentSource = videoSources.find(s => s.id == currentSourceId);
+
+        console.log('渲染视频源配置 -', {
+          currentSourceId,
+          currentSource: currentSource ? { name: currentSource.name, id: currentSource.id } : null,
+          nodeDataKeys: Object.keys(node.data),
+        });
+
+        return (
+          <>
+            <div className="video-source-selector-trigger">
+              {currentSource ? (
+                <div className="current-source-card">
+                  <div className="source-card-header">
+                    <Space size="small">
+                      <VideoCameraOutlined style={{ fontSize: 16, color: '#1890ff' }} />
+                      <Text strong style={{ fontSize: 15 }}>
+                        {currentSource.name}
+                      </Text>
+                    </Space>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<SearchOutlined />}
+                      onClick={() => setSelectorVisible(true)}
+                    >
+                      重新选择
+                    </Button>
+                  </div>
+
+                  <div className="source-card-details">
+                    <div className="detail-item">
+                      <span className="detail-label">编码:</span>
+                      <span className="detail-value">{currentSource.source_code || '-'}</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="detail-label">ID:</span>
+                      <span className="detail-value">{currentSource.id}</span>
+                    </div>
+                    {currentSource.decoder_type && (
+                      <div className="detail-item">
+                        <span className="detail-label">解码器:</span>
+                        <span className="detail-value">{currentSource.decoder_type}</span>
+                      </div>
+                    )}
+                    {currentSource.url && (
+                      <div className="detail-item">
+                        <span className="detail-label">URL:</span>
+                        <span className="detail-value url-text">{currentSource.url}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="dashed"
+                  block
+                  size="large"
+                  icon={<SearchOutlined />}
+                  onClick={() => setSelectorVisible(true)}
+                  style={{ height: 60, fontSize: 14 }}
+                >
+                  点击选择视频源
+                </Button>
+              )}
+            </div>
+
+            {/* 隐藏的表单项，用于验证和提交 */}
+            <Form.Item
+              name="videoSourceId"
+              rules={[{ required: true, message: '请选择视频源' }]}
+              hidden
+            >
+              <Input />
+            </Form.Item>
+
+            {videoSources.length === 0 && (
+              <div className="info-box">
+                <InfoCircleOutlined />
+                <span>暂无可用视频源，请先在视频源管理中添加</span>
+              </div>
+            )}
+
+            {currentSourceId && !currentSource && (
+              <div className="info-box" style={{ background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                <InfoCircleOutlined />
+                <span>原视频源 (ID: {currentSourceId}) 不存在，请重新选择</span>
+              </div>
+            )}
+          </>
+        );
+
+      case 'algorithm':
+        return (
+          <>
+            <Form.Item
+              label="置信度阈值"
+              name="confidence"
+            >
+              <Select>
+                <Option value={0.3}>0.3 (低)</Option>
+                <Option value={0.5}>0.5 (中)</Option>
+                <Option value={0.7}>0.7 (高)</Option>
+                <Option value={0.9}>0.9 (极高)</Option>
+              </Select>
+            </Form.Item>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">时间窗口检测（误报抑制）</span>
+              </div>
+
+              <Form.Item
+                label="启用窗口检测"
+                name="windowEnable"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.windowEnable !== currentValues.windowEnable}>
+                {({ getFieldValue }) => {
+                  const windowEnable = getFieldValue('windowEnable');
+                  if (!windowEnable) return null;
+
+                  return (
+                    <div className="window-config-fields">
+                      <Form.Item
+                        label="窗口大小（秒）"
+                        name="windowSize"
+                      >
+                        <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                      </Form.Item>
+
+                      <Form.Item
+                        label="检测模式"
+                        name="windowMode"
+                      >
+                        <Select>
+                          <Option value="count">检测次数 (count)</Option>
+                          <Option value="ratio">检测比例 (ratio)</Option>
+                          <Option value="consecutive">连续检测 (consecutive)</Option>
+                        </Select>
+                      </Form.Item>
+
+                      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.windowMode !== currentValues.windowMode}>
+                        {({ getFieldValue }) => {
+                          const windowMode = getFieldValue('windowMode') || 'ratio';
+                          return (
+                            <Form.Item
+                              label={windowMode === 'ratio' ? '检测阈值（比例）' : '检测阈值（次数）'}
+                              name="windowThreshold"
+                              extra={windowMode === 'ratio' ? '0-1之间的小数，如0.3表示30%' : '正整数，最少检测次数'}
+                            >
+                              {windowMode === 'ratio' ? (
+                                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                              ) : (
+                                <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
+                              )}
+                            </Form.Item>
+                          );
+                        }}
+                      </Form.Item>
+                    </div>
+                  );
+                }}
+              </Form.Item>
+            </div>
+          </>
+        );
+
+      case 'condition':
+        return (
+          <>
+            <Form.Item
+              label="条件类型"
+              name="conditionType"
+            >
+              <Select>
+                <Option value="detection">检测到目标</Option>
+                <Option value="noDetection">未检测到目标</Option>
+                <Option value="count">数量达到</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item
+              label="目标数量"
+              name="targetCount"
+            >
+              <Select>
+                <Option value={1}>1 个</Option>
+                <Option value={2}>2 个</Option>
+                <Option value={3}>3 个</Option>
+                <Option value={5}>5 个</Option>
+                <Option value={10}>10 个</Option>
+              </Select>
+            </Form.Item>
+          </>
+        );
+
+      case 'roi':
+        return (
+          <>
+            <Form.Item
+              label="ROI 模式"
+              name="roiMode"
+            >
+              <Select>
+                <Option value="preMask">前置掩码</Option>
+                <Option value="postFilter">后置过滤</Option>
+              </Select>
+            </Form.Item>
+            <div className="info-box">
+              <InfoCircleOutlined />
+              <span>请在视频源配置中绘制 ROI 区域</span>
+            </div>
+          </>
+        );
+
+      case 'alert':
+        return (
+          <>
+            <Form.Item
+              label="告警级别"
+              name="alertLevel"
+            >
+              <Select>
+                <Option value="info">信息</Option>
+                <Option value="warning">警告</Option>
+                <Option value="error">错误</Option>
+                <Option value="critical">严重</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item
+              label="告警消息"
+              name="alertMessage"
+            >
+              <Input placeholder="自定义告警消息" />
+            </Form.Item>
+          </>
+        );
+
+      case 'record':
+        return (
+          <>
+            <Form.Item
+              label="录像时长"
+              name="recordDuration"
+            >
+              <Select>
+                <Option value={5}>5 秒</Option>
+                <Option value={10}>10 秒</Option>
+                <Option value={30}>30 秒</Option>
+                <Option value={60}>60 秒</Option>
+              </Select>
+            </Form.Item>
+          </>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="property-panel">
+      <div className="panel-header">
+        <Space size="small">
+          <SettingOutlined />
+          <span className="panel-title">节点属性</span>
+        </Space>
+        <Button
+          type="text"
+          size="small"
+          icon={<DeleteOutlined />}
+          onClick={onDelete}
+          className="delete-btn"
+        >
+          删除
+        </Button>
+      </div>
+
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        size="small"
+        className="property-tabs"
+      >
+        <Tabs.TabPane tab="基本属性" key="basic">
+          <Form
+            key={node.id}
+            form={form}
+            layout="vertical"
+            className="property-form"
+          >
+            <Form.Item
+              label="节点名称"
+              name="label"
+              rules={[{ required: true, message: '请输入节点名称' }]}
+            >
+              <Input size="small" />
+            </Form.Item>
+
+            <Form.Item
+              label="描述"
+              name="description"
+            >
+              <TextArea rows={3} size="small" />
+            </Form.Item>
+
+            <div className="form-divider" />
+
+            {getNodeConfigFields()}
+
+            <Form.Item className="form-actions">
+              <Button type="primary" block size="small" onClick={handleUpdate}>
+                更新节点
+              </Button>
+            </Form.Item>
+          </Form>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab="节点信息" key="info">
+          <div className="node-info">
+            <div className="info-row">
+              <span className="info-label">节点 ID:</span>
+              <span className="info-value">{node.id}</span>
+            </div>
+            <div className="info-row">
+              <span className="info-label">节点类型:</span>
+              <Tag color={node.data.color}>{node.data.label}</Tag>
+            </div>
+            <div className="info-row">
+              <span className="info-label">位置:</span>
+              <span className="info-value">
+                X: {Math.round(node.position.x)}, Y: {Math.round(node.position.y)}
+              </span>
+            </div>
+          </div>
+        </Tabs.TabPane>
+      </Tabs>
+
+      <VideoSourceSelector
+        visible={selectorVisible}
+        value={node.data.videoSourceId}
+        videoSources={videoSources}
+        onChange={(value) => {
+          console.log('🎬 VideoSourceSelector onChange 被调用，新值:', value);
+
+          // 查找选中的视频源
+          const selectedSource = videoSources.find(s => s.id == value);
+          if (!selectedSource) {
+            console.warn('⚠️ 未找到选中的视频源，value:', value);
+            setSelectorVisible(false);
+            return;
+          }
+
+          // 获取当前表单的所有值
+          const currentValues = form.getFieldsValue();
+          console.log('📝 当前表单值（更新前）:', currentValues);
+
+          // 🔑 关键：使用 ref 设置标志（同步更新，立即生效）
+          isUpdatingVideoSourceRef.current = true;
+          console.log('🚫 设置 isUpdatingVideoSourceRef.current = true');
+
+          // 合并所有数据，保留其他字段
+          const updatedData = {
+            label: currentValues.label || node.data.label,
+            description: currentValues.description || node.data.description || '',
+            dataId: selectedSource.id,  // 重要：也要更新 dataId
+            videoSourceId: value,
+            videoSourceName: selectedSource.name,
+            videoSourceCode: selectedSource.source_code,
+          };
+
+          console.log('🔄 准备更新节点数据:', updatedData);
+          console.log('🎯 选中的视频源:', selectedSource);
+
+          // 立即更新表单值，确保表单中有最新的videoSourceId
+          form.setFieldsValue({
+            label: updatedData.label,
+            description: updatedData.description,
+            videoSourceId: value
+          });
+
+          console.log('✅ 表单值已更新');
+          console.log('📝 更新后的表单值:', form.getFieldsValue());
+
+          // 调用onUpdate更新节点数据
+          console.log('📤 准备调用 onUpdate，参数:', updatedData);
+          console.log('🔍 调用时机检查 - isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
+
+          onUpdate(updatedData);
+          console.log('✅ 已调用onUpdate');
+
+          setSelectorVisible(false);
+        }}
+        onCancel={() => setSelectorVisible(false)}
+      />
+    </div>
+  );
+};
+
+export default PropertyPanel;

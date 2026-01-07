@@ -1,0 +1,72 @@
+.welcome-banner {
+  background: linear-gradient(135deg, #000000 0%, #262626 100%);
+  border-radius: 12px;
+  padding: 32px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.welcome-content {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.5px;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0;
+  font-weight: 400;
+}
+
+.welcome-icon-wrapper {
+  display: none;
+  position: relative;
+  z-index: 1;
+}
+
+@media (min-width: 768px) {
+  .welcome-icon-wrapper {
+    display: block;
+  }
+}
+
+.welcome-icon-bg {
+  width: 96px;
+  height: 96px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.welcome-icon {
+  font-size: 40px;
+  color: rgba(255, 255, 255, 0.9);
+}

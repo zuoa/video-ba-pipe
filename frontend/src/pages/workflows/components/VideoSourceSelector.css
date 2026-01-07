@@ -1,0 +1,99 @@
+.video-source-selector-modal .ant-modal-body {
+  padding: 24px;
+  max-height: 600px;
+  overflow: hidden;
+}
+
+.video-source-selector {
+  display: flex;
+  flex-direction: column;
+}
+
+.sources-count {
+  padding: 8px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.sources-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 450px;
+}
+
+.sources-list .ant-list-item {
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  background: #fff;
+}
+
+.sources-list .ant-list-item:hover {
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.sources-list .ant-list-item.selected {
+  border-color: #52c41a;
+  background: #f6ffed;
+  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.2);
+}
+
+.source-item-content {
+  width: 100%;
+}
+
+.source-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.source-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 24px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+}
+
+/* 滚动条样式 */
+.sources-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sources-list::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.sources-list::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 3px;
+}
+
+.sources-list::-webkit-scrollbar-thumb:hover {
+  background: #8c8c8c;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .video-source-selector-modal .ant-modal {
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  .source-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

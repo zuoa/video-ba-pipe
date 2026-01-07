@@ -1,0 +1,131 @@
+/* 验证模态框标题 */
+.validation-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.validation-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+/* 验证内容 */
+.validation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.validation-item {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid #f0f0f0;
+  transition: all 0.3s;
+}
+
+.validation-item:hover {
+  background: #f5f5f5;
+  border-color: #e8e8e8;
+}
+
+.validation-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.validation-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.validation-status {
+  font-size: 18px;
+  transition: transform 0.3s;
+}
+
+.validation-status.passed {
+  color: #52c41a;
+  transform: scale(1.1);
+}
+
+.validation-status.failed {
+  color: #ff4d4f;
+  animation: shake 0.5s;
+}
+
+.validation-status.optional {
+  color: #8c8c8c;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.validation-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fff1f0;
+  border-left: 3px solid #ff4d4f;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #cf1322;
+}
+
+/* 编辑器包装器 */
+.code-editor-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 模态框图标 */
+.modal-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.modal-subtitle {
+  font-size: 12px;
+  color: #8c8c8c;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* 模态框样式 */
+.upload-modal .ant-modal-header,
+.edit-modal .ant-modal-header {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 20px 24px;
+}
+
+.upload-modal .ant-modal-body,
+.edit-modal .ant-modal-body {
+  padding: 24px;
+}
+
+.upload-modal .ant-form-item,
+.edit-modal .ant-form-item {
+  margin-bottom: 20px;
+}

@@ -1,0 +1,374 @@
+/* 测试面板容器 */
+.test-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: white;
+}
+
+/* 面板头部 */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+}
+
+.panel-icon {
+  font-size: 18px;
+  color: #000000;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+}
+
+/* 内容区域 */
+.test-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.test-section {
+  margin-bottom: 20px;
+}
+
+/* 工作流信息区域 */
+.workflow-info-section {
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.info-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.video-source-card {
+  background: white;
+  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid #d9d9d9;
+}
+
+.video-source-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 6px;
+}
+
+.video-source-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.video-source-url {
+  color: #8c8c8c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* 区块标题 */
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 12px;
+}
+
+/* 来源切换按钮 */
+.source-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.source-tabs .ant-btn {
+  flex: 1;
+  height: 36px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.source-tabs .ant-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 抓帧按钮 */
+.capture-frame-btn {
+  height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  border: none;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.capture-frame-btn:hover {
+  background: linear-gradient(135deg, #40a9ff 0%, #69c0ff 100%);
+  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.capture-frame-btn:active {
+  transform: translateY(0);
+}
+
+/* 上传区域 */
+.upload-dragger {
+  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 24px 16px;
+  transition: all 0.3s ease;
+}
+
+.upload-dragger:hover {
+  border-color: #000000;
+  background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
+}
+
+.upload-dragger .ant-upload-drag-icon {
+  color: #000000;
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.upload-dragger .ant-upload-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #262626;
+  margin-bottom: 4px;
+}
+
+.upload-dragger .ant-upload-hint {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* 图片预览 */
+.image-preview {
+  position: relative;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.image-preview img {
+  width: 100%;
+  display: block;
+}
+
+.clear-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  padding: 0 12px;
+  height: 28px;
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.clear-btn:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: scale(1.05);
+}
+
+/* 运行测试按钮 */
+.run-test-btn {
+  height: 44px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.run-test-btn:hover {
+  background: linear-gradient(135deg, #333333 0%, #555555 100%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+}
+
+.run-test-btn:active {
+  transform: translateY(0);
+}
+
+/* 测试结果 */
+.result-alert {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: none;
+}
+
+.result-alert .anticon {
+  font-size: 16px;
+}
+
+/* 结果摘要 */
+.result-summary {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%);
+  border-radius: 8px;
+  border: 1px solid #bae7ff;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.summary-label {
+  color: #595959;
+  font-weight: 500;
+}
+
+.summary-value {
+  color: #262626;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* 错误详情 */
+.error-details {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+}
+
+.error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 8px;
+}
+
+.error-stack {
+  font-size: 12px;
+  color: #8c8c8c;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* 空状态 */
+.test-empty {
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.test-empty .ant-empty-description {
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+/* Select 样式优化 */
+.test-section .ant-select {
+  border-radius: 6px;
+}
+
+.test-section .ant-select-selector {
+  border-radius: 6px !important;
+}
+
+.test-section .ant-btn {
+  border-radius: 6px;
+}
+
+/* 滚动条样式 */
+.test-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.test-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.test-content::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.test-content::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* 响应式优化 */
+@media (max-width: 768px) {
+  .test-content {
+    padding: 16px;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+  }
+
+  .workflow-info-section {
+    padding: 12px;
+  }
+
+  .video-source-url {
+    max-width: 150px;
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.test-section {
+  animation: fadeIn 0.3s ease;
+}
+
+.detection-item {
+  animation: fadeIn 0.3s ease;
+}
+
+/* 加载状态优化 */
+.ant-spin-nested-loading {
+  border-radius: 8px;
+}

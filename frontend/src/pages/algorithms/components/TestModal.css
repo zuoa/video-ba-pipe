@@ -1,0 +1,339 @@
+/* Test Modal */
+.test-modal .ant-modal-content {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.test-modal .ant-modal-header {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  border-bottom: 1px solid #86efac;
+  padding: 16px 24px;
+}
+
+.test-modal .ant-modal-body {
+  padding: 24px;
+}
+
+/* Modal Title */
+.test-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+}
+
+.title-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.title-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #166534;
+}
+
+.title-subtitle {
+  font-size: 12px;
+  color: #15803d;
+}
+
+/* Modal Content */
+.test-modal-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.test-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1200px) {
+  .test-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panel */
+.test-left-panel,
+.test-right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Section */
+.test-section {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.test-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+/* Upload Dragger */
+.test-upload-dragger {
+  background: #ffffff;
+}
+
+.test-upload-dragger .ant-upload {
+  padding: 32px 16px;
+}
+
+.test-upload-dragger .ant-upload-drag-icon {
+  color: #22c55e;
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.test-upload-dragger .ant-upload-text {
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.test-upload-dragger .ant-upload-hint {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* Preview Container */
+.test-preview-container {
+  margin-bottom: 16px;
+}
+
+.test-preview-wrapper {
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.test-preview-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.test-remove-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 6px;
+}
+
+/* Test Run Button - use Ant Design primary */
+.test-run-btn {
+  height: 40px;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+/* Algorithm Info */
+.test-algorithm-info {
+  background: #fff;
+  border-radius: 6px;
+}
+
+.test-algorithm-info .ant-descriptions-item-label {
+  font-weight: 500;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.test-algorithm-info .ant-descriptions-item-content {
+  color: #374151;
+  font-size: 13px;
+}
+
+/* Results Container */
+.test-results-container {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 400px;
+}
+
+.test-loading-state,
+.test-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 320px;
+  color: #8c8c8c;
+}
+
+.test-loading-state p,
+.test-empty-state p {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.test-empty-state {
+  font-size: 48px;
+}
+
+/* Results Content */
+.test-results-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.test-result-alert {
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.test-result-alert .ant-alert-message {
+  font-weight: 500;
+}
+
+/* Result Image */
+.test-result-image-container {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.test-result-subtitle {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.test-result-image {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+/* Detection Details */
+.test-detection-details {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.test-detection-table {
+  font-size: 12px;
+}
+
+.test-detection-table .ant-table-thead > tr > th {
+  background: #fafafa;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 10px 12px;
+}
+
+.test-detection-table .ant-table-tbody > tr > td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.detection-label {
+  font-weight: 500;
+  color: #374151;
+}
+
+.detection-confidence {
+  font-family: 'Monaco', 'Consolas', monospace;
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.detection-bbox {
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f9fafb;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Error States */
+.test-error-alert,
+.test-no-detection-alert {
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.test-right-panel {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .test-modal .ant-modal-body {
+    padding: 16px;
+  }
+
+  .test-grid {
+    gap: 16px;
+  }
+
+  .test-section {
+    padding: 12px;
+  }
+
+  .test-upload-dragger .ant-upload {
+    padding: 24px 12px;
+  }
+
+  .test-upload-dragger .ant-upload-drag-icon {
+    font-size: 36px;
+  }
+
+  .test-results-container {
+    min-height: 300px;
+  }
+
+  .test-loading-state,
+  .test-empty-state {
+    height: 240px;
+  }
+}

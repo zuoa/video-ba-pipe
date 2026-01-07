@@ -1,0 +1,315 @@
+.algorithm-table-wrapper {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f0f0f0;
+  overflow: hidden;
+}
+
+.algorithm-table .ant-table {
+  font-size: 13px;
+}
+
+.algorithm-table .ant-table-thead > tr > th {
+  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+  color: #374151;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 16px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.algorithm-table .ant-table-tbody > tr > td {
+  padding: 16px;
+  border-bottom: 1px solid #fafafa;
+}
+
+.algorithm-table .ant-table-tbody > tr:hover > td {
+  background: #fafafa;
+}
+
+.algorithm-table .ant-table-tbody > tr > td {
+  transition: background-color 0.2s;
+}
+
+/* ID Badge */
+.id-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Algorithm Info Cell */
+.algorithm-info-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.algorithm-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+  flex-shrink: 0;
+}
+
+.algorithm-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.algorithm-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.algorithm-meta {
+  font-size: 12px;
+}
+
+.algorithm-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 4px;
+  color: #0369a1;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.algorithm-code-empty {
+  color: #8c8c8c;
+  font-style: italic;
+}
+
+/* Label Config Cell */
+.label-config-cell {
+  display: flex;
+  align-items: center;
+}
+
+.label-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* Interval Cell */
+.interval-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.interval-icon {
+  color: #8c8c8c;
+  font-size: 14px;
+}
+
+.interval-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+/* Window Check Cell */
+.window-check-cell {
+  display: flex;
+  align-items: center;
+}
+
+.window-enabled-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  border-color: #86efac;
+  color: #166534;
+}
+
+.window-disabled-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* Resources Cell */
+.resources-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.resource-label {
+  color: #8c8c8c;
+}
+
+.resource-value {
+  font-weight: 500;
+  color: #374151;
+}
+
+/* Action Buttons - simplified to use Ant Design styles */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid;
+  background: transparent;
+}
+
+.action-btn span {
+  line-height: 1;
+}
+
+.action-btn-test {
+  color: #52c41a;
+  border-color: #b7eb8f;
+}
+
+.action-btn-test:hover {
+  color: #389e0d;
+  border-color: #95de64;
+  background: #f6ffed;
+}
+
+.action-btn-edit {
+  color: #1890ff;
+  border-color: #91d5ff;
+}
+
+.action-btn-edit:hover {
+  color: #096dd9;
+  border-color: #69c0ff;
+  background: #e6f7ff;
+}
+
+.action-btn-delete {
+  color: #ff4d4f;
+  border-color: #ffa39e;
+}
+
+.action-btn-delete:hover {
+  color: #d9363e;
+  border-color: #ff7875;
+  background: #fff1f0;
+}
+
+/* Pagination */
+.algorithm-table .ant-pagination {
+  margin: 24px;
+}
+
+.algorithm-table .ant-pagination-item {
+  border-radius: 6px;
+  border-color: #f0f0f0;
+  transition: all 0.3s;
+}
+
+.algorithm-table .ant-pagination-item:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.algorithm-table .ant-pagination-item-active {
+  background: #1890ff;
+  border-color: #1890ff;
+}
+
+.algorithm-table .ant-pagination-item-active a {
+  color: #ffffff;
+}
+
+.algorithm-table .ant-pagination-prev,
+.algorithm-table .ant-pagination-next {
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.algorithm-table .ant-pagination-prev:hover,
+.algorithm-table .ant-pagination-next:hover {
+  border-color: #1890ff;
+}
+
+/* Loading State */
+.algorithm-table .ant-spin-dot-item {
+  background-color: #1890ff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .algorithm-table .ant-table {
+    font-size: 12px;
+  }
+
+  .algorithm-table .ant-table-thead > tr > th,
+  .algorithm-table .ant-table-tbody > tr > td {
+    padding: 12px 8px;
+  }
+
+  .algorithm-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+
+  .action-btn {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .action-btn span {
+    display: none;
+  }
+
+  .action-btn {
+    width: 32px;
+    justify-content: center;
+  }
+}

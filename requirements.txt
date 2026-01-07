@@ -4,5 +4,6 @@ opencv-python
 peewee
 ultralytics
 flask
+flask-cors
 pika
 gunicorn

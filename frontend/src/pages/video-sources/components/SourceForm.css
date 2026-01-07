@@ -1,0 +1,211 @@
+.source-form-modal .ant-modal-content {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.source-form-modal .ant-modal-header {
+  background: linear-gradient(135deg, #fafafa 0%, #ffffff 100%);
+  border-bottom: 1px solid #f0f0f0;
+  padding: 20px 24px;
+}
+
+.source-form-modal .ant-modal-body {
+  padding: 24px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.source-form-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.title-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+}
+
+/* 表单分组 */
+.form-section {
+  margin-bottom: 24px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.section-icon {
+  color: #000000;
+  font-size: 14px;
+}
+
+.form-section-content {
+  padding: 16px;
+}
+
+/* 流信息提示 */
+.stream-info {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.stream-info-label {
+  font-weight: 600;
+  color: #1890ff;
+  margin-right: 8px;
+}
+
+.stream-info-value {
+  color: #0050b3;
+  font-weight: 500;
+}
+
+.stream-info-divider {
+  margin: 0 8px;
+  color: #1890ff;
+}
+
+/* 解码参数网格 */
+.decode-params {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .decode-params {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 表单提示 */
+.form-tips {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+.tips-icon {
+  color: #1890ff;
+  font-size: 14px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.tips-content {
+  flex: 1;
+}
+
+.tips-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0050b3;
+  margin-bottom: 4px;
+}
+
+.tips-list {
+  font-size: 12px;
+  color: #0073b1;
+  line-height: 1.6;
+}
+
+.tips-list > div {
+  margin-bottom: 2px;
+}
+
+/* 控制项 */
+.control-items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .control-items {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 表单项样式优化 */
+.form-section .ant-form-item {
+  margin-bottom: 16px;
+}
+
+.form-section .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.form-section .ant-form-item-label > label {
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-section .ant-form-item-extra {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* 自定义滑块 */
+.form-section .ant-switch {
+  background: linear-gradient(135deg, #d9d9d9 0%, #bfbfbf 100%);
+}
+
+.form-section .ant-switch-checked {
+  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+}
+
+/* 滚动条样式 */
+.source-form-modal .ant-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.source-form-modal .ant-modal-body::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.source-form-modal .ant-modal-body::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 3px;
+}
+
+.source-form-modal .ant-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}

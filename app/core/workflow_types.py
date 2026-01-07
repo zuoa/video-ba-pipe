@@ -76,6 +76,11 @@ class RoiDrawNodeData(NodeContext):
     """
 
 
+@dataclass
+class AlertNodeData(NodeContext):
+    node_type: str = "alert"
+
+
 def create_node_data(node_dict: Dict) -> NodeContext:
     node_type = node_dict.get('type')
     node_id = node_dict.get('id')
@@ -88,6 +93,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'output': OutputNodeData,
         'roi_draw': RoiDrawNodeData,
         'roi': RoiDrawNodeData,  # 前端使用的类型名称
+        'alert': AlertNodeData,
     }
 
     node_class = node_classes.get(node_type)

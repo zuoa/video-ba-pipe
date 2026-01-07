@@ -1,0 +1,99 @@
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f0f0f0;
+  position: relative;
+  overflow: hidden;
+}
+
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #000000 0%, #333333 100%);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.header-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.header-icon .anticon {
+  font-size: 24px;
+  color: #fff;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+}
+
+.page-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #8c8c8c;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.header-right {
+  position: relative;
+  z-index: 1;
+}
+
+.header-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.04) 0%, rgba(51, 51, 51, 0.04) 100%);
+  border-radius: 8px;
+  border-left: 3px solid #000000;
+}
+
+.count-number {
+  font-size: 20px;
+  font-weight: 700;
+  color: #000000;
+  line-height: 1;
+}
+
+.count-label {
+  font-size: 13px;
+  color: #595959;
+  margin-left: 4px;
+}

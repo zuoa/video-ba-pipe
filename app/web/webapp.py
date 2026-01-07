@@ -12,6 +12,7 @@ import threading
 import time
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
+from flask_cors import CORS
 
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
@@ -20,6 +21,7 @@ from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
 

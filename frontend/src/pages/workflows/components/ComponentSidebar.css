@@ -1,0 +1,162 @@
+.component-sidebar {
+  width: 280px;
+  background: white;
+  border-right: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+  background: #fafafa;
+}
+
+.sidebar-icon {
+  font-size: 18px;
+  color: #000000;
+}
+
+.component-collapse {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.component-collapse .ant-collapse-header {
+  padding: 14px 20px !important;
+  font-size: 14px;
+  font-weight: 600;
+  color: #595959;
+  border-radius: 0 !important;
+  transition: background 0.2s ease;
+}
+
+.component-collapse .ant-collapse-header:hover {
+  background: #fafafa;
+}
+
+.component-collapse .ant-collapse-content {
+  border-radius: 0 !important;
+}
+
+.component-collapse .ant-collapse-content-box {
+  padding: 8px 12px;
+}
+
+/* Collapse item label styling */
+.collapse-item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapse-item-label .anticon {
+  font-size: 16px;
+  color: #595959;
+}
+
+.category-title {
+  font-size: 14px;
+  color: #262626;
+}
+
+.component-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.component-item {
+  padding: 10px 12px;
+  background: white;
+  border: 2px solid #f0f0f0;
+  border-radius: 8px;
+  cursor: grab;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.component-item-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.component-item:hover {
+  border-color: #000000;
+  background: #fafafa;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.component-item:active {
+  cursor: grabbing;
+}
+
+.component-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.component-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.component-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #262626;
+  margin-bottom: 2px;
+}
+
+.component-description {
+  font-size: 11px;
+  color: #8c8c8c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-add {
+  flex-shrink: 0;
+  color: #8c8c8c;
+  font-size: 14px;
+  transition: color 0.2s ease;
+}
+
+.component-item:hover .component-add {
+  color: #000000;
+}
+
+.component-empty {
+  padding: 20px;
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+/* 滚动条样式 */
+.component-collapse::-webkit-scrollbar {
+  width: 6px;
+}
+
+.component-collapse::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.component-collapse::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.component-collapse::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}

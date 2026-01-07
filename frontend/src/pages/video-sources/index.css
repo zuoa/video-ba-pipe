@@ -1,0 +1,80 @@
+.video-sources-page {
+  padding: 24px;
+}
+
+/* 创建按钮 */
+.create-btn {
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-weight: 600;
+  height: 40px;
+  padding: 0 24px;
+  transition: all 0.3s;
+}
+
+.create-btn:hover {
+  background: linear-gradient(135deg, #333333 0%, #555555 100%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  transform: translateY(-2px);
+}
+
+.create-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .video-sources-page {
+    padding: 16px;
+  }
+
+  .create-btn {
+    width: 100%;
+    height: 44px;
+  }
+}
+
+/* 加载动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.video-sources-page > * {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+/* 表格容器动画 */
+.source-table-wrapper {
+  animation-delay: 0.1s;
+}
+
+/* 滚动条美化 */
+.video-sources-page ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.video-sources-page ::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.video-sources-page ::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.video-sources-page ::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
