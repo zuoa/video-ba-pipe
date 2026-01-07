@@ -3,6 +3,7 @@
 """
 import json
 from datetime import datetime
+from copy import deepcopy
 from flask import jsonify, request
 
 from app.core.database_models import Workflow, WorkflowNode, VideoSource, Algorithm
@@ -309,4 +310,239 @@ def register_workflows_api(app):
             import traceback
             traceback.print_exc()
             return jsonify({'error': f'捕获帧失败: {str(e)}'}), 500
+
+    # ==================== 批量复制相关 API ====================
+
+    def generate_workflow_name(source: VideoSource, workflow_data: dict, template_name: str = '') -> str:
+        """
+        智能生成工作流名称
+
+        规则：
+        1. 提取算法节点信息
+        2. 组合：{视频源名称}-{算法描述}
+        3. 如果名称过长，截断算法部分
+        """
+        # 提取所有 algorithm 节点
+        algo_nodes = [n for n in workflow_data.get('nodes', []) if n.get('type') == 'algorithm']
+
+        if not algo_nodes:
+            return f"{source.name}-检测流程"
+
+        # 提取算法名称
+        algo_names = []
+        for node in algo_nodes:
+            # 优先级：label > name > data.name > data.algorithmName
+            label = (node.get('label', '') or node.get('name', '') or '').strip()
+            if not label:
+                data = node.get('data', {})
+                label = data.get('name', data.get('algorithmName', '算法'))
+            algo_names.append(label)
+
+        # 组合算法名称
+        if len(algo_names) == 1:
+            algo_desc = algo_names[0]
+        elif len(algo_names) == 2:
+            algo_desc = "+".join(algo_names)
+        else:
+            algo_desc = f"{algo_names[0]}等{len(algo_names)}个算法"
+
+        # 生成最终名称
+        full_name = f"{source.name}-{algo_desc}"
+
+        # 长度限制
+        if len(full_name) > 50:
+            max_algo_len = 50 - len(source.name) - 1
+            algo_desc = algo_desc[:max_algo_len] + "..."
+            full_name = f"{source.name}-{algo_desc}"
+
+        return full_name
+
+    @app.route('/api/workflows/<int:workflow_id>/batch-copy', methods=['POST'])
+    def batch_copy_workflow(workflow_id):
+        """批量复制工作流到多个视频源"""
+        try:
+            data = request.json
+            source_ids = data.get('source_ids', [])
+
+            if not source_ids:
+                return jsonify({'error': '请选择要应用的视频源'}), 400
+
+            # 读取模板工作流
+            template = Workflow.get_by_id(workflow_id)
+            template_data = template.data_dict
+
+            results = []
+            errors = []
+
+            for source_id in source_ids:
+                try:
+                    source = VideoSource.get_by_id(source_id)
+
+                    # 深拷贝 workflow_data
+                    new_data = deepcopy(template_data)
+
+                    # 替换 source 节点的 dataId
+                    for node in new_data.get('nodes', []):
+                        if node.get('type') == 'source':
+                            node['dataId'] = source_id
+
+                    # 生成名称
+                    name = generate_workflow_name(source, new_data, template.name)
+
+                    # 创建新工作流（默认不激活）
+                    new_workflow = Workflow.create(
+                        name=name,
+                        description=f"从 '{template.name}' 复制",
+                        workflow_data=json.dumps(new_data),
+                        is_active=False,  # 默认不激活
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                        created_by='admin'
+                    )
+
+                    results.append({
+                        'workflow_id': new_workflow.id,
+                        'source_id': source.id,
+                        'name': name,
+                        'source_name': source.name,
+                        'is_active': False
+                    })
+
+                except Exception as e:
+                    errors.append({
+                        'source_id': source_id,
+                        'error': str(e)
+                    })
+
+            return jsonify({
+                'success': True,
+                'template': {
+                    'id': template.id,
+                    'name': template.name
+                },
+                'created': results,
+                'errors': errors,
+                'summary': {
+                    'total': len(source_ids),
+                    'success': len(results),
+                    'failed': len(errors)
+                }
+            })
+
+        except Workflow.DoesNotExist:
+            return jsonify({'error': '工作流不存在'}), 404
+        except Exception as e:
+            app.logger.error(f"批量复制工作流失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/workflows/batch-activate', methods=['POST'])
+    def batch_activate_workflows():
+        """批量激活工作流"""
+        try:
+            data = request.json
+            workflow_ids = data.get('workflow_ids', [])
+
+            if not workflow_ids:
+                return jsonify({'error': '请选择要激活的工作流'}), 400
+
+            success_count = 0
+            failed = []
+
+            for workflow_id in workflow_ids:
+                try:
+                    workflow = Workflow.get_by_id(workflow_id)
+                    workflow.is_active = True
+                    workflow.updated_at = datetime.now()
+                    workflow.save()
+                    success_count += 1
+                except Exception as e:
+                    failed.append({
+                        'workflow_id': workflow_id,
+                        'error': str(e)
+                    })
+
+            return jsonify({
+                'success': True,
+                'activated': success_count,
+                'failed': failed,
+                'message': f'成功激活 {success_count} 个工作流'
+            })
+
+        except Exception as e:
+            app.logger.error(f"批量激活工作流失败: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/workflows/batch-deactivate', methods=['POST'])
+    def batch_deactivate_workflows():
+        """批量停用工作流"""
+        try:
+            data = request.json
+            workflow_ids = data.get('workflow_ids', [])
+
+            if not workflow_ids:
+                return jsonify({'error': '请选择要停用的工作流'}), 400
+
+            success_count = 0
+            failed = []
+
+            for workflow_id in workflow_ids:
+                try:
+                    workflow = Workflow.get_by_id(workflow_id)
+                    workflow.is_active = False
+                    workflow.updated_at = datetime.now()
+                    workflow.save()
+                    success_count += 1
+                except Exception as e:
+                    failed.append({
+                        'workflow_id': workflow_id,
+                        'error': str(e)
+                    })
+
+            return jsonify({
+                'success': True,
+                'deactivated': success_count,
+                'failed': failed,
+                'message': f'成功停用 {success_count} 个工作流'
+            })
+
+        except Exception as e:
+            app.logger.error(f"批量停用工作流失败: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/workflows/batch-delete', methods=['POST'])
+    def batch_delete_workflows():
+        """批量删除工作流"""
+        try:
+            data = request.json
+            workflow_ids = data.get('workflow_ids', [])
+
+            if not workflow_ids:
+                return jsonify({'error': '请选择要删除的工作流'}), 400
+
+            success_count = 0
+            failed = []
+
+            for workflow_id in workflow_ids:
+                try:
+                    workflow = Workflow.get_by_id(workflow_id)
+                    workflow.delete_instance(recursive=True)
+                    success_count += 1
+                except Exception as e:
+                    failed.append({
+                        'workflow_id': workflow_id,
+                        'error': str(e)
+                    })
+
+            return jsonify({
+                'success': True,
+                'deleted': success_count,
+                'failed': failed,
+                'message': f'成功删除 {success_count} 个工作流'
+            })
+
+        except Exception as e:
+            app.logger.error(f"批量删除工作流失败: {e}")
+            return jsonify({'error': str(e)}), 500
 

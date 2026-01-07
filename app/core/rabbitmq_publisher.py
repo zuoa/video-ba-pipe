@@ -212,18 +212,17 @@ def publish_alert_to_rabbitmq(alert_data: Dict[str, Any]) -> bool:
 def format_alert_message(alert) -> Dict[str, Any]:
     """
     格式化Alert对象为RabbitMQ消息格式
-    
+
     Args:
         alert: Alert数据库模型实例
-        
+
     Returns:
         Dict[str, Any]: 格式化后的预警消息
     """
-    return {
+    message = {
         'alert_id': alert.id,
         'source_id': alert.video_source.id,
         'source_name': alert.video_source.name,
-        'source_display_name': alert.video_source.source_name,
         'source_code': alert.video_source.source_code,
         'alert_time': alert.alert_time.isoformat() if hasattr(alert.alert_time, 'isoformat') else str(alert.alert_time),
         'alert_type': alert.alert_type,
@@ -234,3 +233,10 @@ def format_alert_message(alert) -> Dict[str, Any]:
         'timestamp': time.time(),
         'source': 'video-ba-pipe'
     }
+
+    # 添加 workflow 信息（如果存在）
+    if alert.workflow:
+        message['workflow_id'] = alert.workflow.id
+        message['workflow_name'] = alert.workflow.name
+
+    return message

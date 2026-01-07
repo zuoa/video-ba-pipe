@@ -104,6 +104,7 @@ class AlertConsumer:
             
             # 显示预警信息
             print(f"📋 预警ID: {alert_data.get('alert_id', 'N/A')}")
+            print(f"🔄 工作流: {alert_data.get('workflow_name', 'N/A')} (ID: {alert_data.get('workflow_id', 'N/A')})")
             print(f"📹 任务名称: {alert_data.get('task_name', 'N/A')}")
             print(f"📷 摄像头: {alert_data.get('task_source_name', 'N/A')}( {alert_data.get('task_source_code', 'N/A')})")
             print(f"🔗 视频源: {alert_data.get('task_source_url', 'N/A')}")

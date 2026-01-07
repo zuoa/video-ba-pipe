@@ -78,20 +78,89 @@ class VideoSource(BaseModel):
         return f'video_buffer.{self.source_code}'
 
 
-# 兼容别名
-Task = VideoSource
+# ==================== 工作流配置表 ====================
+
+class Workflow(BaseModel):
+    """工作流配置表"""
+    id = pw.AutoField()
+    name = pw.CharField()                    # 工作流名称
+    description = pw.TextField(null=True)    # 描述
+    workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
+    is_active = pw.BooleanField(default=False)  # 是否激活
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'workflows'
+
+    @property
+    def data_dict(self):
+        """获取解析后的工作流数据"""
+        try:
+            if not self.workflow_data:
+                return {}
+            return json.loads(self.workflow_data)
+        except Exception as e:
+            import logging
+            logging.error(f"解析工作流数据失败 (ID={self.id}): {e}, 原始数据: {self.workflow_data[:200]}")
+            return {}
+
+
+class WorkflowNode(BaseModel):
+    """工作流节点配置"""
+    id = pw.AutoField()
+    workflow = pw.ForeignKeyField(Workflow, backref='nodes', on_delete='CASCADE')
+    node_id = pw.CharField()                 # 节点ID（前端生成的UUID）
+    node_type = pw.CharField()               # 节点类型：source, algorithm, output, condition
+    node_data = pw.TextField(default='{}')  # 节点配置数据（JSON）
+    position_x = pw.FloatField(default=0)    # X坐标
+    position_y = pw.FloatField(default=0)    # Y坐标
+
+    class Meta:
+        table_name = 'workflow_nodes'
+        indexes = (
+            (('workflow', 'node_id'), True),
+        )
+
+    @property
+    def data_dict(self):
+        """获取解析后的节点数据"""
+        try:
+            return json.loads(self.node_data) if self.node_data else {}
+        except:
+            return {}
+
+
+class WorkflowConnection(BaseModel):
+    """工作流连线配置"""
+    id = pw.AutoField()
+    workflow = pw.ForeignKeyField(Workflow, backref='connections', on_delete='CASCADE')
+    from_node_id = pw.CharField()            # 源节点ID
+    to_node_id = pw.CharField()              # 目标节点ID
+    from_port = pw.CharField(default='output')  # 输出端口：output, true, false
+    to_port = pw.CharField(default='input')     # 输入端口：input
+    condition = pw.CharField(null=True)      # 条件：detected, not_detected, null
+    label = pw.CharField(null=True)          # 连线标签
+
+    class Meta:
+        table_name = 'workflow_connections'
+        indexes = (
+            (('workflow', 'from_node_id', 'to_node_id'), False),
+        )
 
 
 class Alert(BaseModel):
     id = pw.AutoField()
     video_source = pw.ForeignKeyField(VideoSource, backref='alerts', on_delete='CASCADE')
+    workflow = pw.ForeignKeyField(Workflow, backref='alerts', on_delete='SET NULL', null=True)
     alert_time = pw.DateTimeField()
     alert_type = pw.CharField()
     alert_message = pw.TextField(null=True)
     alert_image = pw.TextField(null=True)
     alert_image_ori = pw.TextField(null=True)
     alert_video = pw.TextField(null=True)
-    
+
     # 检测序列相关字段
     detection_count = pw.IntegerField(default=1)
     window_stats = pw.TextField(null=True)
@@ -282,73 +351,3 @@ class MLModel(BaseModel):
             self.save()
 
 
-# ==================== 工作流配置表 ====================
-
-class Workflow(BaseModel):
-    """工作流配置表"""
-    id = pw.AutoField()
-    name = pw.CharField()                    # 工作流名称
-    description = pw.TextField(null=True)    # 描述
-    workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
-    is_active = pw.BooleanField(default=False)  # 是否激活
-    created_at = pw.DateTimeField()
-    updated_at = pw.DateTimeField()
-    created_by = pw.CharField(default='admin')
-
-    class Meta:
-        table_name = 'workflows'
-    
-    @property
-    def data_dict(self):
-        """获取解析后的工作流数据"""
-        try:
-            if not self.workflow_data:
-                return {}
-            return json.loads(self.workflow_data)
-        except Exception as e:
-            import logging
-            logging.error(f"解析工作流数据失败 (ID={self.id}): {e}, 原始数据: {self.workflow_data[:200]}")
-            return {}
-
-
-class WorkflowNode(BaseModel):
-    """工作流节点配置"""
-    id = pw.AutoField()
-    workflow = pw.ForeignKeyField(Workflow, backref='nodes', on_delete='CASCADE')
-    node_id = pw.CharField()                 # 节点ID（前端生成的UUID）
-    node_type = pw.CharField()               # 节点类型：source, algorithm, output, condition
-    node_data = pw.TextField(default='{}')  # 节点配置数据（JSON）
-    position_x = pw.FloatField(default=0)    # X坐标
-    position_y = pw.FloatField(default=0)    # Y坐标
-    
-    class Meta:
-        table_name = 'workflow_nodes'
-        indexes = (
-            (('workflow', 'node_id'), True),
-        )
-    
-    @property
-    def data_dict(self):
-        """获取解析后的节点数据"""
-        try:
-            return json.loads(self.node_data) if self.node_data else {}
-        except:
-            return {}
-
-
-class WorkflowConnection(BaseModel):
-    """工作流连线配置"""
-    id = pw.AutoField()
-    workflow = pw.ForeignKeyField(Workflow, backref='connections', on_delete='CASCADE')
-    from_node_id = pw.CharField()            # 源节点ID
-    to_node_id = pw.CharField()              # 目标节点ID
-    from_port = pw.CharField(default='output')  # 输出端口：output, true, false
-    to_port = pw.CharField(default='input')     # 输入端口：input
-    condition = pw.CharField(null=True)      # 条件：detected, not_detected, null
-    label = pw.CharField(null=True)          # 连线标签
-    
-    class Meta:
-        table_name = 'workflow_connections'
-        indexes = (
-            (('workflow', 'from_node_id', 'to_node_id'), False),
-        )

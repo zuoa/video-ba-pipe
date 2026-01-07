@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>告警大屏 - 视频分析系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1729 100%);
+            min-height: 100vh;
+            overflow: hidden;
+            color: #e2e8f0;
+        }
+
+        /* 网格背景 */
+        .grid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* 扫描线动画 */
+        .scan-line {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent);
+            animation: scan 8s linear infinite;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+
+        /* 发光边框 */
+        .glow-border {
+            position: relative;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            box-shadow:
+                0 0 20px rgba(59, 130, 246, 0.1),
+                inset 0 0 60px rgba(59, 130, 246, 0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        /* 粒子容器 */
+        #particles-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.6) 0%, rgba(59, 130, 246, 0) 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: float linear infinite;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(100vh) scale(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-10vh) scale(1);
+                opacity: 0;
+            }
+        }
+
+        /* 数字字体 */
+        .digital-font {
+            font-family: 'Orbitron', monospace;
+        }
+
+        /* 告警卡片样式 */
+        .alert-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            transition: all 0.3s ease;
+            animation: slideIn 0.5s ease-out;
+            cursor: pointer;
+        }
+
+        .alert-card:hover {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(30, 41, 59, 0.9));
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateX(5px);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* 主画面样式 */
+        .main-display {
+            position: relative;
+            background: rgba(15, 23, 42, 0.6);
+            border: 2px solid rgba(59, 130, 246, 0.4);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow:
+                0 0 40px rgba(59, 130, 246, 0.2),
+                inset 0 0 80px rgba(59, 130, 246, 0.05);
+        }
+
+        .main-display::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #3b82f6, #8b5cf6, #3b82f6, transparent);
+            animation: progress 3s linear infinite;
+        }
+
+        @keyframes progress {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* 脉冲动画 */
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 滚动容器 */
+        .scroll-container {
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(59, 130, 246, 0.5) transparent;
+        }
+
+        .scroll-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scroll-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .scroll-container::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.5);
+            border-radius: 3px;
+        }
+
+        .scroll-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(59, 130, 246, 0.8);
+        }
+
+        /* 状态指示器 */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* 装饰角标 */
+        .corner-decoration {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(59, 130, 246, 0.5);
+        }
+
+        .corner-decoration.top-left {
+            top: 10px;
+            left: 10px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .corner-decoration.top-right {
+            top: 10px;
+            right: 10px;
+            border-left: none;
+            border-bottom: none;
+        }
+
+        .corner-decoration.bottom-left {
+            bottom: 10px;
+            left: 10px;
+            border-right: none;
+            border-top: none;
+        }
+
+        .corner-decoration.bottom-right {
+            bottom: 10px;
+            right: 10px;
+            border-left: none;
+            border-top: none;
+        }
+
+        /* 数据加载动画 */
+        .loading-shimmer {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 25%, rgba(59, 130, 246, 0.2) 50%, rgba(59, 130, 246, 0.1) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* 实时状态文字 */
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #fca5a5;
+        }
+
+        /* 图片容器 */
+        .image-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        /* 图片包装器 - 自适应容器大小，尽量接近16:9 */
+        .image-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+
+        .image-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 缩略图样式 */
+        .alert-thumbnail {
+            width: 80px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+            flex-shrink: 0;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        /* 无告警状态 */
+        .no-alert {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: rgba(148, 163, 184, 0.5);
+        }
+
+        /* 新告警切换动画 */
+        .alert-switch-animation {
+            animation: alertSwitch 0.6s ease-out;
+        }
+
+        @keyframes alertSwitch {
+            0% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            25% {
+                opacity: 0.5;
+                transform: scale(0.95) translateX(-20px);
+            }
+            50% {
+                opacity: 0.3;
+                transform: scale(0.9) blur(5px);
+            }
+            75% {
+                opacity: 0.7;
+                transform: scale(0.98) translateX(20px);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1) translateX(0);
+            }
+        }
+
+        /* 闪烁边框效果 */
+        .flash-border {
+            animation: flashBorder 0.8s ease-out;
+        }
+
+        @keyframes flashBorder {
+            0%, 100% {
+                box-shadow:
+                    0 0 40px rgba(59, 130, 246, 0.2),
+                    inset 0 0 80px rgba(59, 130, 246, 0.05);
+            }
+            50% {
+                box-shadow:
+                    0 0 80px rgba(59, 130, 246, 0.6),
+                    0 0 120px rgba(139, 92, 246, 0.4),
+                    inset 0 0 100px rgba(59, 130, 246, 0.3);
+                border-color: rgba(139, 92, 246, 0.8);
+            }
+        }
+
+        /* 告警图标跳动 */
+        .alert-icon-bounce {
+            animation: iconBounce 0.5s ease-out;
+        }
+
+        @keyframes iconBounce {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.3);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景效果 -->
+    <div class="grid-bg"></div>
+    <div class="scan-line"></div>
+    <div id="particles-container"></div>
+
+    <!-- 主容器 -->
+    <div class="relative z-10 h-screen flex flex-col p-6">
+        <!-- 顶部标题栏 -->
+        <header class="flex items-center justify-between mb-6 px-6 py-4 glow-border rounded-xl">
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-shield-alt text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-white digital-font">智能监控告警中心</h1>
+                        <p class="text-blue-300 text-sm">Intelligent Monitoring Alert Center</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-8">
+                <!-- 统计信息 -->
+                <div class="flex items-center gap-8">
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-blue-400 digital-font" id="todayCount">0</div>
+                        <div class="text-xs text-gray-400">今日告警</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-purple-400 digital-font" id="totalCount">0</div>
+                        <div class="text-xs text-gray-400">总计告警</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-green-400 digital-font" id="activeTasks">0</div>
+                        <div class="text-xs text-gray-400">监控任务</div>
+                    </div>
+                </div>
+
+                <!-- 实时状态 -->
+                <div class="live-badge">
+                    <div class="status-dot bg-red-500"></div>
+                    <span>LIVE</span>
+                </div>
+
+                <!-- 当前时间 -->
+                <div class="text-right">
+                    <div class="text-xl font-bold text-white digital-font" id="currentTime">--:--:--</div>
+                    <div class="text-xs text-gray-400" id="currentDate">----/--/--</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <div class="flex-1 flex gap-6 min-h-0">
+            <!-- 左侧大幅画面 -->
+            <div class="flex-1 main-display flex flex-col">
+                <div class="corner-decoration top-left"></div>
+                <div class="corner-decoration top-right"></div>
+                <div class="corner-decoration bottom-left"></div>
+                <div class="corner-decoration bottom-right"></div>
+
+                <!-- 顶部信息栏 -->
+                <div class="flex items-center justify-between px-6 py-4 border-b border-blue-500/20">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-exclamation-triangle text-yellow-400 text-lg"></i>
+                        <span class="text-lg font-semibold text-white">最新告警</span>
+                    </div>
+                    <div class="flex items-center gap-4 text-sm">
+                        <div class="flex items-center gap-2 text-gray-300">
+                            <i class="fas fa-video text-blue-400"></i>
+                            <span id="mainTaskName">--</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-gray-300">
+                            <i class="fas fa-clock text-purple-400"></i>
+                            <span id="mainAlertTime">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图片展示区 -->
+                <div class="flex-1 p-6 min-h-0">
+                    <div class="image-container rounded-lg h-full" id="mainImageContainer">
+                        <div class="no-alert">
+                            <i class="fas fa-check-circle text-6xl mb-4"></i>
+                            <p class="text-xl">系统运行正常</p>
+                            <p class="text-sm mt-2">暂无告警信息</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部信息 -->
+                <div class="px-6 py-4 border-t border-blue-500/20">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <span id="mainAlertType" class="px-3 py-1 rounded-full text-sm font-semibold bg-red-500/20 text-red-400 border border-red-500/30">
+                                --
+                            </span>
+                            <span id="mainDetectionCount" class="text-sm text-gray-400"></span>
+                        </div>
+                        <div class="text-sm text-gray-400" id="mainAlertMessage">等待告警数据...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧滚动列表 -->
+            <div class="w-96 glow-border rounded-xl flex flex-col">
+                <!-- 标题 -->
+                <div class="px-6 py-4 border-b border-blue-500/20">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-list text-blue-400"></i>
+                            <span class="text-lg font-semibold text-white">实时告警列表</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-gray-400">
+                            <span>最近</span>
+                            <span class="text-blue-400 font-bold">50</span>
+                            <span>条</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 告警列表 -->
+                <div class="flex-1 scroll-container p-4" id="alertList">
+                    <div class="loading-shimmer h-20 rounded-lg mb-3"></div>
+                    <div class="loading-shimmer h-20 rounded-lg mb-3"></div>
+                    <div class="loading-shimmer h-20 rounded-lg mb-3"></div>
+                </div>
+
+                <!-- 底部刷新指示 -->
+                <div class="px-6 py-3 border-t border-blue-500/20 text-center text-xs text-gray-500">
+                    <i class="fas fa-sync-alt mr-2"></i>
+                    每 <span class="text-blue-400">5</span> 秒自动刷新
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let alerts = [];
+        let tasks = [];
+        let mainAlert = null;
+
+        // 创建粒子效果
+        function createParticles() {
+            const container = document.getElementById('particles-container');
+            const particleCount = 30;
+
+            for (let i = 0; i < particleCount; i++) {
+                createParticle(container);
+            }
+        }
+
+        function createParticle(container) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+
+            // 随机属性
+            const size = Math.random() * 4 + 2; // 2-6px
+            const left = Math.random() * 100;
+            const duration = Math.random() * 15 + 10; // 10-25秒
+            const delay = Math.random() * 10; // 0-10秒延迟
+
+            particle.style.width = `${size}px`;
+            particle.style.height = `${size}px`;
+            particle.style.left = `${left}%`;
+            particle.style.animationDuration = `${duration}s`;
+            particle.style.animationDelay = `-${delay}s`; // 负延迟让动画立即在中间开始
+
+            container.appendChild(particle);
+
+            // 动画结束后重新创建粒子
+            setTimeout(() => {
+                particle.remove();
+                createParticle(container);
+            }, (duration + delay) * 1000);
+        }
+
+        // 更新时间
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const dateStr = now.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                weekday: 'short'
+            });
+
+            document.getElementById('currentTime').textContent = timeStr;
+            document.getElementById('currentDate').textContent = dateStr;
+        }
+
+        // 格式化相对时间
+        function formatRelativeTime(alertTime) {
+            const now = new Date();
+            const diff = now - new Date(alertTime);
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (seconds < 60) return '刚刚';
+            if (minutes < 60) return `${minutes}分钟前`;
+            if (hours < 24) return `${hours}小时前`;
+            if (days < 7) return `${days}天前`;
+            return new Date(alertTime).toLocaleDateString('zh-CN');
+        }
+
+        // 格式化完整时间
+        function formatFullTime(alertTime) {
+            const date = new Date(alertTime);
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // 获取告警类型颜色
+        function getAlertTypeStyle(alertType) {
+            const styles = {
+                'warning': { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', icon: 'fa-exclamation-triangle' },
+                'error': { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', icon: 'fa-times-circle' },
+                'info': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', icon: 'fa-info-circle' },
+                'critical': { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30', icon: 'fa-exclamation-circle' }
+            };
+            return styles[alertType.toLowerCase()] || styles['info'];
+        }
+
+        // 渲染主画面
+        function renderMainDisplay(isNewAlert = false) {
+            const container = document.getElementById('mainImageContainer');
+            const taskName = document.getElementById('mainTaskName');
+            const alertTime = document.getElementById('mainAlertTime');
+            const alertType = document.getElementById('mainAlertType');
+            const detectionCount = document.getElementById('mainDetectionCount');
+            const alertMessage = document.getElementById('mainAlertMessage');
+            const mainDisplay = document.querySelector('.main-display');
+
+            // 如果是新告警，添加闪烁边框效果
+            if (isNewAlert && mainDisplay) {
+                mainDisplay.classList.remove('flash-border');
+                void mainDisplay.offsetWidth; // 触发重绘
+                mainDisplay.classList.add('flash-border');
+            }
+
+            if (!mainAlert || alerts.length === 0) {
+                container.innerHTML = `
+                    <div class="no-alert">
+                        <i class="fas fa-check-circle text-6xl mb-4"></i>
+                        <p class="text-xl">系统运行正常</p>
+                        <p class="text-sm mt-2">暂无告警信息</p>
+                    </div>
+                `;
+                taskName.textContent = '--';
+                alertTime.textContent = '--';
+                alertType.textContent = '--';
+                alertType.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-gray-500/20 text-gray-400 border border-gray-500/30';
+                detectionCount.textContent = '';
+                alertMessage.textContent = '等待告警数据...';
+                return;
+            }
+
+            const task = tasks.find(t => t.id === mainAlert.task_id);
+            const style = getAlertTypeStyle(mainAlert.alert_type);
+
+            // 更新图片
+            if (mainAlert.alert_image) {
+                const imgWrapper = document.createElement('div');
+                imgWrapper.className = 'image-wrapper';
+                if (isNewAlert) {
+                    imgWrapper.classList.add('alert-switch-animation');
+                }
+
+                imgWrapper.innerHTML = `<img src="/api/image/frames/${mainAlert.alert_image}" alt="Alert Image">`;
+                container.innerHTML = '';
+                container.appendChild(imgWrapper);
+            } else {
+                const iconHTML = `
+                    <div class="no-alert ${isNewAlert ? 'alert-switch-animation' : ''}">
+                        <i class="fas ${style.icon} text-6xl mb-4 ${style.text}"></i>
+                        <p class="text-xl ${style.text}">${mainAlert.alert_type}</p>
+                    </div>
+                `;
+                container.innerHTML = iconHTML;
+            }
+
+            // 更新信息
+            taskName.textContent = task ? task.name : `任务 #${mainAlert.task_id}`;
+            alertTime.textContent = formatFullTime(mainAlert.alert_time);
+            alertType.textContent = mainAlert.alert_type;
+            alertType.className = `px-3 py-1 rounded-full text-sm font-semibold ${style.bg} ${style.text} border ${style.border}`;
+            detectionCount.textContent = mainAlert.detection_count > 1 ? `检测 ${mainAlert.detection_count} 次` : '';
+            alertMessage.textContent = mainAlert.alert_message || '无详细信息';
+        }
+
+        // 渲染告警列表
+        function renderAlertList() {
+            const container = document.getElementById('alertList');
+
+            if (alerts.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-check-circle text-4xl mb-3"></i>
+                        <p>暂无告警记录</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = alerts.map((alert, index) => {
+                const task = tasks.find(t => t.id === alert.task_id);
+                const taskName = task ? task.name : `任务 #${alert.task_id}`;
+                const style = getAlertTypeStyle(alert.alert_type);
+                const relativeTime = formatRelativeTime(alert.alert_time);
+                const isLatest = index === 0;
+
+                // 生成缩略图或默认图标
+                let thumbnailHTML = '';
+                if (alert.alert_image) {
+                    thumbnailHTML = `<img src="/api/image/frames/${alert.alert_image}" alt="Alert" class="alert-thumbnail" onerror="this.parentElement.innerHTML='<div class=\\'w-20 h-14 rounded-lg bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0\\'><i class=\\'fas ${style.icon} text-2xl ${style.text}\\'></i></div>'">`;
+                } else {
+                    thumbnailHTML = `<div class="w-20 h-14 rounded-lg bg-gradient-to-br ${style.bg.replace('/20', '')} flex items-center justify-center flex-shrink-0 border ${style.border}">
+                        <i class="fas ${style.icon} text-2xl ${style.text}"></i>
+                    </div>`;
+                }
+
+                return `
+                    <div class="alert-card ${isLatest ? 'border-blue-500/50' : ''}" onclick="selectAlert(${index})">
+                        <div class="flex items-start gap-3">
+                            ${thumbnailHTML}
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between gap-2 mb-1">
+                                    <span class="font-semibold text-white text-sm truncate">${taskName}</span>
+                                    ${isLatest ? '<span class="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/30 flex-shrink-0">最新</span>' : ''}
+                                </div>
+                                <div class="flex items-center justify-between gap-2 text-xs text-gray-400">
+                                    <span>${relativeTime}</span>
+                                    <span class="px-2 py-0.5 rounded ${style.bg} ${style.text} border ${style.border}">${alert.alert_type}</span>
+                                </div>
+                                ${alert.detection_count > 1 ? `<div class="text-xs text-blue-400 mt-1"><i class="fas fa-layer-group mr-1"></i>检测${alert.detection_count}次</div>` : ''}
+                                ${alert.alert_message ? `<p class="text-xs text-gray-500 mt-1 truncate">${alert.alert_message}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 选择告警
+        function selectAlert(index) {
+            if (index >= 0 && index < alerts.length) {
+                mainAlert = alerts[index];
+                renderMainDisplay(false); // 手动选择不触发新告警动画
+            }
+        }
+
+        // 加载数据
+        async function loadData() {
+            try {
+                // 并行加载数据
+                const [alertsResponse, todayCountResponse, tasksResponse] = await Promise.all([
+                    fetch('/api/alerts?page=1&per_page=50'),
+                    fetch('/api/alerts/today-count'),
+                    fetch('/api/video-sources')
+                ]);
+
+                const alertsData = await alertsResponse.json();
+                const todayCountData = await todayCountResponse.json();
+                tasks = await tasksResponse.json();
+
+                const previousAlertId = mainAlert ? mainAlert.id : null;
+                alerts = alertsData.data;
+
+                // 更新统计
+                document.getElementById('todayCount').textContent = todayCountData.count;
+                document.getElementById('totalCount').textContent = alertsData.pagination.total;
+                document.getElementById('activeTasks').textContent = tasks.filter(t => t.status === 'RUNNING').length;
+
+                // 更新主画面（如果还没有或告警列表有更新）
+                if (!mainAlert || (alerts.length > 0 && alerts[0].id !== mainAlert.id)) {
+                    const isNewAlert = previousAlertId !== null && alerts.length > 0 && alerts[0].id !== previousAlertId;
+                    mainAlert = alerts.length > 0 ? alerts[0] : null;
+                    renderMainDisplay(isNewAlert);
+
+                    // 如果是新告警，让告警图标跳动
+                    if (isNewAlert) {
+                        const alertIcon = document.querySelector('header .fa-shield-alt');
+                        if (alertIcon) {
+                            alertIcon.classList.remove('alert-icon-bounce');
+                            void alertIcon.offsetWidth;
+                            alertIcon.classList.add('alert-icon-bounce');
+                        }
+                    }
+                }
+
+                // 更新列表
+                renderAlertList();
+
+            } catch (error) {
+                console.error('加载数据失败:', error);
+            }
+        }
+
+        // 初始化
+        createParticles();
+        updateTime();
+        loadData();
+
+        // 定时更新
+        setInterval(updateTime, 1000);
+        setInterval(loadData, 5000);
+    </script>
+</body>
+</html>

@@ -546,6 +546,7 @@ class WorkflowExecutor:
         
         alert = Alert.create(
             video_source=self.video_source,
+            workflow=self.workflow,
             alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
             alert_type=algorithm_name,
             alert_message="",

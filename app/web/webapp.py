@@ -434,6 +434,8 @@ def get_alerts():
             'id': a.id,
             'source_id': a.video_source.id,
             'task_id': a.video_source.id,  # 兼容旧字段
+            'workflow_id': a.workflow.id if a.workflow else None,
+            'workflow_name': a.workflow.name if a.workflow else None,
             'alert_time': a.alert_time.isoformat(),
             'alert_type': a.alert_type,
             'alert_message': a.alert_message,
@@ -457,14 +459,28 @@ def create_alert():
     data = request.json
     try:
         source_id = data.get('source_id') or data.get('task_id')  # 兼容旧参数
-        alert = Alert.create(
-            video_source=source_id,
-            alert_time=datetime.fromisoformat(data.get('alert_time', datetime.now().isoformat())),
-            alert_type=data['alert_type'],
-            alert_message=data['alert_message'],
-            alert_image=data.get('alert_image'),
-            alert_video=data.get('alert_video')
-        )
+        workflow_id = data.get('workflow_id')  # 可选的 workflow_id
+
+        # 准备 Alert 创建参数
+        alert_params = {
+            'video_source': source_id,
+            'alert_time': datetime.fromisoformat(data.get('alert_time', datetime.now().isoformat())),
+            'alert_type': data['alert_type'],
+            'alert_message': data['alert_message'],
+            'alert_image': data.get('alert_image'),
+            'alert_video': data.get('alert_video')
+        }
+
+        # 如果提供了 workflow_id，添加到参数中
+        if workflow_id is not None:
+            from app.core.database_models import Workflow
+            try:
+                workflow = Workflow.get_by_id(workflow_id)
+                alert_params['workflow'] = workflow
+            except Workflow.DoesNotExist:
+                return jsonify({'error': f'Workflow {workflow_id} does not exist'}), 400
+
+        alert = Alert.create(**alert_params)
         
         # 发布预警消息到RabbitMQ
         try:
@@ -925,6 +941,11 @@ def alerts():
 @app.route('/roi-config')
 def roi_config():
     return render_template('roi_config.html')
+
+@app.route('/alert-wall')
+def alert_wall():
+    """告警大屏页面"""
+    return render_template('alert_wall.html')
 
 # ========== 脚本管理页面路由 ==========
 
