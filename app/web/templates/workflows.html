@@ -120,8 +120,20 @@
                 <!-- 视频源组件 -->
                 <div class="mb-6">
                     <h5 class="text-xs font-semibold text-gray-600 mb-2">视频源</h5>
-                    <div id="sourcesPanel" class="space-y-2">
-                        <!-- 动态加载 -->
+                    <div class="space-y-2">
+                        <div class="component-item p-3 bg-white border-2 border-green-200 rounded-lg cursor-move hover:shadow-md transition-all"
+                            draggable="true"
+                            data-type="source"
+                            data-subtype="video_source"
+                            ondragstart="handleDragStart(event)">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-video text-green-500"></i>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-medium text-gray-700">视频源</div>
+                                    <div class="text-xs text-gray-500">选择视频源</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1184,39 +1196,20 @@
     }
 
     function renderComponentPanels() {
-        // 渲染视频源
-        const sourcesPanel = document.getElementById('sourcesPanel');
-        sourcesPanel.innerHTML = resources.sources.map(s => `
-            <div class="component-item p-3 bg-white border-2 border-green-200 rounded-lg cursor-move hover:shadow-md transition-all"
-                draggable="true" 
-                data-type="source"
-                data-id="${s.id}"
-                data-name="${s.name}"
-                ondragstart="handleDragStart(event)">
-                <div class="flex items-center space-x-2">
-                    <i class="fas fa-video text-green-500"></i>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium text-gray-700 truncate">${s.name}</div>
-                        <div class="text-xs text-gray-500 truncate">${s.source_code}</div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-        
         // 填充视频源下拉列表（用于测试面板）
         const videoSourceSelect = document.getElementById('videoSourceSelect');
-        videoSourceSelect.innerHTML = '<option value="">-- 请选择视频源 --</option>' + 
+        videoSourceSelect.innerHTML = '<option value="">-- 请选择视频源 --</option>' +
             resources.sources.map(s => {
                 const statusIcon = s.status === 'RUNNING' ? '🟢' : '⚫';
                 const statusText = s.status === 'RUNNING' ? '运行中' : '已停止';
                 return `<option value="${s.id}">${statusIcon} ${s.name} (${statusText})</option>`;
             }).join('');
-        
+
         // 渲染算法
         const algorithmsPanel = document.getElementById('algorithmsPanel');
         algorithmsPanel.innerHTML = resources.algorithms.map(a => `
             <div class="component-item p-3 bg-white border-2 border-blue-200 rounded-lg cursor-move hover:shadow-md transition-all"
-                draggable="true" 
+                draggable="true"
                 data-type="algorithm"
                 data-id="${a.id}"
                 data-name="${a.name}"
@@ -1357,6 +1350,153 @@
         }
     }
 
+    // 更改视频源节点的视频源
+    function changeSourceNodeVideoSource(sourceId) {
+        if (!selectedNode || selectedNode.type !== 'source') return;
+
+        if (!sourceId) {
+            showMessage('请选择一个视频源', 'warning');
+            return;
+        }
+
+        // 查找选中的视频源信息
+        const source = resources.sources.find(s => s.id == sourceId);
+        if (!source) {
+            showMessage('视频源不存在', 'error');
+            return;
+        }
+
+        // 更新节点
+        const nodeIndex = nodes.findIndex(n => n.id === selectedNode.id);
+        if (nodeIndex !== -1) {
+            nodes[nodeIndex].dataId = sourceId;
+            nodes[nodeIndex].name = source.name;
+            selectedNode.dataId = sourceId;
+            selectedNode.name = source.name;
+
+            // 更新节点显示
+            const nodeEl = document.querySelector(`[data-node-id="${selectedNode.id}"]`);
+            if (nodeEl) {
+                const nameEl = nodeEl.querySelector('.font-semibold');
+                if (nameEl) {
+                    nameEl.textContent = source.name;
+                }
+            }
+
+            // 更新属性面板显示
+            const displayEl = document.getElementById('currentSourceDisplay');
+            if (displayEl) {
+                displayEl.textContent = source.name;
+            }
+
+            showMessage('视频源已更新为: ' + source.name, 'success');
+        }
+    }
+
+    // 在属性面板中显示视频源选择对话框（带搜索）
+    function showSourceSelectorInPanel() {
+        if (!selectedNode || selectedNode.type !== 'source') return;
+
+        if (resources.sources.length === 0) {
+            showMessage('没有可用的视频源，请先创建视频源', 'warning');
+            return;
+        }
+
+        // 创建选择对话框
+        const dialog = document.createElement('div');
+        dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        dialog.innerHTML = `
+            <div class="bg-white rounded-lg p-6 w-96">
+                <h3 class="text-lg font-bold mb-4">更改视频源</h3>
+
+                <!-- 搜索框 -->
+                <div class="mb-4">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        <input type="text" id="panelSourceSearchInput"
+                            placeholder="搜索视频源名称或代码..."
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black">
+                    </div>
+                </div>
+
+                <!-- 视频源列表 -->
+                <div id="panelSourceListContainer" class="max-h-80 overflow-y-auto space-y-2 mb-4">
+                    ${resources.sources.map(s => `
+                        <div class="source-option-panel p-3 border rounded-lg cursor-pointer hover:bg-blue-50 transition-all"
+                             data-id="${s.id}" data-name="${s.name}" data-code="${s.source_code}">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-video text-green-500"></i>
+                                <div class="flex-1">
+                                    <div class="font-medium">${s.name}</div>
+                                    <div class="text-xs text-gray-500">${s.source_code}</div>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${s.status === 'RUNNING' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">
+                                    ${s.status === 'RUNNING' ? '运行中' : '已停止'}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- 无结果提示 -->
+                <div id="panelNoResultsHint" class="hidden text-center py-4 text-gray-500">
+                    <i class="fas fa-search text-2xl mb-2"></i>
+                    <p class="text-sm">未找到匹配的视频源</p>
+                </div>
+
+                <button onclick="this.closest('.fixed').remove()" class="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">取消</button>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        // 获取搜索输入框和列表容器
+        const searchInput = dialog.querySelector('#panelSourceSearchInput');
+        const listContainer = dialog.querySelector('#panelSourceListContainer');
+        const noResultsHint = dialog.querySelector('#panelNoResultsHint');
+        const allOptions = dialog.querySelectorAll('.source-option-panel');
+
+        // 搜索功能
+        searchInput.addEventListener('input', (e) => {
+            const searchText = e.target.value.toLowerCase().trim();
+            let visibleCount = 0;
+
+            allOptions.forEach(option => {
+                const name = option.dataset.name.toLowerCase();
+                const code = option.dataset.code.toLowerCase();
+                const matches = name.includes(searchText) || code.includes(searchText);
+
+                if (matches) {
+                    option.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    option.style.display = 'none';
+                }
+            });
+
+            // 显示/隐藏无结果提示
+            if (visibleCount === 0) {
+                noResultsHint.classList.remove('hidden');
+                listContainer.classList.add('hidden');
+            } else {
+                noResultsHint.classList.add('hidden');
+                listContainer.classList.remove('hidden');
+            }
+        });
+
+        // 自动聚焦搜索框
+        setTimeout(() => searchInput.focus(), 100);
+
+        // 添加选择事件
+        dialog.querySelectorAll('.source-option-panel').forEach(option => {
+            option.addEventListener('click', () => {
+                const sourceId = option.dataset.id;
+                changeSourceNodeVideoSource(sourceId);
+                dialog.remove();
+            });
+        });
+    }
+
     function renderPropertiesPanel() {
         const panel = document.getElementById('propertiesPanel');
 
@@ -1392,12 +1532,30 @@
                     <label class="block text-xs font-semibold text-gray-600 mb-1">节点类型</label>
                     <div class="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">${selectedNode.type}</div>
                 </div>
-                ${selectedNode.dataId ? `
+
+                ${selectedNode.type === 'source' ? `
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">视频源</label>
+                        <div class="flex items-center space-x-2">
+                            <div id="currentSourceDisplay" class="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">
+                                ${selectedNode.dataId ?
+                                    (resources.sources.find(s => s.id == selectedNode.dataId)?.name || '未知视频源') :
+                                    '未选择'}
+                            </div>
+                            <button onclick="showSourceSelectorInPanel()" class="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition-all">
+                                <i class="fas fa-exchange-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${selectedNode.dataId && selectedNode.type !== 'source' ? `
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">关联ID</label>
                         <div class="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">${selectedNode.dataId}</div>
                     </div>
                 ` : ''}
+
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 mb-1">位置</label>
                     <div class="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">X: ${Math.round(selectedNode.x)}, Y: ${Math.round(selectedNode.y)}</div>
@@ -2211,16 +2369,22 @@
 
     function handleDrop(event) {
         event.preventDefault();
-        
+
         const type = event.dataTransfer.getData('type');
         const dataId = event.dataTransfer.getData('dataId');
         const name = event.dataTransfer.getData('name');
         const subtype = event.dataTransfer.getData('subtype');
-        
+
+        // 如果是视频源节点且未指定具体视频源，弹出选择对话框
+        if (type === 'source' && !dataId) {
+            showVideoSourceSelector(event);
+            return;
+        }
+
         const canvasRect = document.getElementById('canvas').getBoundingClientRect();
         const x = event.clientX - canvasRect.left - 90; // 90 = 节点宽度的一半
         const y = event.clientY - canvasRect.top - 40;  // 40 = 节点高度的一半
-        
+
         let nodeName = name;
         if (!nodeName) {
             if (type === 'output') {
@@ -2233,7 +2397,7 @@
                 nodeName = '未命名';
             }
         }
-        
+
         const node = {
             id: 'node_' + (++nodeIdCounter) + '_' + Date.now(),
             type: type,
@@ -2243,9 +2407,132 @@
             x: Math.max(0, x),
             y: Math.max(0, y)
         };
-        
+
         nodes.push(node);
         renderCanvas();
+    }
+
+    // 显示视频源选择对话框
+    function showVideoSourceSelector(event) {
+        if (resources.sources.length === 0) {
+            showMessage('没有可用的视频源，请先创建视频源', 'warning');
+            return;
+        }
+
+        // 创建选择对话框
+        const dialog = document.createElement('div');
+        dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        dialog.innerHTML = `
+            <div class="bg-white rounded-lg p-6 w-96">
+                <h3 class="text-lg font-bold mb-4">选择视频源</h3>
+
+                <!-- 搜索框 -->
+                <div class="mb-4">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        <input type="text" id="sourceSearchInput"
+                            placeholder="搜索视频源名称或代码..."
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black">
+                    </div>
+                </div>
+
+                <!-- 视频源列表 -->
+                <div id="sourceListContainer" class="max-h-80 overflow-y-auto space-y-2 mb-4">
+                    ${resources.sources.map(s => `
+                        <div class="source-option p-3 border rounded-lg cursor-pointer hover:bg-blue-50 transition-all"
+                             data-id="${s.id}" data-name="${s.name}" data-code="${s.source_code}">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-video text-green-500"></i>
+                                <div class="flex-1">
+                                    <div class="font-medium">${s.name}</div>
+                                    <div class="text-xs text-gray-500">${s.source_code}</div>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${s.status === 'RUNNING' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">
+                                    ${s.status === 'RUNNING' ? '运行中' : '已停止'}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- 无结果提示 -->
+                <div id="noResultsHint" class="hidden text-center py-4 text-gray-500">
+                    <i class="fas fa-search text-2xl mb-2"></i>
+                    <p class="text-sm">未找到匹配的视频源</p>
+                </div>
+
+                <button onclick="this.closest('.fixed').remove()" class="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">取消</button>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        // 获取搜索输入框和列表容器
+        const searchInput = dialog.querySelector('#sourceSearchInput');
+        const listContainer = dialog.querySelector('#sourceListContainer');
+        const noResultsHint = dialog.querySelector('#noResultsHint');
+        const allOptions = dialog.querySelectorAll('.source-option');
+
+        // 搜索功能
+        searchInput.addEventListener('input', (e) => {
+            const searchText = e.target.value.toLowerCase().trim();
+            let visibleCount = 0;
+
+            allOptions.forEach(option => {
+                const name = option.dataset.name.toLowerCase();
+                const code = option.dataset.code.toLowerCase();
+                const matches = name.includes(searchText) || code.includes(searchText);
+
+                if (matches) {
+                    option.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    option.style.display = 'none';
+                }
+            });
+
+            // 显示/隐藏无结果提示
+            if (visibleCount === 0) {
+                noResultsHint.classList.remove('hidden');
+                listContainer.classList.add('hidden');
+            } else {
+                noResultsHint.classList.add('hidden');
+                listContainer.classList.remove('hidden');
+            }
+        });
+
+        // 自动聚焦搜索框
+        setTimeout(() => searchInput.focus(), 100);
+
+        // 添加选择事件
+        dialog.querySelectorAll('.source-option').forEach(option => {
+            option.addEventListener('click', () => {
+                const sourceId = option.dataset.id;
+                const sourceName = option.dataset.name;
+
+                // 计算节点位置
+                const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+                const x = event.clientX - canvasRect.left - 90;
+                const y = event.clientY - canvasRect.top - 40;
+
+                // 创建节点
+                const node = {
+                    id: 'node_' + (++nodeIdCounter) + '_' + Date.now(),
+                    type: 'source',
+                    subtype: 'video_source',
+                    name: sourceName,
+                    dataId: sourceId,
+                    x: Math.max(0, x),
+                    y: Math.max(0, y)
+                };
+
+                nodes.push(node);
+                renderCanvas();
+
+                // 移除对话框
+                dialog.remove();
+            });
+        });
     }
 
     function deleteNode(nodeId) {
