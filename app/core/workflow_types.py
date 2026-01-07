@@ -39,6 +39,7 @@ class AlgorithmNodeData(NodeContext):
     node_type: str = "algorithm"
     data_id: Optional[int] = None
     interval_seconds: Optional[float] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -51,6 +52,30 @@ class OutputNodeData(NodeContext):
     node_type: str = "output"
 
 
+@dataclass
+class RoiDrawNodeData(NodeContext):
+    node_type: str = "roi_draw"
+    roi_regions: Optional[List[Dict[str, Any]]] = None
+    """
+    ROI区域配置列表，每个区域包含：
+    - polygon: 多边形顶点坐标数组 [[x1,y1], [x2,y2], ...]
+    - x: 左上角X坐标（外接矩形）
+    - y: 左上角Y坐标（外接矩形）
+    - width: 区域宽度（外接矩形）
+    - height: 区域高度（外接矩形）
+    - mode: 检测模式 ("pre_mask" 或 "post_filter")
+
+    该节点功能：
+    1. 记录热区坐标信息到context['roi_regions']
+    2. 不执行实际的图像裁剪操作
+    3. 输出roi_regions供下游算法节点使用
+
+    使用示例：
+    source -> roi_draw -> algorithm
+    algorithm节点会自动使用roi_draw节点配置的roi_regions
+    """
+
+
 def create_node_data(node_dict: Dict) -> NodeContext:
     node_type = node_dict.get('type')
     node_id = node_dict.get('id')
@@ -61,6 +86,8 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'algorithm': AlgorithmNodeData,
         'condition': ConditionNodeData,
         'output': OutputNodeData,
+        'roi_draw': RoiDrawNodeData,
+        'roi': RoiDrawNodeData,  # 前端使用的类型名称
     }
 
     node_class = node_classes.get(node_type)
@@ -75,13 +102,20 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             node_type=node_type,
             node_id=node_id,
             data_id=data_id,
-            interval_seconds=data.get('interval_seconds')
+            interval_seconds=data.get('interval_seconds'),
+            config=data.get('config')
         )
     elif node_type == 'source':
         return node_class(
             node_type=node_type,
             node_id=node_id,
             data_id=data_id
+        )
+    elif node_type in ('roi_draw', 'roi'):  # 支持前后端两种类型名称
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            roi_regions=data.get('roi_regions', [])
         )
     else:
         return node_class(

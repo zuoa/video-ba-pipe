@@ -149,20 +149,42 @@ class BaseAlgorithm(ABC):
         return (b, g, r)  # OpenCV使用BGR格式
 
     @staticmethod
-    def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None):
+    def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
         :param img: 原始图像
         :param results: 检测结果列表
         :param save_path: 保存路径
         :param label_color: 标签颜色（十六进制格式）
-        :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域
+        :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域（已弃用，建议使用roi_regions）
+        :param roi_regions: ROI热区配置列表，格式为 [{"polygon": [[x1,y1], [x2,y2], ...], ...}]
         """
         img_vis = img.copy()
         img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
 
-        # 如果有ROI掩码，在图像上绘制ROI区域轮廓
-        if roi_mask is not None:
+        # 如果有roi_regions配置，优先使用roi_regions绘制热区（支持多边形）
+        if roi_regions and len(roi_regions) > 0:
+            # 创建半透明层用于绘制ROI热区
+            roi_overlay = img_vis.copy()
+
+            for region in roi_regions:
+                polygon = region.get('polygon', [])
+                if len(polygon) >= 3:
+                    # 转换为numpy数组
+                    pts = np.array(polygon, dtype=np.int32).reshape((-1, 1, 2))
+
+                    # 在overlay上填充淡绿色半透明区域
+                    # 使用很淡的绿色：(144, 238, 144) - BGR格式
+                    cv2.fillPoly(roi_overlay, [pts], (144, 238, 144))
+
+                    # 绘制热区边界线（稍深一点的绿色）
+                    cv2.polylines(roi_overlay, [pts], True, (100, 200, 100), 2)
+
+            # 将overlay以很淡的透明度叠加到原图上（0.15表示15%不透明度，非常淡）
+            cv2.addWeighted(img_vis, 0.85, roi_overlay, 0.15, 0, img_vis)
+
+        # 如果有ROI掩码（兼容旧代码），在图像上绘制ROI区域轮廓
+        elif roi_mask is not None:
             # 找到ROI区域的轮廓
             contours, _ = cv2.findContours(roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             # 绘制半透明的ROI区域

@@ -37,11 +37,11 @@ class WindowDetector:
         从Algorithm表读取时间窗口配置
         """
         key = (source_id, algorithm_id)
-        
+
         try:
             # 获取Algorithm配置
             algorithm = Algorithm.get_by_id(algorithm_id)
-            
+
             # 从算法表读取配置
             config = {
                 'enable': algorithm.enable_window_check,
@@ -49,10 +49,10 @@ class WindowDetector:
                 'mode': algorithm.window_mode,
                 'threshold': algorithm.window_threshold,
             }
-            
+
             self.configs[key] = config
             logger.info(f"[WindowDetector] 加载配置 Source={source_id}, Algo={algorithm_id}: {config}")
-            
+
         except Exception as e:
             logger.error(f"[WindowDetector] 加载配置失败 Source={source_id}, Algo={algorithm_id}: {e}")
             # 使用默认配置
@@ -62,6 +62,32 @@ class WindowDetector:
                 'mode': 'ratio',
                 'threshold': 0.3
             }
+
+    def load_config_with_override(self, source_id: int, algorithm_id: str, window_config: dict):
+        """
+        使用指定的窗口配置（支持节点级配置覆盖）
+
+        Args:
+            source_id: 视频源ID
+            algorithm_id: 算法ID
+            window_config: 窗口配置字典，包含:
+                - enable: 是否启用窗口检测
+                - window_size: 时间窗口大小（秒）
+                - window_mode: 检测模式 ('count', 'ratio', 'consecutive')
+                - window_threshold: 检测阈值
+        """
+        key = (source_id, algorithm_id)
+
+        # 规范化配置字段名
+        config = {
+            'enable': window_config.get('enable', False),
+            'window_size': window_config.get('window_size', 30),
+            'mode': window_config.get('window_mode', 'ratio'),
+            'threshold': window_config.get('window_threshold', 0.3),
+        }
+
+        self.configs[key] = config
+        logger.info(f"[WindowDetector] 加载配置（覆盖模式）Source={source_id}, Algo={algorithm_id}: {config}")
     
     def add_record(self, source_id: int, algorithm_id: str, timestamp: float, has_detection: bool, image_path: str = None):
         """

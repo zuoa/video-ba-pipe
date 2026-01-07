@@ -138,7 +138,7 @@
                     <h5 class="text-xs font-semibold text-gray-600 mb-2">条件分支</h5>
                     <div class="space-y-2">
                         <div class="component-item p-3 bg-white border-2 border-yellow-200 rounded-lg cursor-move hover:shadow-md transition-all"
-                            draggable="true" 
+                            draggable="true"
                             data-type="condition"
                             data-subtype="detection"
                             ondragstart="handleDragStart(event)">
@@ -147,6 +147,27 @@
                                 <div class="flex-1 min-w-0">
                                     <div class="text-sm font-medium text-gray-700">检测条件</div>
                                     <div class="text-xs text-gray-500">是/否检测到</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图像处理 -->
+                <div class="mb-6">
+                    <h5 class="text-xs font-semibold text-gray-600 mb-2">图像处理</h5>
+                    <div class="space-y-2">
+                        <div class="component-item p-3 bg-white border-2 border-orange-200 rounded-lg cursor-move hover:shadow-md transition-all"
+                            draggable="true"
+                            data-type="roi"
+                            data-subtype="draw"
+                            data-name="热区绘制"
+                            ondragstart="handleDragStart(event)">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-draw-polygon text-orange-500"></i>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-medium text-gray-700">热区绘制</div>
+                                    <div class="text-xs text-gray-500">绘制ROI区域</div>
                                 </div>
                             </div>
                         </div>
@@ -390,7 +411,11 @@
     .node-condition {
         border-color: #F59E0B;
     }
-    
+
+    .node-roi {
+        border-color: #F97316;
+    }
+
     .connection-line.detected {
         stroke: #10B981;
     }
@@ -822,7 +847,30 @@
                         branch: detected ? '是' : '否'
                     };
                     break;
-                    
+
+                case 'roi':
+                    // 热区绘制节点，只记录ROI坐标
+                    const roiConfig = node.data?.roi_regions?.[0];
+                    if (roiConfig) {
+                        result.data = {
+                            message: '热区绘制成功',
+                            roi_region: {
+                                x: roiConfig.x,
+                                y: roiConfig.y,
+                                width: roiConfig.width,
+                                height: roiConfig.height,
+                                polygon: roiConfig.polygon
+                            },
+                            polygon_points: roiConfig.polygon ? roiConfig.polygon.length : 0
+                        };
+                    } else {
+                        result.data = {
+                            message: '未配置ROI区域（模拟）',
+                            roi_region: null
+                        };
+                    }
+                    break;
+
                 case 'output':
                     result.data = {
                         message: node.subtype === 'alert' ? '告警已触发' : '录像已保存',
@@ -959,24 +1007,31 @@
 
     function formatNodeData(node) {
         const data = node.data;
-        
+
         switch (node.nodeType) {
             case 'source':
                 return `<p>✓ ${data.message}</p><p class="text-gray-500">分辨率: ${data.resolution}, 帧率: ${data.fps}</p>`;
-                
+
             case 'algorithm':
                 if (data.detection_count > 0) {
                     return `<p>✓ 检测到 ${data.detection_count} 个目标</p>`;
                 } else {
                     return `<p>未检测到目标</p>`;
                 }
-                
+
             case 'condition':
                 return `<p>✓ ${data.message}</p><p class="text-gray-500">执行分支: ${data.branch}</p>`;
-                
+
+            case 'crop':
+                if (data.crop_region) {
+                    return `<p>✓ ${data.message}</p><p class="text-gray-500">裁剪区域: ${data.crop_region.x},${data.crop_region.y} ${data.crop_region.width}x${data.crop_region.height}</p><p class="text-gray-500">输出尺寸: ${data.cropped_size}</p>`;
+                } else {
+                    return `<p>${data.message}</p>`;
+                }
+
             case 'output':
                 return `<p>✓ ${data.message}</p>`;
-                
+
             default:
                 return `<p>${data.message || '执行成功'}</p>`;
         }
@@ -1225,6 +1280,11 @@
                 color = 'text-yellow-500';
                 typeLabel = '条件分支';
                 break;
+            case 'roi':
+                icon = 'fa-draw-polygon';
+                color = 'text-orange-500';
+                typeLabel = '热区绘制';
+                break;
             case 'output':
                 icon = node.subtype === 'alert' ? 'fa-bell' : 'fa-video';
                 color = 'text-purple-500';
@@ -1299,7 +1359,7 @@
 
     function renderPropertiesPanel() {
         const panel = document.getElementById('propertiesPanel');
-        
+
         if (!selectedNode) {
             panel.innerHTML = `
                 <div class="text-center text-gray-400 py-8">
@@ -1309,7 +1369,18 @@
             `;
             return;
         }
-        
+
+        // 如果切换到roi节点，先清空Canvas状态（避免显示上一个节点的多边形）
+        if (selectedNode.type === 'roi') {
+            cropPolygonPoints = [];
+            cropCanvas = null;
+            cropCtx = null;
+            cropImage = null;
+        }
+
+        // 获取节点配置
+        const nodeConfig = selectedNode.data?.config || {};
+
         panel.innerHTML = `
             <h4 class="text-sm font-bold text-gray-700 mb-4">节点属性</h4>
             <div class="space-y-4">
@@ -1331,8 +1402,650 @@
                     <label class="block text-xs font-semibold text-gray-600 mb-1">位置</label>
                     <div class="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">X: ${Math.round(selectedNode.x)}, Y: ${Math.round(selectedNode.y)}</div>
                 </div>
+
+                ${selectedNode.type === 'algorithm' ? `
+                    <div class="border-t border-gray-200 pt-4 mt-4">
+                        <h5 class="text-xs font-bold text-gray-700 mb-3 flex items-center">
+                            <i class="fas fa-cog mr-2"></i>节点配置
+                        </h5>
+
+                        <!-- 窗口检测配置 -->
+                        <div class="mb-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="block text-xs font-semibold text-gray-600">时间窗口检测</label>
+                                <button onclick="resetWindowDetectionConfig()" class="text-xs text-blue-600 hover:text-blue-800">重置为默认</button>
+                            </div>
+
+                            <div class="space-y-2 bg-gray-50 p-3 rounded-lg">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs text-gray-600">启用窗口检测</span>
+                                    <input type="checkbox" id="windowEnable"
+                                        ${nodeConfig.window_detection?.enable ? 'checked' : ''}
+                                        onchange="updateWindowConfig('enable', this.checked)"
+                                        class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">窗口大小（秒）</label>
+                                    <input type="number" id="windowSize" min="1" max="300"
+                                        value="${nodeConfig.window_detection?.window_size || 30}"
+                                        onchange="updateWindowConfig('window_size', parseFloat(this.value))"
+                                        class="w-full px-2 py-1 border border-gray-300 rounded text-xs">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">检测模式</label>
+                                    <select id="windowMode"
+                                        onchange="updateWindowConfig('window_mode', this.value)"
+                                        class="w-full px-2 py-1 border border-gray-300 rounded text-xs">
+                                        <option value="count" ${nodeConfig.window_detection?.window_mode === 'count' ? 'selected' : ''}>检测次数 (count)</option>
+                                        <option value="ratio" ${nodeConfig.window_detection?.window_mode === 'ratio' || !nodeConfig.window_detection?.window_mode ? 'selected' : ''}>检测比例 (ratio)</option>
+                                        <option value="consecutive" ${nodeConfig.window_detection?.window_mode === 'consecutive' ? 'selected' : ''}>连续检测 (consecutive)</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">检测阈值</label>
+                                    <input type="number" id="windowThreshold" min="0" max="1" step="0.01"
+                                        value="${nodeConfig.window_detection?.window_threshold !== undefined ? nodeConfig.window_detection.window_threshold : 0.3}"
+                                        onchange="updateWindowConfig('window_threshold', parseFloat(this.value))"
+                                        class="w-full px-2 py-1 border border-gray-300 rounded text-xs">
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        ${nodeConfig.window_detection?.window_mode === 'count' ? '最少检测次数（整数）' :
+                                          nodeConfig.window_detection?.window_mode === 'consecutive' ? '最少连续次数（整数）' :
+                                          '最小检测比例（0-1之间的小数）'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ROI配置 -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">ROI区域配置</label>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div id="roiList" class="space-y-2 mb-2">
+                                    ${(nodeConfig.roi_regions || []).map((roi, index) => `
+                                        <div class="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
+                                            <span class="text-xs text-gray-700">${roi.name || '区域' + (index + 1)}</span>
+                                            <button onclick="removeROI(${index})" class="text-red-500 hover:text-red-700">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <button onclick="addROI()" class="w-full px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100 transition-all">
+                                    <i class="fas fa-plus mr-1"></i>添加ROI区域
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 保存按钮 -->
+                        <button onclick="saveNodeConfig()" class="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-all">
+                            <i class="fas fa-save mr-1"></i>保存配置
+                        </button>
+                    </div>
+                ` : ''}
+
+                ${selectedNode.type === 'roi' ? `
+                    <div class="border-t border-gray-200 pt-4 mt-4">
+                        <h5 class="text-xs font-bold text-gray-700 mb-3 flex items-center">
+                            <i class="fas fa-draw-polygon mr-2"></i>热区绘制配置
+                        </h5>
+
+                        <!-- 隐藏的输入框，用于存储配置值 -->
+                        <input type="hidden" id="cropX" value="${selectedNode.data?.roi_regions?.[0]?.x || 0}">
+                        <input type="hidden" id="cropY" value="${selectedNode.data?.roi_regions?.[0]?.y || 0}">
+                        <input type="hidden" id="cropWidth" value="${selectedNode.data?.roi_regions?.[0]?.width || 640}">
+                        <input type="hidden" id="cropHeight" value="${selectedNode.data?.roi_regions?.[0]?.height || 480}">
+
+                        <!-- 视频源选择 -->
+                        <div class="mb-3">
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">选择视频源</label>
+                            <select id="cropVideoSourceSelect" class="w-full px-2 py-1 border border-gray-200 rounded text-xs mb-2"
+                                onchange="handleVideoSourceChange()">
+                                <option value="">-- 请选择视频源 --</option>
+                            </select>
+                            <button onclick="loadImageForCrop()" id="btnLoadCropImage" class="w-full px-3 py-2 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600 transition-all">
+                                <i class="fas fa-camera mr-1"></i>加载当前帧
+                            </button>
+                        </div>
+
+                        <!-- Canvas绘制区域 -->
+                        <div id="cropCanvasContainer" class="hidden">
+                            <div class="relative border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-gray-900">
+                                <canvas id="cropCanvas" class="w-full cursor-crosshair"></canvas>
+                            </div>
+
+                            <!-- 操作按钮 -->
+                            <div class="flex space-x-2 mt-2">
+                                <button onclick="clearCropPolygon()" class="flex-1 px-2 py-1 bg-red-50 text-red-600 rounded text-xs hover:bg-red-100 transition-all">
+                                    <i class="fas fa-trash mr-1"></i>清除
+                                </button>
+                                <button onclick="undoCropPoint()" class="flex-1 px-2 py-1 bg-yellow-50 text-yellow-600 rounded text-xs hover:bg-yellow-100 transition-all">
+                                    <i class="fas fa-undo mr-1"></i>撤销
+                                </button>
+                                <button onclick="completeCropPolygon()" class="flex-1 px-2 py-1 bg-green-50 text-green-600 rounded text-xs hover:bg-green-100 transition-all">
+                                    <i class="fas fa-check mr-1"></i>完成
+                                </button>
+                            </div>
+
+                            <!-- 多边形信息 -->
+                            <div class="mt-2 p-2 bg-gray-50 rounded text-xs">
+                                <p class="font-semibold text-gray-700 mb-1">多边形顶点：</p>
+                                <div id="cropPolygonPoints" class="text-gray-600 max-h-20 overflow-y-auto">
+                                    <p class="text-gray-400">点击图片添加顶点...</p>
+                                </div>
+                            </div>
+
+                            <!-- 外接矩形信息 -->
+                            <div id="cropBoundingBoxInfo" class="mt-2 hidden p-2 bg-blue-50 rounded text-xs">
+                                <p class="font-semibold text-blue-700 mb-1">外接矩形：</p>
+                                <p class="text-blue-600" id="cropBoundingText"></p>
+                            </div>
+                        </div>
+
+                        <div id="cropNoImageHint" class="p-4 text-center text-gray-400 border-2 border-dashed border-gray-300 rounded-lg">
+                            <i class="fas fa-image text-2xl mb-2"></i>
+                            <p class="text-xs">请先选择视频源并加载图片</p>
+                        </div>
+
+                        <div class="mt-3 p-2 bg-orange-50 rounded-lg">
+                            <p class="text-xs text-orange-700">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                绘制的热区坐标将传递给后续算法节点使用
+                            </p>
+                        </div>
+
+                        <!-- 保存按钮 -->
+                        <button onclick="saveCropConfig()" class="w-full mt-3 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-all">
+                            <i class="fas fa-save mr-1"></i>保存热区配置
+                        </button>
+                    </div>
+                ` : ''}
             </div>
         `;
+
+        // 如果是roi或crop节点，自动查找并加载前置视频源
+        if (selectedNode.type === 'roi' || selectedNode.type === 'crop') {
+            setTimeout(() => {
+                const selectEl = document.getElementById('cropVideoSourceSelect');
+
+                // 填充视频源下拉列表（无论是否已有选项，都重新填充以确保最新）
+                if (selectEl) {
+                    selectEl.innerHTML = '<option value="">-- 请选择视频源 --</option>' +
+                        resources.sources.map(s => {
+                            const statusIcon = s.status === 'RUNNING' ? '🟢' : '⚫';
+                            return `<option value="${s.id}">${statusIcon} ${s.name}</option>`;
+                        }).join('');
+                }
+
+                // 自动查找前置视频源节点
+                const inputConnection = connections.find(c => c.to === selectedNode.id);
+                let autoSourceId = null;
+                let autoSourceName = null;
+
+                if (inputConnection) {
+                    const sourceNode = nodes.find(n => n.id === inputConnection.from);
+                    if (sourceNode && sourceNode.type === 'source') {
+                        autoSourceId = sourceNode.dataId;
+                        autoSourceName = sourceNode.name;
+                    }
+                }
+
+                // 检查是否已有多边形配置，如果有则回显
+                const existingPolygon = selectedNode.data?.roi_regions?.[0]?.polygon;
+                const hasPolygon = existingPolygon && existingPolygon.length >= 3;
+
+                console.log('🔍 热区回显检查:', {
+                    nodeId: selectedNode.id,
+                    nodeName: selectedNode.name,
+                    hasPolygon: hasPolygon,
+                    polygonPoints: hasPolygon ? existingPolygon.length : 0,
+                    roi_regions: selectedNode.data?.roi_regions
+                });
+
+                if (hasPolygon) {
+                    // 将多边形配置转换为cropPolygonPoints格式
+                    cropPolygonPoints = existingPolygon.map((point, index) => ({
+                        canvasX: point[0], // 暂时使用原始坐标，加载图片后会重新计算
+                        canvasY: point[1],
+                        x: point[0],
+                        y: point[1],
+                        closed: index === 0 ? true : undefined // 标记为已闭合
+                    }));
+                    console.log('✅ 多边形数据已加载:', cropPolygonPoints.length, '个顶点');
+                }
+
+                // 自动加载视频源（优先使用前置节点连接的视频源）
+                if (autoSourceId) {
+                    selectEl.value = autoSourceId;
+                    loadImageForCrop(hasPolygon); // 如果有多边形配置则是回显模式
+                    console.log(`✓ 自动加载前置视频源: ${autoSourceName || autoSourceId}`);
+                } else if (hasPolygon && resources.sources.length > 0) {
+                    // 如果没有前置视频源但有多边形配置，加载第一个视频源
+                    const firstSource = resources.sources[0];
+                    selectEl.value = firstSource.id;
+                    loadImageForCrop(true);
+                } else {
+                    // 没有找到前置视频源节点，显示友好提示
+                    console.log('💡 提示: 请先连接视频源节点，或手动选择视频源加载图片');
+                    const hintEl = document.getElementById('cropNoImageHint');
+                    if (hintEl) {
+                        hintEl.innerHTML = `
+                            <i class="fas fa-link text-2xl mb-2"></i>
+                            <p class="text-xs mt-2">请先在画布上连接视频源节点</p>
+                            <p class="text-xs text-gray-500 mt-1">或从下拉列表手动选择视频源</p>
+                        `;
+                    }
+                }
+            }, 100); // 增加延迟确保DOM完全渲染
+        }
+    }
+
+    // 更新窗口检测配置
+    function updateWindowConfig(key, value) {
+        if (!selectedNode.data) {
+            selectedNode.data = {};
+        }
+        if (!selectedNode.data.config) {
+            selectedNode.data.config = {};
+        }
+        if (!selectedNode.data.config.window_detection) {
+            selectedNode.data.config.window_detection = {};
+        }
+
+        selectedNode.data.config.window_detection[key] = value;
+    }
+
+    // 重置窗口检测配置为默认值
+    function resetWindowDetectionConfig() {
+        if (!selectedNode.data) {
+            selectedNode.data = {};
+        }
+        if (!selectedNode.data.config) {
+            selectedNode.data.config = {};
+        }
+
+        // 清空配置，将使用算法默认值
+        delete selectedNode.data.config.window_detection;
+        renderPropertiesPanel();
+        showMessage('已重置为算法默认配置', 'success');
+    }
+
+    // 添加ROI区域
+    function addROI() {
+        if (!selectedNode.data) {
+            selectedNode.data = {};
+        }
+        if (!selectedNode.data.config) {
+            selectedNode.data.config = {};
+        }
+        if (!selectedNode.data.config.roi_regions) {
+            selectedNode.data.config.roi_regions = [];
+        }
+
+        const roiName = prompt('请输入ROI区域名称:', '区域' + (selectedNode.data.config.roi_regions.length + 1));
+        if (!roiName) return;
+
+        selectedNode.data.config.roi_regions.push({
+            name: roiName,
+            polygon: [[0, 0], [100, 0], [100, 100], [0, 100]],
+            mode: 'post_filter'
+        });
+
+        renderPropertiesPanel();
+    }
+
+    // 删除ROI区域
+    function removeROI(index) {
+        if (!selectedNode.data?.config?.roi_regions) return;
+
+        selectedNode.data.config.roi_regions.splice(index, 1);
+        renderPropertiesPanel();
+    }
+
+    // 保存节点配置
+    function saveNodeConfig() {
+        if (!selectedNode) return;
+
+        // 更新nodes数组中的节点数据
+        const nodeIndex = nodes.findIndex(n => n.id === selectedNode.id);
+        if (nodeIndex !== -1) {
+            nodes[nodeIndex].data = nodes[nodeIndex].data || {};
+            nodes[nodeIndex].data.config = selectedNode.data?.config || {};
+
+            // 如果config为空对象，删除它
+            if (Object.keys(nodes[nodeIndex].data.config).length === 0) {
+                delete nodes[nodeIndex].data.config;
+            }
+        }
+
+        showMessage('节点配置已更新，请点击右上角"保存"按钮保存工作流', 'success');
+    }
+
+    // 保存裁剪节点配置（同时支持 roi 和 crop 类型）
+    function saveCropConfig() {
+        if (!selectedNode || (selectedNode.type !== 'crop' && selectedNode.type !== 'roi')) return;
+
+        // 检查是否已完成多边形绘制
+        if (cropPolygonPoints.length < 3 || !isPolygonClosed()) {
+            showMessage('请先完成多边形绘制（至少3个顶点）', 'warning');
+            return;
+        }
+
+        // 从多边形计算外接矩形
+        const bbox = calculateBoundingBox(cropPolygonPoints);
+
+        // 更新隐藏输入框的值
+        document.getElementById('cropX').value = bbox.x;
+        document.getElementById('cropY').value = bbox.y;
+        document.getElementById('cropWidth').value = bbox.width;
+        document.getElementById('cropHeight').value = bbox.height;
+
+        // 保存多边形顶点到节点配置
+        const nodeIndex = nodes.findIndex(n => n.id === selectedNode.id);
+        if (nodeIndex !== -1) {
+            nodes[nodeIndex].data = nodes[nodeIndex].data || {};
+            nodes[nodeIndex].data.roi_regions = [{
+                x: bbox.x,
+                y: bbox.y,
+                width: bbox.width,
+                height: bbox.height,
+                polygon: cropPolygonPoints.map(p => [p.x, p.y])
+            }];
+        }
+
+        const nodeTypeText = selectedNode.type === 'roi' ? '热区' : '裁剪';
+        showMessage(`${nodeTypeText}配置已保存（基于多边形外接矩形），共${cropPolygonPoints.length}个顶点`, 'success');
+    }
+
+    // 图形化配置相关变量
+    let cropPolygonPoints = [];
+    let cropCanvas = null;
+    let cropCtx = null;
+    let cropImage = null;
+    let cropCanvasScale = 1;
+
+    // 处理视频源选择变化
+    function handleVideoSourceChange() {
+        const selectEl = document.getElementById('cropVideoSourceSelect');
+        const taskId = selectEl.value;
+
+        if (!taskId) {
+            // 用户选择了"请选择"，清空Canvas
+            cropPolygonPoints = [];
+            cropCanvas = null;
+            cropCtx = null;
+            cropImage = null;
+
+            document.getElementById('cropCanvasContainer').classList.add('hidden');
+            document.getElementById('cropNoImageHint').classList.remove('hidden');
+            return;
+        }
+
+        // 自动加载选中视频源的图片（清空之前的多边形，因为坐标可能不匹配）
+        cropPolygonPoints = [];
+        loadImageForCrop(false);
+    }
+
+    // 从视频源加载图片用于裁剪配置
+    async function loadImageForCrop(isRestore = false) {
+        const selectEl = document.getElementById('cropVideoSourceSelect');
+        const taskId = selectEl.value;
+
+        if (!taskId) {
+            showMessage('请先选择视频源', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('btnLoadCropImage');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>加载中...';
+
+        try {
+            const response = await fetch(`/api/workflows/capture_frame/${taskId}`);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || '加载失败');
+            }
+
+            // 创建图片对象
+            cropImage = new Image();
+            cropImage.onload = function() {
+                initCropCanvas(isRestore);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-camera mr-1"></i>重新加载';
+
+                // 显示Canvas，隐藏提示
+                document.getElementById('cropCanvasContainer').classList.remove('hidden');
+                document.getElementById('cropNoImageHint').classList.add('hidden');
+
+                if (isRestore) {
+                    showMessage('已加载已有配置，可以继续编辑', 'success');
+                } else {
+                    showMessage('图片加载成功，点击图片添加多边形顶点', 'success');
+                }
+            };
+            cropImage.src = result.image;
+
+        } catch (error) {
+            showMessage('加载失败: ' + error.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-camera mr-1"></i>加载当前帧';
+        }
+    }
+
+    // 初始化Canvas
+    function initCropCanvas(isRestore = false) {
+        cropCanvas = document.getElementById('cropCanvas');
+        cropCtx = cropCanvas.getContext('2d');
+
+        // 设置Canvas尺寸（限制最大宽度）
+        const maxWidth = 280;
+        const scale = Math.min(1, maxWidth / cropImage.width);
+        cropCanvasScale = scale;
+
+        cropCanvas.width = cropImage.width * scale;
+        cropCanvas.height = cropImage.height * scale;
+
+        // 如果是回显模式，重新计算canvas坐标
+        if (isRestore && cropPolygonPoints.length > 0) {
+            cropPolygonPoints = cropPolygonPoints.map(p => ({
+                ...p,
+                canvasX: p.x * scale,  // 重新计算canvas坐标
+                canvasY: p.y * scale
+            }));
+        } else {
+            // 新建模式，清空多边形
+            cropPolygonPoints = [];
+        }
+
+        // 绘制图片和多边形
+        drawCropCanvas();
+        updatePolygonInfo();
+
+        // 如果是回显模式且多边形已闭合，显示外接矩形信息
+        if (isRestore && cropPolygonPoints.length >= 3 && isPolygonClosed()) {
+            const bbox = calculateBoundingBox(cropPolygonPoints);
+            document.getElementById('cropBoundingText').textContent =
+                `X: ${bbox.x}, Y: ${bbox.y}, 宽度: ${bbox.width}, 高度: ${bbox.height}`;
+            document.getElementById('cropBoundingBoxInfo').classList.remove('hidden');
+        }
+
+        // 绑定点击事件
+        cropCanvas.onclick = handleCropCanvasClick;
+        cropCanvas.ondblclick = handleCropCanvasDoubleClick;
+    }
+
+    // 绘制Canvas
+    function drawCropCanvas() {
+        if (!cropCtx || !cropImage) return;
+
+        // 清空
+        cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+
+        // 绘制图片
+        cropCtx.drawImage(cropImage, 0, 0, cropCanvas.width, cropCanvas.height);
+
+        // 绘制多边形
+        if (cropPolygonPoints.length > 0) {
+            cropCtx.strokeStyle = '#00FF00';
+            cropCtx.lineWidth = 2;
+            cropCtx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+
+            cropCtx.beginPath();
+            // 使用canvas坐标
+            cropCtx.moveTo(cropPolygonPoints[0].canvasX, cropPolygonPoints[0].canvasY);
+
+            for (let i = 1; i < cropPolygonPoints.length; i++) {
+                cropCtx.lineTo(cropPolygonPoints[i].canvasX, cropPolygonPoints[i].canvasY);
+            }
+
+            // 如果已完成绘制，闭合路径并填充
+            if (cropPolygonPoints.length >= 3 && isPolygonClosed()) {
+                cropCtx.closePath();
+                cropCtx.fill();
+            } else if (cropPolygonPoints.length >= 2) {
+                // 未完成时也显示半透明填充效果
+                cropCtx.lineTo(cropPolygonPoints[0].canvasX, cropPolygonPoints[0].canvasY);
+                cropCtx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+                cropCtx.fill();
+                // 重新开始路径，只绘制边框
+                cropCtx.beginPath();
+                cropCtx.moveTo(cropPolygonPoints[0].canvasX, cropPolygonPoints[0].canvasY);
+                for (let i = 1; i < cropPolygonPoints.length; i++) {
+                    cropCtx.lineTo(cropPolygonPoints[i].canvasX, cropPolygonPoints[i].canvasY);
+                }
+            }
+
+            cropCtx.stroke();
+
+            // 绘制顶点
+            cropPolygonPoints.forEach((point, index) => {
+                cropCtx.fillStyle = index === 0 ? '#FF0000' : '#00FF00';
+                cropCtx.beginPath();
+                cropCtx.arc(point.canvasX, point.canvasY, 4, 0, 2 * Math.PI);
+                cropCtx.fill();
+
+                // 绘制顶点序号
+                cropCtx.fillStyle = '#FFFFFF';
+                cropCtx.font = '10px Arial';
+                cropCtx.textAlign = 'center';
+                cropCtx.textBaseline = 'middle';
+                cropCtx.fillText(index + 1, point.canvasX, point.canvasY);
+            });
+        }
+    }
+
+    // 处理Canvas点击
+    function handleCropCanvasClick(event) {
+        if (cropPolygonPoints.length >= 3 && isPolygonClosed()) {
+            showMessage('多边形已完成绘制，请先清除或撤销', 'warning');
+            return;
+        }
+
+        const rect = cropCanvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // 保存Canvas坐标（用于显示），同时记录实际坐标
+        cropPolygonPoints.push({
+            canvasX: x,
+            canvasY: y,
+            x: Math.round(x / cropCanvasScale),
+            y: Math.round(y / cropCanvasScale)
+        });
+        drawCropCanvas();
+        updatePolygonInfo();
+    }
+
+    // 处理Canvas双击
+    function handleCropCanvasDoubleClick(event) {
+        event.preventDefault();
+        if (cropPolygonPoints.length >= 3) {
+            completeCropPolygon();
+        }
+    }
+
+    // 检查多边形是否已闭合
+    function isPolygonClosed() {
+        return cropPolygonPoints.length >= 3 && cropPolygonPoints[0].closed;
+    }
+
+    // 清除多边形
+    function clearCropPolygon() {
+        cropPolygonPoints = [];
+        drawCropCanvas();
+        updatePolygonInfo();
+        document.getElementById('cropBoundingBoxInfo').classList.add('hidden');
+        showMessage('已清除多边形', 'success');
+    }
+
+    // 撤销最后一个点
+    function undoCropPoint() {
+        if (cropPolygonPoints.length > 0) {
+            cropPolygonPoints.pop();
+            drawCropCanvas();
+            updatePolygonInfo();
+            document.getElementById('cropBoundingBoxInfo').classList.add('hidden');
+        }
+    }
+
+    // 完成多边形绘制
+    function completeCropPolygon() {
+        if (cropPolygonPoints.length < 3) {
+            showMessage('至少需要3个顶点才能构成多边形', 'warning');
+            return;
+        }
+
+        // 标记多边形为已闭合
+        cropPolygonPoints[0].closed = true;
+        drawCropCanvas();
+
+        // 计算外接矩形
+        const bbox = calculateBoundingBox(cropPolygonPoints);
+
+        // 显示外接矩形信息
+        document.getElementById('cropBoundingText').textContent =
+            `X: ${bbox.x}, Y: ${bbox.y}, 宽度: ${bbox.width}, 高度: ${bbox.height}`;
+        document.getElementById('cropBoundingBoxInfo').classList.remove('hidden');
+
+        showMessage('多边形绘制完成！已计算外接矩形', 'success');
+    }
+
+    // 计算外接矩形
+    function calculateBoundingBox(points) {
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+
+        return {
+            x: Math.round(minX),
+            y: Math.round(minY),
+            width: Math.round(maxX - minX),
+            height: Math.round(maxY - minY)
+        };
+    }
+
+    // 更新多边形信息显示
+    function updatePolygonInfo() {
+        const container = document.getElementById('cropPolygonPoints');
+
+        if (cropPolygonPoints.length === 0) {
+            container.innerHTML = '<p class="text-gray-400">点击图片添加顶点...</p>';
+        } else {
+            container.innerHTML = cropPolygonPoints.map((p, i) => `
+                <div class="flex items-center justify-between py-1">
+                    <span class="font-medium">顶点 ${i + 1}${i === 0 ? ' (起点)' : ''}</span>
+                    <span class="text-gray-600">(${p.x}, ${p.y})</span>
+                </div>
+            `).join('');
+        }
     }
 
     function startNodeDrag(e, nodeId) {
@@ -1514,6 +2227,8 @@
                 nodeName = subtype === 'alert' ? '告警输出' : '录像输出';
             } else if (type === 'condition') {
                 nodeName = subtype === 'detection' ? '检测条件' : '条件分支';
+            } else if (type === 'roi') {
+                nodeName = '热区绘制';
             } else {
                 nodeName = '未命名';
             }
