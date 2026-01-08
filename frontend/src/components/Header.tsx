@@ -113,43 +113,77 @@ const Header: React.FC = () => {
 
       {/* 导航菜单 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        {navItems.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: isActive(item.path) ? '#000' : '#374151',
-              textDecoration: 'none',
-              position: 'relative',
-              transition: 'all 0.2s ease',
-              borderRadius: '4px',
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive(item.path)) {
-                e.currentTarget.style.background = '#f3f4f6';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            {React.cloneElement(item.icon, { style: { marginRight: '8px' } })}
-            {item.label}
-            {isActive(item.path) && (
-              <div style={{
-                position: 'absolute',
-                bottom: '0',
-                left: '0',
-                right: '0',
-                height: '3px',
-                background: '#000',
-              }}></div>
-            )}
-          </Link>
-        ))}
+        {/* 仪表盘 */}
+        <Link
+          to="/dashboard"
+          style={{
+            padding: '8px 16px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: isActive('/dashboard') ? '#000' : '#374151',
+            textDecoration: 'none',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+            borderRadius: '4px',
+          }}
+          onMouseEnter={(e) => {
+            if (!isActive('/dashboard')) {
+              e.currentTarget.style.background = '#f3f4f6';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <HomeOutlined style={{ marginRight: '8px' }} />
+          仪表盘
+          {isActive('/dashboard') && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0',
+              left: '0',
+              right: '0',
+              height: '3px',
+              background: '#000',
+            }}></div>
+          )}
+        </Link>
+
+        {/* 视频源 */}
+        <Link
+          to="/video-sources"
+          style={{
+            padding: '8px 16px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: isActive('/video-sources') ? '#000' : '#374151',
+            textDecoration: 'none',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+            borderRadius: '4px',
+          }}
+          onMouseEnter={(e) => {
+            if (!isActive('/video-sources')) {
+              e.currentTarget.style.background = '#f3f4f6';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <VideoCameraOutlined style={{ marginRight: '8px' }} />
+          视频源
+          {isActive('/video-sources') && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0',
+              left: '0',
+              right: '0',
+              height: '3px',
+              background: '#000',
+            }}></div>
+          )}
+        </Link>
 
         {/* 算法管理下拉菜单 */}
         <Dropdown menu={{ items: menuItems }} placement="bottomLeft">
@@ -178,8 +212,90 @@ const Header: React.FC = () => {
             <ExperimentOutlined style={{ marginRight: '8px' }} />
             算法管理
             <DownOutlined style={{ marginLeft: '4px', fontSize: '12px' }} />
+            {isAlgorithmActive && (
+              <div style={{
+                position: 'absolute',
+                bottom: '0',
+                left: '0',
+                right: '0',
+                height: '3px',
+                background: '#000',
+              }}></div>
+            )}
           </Link>
         </Dropdown>
+
+        {/* 算法编排 */}
+        <Link
+          to="/workflows"
+          style={{
+            padding: '8px 16px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: isActive('/workflows') ? '#000' : '#374151',
+            textDecoration: 'none',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+            borderRadius: '4px',
+          }}
+          onMouseEnter={(e) => {
+            if (!isActive('/workflows')) {
+              e.currentTarget.style.background = '#f3f4f6';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <ApartmentOutlined style={{ marginRight: '8px' }} />
+          算法编排
+          {isActive('/workflows') && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0',
+              left: '0',
+              right: '0',
+              height: '3px',
+              background: '#000',
+            }}></div>
+          )}
+        </Link>
+
+        {/* 告警记录 */}
+        <Link
+          to="/alerts"
+          style={{
+            padding: '8px 16px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: isActive('/alerts') ? '#000' : '#374151',
+            textDecoration: 'none',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+            borderRadius: '4px',
+          }}
+          onMouseEnter={(e) => {
+            if (!isActive('/alerts')) {
+              e.currentTarget.style.background = '#f3f4f6';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <BellOutlined style={{ marginRight: '8px' }} />
+          告警记录
+          {isActive('/alerts') && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0',
+              left: '0',
+              right: '0',
+              height: '3px',
+              background: '#000',
+            }}></div>
+          )}
+        </Link>
       </div>
 
       {/* 右侧操作 */}

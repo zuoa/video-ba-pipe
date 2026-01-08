@@ -102,7 +102,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       } else if (nodeType === 'algorithm') {
         formValues.confidence = node.data.confidence || 0.5;
 
-        // 回显窗口检测配置
         const windowDetection = nodeConfig.window_detection || {};
         formValues.windowEnable = windowDetection.enable || false;
         formValues.windowSize = windowDetection.window_size || 30;
@@ -110,6 +109,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.windowThreshold = windowDetection.window_threshold !== undefined
           ? windowDetection.window_threshold
           : 0.3;
+      } else if (nodeType === 'function') {
+        formValues.functionName = node.data.functionName || 'area_ratio';
+        formValues.inputNodeA = node.data.inputNodeA || '';
+        formValues.inputNodeB = node.data.inputNodeB || '';
+        formValues.classFilterA = node.data.classFilterA || '';
+        formValues.classFilterB = node.data.classFilterB || '';
+        formValues.threshold = node.data.threshold || 0.7;
+        formValues.operator = node.data.operator || 'less_than';
       } else if (nodeType === 'condition') {
         formValues.conditionType = node.data.conditionType || 'detection';
         formValues.targetCount = node.data.targetCount || 1;
@@ -177,10 +184,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       if (nodeType === 'algorithm') {
-        // 确保 config 对象存在
         const config = node.data?.config || {};
 
-        // 更新窗口检测配置
         if (values.windowEnable) {
           config.window_detection = {
             enable: true,
@@ -189,18 +194,44 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             window_threshold: values.windowThreshold !== undefined ? values.windowThreshold : 0.3,
           };
         } else {
-          // 如果禁用，删除窗口检测配置
           delete config.window_detection;
         }
 
-        // 将 config 保存到 updatedData
         updatedData.config = config;
 
-        // 移除临时字段
         delete updatedData.windowEnable;
         delete updatedData.windowSize;
         delete updatedData.windowMode;
         delete updatedData.windowThreshold;
+      } else if (nodeType === 'function') {
+        const config = node.data?.config || {};
+        
+        config.function_name = values.functionName;
+        config.input_a = {
+          node_id: values.inputNodeA,
+          class_filter: values.classFilterA ? values.classFilterA.split(',').map((n: string) => parseInt(n.trim())) : []
+        };
+        config.input_b = {
+          node_id: values.inputNodeB,
+          class_filter: values.classFilterB ? values.classFilterB.split(',').map((n: string) => parseInt(n.trim())) : []
+        };
+        config.threshold = values.threshold;
+        config.operator = values.operator;
+        
+        updatedData.config = config;
+        updatedData.functionName = values.functionName;
+        updatedData.threshold = values.threshold;
+        
+        const inputNodes = [];
+        if (values.inputNodeA) inputNodes.push(values.inputNodeA);
+        if (values.inputNodeB) inputNodes.push(values.inputNodeB);
+        updatedData.input_nodes = inputNodes;
+        
+        delete updatedData.inputNodeA;
+        delete updatedData.inputNodeB;
+        delete updatedData.classFilterA;
+        delete updatedData.classFilterB;
+        delete updatedData.operator;
       }
 
       console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
@@ -422,6 +453,98 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
 
+      case 'function':
+        return (
+          <>
+            <Form.Item
+              label="计算函数"
+              name="functionName"
+            >
+              <Select>
+                <Option value="area_ratio">面积比</Option>
+                <Option value="height_ratio">高度比</Option>
+                <Option value="width_ratio">宽度比</Option>
+                <Option value="iou_check">IOU检查</Option>
+                <Option value="distance_check">距离检查</Option>
+              </Select>
+            </Form.Item>
+            
+            <div className="form-divider" />
+            
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">输入配置</span>
+              </div>
+              
+              <Form.Item
+                label="输入节点A"
+                name="inputNodeA"
+                rules={[{ required: true, message: '请输入节点ID' }]}
+              >
+                <Input placeholder="如: algo1" />
+              </Form.Item>
+              
+              <Form.Item
+                label="类别过滤A"
+                name="classFilterA"
+              >
+                <Input placeholder="如: 0,1,2 (留空表示全部)" />
+              </Form.Item>
+              
+              <Form.Item
+                label="输入节点B"
+                name="inputNodeB"
+                rules={[{ required: true, message: '请输入节点ID' }]}
+              >
+                <Input placeholder="如: algo2" />
+              </Form.Item>
+              
+              <Form.Item
+                label="类别过滤B"
+                name="classFilterB"
+              >
+                <Input placeholder="如: 5,7 (留空表示全部)" />
+              </Form.Item>
+            </div>
+            
+            <div className="form-divider" />
+            
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">判定条件</span>
+              </div>
+              
+              <Form.Item
+                label="阈值"
+                name="threshold"
+              >
+                <InputNumber
+                  min={0}
+                  max={1000}
+                  step={0.1}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+              
+              <Form.Item
+                label="运算符"
+                name="operator"
+              >
+                <Select>
+                  <Option value="less_than">小于</Option>
+                  <Option value="greater_than">大于</Option>
+                  <Option value="equal">等于</Option>
+                </Select>
+              </Form.Item>
+            </div>
+            
+            <div className="info-box">
+              <InfoCircleOutlined />
+              <span>节点ID可在画布中查看节点属性获取</span>
+            </div>
+          </>
+        );
+      
       case 'roi':
         return (
           <>

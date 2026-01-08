@@ -8,6 +8,7 @@ import {
   BellOutlined,
   PlusOutlined,
   AppstoreOutlined,
+  FunctionOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import './ComponentSidebar.css';
@@ -157,6 +158,42 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       ),
     },
     {
+      key: 'function',
+      label: (
+        <div className="collapse-item-label">
+          <FunctionOutlined />
+          <span className="category-title">函数计算</span>
+        </div>
+      ),
+      children: (
+        <div className="component-list">
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'function',
+              nodeType: 'function',
+              label: '函数计算',
+              description: '多输入计算',
+              icon: <FunctionOutlined />,
+              color: '#722ed1',
+            })}
+            style={{ borderColor: '#722ed1' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#722ed1' }}>
+                <FunctionOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">函数计算</div>
+                <div className="component-description">多输入计算</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
       key: 'roi',
       label: (
         <div className="collapse-item-label">
@@ -238,7 +275,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       </div>
 
       <Collapse
-        defaultActiveKey={['videoSource', 'algorithm', 'output']}
+        defaultActiveKey={['videoSource', 'algorithm', 'function', 'output']}
         items={items}
         className="component-collapse"
         ghost

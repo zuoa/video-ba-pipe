@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from '@umijs/max';
+import { useNavigate, useSearchParams } from '@umijs/max';
 import {
   Steps,
   Button,
@@ -31,8 +31,8 @@ import {
   DeleteOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { getDetectorTemplates, getScripts, getModels, createAlgorithm } from '@/services/api';
-import type { DetectorTemplate, Script } from '@/services/api';
+import { getScripts, getModels, createAlgorithm, getAlgorithms, updateAlgorithm } from '@/services/api';
+import type { Script } from '@/services/api';
 import './index.css';
 
 const { TextArea } = Input;
@@ -70,33 +70,107 @@ interface SelectedDetector {
 
 export default function AlgorithmWizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [templates, setTemplates] = useState<DetectorTemplate[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [models, setModels] = useState<any[]>([]);
   const [selectedDetector, setSelectedDetector] = useState<SelectedDetector | null>(null);
   const [configSchema, setConfigSchema] = useState<ConfigSchema>({});
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
+  const [editingAlgorithm, setEditingAlgorithm] = useState<any>(null);
   const [form] = Form.useForm();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [templatesData, scriptsData, modelsData] = await Promise.all([
-        getDetectorTemplates(),
+      const [scriptsData, modelsData] = await Promise.all([
         getScripts(),
         getModels(),
       ]);
-      setTemplates(templatesData?.templates || []);
       setScripts(scriptsData?.scripts || []);
       setModels(modelsData?.models || []);
+
+      if (editId) {
+        const algorithms = await getAlgorithms();
+        const algorithm = algorithms.find((a: any) => a.id === parseInt(editId));
+        if (algorithm) {
+          setEditingAlgorithm(algorithm);
+          await loadEditData(algorithm);
+        } else {
+          message.error('算法不存在');
+          navigate('/algorithms');
+        }
+      }
     } catch (error) {
       message.error('加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [editId, navigate]);
+
+  const loadEditData = async (algorithm: any) => {
+    const detector = {
+      type: 'script' as const,
+      id: null,
+      name: algorithm.name,
+      description: algorithm.description || '',
+      scriptPath: algorithm.script_path,
+    };
+    
+    setSelectedDetector(detector);
+
+    if (detector.scriptPath) {
+      try {
+        const response = await fetch(`/api/scripts/config-schema/${encodeURIComponent(detector.scriptPath)}`);
+        const data = await response.json();
+        if (data.success) {
+          const loadedSchema = data.config_schema || {};
+          setConfigSchema(loadedSchema);
+          
+          form.setFieldsValue({
+            algorithmName: algorithm.name,
+            intervalSeconds: algorithm.interval_seconds || 1,
+            runtimeTimeout: algorithm.runtime_timeout || 30,
+            memoryLimitMb: algorithm.memory_limit_mb || 512,
+            enableWindowCheck: algorithm.enable_window_check || false,
+            windowSize: algorithm.window_size || 30,
+            windowMode: algorithm.window_mode || 'ratio',
+            windowThreshold: algorithm.window_threshold || 0.3,
+            labelName: algorithm.label_name || 'Object',
+          });
+
+          try {
+            const scriptConfig = JSON.parse(algorithm.script_config || '{}');
+            for (const [key, value] of Object.entries(scriptConfig)) {
+              const fieldSchema = loadedSchema[key];
+              if (fieldSchema?.type === 'model_list' && Array.isArray(value)) {
+                const itemIds: string[] = [];
+                value.forEach((item: any, index: number) => {
+                  const itemId = `model_item_${key}_${Date.now()}_${index}`;
+                  itemIds.push(itemId);
+                  for (const [subKey, subValue] of Object.entries(item)) {
+                    form.setFieldValue(`model_${key}_${itemId}_${subKey}`, subValue);
+                  }
+                });
+                setModelItems(prev => ({ ...prev, [key]: itemIds }));
+              } else if (fieldSchema?.type === 'int_list' && Array.isArray(value)) {
+                form.setFieldValue(`config_${key}`, JSON.stringify(value));
+              } else {
+                form.setFieldValue(`config_${key}`, value);
+              }
+            }
+          } catch (error) {
+            console.error('解析脚本配置失败:', error);
+          }
+        }
+      } catch (error) {
+        console.error('加载配置模式失败:', error);
+        setConfigSchema({});
+      }
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -107,7 +181,7 @@ export default function AlgorithmWizard() {
 
     if (detector.scriptPath) {
       try {
-        const response = await fetch(`/api/detector-templates/script-config/${encodeURIComponent(detector.scriptPath)}`);
+        const response = await fetch(`/api/scripts/config-schema/${encodeURIComponent(detector.scriptPath)}`);
         const data = await response.json();
         if (data.success) {
           setConfigSchema(data.config_schema || {});
@@ -152,7 +226,6 @@ export default function AlgorithmWizard() {
         plugin_module: 'script_algorithm',
         script_type: 'script',
         script_config: JSON.stringify(scriptConfig),
-        detector_template_id: selectedDetector!.type === 'template' ? selectedDetector!.id : null,
         interval_seconds: values.intervalSeconds,
         runtime_timeout: values.runtimeTimeout,
         memory_limit_mb: values.memoryLimitMb,
@@ -166,11 +239,16 @@ export default function AlgorithmWizard() {
         ext_config_json: JSON.stringify({}),
       };
 
-      await createAlgorithm(data);
-      message.success('算法创建成功！');
+      if (editingAlgorithm) {
+        await updateAlgorithm(editingAlgorithm.id, data);
+        message.success('算法更新成功！');
+      } else {
+        await createAlgorithm(data);
+        message.success('算法创建成功！');
+      }
       navigate('/algorithms');
     } catch (error) {
-      message.error('创建失败');
+      message.error(editingAlgorithm ? '更新失败' : '创建失败');
     }
   };
 
@@ -205,19 +283,19 @@ export default function AlgorithmWizard() {
       } else {
         const value = form.getFieldValue(`config_${key}`);
         if (field.type === 'number' || field.type === 'float' || field.type === 'int') {
-          config[key] = value !== undefined ? parseFloat(value) : field.default;
+          config[key] = value !== undefined ? parseFloat(value) : (field.default !== undefined ? field.default : null);
         } else if (field.type === 'model_select') {
-          config[key] = value ? parseInt(value) : null;
+          config[key] = value !== undefined && value !== null ? parseInt(value) : null;
         } else if (field.type === 'boolean') {
-          config[key] = value || false;
+          config[key] = value !== undefined ? value : (field.default !== undefined ? field.default : false);
         } else if (field.type === 'int_list') {
           try {
-            config[key] = value ? JSON.parse(value) : [];
+            config[key] = value ? JSON.parse(value) : (field.default !== undefined ? field.default : []);
           } catch (e) {
-            config[key] = [];
+            config[key] = field.default !== undefined ? field.default : [];
           }
         } else {
-          config[key] = value || field.default || '';
+          config[key] = value !== undefined && value !== '' ? value : (field.default !== undefined ? field.default : '');
         }
       }
     }
@@ -246,58 +324,27 @@ export default function AlgorithmWizard() {
 
   const renderStep1 = () => {
     return (
-      <div className="wizard-step-content">
-        <div className="detector-section">
-          <h3 className="section-title">
-            <ApiOutlined className="title-icon" />
-            系统模板（推荐）
-          </h3>
-          <Row gutter={[12, 12]}>
-            {templates.filter(t => t.is_system).map(template => (
-              <Col key={template.id} xs={24} sm={12} lg={8} xl={6}>
-                <Card
-                  hoverable
-                  className={`detector-card ${selectedDetector?.id === template.id ? 'selected' : ''}`}
-                  onClick={() => handleSelectDetector({
-                    type: 'template',
-                    id: template.id,
-                    name: template.name,
-                    description: template.description || '',
-                    scriptPath: template.script_path,
-                  })}
-                >
-                  <ApiOutlined className="card-icon" />
-                  <div className="detector-card-content">
-                    <h4 className="card-title">{template.name}</h4>
-                    <p className="card-description">{template.description}</p>
-                    {template.tags_list && template.tags_list.length > 0 && (
-                      <div className="card-tags">
-                        {template.tags_list.map(tag => (
-                          <span key={tag} className="tag">{tag}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-        </div>
-
-        <Divider />
-
+      <>
         <div className="detector-section">
           <h3 className="section-title">
             <CodeOutlined className="title-icon" />
-            我的脚本
+            选择检测脚本
           </h3>
           <Row gutter={[12, 12]}>
             {scripts.length === 0 ? (
               <Col span={24}>
                 <Alert
-                  message="暂无自定义脚本"
-                  description="请先在脚本管理页面上传脚本"
-                  type="info"
+                  message="暂无检测脚本"
+                  description={
+                    <div>
+                      <p>请先上传检测脚本。脚本需要包含：</p>
+                      <ul style={{ marginLeft: 20, marginTop: 8 }}>
+                        <li>SCRIPT_METADATA 元数据（name、description、config_schema等）</li>
+                        <li>process(frame, config) 函数</li>
+                      </ul>
+                    </div>
+                  }
+                  type="warning"
                   showIcon
                 />
               </Col>
@@ -325,24 +372,24 @@ export default function AlgorithmWizard() {
               ))
             )}
           </Row>
-        </div>
 
-        <div className="upload-script-section">
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => window.open('/scripts', '_blank')}
-            className="upload-script-btn"
-          >
-            上传新脚本
-          </Button>
+          <div className="upload-script-section">
+            <Button
+              icon={<UploadOutlined />}
+              onClick={() => window.open('/scripts', '_blank')}
+              className="upload-script-btn"
+            >
+              管理脚本
+            </Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   };
 
   const renderStep2 = () => {
     return (
-      <div className="wizard-step-content">
+      <>
         <Alert
           message={
             <Space>
@@ -366,29 +413,32 @@ export default function AlgorithmWizard() {
               showIcon
             />
           ) : (
-            Object.entries(configSchema).map(([key, field]) => (
-              <Form.Item
-                key={key}
-                label={
-                  <Space>
-                    {field.label || key}
-                    {field.required && <span className="required">*</span>}
-                  </Space>
-                }
-                extra={field.description}
-              >
-                {renderConfigField(key, field)}
-              </Form.Item>
-            ))
+            <Form form={form} layout="vertical">
+              {Object.entries(configSchema).map(([key, field]) => (
+                <Form.Item
+                  key={key}
+                  name={field.type === 'model_list' ? undefined : `config_${key}`}
+                  label={
+                    <Space>
+                      {field.label || key}
+                      {field.required && <span className="required">*</span>}
+                    </Space>
+                  }
+                  extra={field.description}
+                  rules={field.required && field.type !== 'model_list' ? [{ required: true, message: `请填写${field.label || key}` }] : []}
+                  initialValue={field.type !== 'model_list' ? field.default : undefined}
+                >
+                  {renderConfigField(key, field)}
+                </Form.Item>
+              ))}
+            </Form>
           )}
         </div>
-      </div>
+      </>
     );
   };
 
   const renderConfigField = (key: string, field: any) => {
-    const defaultValue = field.default !== undefined ? field.default : '';
-
     switch (field.type) {
       case 'model_list':
         return (
@@ -426,7 +476,6 @@ export default function AlgorithmWizard() {
       case 'model_select':
         return (
           <Select
-            id={`config_${key}`}
             placeholder="选择模型..."
             allowClear
           >
@@ -450,8 +499,6 @@ export default function AlgorithmWizard() {
       case 'int':
         return (
           <InputNumber
-            id={`config_${key}`}
-            defaultValue={defaultValue}
             min={field.min}
             max={field.max}
             step={field.step || (field.type === 'int' ? 1 : 0.01)}
@@ -461,12 +508,12 @@ export default function AlgorithmWizard() {
 
       case 'boolean':
         return (
-          <Switch id={`config_${key}`} defaultChecked={defaultValue} />
+          <Switch />
         );
 
       case 'select':
         return (
-          <Select id={`config_${key}`} defaultValue={defaultValue}>
+          <Select>
             {field.options?.map((opt: any) => {
               const value = typeof opt === 'object' ? opt.value : opt;
               const label = typeof opt === 'object' ? opt.label : opt;
@@ -479,8 +526,6 @@ export default function AlgorithmWizard() {
         return (
           <Input
             type="color"
-            id={`config_${key}`}
-            defaultValue={defaultValue || '#FF0000'}
             style={{ width: 100 }}
           />
         );
@@ -488,8 +533,6 @@ export default function AlgorithmWizard() {
       case 'int_list':
         return (
           <Input
-            id={`config_${key}`}
-            defaultValue={defaultValue ? JSON.stringify(defaultValue) : '[]'}
             placeholder={field.placeholder || '例如: [0, 1, 2]'}
           />
         );
@@ -497,8 +540,6 @@ export default function AlgorithmWizard() {
       default:
         return (
           <Input
-            id={`config_${key}`}
-            defaultValue={defaultValue}
             placeholder={field.placeholder}
           />
         );
@@ -514,7 +555,7 @@ export default function AlgorithmWizard() {
         <Form.Item
           key={fieldId}
           label={subField.label || subKey}
-          style={{ marginBottom: 8 }}
+          style={{ marginBottom: 12 }}
         >
           {subField.type === 'model_select' ? (
             <Select
@@ -556,8 +597,7 @@ export default function AlgorithmWizard() {
 
   const renderStep3 = () => {
     return (
-      <div className="wizard-step-content">
-        <Form form={form} layout="vertical">
+      <Form form={form} layout="vertical">
           <Card title={<Space><InfoCircleOutlined />基础信息</Space>} className="config-card">
             <Row gutter={16}>
               <Col span={12}>
@@ -706,7 +746,6 @@ export default function AlgorithmWizard() {
             </Row>
           </Card>
         </Form>
-      </div>
     );
   };
 
@@ -729,61 +768,57 @@ export default function AlgorithmWizard() {
   ];
 
   return (
-    <div className="algorithm-wizard-page">
-      <Spin spinning={loading}>
-        <div className="wizard-container">
-          <div className="wizard-header">
-            <h1>算法配置向导</h1>
-            <Button onClick={handleCancel}>返回</Button>
-          </div>
-
-          <Steps
-            current={currentStep}
-            items={steps.map((step, index) => ({
-              title: step.title,
-              description: step.description,
-              icon: index < currentStep ? <CheckOutlined /> : step.icon,
-            }))}
-            className="wizard-steps"
-          />
-
-          <div className="wizard-content">
-            {currentStep === 0 && renderStep1()}
-            {currentStep === 1 && renderStep2()}
-            {currentStep === 2 && renderStep3()}
-          </div>
-
-          <div className="wizard-footer">
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={handlePrev}
-              disabled={currentStep === 0}
-            >
-              上一步
-            </Button>
-            <Space>
-              {currentStep < 2 ? (
-                <Button
-                  type="primary"
-                  icon={<ArrowRightOutlined />}
-                  onClick={handleNext}
-                >
-                  下一步
-                </Button>
-              ) : (
-                <Button
-                  type="primary"
-                  icon={<CheckOutlined />}
-                  onClick={handleSubmit}
-                >
-                  创建算法
-                </Button>
-              )}
-            </Space>
-          </div>
+    <Spin spinning={loading}>
+      <div className="algorithm-wizard-page">
+        <div className="wizard-header">
+          <h1>{editingAlgorithm ? '编辑算法' : '创建算法'}</h1>
+          <Button onClick={handleCancel}>返回</Button>
         </div>
-      </Spin>
-    </div>
+
+        <Steps
+          current={currentStep}
+          items={steps.map((step, index) => ({
+            title: step.title,
+            description: step.description,
+            icon: index < currentStep ? <CheckOutlined /> : step.icon,
+          }))}
+          className="wizard-steps"
+        />
+
+        <div className="wizard-footer">
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={handlePrev}
+            disabled={currentStep === 0}
+          >
+            上一步
+          </Button>
+          <Space>
+            {currentStep < 2 ? (
+              <Button
+                type="primary"
+                icon={<ArrowRightOutlined />}
+                onClick={handleNext}
+              >
+                下一步
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                onClick={handleSubmit}
+              >
+                {editingAlgorithm ? '保存修改' : '创建算法'}
+              </Button>
+            )}
+          </Space>
+        </div>
+
+        {currentStep === 0 && renderStep1()}
+        {currentStep === 1 && renderStep2()}
+        {currentStep === 2 && renderStep3()}
+      </div>
+    </Spin>
   );
 }
 

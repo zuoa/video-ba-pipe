@@ -5,8 +5,6 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   ExperimentOutlined,
-  TagOutlined,
-  ClockCircleOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -15,19 +13,21 @@ import './AlgorithmTable.css';
 export interface Algorithm {
   id: number;
   name: string;
-  label_name: string;
-  interval_seconds: number;
-  plugin_module?: string;
-  script_path?: string;
-  entry_function?: string;
-  enable_window_check: boolean;
+  description?: string;
+  script_path: string;
+  script_config?: string;
+  enabled_hooks?: string;
+  label_name?: string;
+  label_color?: string;
+  interval_seconds?: number;
+  runtime_timeout?: number;
+  memory_limit_mb?: number;
+  enable_window_check?: boolean;
   window_size?: number;
   window_mode?: string;
   window_threshold?: number;
-  runtime_timeout?: number;
-  memory_limit_mb?: number;
-  ext_config_json?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface AlgorithmTableProps {
@@ -60,7 +60,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
     {
       title: '算法信息',
       key: 'algorithmInfo',
-      width: 280,
+      width: 360,
       render: (_: any, record: Algorithm) => (
         <div className="algorithm-info-cell">
           <div className="algorithm-icon">
@@ -68,86 +68,28 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
           </div>
           <div className="algorithm-content">
             <div className="algorithm-name">{record.name}</div>
+            {record.description && (
+              <div className="algorithm-description">{record.description}</div>
+            )}
             <div className="algorithm-meta">
-              {record.script_path ? (
-                <Tooltip title={record.script_path}>
-                  <code className="algorithm-code">
-                    <ApiOutlined />
-                    {record.script_path}
-                  </code>
-                </Tooltip>
-              ) : record.plugin_module ? (
-                <Tooltip title={record.plugin_module}>
-                  <code className="algorithm-code">
-                    <ApiOutlined />
-                    {record.plugin_module}
-                  </code>
-                </Tooltip>
-              ) : (
-                <span className="algorithm-code-empty">未配置</span>
-              )}
+              <Tooltip title={record.script_path}>
+                <code className="algorithm-code">
+                  <ApiOutlined />
+                  {record.script_path}
+                </code>
+              </Tooltip>
             </div>
           </div>
         </div>
       ),
     },
     {
-      title: '标签配置',
-      key: 'labelConfig',
-      width: 160,
+      title: '创建时间',
+      key: 'createdAt',
+      width: 180,
       render: (_: any, record: Algorithm) => (
-        <div className="label-config-cell">
-          <Tag icon={<TagOutlined />} color="blue" className="label-tag">
-            {record.label_name || 'Object'}
-          </Tag>
-        </div>
-      ),
-    },
-    {
-      title: '检测间隔',
-      key: 'interval',
-      width: 120,
-      render: (_: any, record: Algorithm) => (
-        <div className="interval-cell">
-          <ClockCircleOutlined className="interval-icon" />
-          <span className="interval-value">{record.interval_seconds}s</span>
-        </div>
-      ),
-    },
-    {
-      title: '窗口检测',
-      key: 'windowCheck',
-      width: 140,
-      render: (_: any, record: Algorithm) => (
-        <div className="window-check-cell">
-          {record.enable_window_check ? (
-            <Tag color="green" className="window-enabled-tag">
-              <Tooltip title={`窗口: ${record.window_size}s | 模式: ${record.window_mode} | 阈值: ${record.window_threshold}`}>
-                已启用
-              </Tooltip>
-            </Tag>
-          ) : (
-            <Tag color="default" className="window-disabled-tag">
-              未启用
-            </Tag>
-          )}
-        </div>
-      ),
-    },
-    {
-      title: '资源配置',
-      key: 'resources',
-      width: 160,
-      render: (_: any, record: Algorithm) => (
-        <div className="resources-cell">
-          <div className="resource-item">
-            <span className="resource-label">超时:</span>
-            <span className="resource-value">{record.runtime_timeout || 30}s</span>
-          </div>
-          <div className="resource-item">
-            <span className="resource-label">内存:</span>
-            <span className="resource-value">{record.memory_limit_mb || 512}MB</span>
-          </div>
+        <div className="date-cell">
+          {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}
         </div>
       ),
     },

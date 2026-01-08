@@ -57,23 +57,13 @@ def get_algorithms():
         algo_dict = {
             'id': a.id,
             'name': a.name,
+            'description': a.description,
             'script_path': a.script_path,
             'script_config': a.script_config,
-            'detector_template_id': a.detector_template_id,
-            'interval_seconds': a.interval_seconds,
-            'runtime_timeout': a.runtime_timeout,
-            'memory_limit_mb': a.memory_limit_mb,
-            'label_name': a.label_name,
-            'label_color': a.label_color,
-            'enable_window_check': a.enable_window_check,
-            'window_size': a.window_size,
-            'window_mode': a.window_mode,
-            'window_threshold': a.window_threshold
+            'enabled_hooks': a.enabled_hooks,
+            'created_at': a.created_at.isoformat() if a.created_at else None,
+            'updated_at': a.updated_at.isoformat() if a.updated_at else None
         }
-        # 安全地添加可选字段
-        algo_dict['plugin_module'] = getattr(a, 'plugin_module', 'script_algorithm')
-        algo_dict['ext_config_json'] = getattr(a, 'ext_config_json', '{}')
-        algo_dict['entry_function'] = getattr(a, 'entry_function', 'process')
         result.append(algo_dict)
     return jsonify(result)
 
@@ -84,23 +74,13 @@ def get_algorithm(id):
         algo_dict = {
             'id': algorithm.id,
             'name': algorithm.name,
+            'description': algorithm.description,
             'script_path': algorithm.script_path,
             'script_config': algorithm.script_config,
-            'detector_template_id': algorithm.detector_template_id,
-            'interval_seconds': algorithm.interval_seconds,
-            'runtime_timeout': algorithm.runtime_timeout,
-            'memory_limit_mb': algorithm.memory_limit_mb,
-            'label_name': algorithm.label_name,
-            'label_color': algorithm.label_color,
-            'enable_window_check': algorithm.enable_window_check,
-            'window_size': algorithm.window_size,
-            'window_mode': algorithm.window_mode,
-            'window_threshold': algorithm.window_threshold
+            'enabled_hooks': algorithm.enabled_hooks,
+            'created_at': algorithm.created_at.isoformat() if algorithm.created_at else None,
+            'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None
         }
-        # 安全地添加可选字段
-        algo_dict['plugin_module'] = getattr(algorithm, 'plugin_module', 'script_algorithm')
-        algo_dict['ext_config_json'] = getattr(algorithm, 'ext_config_json', '{}')
-        algo_dict['entry_function'] = getattr(algorithm, 'entry_function', 'process')
         return jsonify(algo_dict)
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
@@ -109,25 +89,23 @@ def get_algorithm(id):
 def create_algorithm():
     data = request.json
     try:
+        from datetime import datetime
+        
         # 验证必填字段
+        if not data.get('name'):
+            return jsonify({'error': '缺少必填字段: name'}), 400
         if not data.get('script_path'):
             return jsonify({'error': '缺少必填字段: script_path'}), 400
         
         # 创建算法
         algorithm = Algorithm.create(
             name=data['name'],
+            description=data.get('description'),
             script_path=data['script_path'],
             script_config=data.get('script_config', '{}'),
-            detector_template_id=data.get('detector_template_id'),
-            interval_seconds=data.get('interval_seconds', 1),
-            runtime_timeout=data.get('runtime_timeout', 30),
-            memory_limit_mb=data.get('memory_limit_mb', 512),
-            enable_window_check=data.get('enable_window_check', False),
-            window_size=data.get('window_size', 30),
-            window_mode=data.get('window_mode', 'ratio'),
-            window_threshold=data.get('window_threshold', 0.3),
-            label_name=data.get('label_name', 'Object'),
-            label_color=data.get('label_color', '#FF0000')
+            enabled_hooks=data.get('enabled_hooks'),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
         )
         
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
@@ -137,37 +115,24 @@ def create_algorithm():
 @app.route('/api/algorithms/<int:id>', methods=['PUT'])
 def update_algorithm(id):
     try:
+        from datetime import datetime
+        
         algorithm = Algorithm.get_by_id(id)
         data = request.json
 
-        import json
-
-        # 更新基本字段
-        algorithm.name = data.get('name', algorithm.name)
-        algorithm.interval_seconds = data.get('interval_seconds', algorithm.interval_seconds)
-        algorithm.label_name = data.get('label_name', algorithm.label_name)
-        algorithm.enable_window_check = data.get('enable_window_check', algorithm.enable_window_check)
-        algorithm.window_size = data.get('window_size', algorithm.window_size)
-        algorithm.window_mode = data.get('window_mode', algorithm.window_mode)
-        algorithm.window_threshold = data.get('window_threshold', algorithm.window_threshold)
-
-        # 脚本相关字段
+        # 更新字段
+        if 'name' in data:
+            algorithm.name = data['name']
+        if 'description' in data:
+            algorithm.description = data['description']
         if 'script_path' in data:
             algorithm.script_path = data['script_path']
-        if 'runtime_timeout' in data:
-            algorithm.runtime_timeout = data['runtime_timeout']
-        if 'memory_limit_mb' in data:
-            algorithm.memory_limit_mb = data['memory_limit_mb']
-
-        # 处理扩展字段（如果数据库中有这些字段就更新，否则跳过）
-        ext_fields = ['plugin_module', 'ext_config_json', 'model_json', 'model_ids', 'script_type', 'entry_function']
-        for field in ext_fields:
-            if field in data and hasattr(algorithm, field):
-                try:
-                    setattr(algorithm, field, data[field])
-                except Exception as e:
-                    app.logger.warning(f"无法更新字段 {field}: {e}")
-
+        if 'script_config' in data:
+            algorithm.script_config = data['script_config']
+        if 'enabled_hooks' in data:
+            algorithm.enabled_hooks = data['enabled_hooks']
+        
+        algorithm.updated_at = datetime.now()
         algorithm.save()
 
         return jsonify({'message': 'Algorithm updated'})
@@ -181,19 +146,6 @@ def update_algorithm(id):
 def delete_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
-        
-        # 减少关联模型的使用计数
-        try:
-            for model_id in algorithm.model_id_list:
-                try:
-                    model = MLModel.get_by_id(model_id)
-                    model.decrement_usage()
-                except MLModel.DoesNotExist:
-                    app.logger.warning(f"模型 {model_id} 不存在")
-        except Exception as e:
-            app.logger.error(f"减少模型使用计数失败: {e}")
-        
-        # 使用 recursive=True 确保级联删除相关记录
         algorithm.delete_instance(recursive=True)
         return jsonify({'message': 'Algorithm deleted'})
     except Algorithm.DoesNotExist:
@@ -256,25 +208,25 @@ def test_algorithm():
 
             # 使用统一的脚本算法类
             from app.plugins.script_algorithm import ScriptAlgorithm
-            
+
             # 准备算法配置
             script_config = algorithm.config_dict  # 从 script_config 字段解析
-            
+
             full_config = {
                 "id": algorithm.id,
                 "name": algorithm.name,
-                "label_name": algorithm.label_name,
-                "label_color": algorithm.label_color,
-                "interval_seconds": algorithm.interval_seconds,
+                "label_name": getattr(algorithm, 'label_name', None) or script_config.get('label_name', 'Object'),
+                "label_color": getattr(algorithm, 'label_color', None) or script_config.get('label_color', '#FF0000'),
+                "interval_seconds": getattr(algorithm, 'interval_seconds', None) or script_config.get('interval_seconds', 1),
                 "source_id": 0,  # 测试模式，使用虚拟视频源ID
-                
+
                 # 脚本执行相关配置
                 "script_path": algorithm.script_path,
                 "entry_function": 'process',
-                "runtime_timeout": algorithm.runtime_timeout,
-                "memory_limit_mb": algorithm.memory_limit_mb,
+                "runtime_timeout": getattr(algorithm, 'runtime_timeout', None) or script_config.get('runtime_timeout', 30),
+                "memory_limit_mb": getattr(algorithm, 'memory_limit_mb', None) or script_config.get('memory_limit_mb', 512),
             }
-            
+
             # 合并脚本配置
             full_config.update(script_config)
             
@@ -1088,8 +1040,6 @@ except ImportError as e:
 
 # ========== 注册检测器模板API ==========
 try:
-    from app.web.api.detector_templates import register_detector_templates_api
-    register_detector_templates_api(app)
     app.logger.info("检测器模板API已注册")
 except ImportError as e:
     app.logger.warning(f"检测器模板API注册失败: {e}")

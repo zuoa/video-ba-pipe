@@ -503,6 +503,33 @@ def rollback_script(algorithm_id):
         }), 500
 
 
+@scripts_bp.route('/config-schema/<path:script_path>', methods=['GET'])
+def get_script_config_schema(script_path):
+    """获取脚本的配置模式"""
+    try:
+        loader = get_script_loader()
+        metadata = loader.get_script_metadata(script_path)
+        
+        if not metadata:
+            return jsonify({
+                'success': False,
+                'error': '无法读取脚本元数据'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'config_schema': metadata.get('config_schema', {}),
+            'metadata': metadata
+        })
+    
+    except Exception as e:
+        logger.error(f"获取脚本配置模式失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @scripts_bp.route('/templates', methods=['GET'])
 def get_templates():
     """获取脚本模板列表"""

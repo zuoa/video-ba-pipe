@@ -2,7 +2,7 @@ import json
 
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
-    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel, DetectorTemplate,
+    ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, User
 )
 
@@ -18,7 +18,6 @@ def setup_database():
         VideoSource,
         Alert,
         # 脚本支持相关表
-        DetectorTemplate,
         ScriptVersion,
         Hook,
         AlgorithmHook,

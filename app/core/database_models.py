@@ -27,29 +27,17 @@ class BaseModel(pw.Model):
 
 class Algorithm(BaseModel):
     name = pw.CharField(unique=True)
-    
+    description = pw.TextField(null=True)
+
     # === 脚本配置 ===
-    script_path = pw.TextField()  # 脚本路径（必需）
-    script_config = pw.TextField(default='{}')  # 脚本配置JSON（传给init()）
-    detector_template_id = pw.IntegerField(null=True)  # 关联的检测器模板ID（可选）
-    
-    # === 执行配置 ===
-    interval_seconds = pw.DoubleField(default=1)
-    runtime_timeout = pw.IntegerField(default=30)  # 运行超时（秒）
-    memory_limit_mb = pw.IntegerField(default=512)  # 内存限制（MB）
-    
-    # === 时间窗口检测配置 ===
-    enable_window_check = pw.BooleanField(default=False)
-    window_size = pw.IntegerField(default=30)  # 时间窗口大小（秒）
-    window_mode = pw.CharField(default='ratio')  # 预警模式: 'count', 'ratio', 'consecutive'
-    window_threshold = pw.FloatField(default=0.3)  # 预警阈值
-    
-    # === UI配置 ===
-    label_name = pw.CharField(default='Object')
-    label_color = pw.CharField(default='#FF0000')
-    
+    script_path = pw.TextField()
+    script_config = pw.TextField(default='{}')
+
     # === Hook配置 ===
-    enabled_hooks = pw.TextField(null=True)  # 启用的Hook列表（JSON）
+    enabled_hooks = pw.TextField(null=True)
+
+    created_at = pw.DateTimeField(null=True)
+    updated_at = pw.DateTimeField(null=True)
 
     @property
     def config_dict(self):
@@ -244,51 +232,6 @@ class ScriptExecutionLog(BaseModel):
     executed_at = pw.DateTimeField()
 
 
-# ==================== 检测器模板表 ====================
-
-class DetectorTemplate(BaseModel):
-    """检测器模板 - 预设配置"""
-    id = pw.AutoField()
-    name = pw.CharField(unique=True)            # "人员检测-高精度"
-    description = pw.TextField(null=True)       # 描述
-    script_path = pw.TextField()                # 脚本路径（相对于USER_SCRIPTS_ROOT）
-    config_preset = pw.TextField(default='{}')  # 预设配置（JSON）
-    category = pw.CharField(default='detection') # 类别：detection/tracking/classification/custom
-    tags = pw.TextField(default='[]')           # 标签（JSON数组）
-    is_system = pw.BooleanField(default=False)  # 是否系统模板
-    is_enabled = pw.BooleanField(default=True)  # 是否启用
-    icon = pw.CharField(null=True)              # 图标（emoji或class名）
-    
-    created_at = pw.DateTimeField()
-    updated_at = pw.DateTimeField()
-    created_by = pw.CharField(default='system')
-    
-    # 统计信息
-    usage_count = pw.IntegerField(default=0)    # 使用次数
-
-    class Meta:
-        table_name = 'detector_templates'
-    
-    @property
-    def config_dict(self):
-        """获取解析后的配置"""
-        try:
-            return json.loads(self.config_preset) if self.config_preset else {}
-        except:
-            return {}
-    
-    @property
-    def tags_list(self):
-        """获取解析后的标签列表"""
-        try:
-            return json.loads(self.tags) if self.tags else []
-        except:
-            return []
-    
-    def increment_usage(self):
-        """增加使用计数"""
-        self.usage_count += 1
-        self.save()
 
 
 # ==================== 模型管理相关表 ====================

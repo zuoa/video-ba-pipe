@@ -9,6 +9,7 @@ from app.core.algorithm import BaseAlgorithm
 from app.core.script_loader import get_script_loader, ScriptLoadError
 from app.core.resource_limiter import get_script_executor
 from app.core.hook_manager import get_hook_manager
+from app.core.model_resolver import get_model_resolver
 
 
 class ScriptAlgorithm(BaseAlgorithm):
@@ -45,9 +46,13 @@ class ScriptAlgorithm(BaseAlgorithm):
 
             logger.info(f"[{self.name}] 脚本加载成功: {metadata.get('name', 'unknown')} v{metadata.get('version', '1.0')}")
 
+            # 解析模型引用（将 name 转换为 path）
+            resolver = get_model_resolver()
+            resolved_config = resolver.resolve_models(self.config)
+
             # 如果脚本有init函数，调用它（传递解析后的config）
             if hasattr(self.script_module, 'init'):
-                self.script_state = self.script_module.init(self.config)
+                self.script_state = self.script_module.init(resolved_config)
                 logger.info(f"[{self.name}] 脚本init函数已调用")
             else:
                 self.script_state = None
@@ -71,13 +76,14 @@ class ScriptAlgorithm(BaseAlgorithm):
         # 算法ID（从config获取，用于Hook）
         self.algorithm_id = self.config.get('id')
 
-    def process(self, frame: np.ndarray, roi_regions: list = None) -> dict:
+    def process(self, frame: np.ndarray, roi_regions: list = None, upstream_results: dict = None) -> dict:
         """
         处理帧（执行脚本）
 
         Args:
             frame: RGB格式的视频帧
             roi_regions: ROI热区配置
+            upstream_results: 上游节点的执行结果
 
         Returns:
             检测结果字典
@@ -101,15 +107,14 @@ class ScriptAlgorithm(BaseAlgorithm):
 
         # 2. 执行脚本
         try:
-            # 准备参数
             all_args = {
                 'frame': frame,
                 'config': self.config,
                 'roi_regions': roi_regions,
-                'state': self.script_state
+                'state': self.script_state,
+                'upstream_results': upstream_results
             }
 
-            # 检查函数签名，只传递它接受的参数
             sig = inspect.signature(self.process_func)
             script_args = {}
             for param_name in sig.parameters:

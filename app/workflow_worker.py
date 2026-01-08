@@ -31,7 +31,7 @@ from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData
 
 
 class WorkflowExecutor:
@@ -61,7 +61,10 @@ class WorkflowExecutor:
             'output': self._handle_output_node,
             'roi_draw': self._handle_roi_draw_node,
             'alert': self._handle_output_node,
+            'function': self._handle_function_node,
         }
+        
+        self.node_results_cache = {}
         
         self._build_execution_graph()
         self._init_resources()
@@ -73,45 +76,32 @@ class WorkflowExecutor:
         for node_id in self.algorithms.keys():
             self.algo_last_alert_time[node_id] = 0
     
-    def _merge_algorithm_config(self, algorithm, node_config=None):
+    def _get_node_runtime_config(self, node_data_dict):
         """
-        合并算法默认配置和节点配置
-
-        优先级: 节点配置 > 算法配置
+        从节点配置中提取运行时配置
 
         Args:
-            algorithm: Algorithm模型实例
-            node_config: 节点配置字典（可选）
+            node_data_dict: 节点的 data_dict
 
         Returns:
-            合并后的完整配置字典
+            运行时配置字典
         """
-        # 1. 从Algorithm表加载默认配置
-        default_config = {
-            'window_detection': {
-                'enable': algorithm.enable_window_check,
-                'window_size': algorithm.window_size,
-                'window_mode': algorithm.window_mode,
-                'window_threshold': algorithm.window_threshold,
-            },
-            'roi_regions': [],
+        return {
+            'interval_seconds': node_data_dict.get('interval_seconds', 1.0),
+            'runtime_timeout': node_data_dict.get('runtime_timeout', 30),
+            'memory_limit_mb': node_data_dict.get('memory_limit_mb', 512),
+            'window_detection': node_data_dict.get('window_detection', {
+                'enable': False,
+                'window_size': 30,
+                'window_mode': 'ratio',
+                'window_threshold': 0.3
+            }),
+            'label': node_data_dict.get('label', {
+                'name': 'Object',
+                'color': '#FF0000'
+            }),
+            'roi_regions': node_data_dict.get('roi_regions', [])
         }
-
-        # 2. 如果有节点配置，合并覆盖
-        if node_config:
-            # 合并窗口检测配置
-            if 'window_detection' in node_config:
-                node_window_config = node_config['window_detection']
-                # 只覆盖提供的字段
-                for key in ['enable', 'window_size', 'window_mode', 'window_threshold']:
-                    if key in node_window_config:
-                        default_config['window_detection'][key] = node_window_config[key]
-
-            # 合并ROI配置（完全替换）
-            if 'roi_regions' in node_config:
-                default_config['roi_regions'] = node_config['roi_regions']
-
-        return default_config
 
     def _build_execution_graph(self):
         for conn in self.connections:
@@ -165,50 +155,67 @@ class WorkflowExecutor:
             logger.info(f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
         
         for node_id, node in self.nodes.items():
-            if node.node_type == 'algorithm':
+            if node.node_type in ('algorithm', 'function'):
                 algo_id = node.data_id
                 if algo_id:
                     algo = Algorithm.get_by_id(algo_id)
 
-                    # 获取节点配置（如果有的话）
-                    node_config = None
-                    if isinstance(node, AlgorithmNodeData) and node.config:
-                        node_config = node.config
+                    # 从工作流数据中获取完整的 node_data
+                    node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
 
-                    # 合并算法默认配置和节点配置
-                    merged_config = self._merge_algorithm_config(algo, node_config)
+                    # 获取运行时配置（从节点配置）
+                    runtime_config = self._get_node_runtime_config(node_data_dict)
 
-                    # 使用合并后的ROI配置
-                    self.algorithm_roi_configs[node_id] = merged_config['roi_regions']
-                    if merged_config['roi_regions']:
-                        logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 配置了 {len(merged_config['roi_regions'])} 个ROI热区")
+                    # 提取各项配置
+                    interval_seconds = runtime_config['interval_seconds']
+                    runtime_timeout = runtime_config['runtime_timeout']
+                    memory_limit_mb = runtime_config['memory_limit_mb']
+                    window_detection_config = runtime_config['window_detection']
+                    label_config = runtime_config['label']
+                    roi_regions = runtime_config['roi_regions']
+
+                    # 存储ROI配置
+                    self.algorithm_roi_configs[node_id] = roi_regions
+                    if roi_regions:
+                        logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 配置了 {len(roi_regions)} 个ROI热区")
                     else:
                         logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 未配置ROI热区，将使用全画面检测")
 
+                    # 构建完整配置（算法固有配置 + 运行时配置）
                     full_config = {
                         "id": algo_id,
                         "name": algo.name,
-                        "label_name": algo.label_name,
-                        "label_color": algo.label_color,
-                        "interval_seconds": algo.interval_seconds,
                         "source_id": self.video_source.id,
                         "script_path": algo.script_path,
                         "entry_function": 'process',
-                        "runtime_timeout": algo.runtime_timeout,
-                        "memory_limit_mb": algo.memory_limit_mb,
+                        # 运行时配置
+                        "interval_seconds": interval_seconds,
+                        "runtime_timeout": runtime_timeout,
+                        "memory_limit_mb": memory_limit_mb,
+                        "label_name": label_config['name'],
+                        "label_color": label_config['color'],
                     }
+                    # 合并算法固有配置（script_config）
                     full_config.update(algo.config_dict)
 
                     self.algorithms[node_id] = ScriptAlgorithm(full_config)
-                    self.algorithm_datamap[node_id] = model_to_dict(algo)
+                    
+                    # 存储算法元数据（用于后续访问）
+                    self.algorithm_datamap[node_id] = {
+                        'id': algo_id,
+                        'name': algo.name,
+                        'interval_seconds': interval_seconds,
+                        'label_name': label_config['name'],
+                        'label_color': label_config['color']
+                    }
+                    
                     self.algorithm_configs[node_id] = {
                         'algorithm_id': algo_id,
                         'node_id': node_id,
-                        'merged_config': merged_config
+                        'runtime_config': runtime_config
                     }
 
-                    # 加载窗口检测配置（使用合并后的配置）
-                    window_detection_config = merged_config['window_detection']
+                    # 加载窗口检测配置
                     self.window_detector.load_config_with_override(
                         source_id=self.video_source.id,
                         algorithm_id=algo_id,
@@ -216,6 +223,7 @@ class WorkflowExecutor:
                     )
 
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 加载算法: {algo.name}, 脚本路径: {algo.script_path}")
+                    logger.info(f"[WorkflowWorker:{os.getpid()}] 运行时配置: interval={interval_seconds}s, timeout={runtime_timeout}s, memory={memory_limit_mb}MB")
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 窗口检测配置: {window_detection_config}")
         
         logger.info(f"[WorkflowWorker:{os.getpid()}] 算法处理间隔配置:")
@@ -231,6 +239,114 @@ class WorkflowExecutor:
             if next_id in self.nodes:
                 branch_nodes.append(next_id)
         return branch_nodes
+
+    def _calculate_node_indegrees(self):
+        """计算每个节点的入度（前驱节点数量）"""
+        indegrees = {node_id: 0 for node_id in self.nodes.keys()}
+        for conn in self.connections:
+            to_id = conn['to']
+            if to_id in indegrees:
+                indegrees[to_id] += 1
+        return indegrees
+
+    def _get_node_dependencies(self, node_id):
+        """获取节点的所有依赖节点（前驱节点）"""
+        dependencies = []
+        for conn in self.connections:
+            if conn['to'] == node_id:
+                from_id = conn['from']
+                if from_id in self.nodes:
+                    dependencies.append(from_id)
+        return dependencies
+
+    def _build_topology_levels(self):
+        """
+        构建拓扑层级
+        返回: [[level0_nodes], [level1_nodes], [level2_nodes], ...]
+        例如: [[source], [algo1, algo2, algo3], [function], [alert1, alert2]]
+        """
+        levels = []
+        remaining_nodes = set(self.nodes.keys())
+        level_indegrees = self._calculate_node_indegrees()
+
+        while remaining_nodes:
+            # 找出当前入度为0的节点（可以执行的节点）
+            current_level = []
+            for node_id in list(remaining_nodes):
+                if level_indegrees.get(node_id, 0) == 0:
+                    current_level.append(node_id)
+
+            if not current_level:
+                # 如果没有入度为0的节点，说明存在循环依赖
+                logger.warning(f"[WorkflowWorker] 检测到循环依赖，剩余节点: {remaining_nodes}")
+                # 强制添加剩余节点到当前层级
+                current_level = list(remaining_nodes)
+
+            # 按节点类型排序（source -> algorithm/roi_draw -> function -> condition -> output/alert）
+            current_level.sort(key=lambda nid: self._get_node_type_priority(nid))
+
+            levels.append(current_level)
+            logger.info(f"[WorkflowWorker] 拓扑层级 {len(levels)-1}: {[f'{nid}({self.nodes[nid].node_type})' for nid in current_level]}")
+
+            # 更新入度：移除当前层级的节点
+            for node_id in current_level:
+                remaining_nodes.remove(node_id)
+                # 更新后继节点的入度
+                for next_info in self.execution_graph.get(node_id, []):
+                    next_id = next_info['target']
+                    if next_id in level_indegrees:
+                        level_indegrees[next_id] -= 1
+
+        return levels
+
+    def _get_node_type_priority(self, node_id):
+        """获取节点类型的优先级（用于排序）"""
+        node = self.nodes.get(node_id)
+        if not node:
+            return 999
+
+        priority_map = {
+            'source': 0,
+            'roi_draw': 1,
+            'algorithm': 2,
+            'function': 3,
+            'condition': 4,
+            'output': 5,
+            'alert': 5
+        }
+        return priority_map.get(node.node_type, 999)
+
+    def _can_execute_level_parallel(self, level_nodes):
+        """
+        判断某个层级的节点是否可以并行执行
+        函数节点需要等待所有上游节点完成，不能并行
+        """
+        for node_id in level_nodes:
+            node = self.nodes.get(node_id)
+            if isinstance(node, FunctionNodeData):
+                # 函数节点需要等待上游，不能与其他函数节点并行
+                return False
+        return True
+
+    def _check_function_node_ready(self, node_id):
+        """检查函数节点的所有上游节点是否都已执行完成"""
+        node = self.nodes.get(node_id)
+        if not isinstance(node, FunctionNodeData):
+            return True
+
+        if node.input_nodes:
+            for input_node_id in node.input_nodes:
+                if input_node_id not in self.node_results_cache:
+                    return False
+
+        # 检查连接的上游节点
+        for conn in self.connections:
+            if conn['to'] == node_id:
+                from_node_id = conn['from']
+                if from_node_id not in self.node_results_cache:
+                    return False
+
+        return True
     
     def _get_node_interval(self, node_id):
         node = self.nodes.get(node_id)
@@ -259,20 +375,18 @@ class WorkflowExecutor:
         
         return False
     
-    def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None):
+    def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None, upstream_results=None):
         algo = self.algorithms.get(node_id)
         if not algo:
             return None
 
         try:
-            # 优先使用context传入的roi_regions，如果没有则使用算法自身配置
             effective_roi_regions = roi_regions if roi_regions is not None else self.algorithm_roi_configs.get(node_id, [])
 
-            # 如果context中提供了roi_regions，记录日志
             if roi_regions is not None:
                 logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用context中的ROI配置，包含 {len(roi_regions)} 个区域")
 
-            result = algo.process(frame.copy(), effective_roi_regions)
+            result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
             logger.info(result)
             has_detection = bool(result and result.get("detections"))
             roi_mask = result.get('roi_mask')
@@ -351,9 +465,12 @@ class WorkflowExecutor:
         frame_timestamp = context.get('frame_timestamp')
         if frame is None:
             return None
-        # 从context中获取roi_regions（如果上游节点提供了）
         roi_regions = context.get('roi_regions')
-        return self._process_algorithm(node_id, frame, frame_timestamp, roi_regions)
+        upstream_results = self._get_upstream_results(node_id)
+        result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
+        if result:
+            self.node_results_cache[node_id] = result
+        return result
     
     def _handle_condition_node(self, node_id, context):
         return context
@@ -362,17 +479,38 @@ class WorkflowExecutor:
         self._execute_output(node_id, context)
         return context
 
+    def _handle_function_node(self, node_id, context):
+        frame = context.get('frame')
+        frame_timestamp = context.get('frame_timestamp')
+        if frame is None:
+            return None
+        roi_regions = context.get('roi_regions')
+        upstream_results = self._get_upstream_results(node_id)
+        result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
+        if result:
+            self.node_results_cache[node_id] = result
+        return result
+    
+    def _get_upstream_results(self, node_id):
+        node = self.nodes.get(node_id)
+        upstream_results = {}
+        
+        if isinstance(node, FunctionNodeData) and node.input_nodes:
+            for input_node_id in node.input_nodes:
+                if input_node_id in self.node_results_cache:
+                    cached = self.node_results_cache[input_node_id]
+                    upstream_results[input_node_id] = cached.get('result', {})
+        
+        for conn in self.connections:
+            if conn['to'] == node_id:
+                from_node_id = conn['from']
+                if from_node_id in self.node_results_cache:
+                    cached = self.node_results_cache[from_node_id]
+                    upstream_results[from_node_id] = cached.get('result', {})
+        
+        return upstream_results
+    
     def _handle_roi_draw_node(self, node_id, context):
-        """
-        处理热区绘制节点：记录热区坐标信息到context，不执行裁剪
-
-        Args:
-            node_id: 节点ID
-            context: 上下文，包含frame等信息
-
-        Returns:
-            更新后的上下文，包含roi_regions信息
-        """
         frame = context.get('frame')
         if frame is None:
             logger.warning(f"[WorkflowWorker] 热区绘制节点 {node_id} 输入帧为空")
@@ -388,7 +526,6 @@ class WorkflowExecutor:
             logger.warning(f"[WorkflowWorker] 热区绘制节点 {node_id} 未配置ROI区域")
             return context
 
-        # 将ROI区域信息输出到context，供后续算法节点使用
         context['roi_regions'] = roi_regions
 
         roi = roi_regions[0]
@@ -420,33 +557,132 @@ class WorkflowExecutor:
         
         logger.info(f"[WorkflowWorker] 执行节点 {node_id} (类型: {node_type})")
         return handler(node_id, context)
-    
-    def _execute_branch(self, start_node_id, context):
-        current_node_id = start_node_id
+
+    def _execute_single_node(self, node_id, context):
+        """执行单个节点（不处理后续节点）"""
+        return self._execute_node(node_id, context)
+
+    def _execute_algorithm_branch(self, node_id, context):
+        """
+        执行算法分支：从该节点开始，按连接关系顺序执行到结束
+        用于简单的线性分支：algorithm -> output/alert
+        """
+        current_node_id = node_id
         current_context = context
-        
+
         while current_node_id:
             result = self._execute_node(current_node_id, current_context)
             if result is None:
                 break
-            
+
             current_context = result
             next_nodes = self.execution_graph.get(current_node_id, [])
-            
+
+            # 查找下一个满足条件的节点
             next_node_id = None
             for next_info in next_nodes:
                 next_id = next_info['target']
                 condition = next_info.get('condition')
-                
+
                 if self._evaluate_condition(condition, current_context):
                     logger.info(f"[WorkflowWorker] {current_node_id} -> {next_id} 条件满足")
                     next_node_id = next_id
                     break
                 else:
                     logger.info(f"[WorkflowWorker] {current_node_id} -> {next_id} 条件不满足: {condition}")
-            
+
             current_node_id = next_node_id
-    
+
+    def _execute_level_nodes(self, level_nodes, context, executor=None):
+        """
+        执行一个层级的所有节点
+        - 如果可以并行且提供了executor，则并行执行
+        - 否则串行执行
+        """
+        if not level_nodes:
+            return
+
+        # 检查是否可以并行执行
+        can_parallel = self._can_execute_level_parallel(level_nodes) and executor is not None
+
+        if can_parallel:
+            # 并行执行当前层级的节点
+            logger.info(f"[WorkflowWorker] 并行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
+            future_to_node = {
+                executor.submit(self._execute_level_node, nid, context): nid
+                for nid in level_nodes
+            }
+
+            for future in as_completed(future_to_node):
+                node_id = future_to_node[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.error(f"[WorkflowWorker] 节点 {node_id} 执行异常: {exc}", exc_info=True)
+        else:
+            # 串行执行当前层级的节点
+            logger.info(f"[WorkflowWorker] 串行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
+            for node_id in level_nodes:
+                self._execute_level_node(node_id, context)
+
+    def _execute_level_node(self, node_id, context):
+        """
+        执行层级中的一个节点
+        - 对于函数节点：检查上游是否完成，执行函数，不继续执行下游
+        - 对于算法节点：执行算法，然后继续执行下游（形成分支）
+        - 对于其他节点：直接执行
+        """
+        node = self.nodes.get(node_id)
+        if not node:
+            return
+
+        # 对于函数节点，特殊处理
+        if isinstance(node, FunctionNodeData):
+            if not self._check_function_node_ready(node_id):
+                logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 的上游节点未完成，跳过")
+                return
+
+            # 执行函数节点
+            result = self._execute_single_node(node_id, context)
+            if result is None:
+                logger.debug(f"[WorkflowWorker] 函数节点 {node_id} 返回None")
+                return
+
+            # 函数节点执行完后，继续执行下游节点（通常是 alert）
+            next_nodes = self.execution_graph.get(node_id, [])
+            for next_info in next_nodes:
+                next_id = next_info['target']
+                condition = next_info.get('condition')
+                if self._evaluate_condition(condition, result):
+                    logger.info(f"[WorkflowWorker] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
+                    # 继续执行下游（递归调用_execute_branch）
+                    self._execute_branch(next_id, result)
+        elif isinstance(node, AlgorithmNodeData):
+            # 算法节点：执行并继续执行下游（形成完整分支）
+            self._execute_algorithm_branch(node_id, context)
+        else:
+            # 其他节点（roi_draw, condition, output, alert）：直接执行单个节点
+            self._execute_single_node(node_id, context)
+
+    def _execute_by_topology_levels(self, executor, context):
+        """
+        按拓扑层级执行所有节点
+        """
+        levels = self._build_topology_levels()
+        logger.info(f"[WorkflowWorker] 共有 {len(levels)} 个拓扑层级，开始按层级执行...")
+
+        for level_idx, level_nodes in enumerate(levels):
+            logger.info(f"[WorkflowWorker] 执行层级 {level_idx + 1}/{len(levels)}")
+
+            # 特殊处理第一层（source节点）
+            if level_idx == 0:
+                # 第一层通常是source，直接执行
+                for node_id in level_nodes:
+                    self._execute_single_node(node_id, context)
+            else:
+                # 其他层级按并行或串行执行
+                self._execute_level_nodes(level_nodes, context, executor)
+
     def _execute_output(self, node_id, context):
         algo_node_id = context.get('node_id')
         if not algo_node_id:
@@ -604,14 +840,19 @@ class WorkflowExecutor:
     def run(self):
         logger.info(f"[WorkflowWorker:{os.getpid()}] 已加载 {len(self.algorithms)} 个算法，开始处理 {self.video_source.buffer_name}")
 
-        parallel_branch_nodes = self._get_parallel_branch_nodes()
-        logger.info(f"[WorkflowWorker:{os.getpid()}] 检测到 {len(parallel_branch_nodes)} 个并行分支")
+        # 使用拓扑排序替代并行分支检测
+        levels = self._build_topology_levels()
+        logger.info(f"[WorkflowWorker:{os.getpid()}] 工作流共有 {len(levels)} 个拓扑层级")
+
+        # 计算需要的线程数（取最大的层级大小）
+        max_level_size = max((len(level) for level in levels), default=1)
+        max_workers = max(max_level_size, 1)
+        logger.info(f"[WorkflowWorker:{os.getpid()}] 使用 {max_workers} 个工作线程进行并行处理")
 
         last_processed_frame_time = 0
         frame_count = 0
         last_log_time = time.time()
 
-        max_workers = max(len(parallel_branch_nodes), 1)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while True:
                 frame_with_timestamp = self.buffer.peek_with_timestamp(-1)
@@ -631,24 +872,21 @@ class WorkflowExecutor:
                         logger.info(f"[WorkflowWorker:{os.getpid()}] 正在读取帧... (已处理 {frame_count} 帧)")
                         last_log_time = current_time
 
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 收到第 {frame_count} 帧，提交 {len(parallel_branch_nodes)} 个分支执行...")
-                    
+                    logger.info(f"[WorkflowWorker:{os.getpid()}] 收到第 {frame_count} 帧，开始按拓扑层级执行...")
+
+                    # 清空上一帧的结果缓存
+                    self.node_results_cache.clear()
+
                     context = {
                         'frame': latest_frame.copy(),
                         'frame_timestamp': frame_timestamp
                     }
-                    
-                    future_to_node = {
-                        executor.submit(self._execute_branch, node_id, context): node_id
-                        for node_id in parallel_branch_nodes
-                    }
 
-                    for future in as_completed(future_to_node):
-                        branch_start_node = future_to_node[future]
-                        try:
-                            future.result()
-                        except Exception as exc:
-                            logger.error(f"[WorkflowWorker] 分支 {branch_start_node} 执行异常: {exc}", exc_info=True)
+                    # 按拓扑层级执行所有节点
+                    try:
+                        self._execute_by_topology_levels(executor, context)
+                    except Exception as exc:
+                        logger.error(f"[WorkflowWorker] 帧处理异常: {exc}", exc_info=True)
 
                     frame_count += 1
                 else:

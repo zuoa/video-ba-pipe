@@ -386,6 +386,23 @@ class ScriptLoader:
 
         return scripts
 
+    def get_script_metadata(self, script_path: str) -> Optional[Dict]:
+        """
+        获取脚本元数据
+
+        Args:
+            script_path: 脚本路径
+
+        Returns:
+            脚本元数据字典，如果失败则返回 None
+        """
+        try:
+            module, metadata = self.load(script_path)
+            return metadata
+        except Exception as e:
+            print(f"[ScriptLoader] 获取元数据失败: {e}")
+            return None
+
     def get_cache_info(self) -> Dict:
         """
         获取缓存信息

@@ -134,6 +134,14 @@
   color: #fa8c16;
 }
 
+.function-node {
+  border-color: #722ed1;
+}
+
+.function-node .node-icon {
+  color: #722ed1;
+}
+
 .custom-node.alert-node {
   border-color: #f5222d !important;
   background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%) !important;

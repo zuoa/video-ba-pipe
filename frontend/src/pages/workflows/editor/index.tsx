@@ -98,14 +98,14 @@ export default function WorkflowEditorPage() {
 
           // 转换节点数据
           const convertedNodes = (graphData.nodes || []).map((node: any) => {
-            // 始终进行类型映射，确保所有节点使用正确的自定义组件
             const originalType = node.type || node.data?.type;
             const nodeType = originalType === 'source' ? 'videoSource' :
                             originalType === 'algorithm' ? 'algorithm' :
+                            originalType === 'function' ? 'function' :
                             originalType === 'condition' ? 'condition' :
                             originalType === 'roi' ? 'roi' :
                             originalType === 'alert' ? 'alert' :
-                            originalType === 'output' ? 'alert' :  // 所有 output 类型统一为 alert
+                            originalType === 'output' ? 'alert' :
                             originalType;
 
             // 如果已经是 ReactFlow 格式，只更新类型
@@ -645,6 +645,7 @@ export default function WorkflowEditorPage() {
                 switch (node.type) {
                   case 'videoSource': return '#1890ff';
                   case 'algorithm': return '#52c41a';
+                  case 'function': return '#722ed1';
                   case 'condition': return '#faad14';
                   case 'roi': return '#fa8c16';
                   case 'alert': return '#f5222d';

@@ -8,13 +8,10 @@ import {
 } from '@ant-design/icons';
 import {
   getAlgorithms,
-  createAlgorithm,
-  updateAlgorithm,
   deleteAlgorithm,
 } from '@/services/api';
 import { PageHeader } from '@/components/common';
 import AlgorithmTable from './components/AlgorithmTable';
-import AlgorithmForm from './components/AlgorithmForm';
 import TestModal from './components/TestModal';
 import type { Algorithm } from './components/AlgorithmTable';
 import './index.css';
@@ -24,9 +21,7 @@ export default function Algorithms() {
   const [algorithms, setAlgorithms] = useState<Algorithm[]>([]);
   const [pluginModules, setPluginModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [formVisible, setFormVisible] = useState(false);
   const [testModalVisible, setTestModalVisible] = useState(false);
-  const [editingAlgorithm, setEditingAlgorithm] = useState<Algorithm | null>(null);
   const [testingAlgorithm, setTestingAlgorithm] = useState<Algorithm | null>(null);
 
   const loadAlgorithms = useCallback(async () => {
@@ -58,13 +53,11 @@ export default function Algorithms() {
   }, [loadAlgorithms, loadPluginModules]);
 
   const handleCreate = () => {
-    setEditingAlgorithm(null);
-    setFormVisible(true);
+    navigate('/algorithms/wizard');
   };
 
   const handleEdit = (algorithm: Algorithm) => {
-    setEditingAlgorithm(algorithm);
-    setFormVisible(true);
+    navigate(`/algorithms/wizard?edit=${algorithm.id}`);
   };
 
   const handleDelete = (id: number) => {
@@ -85,31 +78,6 @@ export default function Algorithms() {
     });
   };
 
-  const handleSubmit = async (values: any) => {
-    try {
-      const data = {
-        ...values,
-        model_json: JSON.stringify({ models: [] }),
-        model_ids: JSON.stringify([]),
-        ext_config_json: typeof values.ext_config_json === 'string'
-          ? values.ext_config_json
-          : JSON.stringify(values.ext_config_json || {}),
-      };
-
-      if (editingAlgorithm) {
-        await updateAlgorithm(editingAlgorithm.id, data);
-        message.success('算法更新成功');
-      } else {
-        await createAlgorithm(data);
-        message.success('算法创建成功');
-      }
-      setFormVisible(false);
-      loadAlgorithms();
-    } catch (error) {
-      message.error(editingAlgorithm ? '更新失败' : '创建失败');
-      throw error;
-    }
-  };
 
   const handleTest = (algorithm: Algorithm) => {
     setTestingAlgorithm(algorithm);
@@ -131,19 +99,12 @@ export default function Algorithms() {
         extra={
           <div className="header-actions">
             <Button
+              type="primary"
               icon={<BulbOutlined />}
               onClick={handleOpenWizard}
               className="wizard-btn"
             >
               配置向导
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleCreate}
-              className="create-btn"
-            >
-              快速添加
             </Button>
           </div>
         }
@@ -157,13 +118,6 @@ export default function Algorithms() {
         onTest={handleTest}
       />
 
-      <AlgorithmForm
-        visible={formVisible}
-        editingAlgorithm={editingAlgorithm}
-        pluginModules={pluginModules}
-        onCancel={() => setFormVisible(false)}
-        onSubmit={handleSubmit}
-      />
 
       <TestModal
         visible={testModalVisible}

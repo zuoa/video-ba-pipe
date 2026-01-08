@@ -81,6 +81,15 @@ class AlertNodeData(NodeContext):
     node_type: str = "alert"
 
 
+@dataclass
+class FunctionNodeData(NodeContext):
+    node_type: str = "function"
+    data_id: Optional[int] = None
+    interval_seconds: Optional[float] = None
+    config: Optional[Dict[str, Any]] = None
+    input_nodes: Optional[List[str]] = None
+
+
 def create_node_data(node_dict: Dict) -> NodeContext:
     node_type = node_dict.get('type')
     node_id = node_dict.get('id')
@@ -92,8 +101,9 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'condition': ConditionNodeData,
         'output': OutputNodeData,
         'roi_draw': RoiDrawNodeData,
-        'roi': RoiDrawNodeData,  # 前端使用的类型名称
+        'roi': RoiDrawNodeData,
         'alert': AlertNodeData,
+        'function': FunctionNodeData,
     }
 
     node_class = node_classes.get(node_type)
@@ -110,6 +120,15 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             data_id=data_id,
             interval_seconds=data.get('interval_seconds'),
             config=data.get('config')
+        )
+    elif node_type == 'function':
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            data_id=data_id,
+            interval_seconds=data.get('interval_seconds'),
+            config=data.get('config'),
+            input_nodes=data.get('input_nodes', [])
         )
     elif node_type == 'source':
         return node_class(
