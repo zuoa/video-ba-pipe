@@ -10,6 +10,7 @@ import {
   FilterOutlined,
   CheckOutlined,
   CloseOutlined,
+  CopyOutlined,
 } from '@ant-design/icons';
 import './WorkflowTable.css';
 
@@ -24,6 +25,7 @@ export interface WorkflowTableProps {
   onOpenEditor: (workflow: any) => void;
   onActivate: (id: number) => void;
   onDeactivate: (id: number) => void;
+  onCopy?: (workflow: any) => void;
   onBatchActivate?: (ids: number[]) => void;
   onBatchDeactivate?: (ids: number[]) => void;
   onBatchDelete?: (ids: number[]) => void;
@@ -38,6 +40,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   onOpenEditor,
   onActivate,
   onDeactivate,
+  onCopy,
   onBatchActivate,
   onBatchDeactivate,
   onBatchDelete,
@@ -48,7 +51,13 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   const filteredWorkflows = workflows.filter((workflow) => {
-    const matchSource = filterSource === undefined || workflow.video_source_id === filterSource;
+    // 从 workflow_data 中获取视频源 ID
+    const workflowData = workflow.workflow_data || {};
+    const nodes = workflowData.nodes || [];
+    const sourceNode = nodes.find((node: any) => node.type === 'source');
+    const workflowSourceId = sourceNode?.dataId;
+
+    const matchSource = filterSource === undefined || workflowSourceId === filterSource;
     const matchSearch =
       !searchText ||
       workflow.name?.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -122,18 +131,29 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
     },
     {
       title: '视频源',
-      dataIndex: 'video_source_id',
-      key: 'video_source_id',
+      key: 'video_source',
       width: 200,
-      render: (sourceId: number) => {
-        const source = videoSources.find((s) => s.id === sourceId);
-        return source ? (
-          <Tag color="blue" className="source-tag">
-            {source.name}
-          </Tag>
-        ) : (
-          <Tag color="default">未配置</Tag>
-        );
+      render: (_: any, record: any) => {
+        // 从 workflow_data 的 nodes 中查找 source 节点
+        const workflowData = record.workflow_data || {};
+        const nodes = workflowData.nodes || [];
+
+        // 查找类型为 'source' 的节点
+        const sourceNode = nodes.find((node: any) => node.type === 'source');
+
+        if (sourceNode && sourceNode.dataId) {
+          const sourceId = sourceNode.dataId;
+          const source = videoSources.find((s) => s.id === sourceId);
+          return source ? (
+            <Tag color="blue" className="source-tag">
+              {source.name}
+            </Tag>
+          ) : (
+            <Tag color="default">未配置</Tag>
+          );
+        }
+
+        return <Tag color="default">未配置</Tag>;
       },
     },
     {
@@ -183,6 +203,16 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
           >
             编排
           </Button>
+          {onCopy && (
+            <Button
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => onCopy(record)}
+              className="action-btn"
+            >
+              复制
+            </Button>
+          )}
           <Button
             size="small"
             icon={<EditOutlined />}

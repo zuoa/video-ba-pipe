@@ -1,15 +1,13 @@
 import React, { useEffect } from 'react';
-import { Modal, Form, Input, Select, Button } from 'antd';
+import { Modal, Form, Input, Button } from 'antd';
 import { ApartmentOutlined } from '@ant-design/icons';
 import './WorkflowForm.css';
 
 const { TextArea } = Input;
-const { Option } = Select;
 
 export interface WorkflowFormProps {
   visible: boolean;
   editingWorkflow: any;
-  videoSources: any[];
   onCancel: () => void;
   onSubmit: (values: any) => void;
 }
@@ -17,7 +15,6 @@ export interface WorkflowFormProps {
 const WorkflowForm: React.FC<WorkflowFormProps> = ({
   visible,
   editingWorkflow,
-  videoSources,
   onCancel,
   onSubmit,
 }) => {
@@ -29,7 +26,6 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
         form.setFieldsValue({
           name: editingWorkflow.name,
           description: editingWorkflow.description || '',
-          video_source_id: editingWorkflow.video_source_id,
         });
       } else {
         form.resetFields();
@@ -88,29 +84,12 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
         </Form.Item>
 
         <Form.Item
-          label="视频源"
-          name="video_source_id"
-          rules={[{ required: true, message: '请选择视频源' }]}
-        >
-          <Select
-            placeholder="请选择视频源"
-            size="large"
-          >
-            {videoSources.map((source) => (
-              <Option key={source.id} value={source.id}>
-                {source.name}
-              </Option>
-            ))}
-          </Select>
-        </Form.Item>
-
-        <Form.Item
           label="描述"
           name="description"
         >
           <TextArea
             rows={4}
-            placeholder="描述算法编排的用途"
+            placeholder="描述算法编排的用途（视频源请在编排编辑器中配置）"
           />
         </Form.Item>
       </Form>

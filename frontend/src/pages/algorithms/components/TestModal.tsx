@@ -773,6 +773,19 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                             showIcon
                             icon={<BugOutlined />}
                           />
+                        ) : testResult.metadata?.detections_detail ? (
+                          <Alert
+                            message="未检测到任何目标"
+                            description={
+                              <div>
+                                <p>算法已成功运行，但在图片中未发现任何目标。</p>
+                                <p>请查看下方的"检测调试信息"了解详细情况。</p>
+                              </div>
+                            }
+                            type="info"
+                            showIcon
+                            icon={<BugOutlined />}
+                          />
                         ) : (
                           <Alert
                             message="未检测到任何目标"

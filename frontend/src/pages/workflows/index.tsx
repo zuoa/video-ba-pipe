@@ -12,10 +12,12 @@ import {
   activateWorkflow,
   deactivateWorkflow,
   getVideoSources,
+  batchCopyWorkflow,
 } from '@/services/api';
 import { PageHeader } from '@/components/common';
 import WorkflowTable from './components/WorkflowTable';
 import WorkflowForm from './components/WorkflowForm';
+import CopyWorkflowModal from './components/CopyWorkflowModal';
 import './index.css';
 
 export default function Workflows() {
@@ -23,7 +25,9 @@ export default function Workflows() {
   const [loading, setLoading] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
   const [editorVisible, setEditorVisible] = useState(false);
+  const [copyModalVisible, setCopyModalVisible] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<any>(null);
+  const [copyingWorkflow, setCopyingWorkflow] = useState<any>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
 
@@ -137,6 +141,36 @@ export default function Workflows() {
     }
   };
 
+  const handleCopy = (workflow: any) => {
+    setCopyingWorkflow(workflow);
+    setCopyModalVisible(true);
+  };
+
+  const handleCopyConfirm = async (sourceIds: number[]) => {
+    try {
+      const result = await batchCopyWorkflow(copyingWorkflow.id, sourceIds);
+
+      const { created, errors, summary } = result as any;
+
+      if (summary && summary.success > 0) {
+        message.success(
+          `成功复制 ${summary.success} 个编排${summary.failed > 0 ? `，${summary.failed} 个失败` : ''}`
+        );
+        loadWorkflows();
+      }
+
+      if (errors && errors.length > 0) {
+        console.error('部分复制失败:', errors);
+      }
+
+      setCopyModalVisible(false);
+      setCopyingWorkflow(null);
+    } catch (error: any) {
+      message.error(error.message || '复制失败');
+      throw error;
+    }
+  };
+
   return (
     <div className="workflows-page">
       <PageHeader
@@ -167,14 +201,25 @@ export default function Workflows() {
         onOpenEditor={handleOpenEditor}
         onActivate={handleActivate}
         onDeactivate={handleDeactivate}
+        onCopy={handleCopy}
       />
 
       <WorkflowForm
         visible={formVisible}
         editingWorkflow={editingWorkflow}
-        videoSources={videoSources}
         onCancel={() => setFormVisible(false)}
         onSubmit={handleSubmit}
+      />
+
+      <CopyWorkflowModal
+        visible={copyModalVisible}
+        workflow={copyingWorkflow}
+        videoSources={videoSources}
+        onCopy={handleCopyConfirm}
+        onCancel={() => {
+          setCopyModalVisible(false);
+          setCopyingWorkflow(null);
+        }}
       />
 
     </div>

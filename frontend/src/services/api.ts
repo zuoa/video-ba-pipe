@@ -77,6 +77,34 @@ export async function deactivateWorkflow(id: number) {
   });
 }
 
+export async function batchCopyWorkflow(workflowId: number, sourceIds: number[]) {
+  return request(`/api/workflows/${workflowId}/batch-copy`, {
+    method: 'POST',
+    data: { source_ids: sourceIds },
+  });
+}
+
+export async function batchActivateWorkflows(workflowIds: number[]) {
+  return request('/api/workflows/batch-activate', {
+    method: 'POST',
+    data: { workflow_ids: workflowIds },
+  });
+}
+
+export async function batchDeactivateWorkflows(workflowIds: number[]) {
+  return request('/api/workflows/batch-deactivate', {
+    method: 'POST',
+    data: { workflow_ids: workflowIds },
+  });
+}
+
+export async function batchDeleteWorkflows(workflowIds: number[]) {
+  return request('/api/workflows/batch-delete', {
+    method: 'POST',
+    data: { workflow_ids: workflowIds },
+  });
+}
+
 // 算法
 export async function getAlgorithms() {
   return request('/api/algorithms');
