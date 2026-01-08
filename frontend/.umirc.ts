@@ -50,6 +50,11 @@ export default defineConfig({
       icon: 'ExperimentOutlined',
     },
     {
+      name: '算法配置向导',
+      path: '/algorithms/wizard',
+      component: './algorithms/wizard',
+    },
+    {
       name: '视频源',
       path: '/video-sources',
       component: './video-sources',

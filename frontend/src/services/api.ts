@@ -280,7 +280,34 @@ export async function getScriptTemplates() {
   return request('/api/scripts/templates');
 }
 
-export async function getDetectorTemplates() {
-  return request('/api/detector-templates');
+export async function getDetectorTemplates(params?: { is_system?: boolean }) {
+  return request('/api/detector-templates', { params });
+}
+
+export async function getDetectorScriptConfig(scriptPath: string) {
+  return request(`/api/detector-templates/script-config/${encodeURIComponent(scriptPath)}`);
+}
+
+export async function createAlgorithmFromWizard(data: any) {
+  return request('/api/algorithms', {
+    method: 'POST',
+    data,
+  });
+}
+
+// 类型定义
+export interface DetectorTemplate {
+  id: number;
+  name: string;
+  description: string;
+  script_path: string;
+  is_system: boolean;
+  tags_list?: string[];
+}
+
+export interface Script {
+  name: string;
+  path: string;
+  category?: string;
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal, message, Button } from 'antd';
+import { useNavigate } from '@umijs/max';
 import {
   PlusOutlined,
   ExperimentOutlined,
@@ -19,6 +20,7 @@ import type { Algorithm } from './components/AlgorithmTable';
 import './index.css';
 
 export default function Algorithms() {
+  const navigate = useNavigate();
   const [algorithms, setAlgorithms] = useState<Algorithm[]>([]);
   const [pluginModules, setPluginModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -115,7 +117,7 @@ export default function Algorithms() {
   };
 
   const handleOpenWizard = () => {
-    window.location.href = '/algorithm-wizard';
+    navigate('/algorithms/wizard');
   };
 
   return (
@@ -169,5 +171,6 @@ export default function Algorithms() {
         onCancel={() => setTestModalVisible(false)}
       />
     </div>
+
   );
 }
