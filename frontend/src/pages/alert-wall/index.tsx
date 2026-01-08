@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getAlerts, getTodayAlertsCount, getVideoSources } from '@/services/api';
+import { getAlerts, getTodayAlertsCount, getVideoSources, getWorkflows, getAlertTrend } from '@/services/api';
 import { Alert, Task } from '../alerts/types';
 import AlertTypeBadge from '../alerts/components/AlertTypeBadge';
 import RelativeTime from '../alerts/components/RelativeTime';
@@ -18,33 +18,43 @@ import {
   SyncOutlined,
   DesktopOutlined,
   FireOutlined,
+  BranchesOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import './index.css';
 
 const AlertWallPage: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
   const [mainAlert, setMainAlert] = useState<Alert | null>(null);
   const [todayCount, setTodayCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [activeTasks, setActiveTasks] = useState(0);
+  const [videoSourceCount, setVideoSourceCount] = useState(0);
+  const [activeWorkflowCount, setActiveWorkflowCount] = useState(0);
+  const [alertTrend, setAlertTrend] = useState<Array<{ date: string; count: number }>>([]);
   const [isNewAlert, setIsNewAlert] = useState(false);
+  const [isManualSelect, setIsManualSelect] = useState(false);
   const [imageError, setImageError] = useState(false);
   const mainDisplayRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLDivElement>(null);
+  const lastKnownLatestIdRef = useRef<string | undefined>(undefined);
 
   // 加载数据
   const loadData = useCallback(async () => {
     try {
-      const [alertsResponse, todayCountResponse, tasksResponse] = await Promise.all([
+      const [alertsResponse, todayCountResponse, tasksResponse, workflowsResponse, trendResponse] = await Promise.all([
         getAlerts({ page: 1, per_page: 50 }),
         getTodayAlertsCount(),
         getVideoSources(),
+        getWorkflows(),
+        getAlertTrend(7),
       ]);
 
       const newAlerts = alertsResponse.data || [];
       const previousAlertId = mainAlert?.id;
+      const currentLatestId = newAlerts.length > 0 ? newAlerts[0].id : undefined;
 
       setAlerts(newAlerts);
       setTotalCount(alertsResponse.pagination?.total || 0);
@@ -56,11 +66,27 @@ const AlertWallPage: React.FC = () => {
       }
 
       setTasks(tasksResponse || []);
-      setActiveTasks(tasksResponse?.filter((t: Task) => t.status === 'RUNNING').length || 0);
+      setVideoSourceCount(tasksResponse?.length || 0);
 
-      // 检查是否有新告警
-      if (newAlerts.length > 0 && previousAlertId && newAlerts[0].id !== previousAlertId) {
+      // 设置workflows和激活的编排数
+      setWorkflows(workflowsResponse || []);
+      setActiveWorkflowCount(workflowsResponse?.filter((w: any) => w.is_active).length || 0);
+
+      // 设置告警趋势
+      setAlertTrend(trendResponse?.trend || []);
+
+      // 检查是否有真正的新告警（而不是用户手动切换历史）
+      const hasNewAlert = currentLatestId && lastKnownLatestIdRef.current && currentLatestId !== lastKnownLatestIdRef.current;
+
+      // 更新已知的最新告警ID
+      if (currentLatestId && currentLatestId !== lastKnownLatestIdRef.current) {
+        lastKnownLatestIdRef.current = currentLatestId;
+      }
+
+      // 只有在真正有新告警时才自动切换并播放动画
+      if (hasNewAlert) {
         setIsNewAlert(true);
+        setIsManualSelect(false); // 重置手动选择标志
         setMainAlert(newAlerts[0]);
 
         // 触发闪烁边框动画
@@ -80,7 +106,9 @@ const AlertWallPage: React.FC = () => {
         // 1秒后重置新告警标志
         setTimeout(() => setIsNewAlert(false), 1000);
       } else if (!mainAlert && newAlerts.length > 0) {
+        // 首次加载，设置最新告警
         setMainAlert(newAlerts[0]);
+        lastKnownLatestIdRef.current = currentLatestId;
       }
 
       // 重置图片错误状态
@@ -88,7 +116,7 @@ const AlertWallPage: React.FC = () => {
     } catch (error) {
       console.error('加载数据失败:', error);
     }
-  }, [mainAlert, todayCount]);
+  }, [mainAlert, todayCount, isManualSelect]);
 
   // 更新时间
   const updateTime = useCallback(() => {
@@ -113,6 +141,14 @@ const AlertWallPage: React.FC = () => {
   // 选择告警
   const selectAlert = (index: number) => {
     if (index >= 0 && index < alerts.length) {
+      setIsManualSelect(true); // 标记为手动选择
+      setIsNewAlert(false); // 确保不触发新告警动画
+
+      // 移除可能存在的 flash-border 类
+      if (mainDisplayRef.current) {
+        mainDisplayRef.current.classList.remove('flash-border');
+      }
+
       setMainAlert(alerts[index]);
       setImageError(false);
     }
@@ -181,12 +217,27 @@ const AlertWallPage: React.FC = () => {
               </div>
             </div>
             <div className="stat-item">
-              <div className="stat-icon-wrapper active-icon">
+              <div className="stat-icon-wrapper video-icon">
                 <VideoCameraOutlined />
               </div>
               <div className="stat-content">
-                <div className="stat-value digital-font" id="activeTasks">{activeTasks}</div>
-                <div className="stat-label">监控任务</div>
+                <div className="stat-value digital-font" id="videoSourceCount">{videoSourceCount}</div>
+                <div className="stat-label">视频源</div>
+              </div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-icon-wrapper workflow-icon">
+                <BranchesOutlined />
+              </div>
+              <div className="stat-content">
+                <div className="stat-value digital-font" id="activeWorkflowCount">{activeWorkflowCount}</div>
+                <div className="stat-label">算法编排</div>
+              </div>
+            </div>
+            <div className="stat-item trend-item">
+              <div className="trend-content">
+                <div className="trend-label">近7日趋势</div>
+                <TrendChart data={alertTrend} />
               </div>
             </div>
           </div>
@@ -255,11 +306,11 @@ const AlertWallPage: React.FC = () => {
                     key={mainAlert.id}
                     src={`/api/image/frames/${mainAlert.alert_image}`}
                     alt="Alert"
-                    className={`main-image ${isNewAlert ? 'alert-switch-animation' : ''}`}
+                    className={`main-image ${isNewAlert && !isManualSelect ? 'alert-switch-animation with-animation' : ''}`}
                     onError={handleImageError}
                   />
                 ) : (
-                  <div className={`no-alert-placeholder ${isNewAlert ? 'alert-switch-animation' : ''}`}>
+                  <div className={`no-alert-placeholder ${isNewAlert && !isManualSelect ? 'alert-switch-animation' : ''}`}>
                     <div className="placeholder-icon">
                       {getAlertTypeIcon(mainAlert.alert_type)}
                     </div>
@@ -379,6 +430,80 @@ const AlertWallPage: React.FC = () => {
 
       {/* 粒子效果 */}
       <ParticlesEffect />
+    </div>
+  );
+};
+
+// 趋势图组件
+const TrendChart: React.FC<{ data: Array<{ date: string; count: number }> }> = ({ data }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="trend-chart-placeholder">
+        <LineChartOutlined />
+        <span>暂无数据</span>
+      </div>
+    );
+  }
+
+  const maxValue = Math.max(...data.map(d => d.count), 1);
+  const width = 280;
+  const height = 60;
+  const padding = 5;
+
+  // 生成SVG路径
+  const points = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
+    const y = height - padding - (d.count / maxValue) * (height - 2 * padding);
+    return `${x},${y}`;
+  }).join(' ');
+
+  // 生成填充区域
+  const areaPoints = `
+    ${padding},${height - padding}
+    ${points}
+    ${width - padding},${height - padding}
+  `;
+
+  return (
+    <div className="trend-chart">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <defs>
+          <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(59, 130, 246, 0.3)" />
+            <stop offset="100%" stopColor="rgba(59, 130, 246, 0)" />
+          </linearGradient>
+        </defs>
+        {/* 填充区域 */}
+        <polygon
+          points={areaPoints}
+          fill="url(#trendGradient)"
+        />
+        {/* 折线 */}
+        <polyline
+          points={points}
+          fill="none"
+          stroke="rgba(59, 130, 246, 0.8)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* 数据点 */}
+        {data.map((d, i) => {
+          const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
+          const y = height - padding - (d.count / maxValue) * (height - 2 * padding);
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r="3"
+              fill="rgba(59, 130, 246, 1)"
+              stroke="rgba(59, 130, 246, 0.3)"
+              strokeWidth="2"
+            />
+          );
+        })}
+      </svg>
     </div>
   );
 };

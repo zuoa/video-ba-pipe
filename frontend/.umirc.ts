@@ -14,15 +14,13 @@ export default defineConfig({
   model: {},
   initialState: {},
   request: {},
-  layout: {
-    title: '视频分析系统',
-    name: '视频分析系统',
-    logo: false,
-    layout: 'top',
-    navTheme: 'light',
-    headerHeight: 64,
-  },
+  layout: false,
   routes: [
+    {
+      path: '/login',
+      component: './login',
+      layout: false,
+    },
     {
       path: '/',
       redirect: '/dashboard',
@@ -81,6 +79,12 @@ export default defineConfig({
       path: '/scripts',
       component: './scripts',
       icon: 'CodeOutlined',
+    },
+    {
+      name: '用户管理',
+      path: '/users',
+      component: './users',
+      icon: 'UserOutlined',
     },
   ],
   npmClient: 'npm',

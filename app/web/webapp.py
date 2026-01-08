@@ -31,7 +31,11 @@ try:
     app.logger.info("数据库初始化完成")
 except Exception as e:
     app.logger.error(f"数据库初始化失败: {e}")
-    # 不阻止应用启动，让应用继续运行并在后续操作中报告错误
+    # 不阻止应用启动,让应用继续运行并在后续操作中报告错误
+
+# ========== 注册认证API ==========
+from app.web.api.auth import auth_bp
+app.register_blueprint(auth_bp)
 
 # ========== API 端点 ==========
 
@@ -508,19 +512,56 @@ def get_alert_types():
 def get_today_alerts_count():
     """获取今日告警数量"""
     from datetime import datetime, date
-    
+
     # 获取今天的开始和结束时间
     today = date.today()
     start_of_day = datetime.combine(today, datetime.min.time())
     end_of_day = datetime.combine(today, datetime.max.time())
-    
+
     # 查询今日告警数量
     count = Alert.select().where(
-        (Alert.alert_time >= start_of_day) & 
+        (Alert.alert_time >= start_of_day) &
         (Alert.alert_time <= end_of_day)
     ).count()
-    
+
     return jsonify({'count': count})
+
+@app.route('/api/alerts/trend', methods=['GET'])
+def get_alert_trend():
+    """获取告警趋势数据"""
+    from datetime import datetime, timedelta
+
+    # 获取查询参数（天数）
+    days = request.args.get('days', 7, type=int)
+    days = min(days, 30)  # 最多30天
+
+    # 计算日期范围
+    end_date = datetime.now().replace(hour=23, minute=59, second=59)
+    start_date = (end_date - timedelta(days=days-1)).replace(hour=0, minute=0, second=0)
+
+    # 查询所有告警
+    alerts = Alert.select().where(
+        (Alert.alert_time >= start_date) &
+        (Alert.alert_time <= end_date)
+    )
+
+    # 按日期统计
+    result_dict = {}
+    for alert in alerts:
+        alert_date = alert.alert_time.date()
+        result_dict[alert_date] = result_dict.get(alert_date, 0) + 1
+
+    # 填充缺失的日期
+    trend = []
+    current_date = start_date.date()
+    while current_date <= end_date.date():
+        trend.append({
+            'date': current_date.strftime('%Y-%m-%d'),
+            'count': result_dict.get(current_date, 0)
+        })
+        current_date += timedelta(days=1)
+
+    return jsonify({'trend': trend})
 
 # ========== 时间窗口检测API ==========
 

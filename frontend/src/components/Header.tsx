@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link, useLocation } from '@umijs/max';
-import { Dropdown, Button } from 'antd';
+import { Link, useLocation, history } from '@umijs/max';
+import { Dropdown, Button, message } from 'antd';
 import {
   VideoCameraOutlined,
   HomeOutlined,
@@ -13,10 +13,35 @@ import {
   FunctionOutlined,
   DownOutlined,
   CalculatorOutlined,
+  LogoutOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 
 const Header: React.FC = () => {
   const location = useLocation();
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    message.success('退出成功');
+    history.push('/login');
+  };
+
+  const userMenuItems = [
+    ...(user?.role === 'admin' ? [{
+      key: 'users',
+      icon: <TeamOutlined />,
+      label: <Link to="/users">用户管理</Link>,
+    }] : []),
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: '退出登录',
+      onClick: handleLogout,
+    },
+  ];
 
   const menuItems = [
     {
@@ -191,36 +216,39 @@ const Header: React.FC = () => {
           title="大屏"
         />
 
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          paddingLeft: '12px',
-          borderLeft: '1px solid #e5e7eb',
-        }}>
+        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <div style={{
-            width: '32px',
-            height: '32px',
-            background: '#000',
-            borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontSize: '12px',
-            fontWeight: '600',
+            gap: '8px',
+            paddingLeft: '12px',
+            borderLeft: '1px solid #e5e7eb',
+            cursor: 'pointer',
           }}>
-            <UserOutlined style={{ fontSize: '12px' }} />
+            <div style={{
+              width: '32px',
+              height: '32px',
+              background: '#000',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}>
+              <UserOutlined style={{ fontSize: '12px' }} />
+            </div>
+            <span style={{
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              display: 'block',
+            }}>
+              {user?.username || '未登录'}
+            </span>
           </div>
-          <span style={{
-            fontSize: '14px',
-            fontWeight: '500',
-            color: '#374151',
-            display: 'block',
-          }}>
-            管理员
-          </span>
-        </div>
+        </Dropdown>
       </div>
     </div>
   );

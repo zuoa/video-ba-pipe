@@ -3,7 +3,7 @@ import json
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel, DetectorTemplate,
-    Workflow, WorkflowNode, WorkflowConnection
+    Workflow, WorkflowNode, WorkflowConnection, User
 )
 
 
@@ -28,8 +28,21 @@ def setup_database():
         # 工作流表
         Workflow,
         WorkflowNode,
-        WorkflowConnection
+        WorkflowConnection,
+        # 用户表
+        User
     ], safe=True)
+
+    from datetime import datetime
+    import hashlib
+    User.get_or_create(
+        username='admin',
+        defaults={
+            'password_hash': hashlib.sha256('admin123'.encode()).hexdigest(),
+            'role': 'admin',
+            'created_at': datetime.now()
+        }
+    )
 
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建

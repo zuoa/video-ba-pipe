@@ -1,5 +1,41 @@
 import { request } from '@umijs/max';
 
+// 认证
+export async function login(data: { username: string; password: string }) {
+  return request('/api/auth/login', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function getCurrentUser() {
+  return request('/api/auth/current');
+}
+
+export async function getUsers() {
+  return request('/api/auth/users');
+}
+
+export async function createUser(data: any) {
+  return request('/api/auth/users', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function updateUser(id: number, data: any) {
+  return request(`/api/auth/users/${id}`, {
+    method: 'PUT',
+    data,
+  });
+}
+
+export async function deleteUser(id: number) {
+  return request(`/api/auth/users/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 // 工作流
 export async function getWorkflows() {
   return request('/api/workflows');
@@ -151,6 +187,10 @@ export async function getAlertTypes() {
 
 export async function getTodayAlertsCount() {
   return request('/api/alerts/today-count');
+}
+
+export async function getAlertTrend(days: number = 7) {
+  return request(`/api/alerts/trend?days=${days}`);
 }
 
 // 模型

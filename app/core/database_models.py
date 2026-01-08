@@ -351,3 +351,17 @@ class MLModel(BaseModel):
             self.save()
 
 
+class User(BaseModel):
+    """用户表"""
+    id = pw.AutoField()
+    username = pw.CharField(unique=True, max_length=50)
+    password_hash = pw.CharField(max_length=255)
+    role = pw.CharField(max_length=20, default='user')
+    created_at = pw.DateTimeField()
+    last_login = pw.DateTimeField(null=True)
+    enabled = pw.BooleanField(default=True)
+
+    class Meta:
+        table_name = 'users'
+
+
