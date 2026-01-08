@@ -16,28 +16,92 @@ class ModelResolver:
     
     def resolve_models(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        解析配置中的模型引用，将 name 转换为完整路径
-        
+        解析配置中的模型引用，将 name 或 id 转换为完整路径
+
+        支持两种格式：
+        1. 列表格式（新格式，用于 yolo_detector.py）:
+           {"models": [{"model_id": 1, ...}, {"model_id": 2, ...}]}
+        2. 字典格式（旧格式）:
+           {"models": {"person": "YOLOv8n-Person", "helmet": "YOLOv8n-Helmet"}}
+
         Args:
             config: 算法配置字典，可能包含 models 字段
-            
+
         Returns:
             解析后的配置字典
-        
+
         Example:
-            输入: {"models": {"person": "YOLOv8n-Person"}, "iou": 0.45}
-            输出: {"models": {"person": {"path": "/models/yolov8n.pt", "name": "YOLOv8n-Person"}}, "iou": 0.45}
+            输入（列表）: {"models": [{"model_id": 1, "class": 0}]}
+            输出（列表）: {"models": [{"model_id": 1, "class": 0, "_model_path": "/path/to/model.pt"}]}
+
+            输入（字典）: {"models": {"person": "YOLOv8n-Person"}, "iou": 0.45}
+            输出（字典）: {"models": {"person": {"path": "/models/yolov8n.pt", "name": "YOLOv8n-Person"}}, "iou": 0.45}
         """
         if 'models' not in config:
             return config
-        
+
         models_config = config['models']
-        if not isinstance(models_config, dict):
-            logger.warning(f"[ModelResolver] models 字段格式错误，应为dict: {type(models_config)}")
-            return config
-        
+
+        # 处理列表格式（新格式，用于模板脚本）
+        if isinstance(models_config, list):
+            return self._resolve_models_list(config, models_config)
+
+        # 处理字典格式（旧格式）
+        if isinstance(models_config, dict):
+            return self._resolve_models_dict(config, models_config)
+
+        logger.warning(f"[ModelResolver] models 字段格式错误，应为 list 或 dict: {type(models_config)}")
+        return config
+
+    def _resolve_models_list(self, config: Dict[str, Any], models_config: list) -> Dict[str, Any]:
+        """
+        解析列表格式的模型配置
+
+        为每个模型项添加 _model_path 字段（包含模型文件路径）
+        """
+        resolved_models = []
+
+        for idx, model_item in enumerate(models_config):
+            if not isinstance(model_item, dict):
+                logger.warning(f"[ModelResolver] 模型项 {idx} 格式错误，应为 dict: {type(model_item)}")
+                resolved_models.append(model_item)
+                continue
+
+            # 获取 model_id（支持数字和字符串）
+            model_id = model_item.get('model_id')
+            if model_id is None:
+                logger.warning(f"[ModelResolver] 模型项 {idx} 缺少 model_id")
+                resolved_models.append(model_item)
+                continue
+
+            # 查询模型路径
+            model_info = self._get_model_info(model_id)
+            if not model_info:
+                logger.error(f"[ModelResolver] 模型项 {idx} 的模型不存在: model_id={model_id}")
+                resolved_models.append(model_item)
+                continue
+
+            # 复制原配置并添加路径信息
+            resolved_item = model_item.copy()
+            resolved_item['_model_path'] = model_info['path']
+            resolved_item['_model_type'] = model_info.get('model_type', '')
+            resolved_item['_model_framework'] = model_info.get('framework', '')
+            resolved_models.append(resolved_item)
+
+        # 替换配置中的 models 字段
+        resolved_config = config.copy()
+        resolved_config['models'] = resolved_models
+
+        logger.info(f"[ModelResolver] 解析了 {len(resolved_models)} 个模型引用（列表格式）")
+
+        return resolved_config
+
+    def _resolve_models_dict(self, config: Dict[str, Any], models_config: dict) -> Dict[str, Any]:
+        """
+        解析字典格式的模型配置（旧格式）
+        """
         resolved_models = {}
-        
+
         for role, model_ref in models_config.items():
             # 支持两种格式：
             # 1. 字符串（模型名称）："person": "YOLOv8n-Person"

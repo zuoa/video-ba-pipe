@@ -278,9 +278,10 @@ def test_algorithm():
             # 创建算法实例并处理图片
             algo_instance = ScriptAlgorithm(full_config)
             results = algo_instance.process(image)
-            
+
             # 处理结果
             detections = results.get('detections', [])
+            metadata = results.get('metadata', {})
             
             # 生成可视化结果（无论是否有检测结果都生成）
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_result:
@@ -298,7 +299,8 @@ def test_algorithm():
             response_data = {
                 'success': True,
                 'detections': detections,
-                'detection_count': len(detections)
+                'detection_count': len(detections),
+                'metadata': metadata  # 包含调试信息
             }
             
             # 转换结果图片为base64

@@ -189,6 +189,9 @@ class WorkflowExecutor:
 
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 的原始配置: {node_data_dict.get('config', {})}")
 
+                    # 获取节点配置（用户在工作流编辑器中配置的）
+                    node_config = node_data_dict.get('config', {})
+
                     # 获取运行时配置（从节点配置）
                     runtime_config = self._get_node_runtime_config(node_data_dict)
 
@@ -207,7 +210,7 @@ class WorkflowExecutor:
                     else:
                         logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 未配置ROI热区，将使用全画面检测")
 
-                    # 构建完整配置（算法固有配置 + 运行时配置）
+                    # 构建完整配置（算法固有配置 + 节点配置 + 运行时配置）
                     full_config = {
                         "id": algo_id,
                         "name": algo.name,
@@ -221,8 +224,14 @@ class WorkflowExecutor:
                         "label_name": label_config['name'],
                         "label_color": label_config['color'],
                     }
+
                     # 合并算法固有配置（script_config）
                     full_config.update(algo.config_dict)
+
+                    # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
+                    full_config.update(node_config)
+
+                    logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
                     self.algorithms[node_id] = ScriptAlgorithm(full_config)
                     

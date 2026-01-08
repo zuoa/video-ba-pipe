@@ -215,11 +215,58 @@ export default function AlgorithmWizard() {
     setCurrentStep(currentStep - 1);
   };
 
+  const collectModelIdsFromConfig = (config: any) => {
+    // 从 script_config 中提取模型 ID 列表
+    const modelIds: number[] = [];
+
+    if (config.models && Array.isArray(config.models)) {
+      for (const modelItem of config.models) {
+        if (modelItem.model_id && typeof modelItem.model_id === 'number') {
+          modelIds.push(modelItem.model_id);
+        }
+      }
+    }
+
+    return modelIds;
+  };
+
+  const validateModelSelection = (config: any): { valid: boolean; error?: string } => {
+    // 验证模型选择是否完整
+    if (config.models && Array.isArray(config.models)) {
+      for (let i = 0; i < config.models.length; i++) {
+        const modelItem = config.models[i];
+        if (!modelItem.model_id || typeof modelItem.model_id !== 'number') {
+          return {
+            valid: false,
+            error: `请为第 ${i + 1} 个模型选择有效的模型`
+          };
+        }
+      }
+      if (config.models.length === 0) {
+        return {
+          valid: false,
+          error: '请至少添加一个模型'
+        };
+      }
+    }
+    return { valid: true };
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
 
       const scriptConfig = collectConfigData();
+
+      // 验证模型选择
+      const validation = validateModelSelection(scriptConfig);
+      if (!validation.valid) {
+        message.error(validation.error);
+        return;
+      }
+
+      // 从 script_config 中提取模型 ID
+      const modelIds = collectModelIdsFromConfig(scriptConfig);
 
       const data = {
         name: values.algorithmName,
@@ -236,8 +283,8 @@ export default function AlgorithmWizard() {
         window_threshold: values.windowThreshold,
         label_name: values.labelName,
         label_color: values.labelColor,
-        model_json: JSON.stringify({ models: [] }),
-        model_ids: JSON.stringify([]),
+        model_json: JSON.stringify({ models: scriptConfig.models || [] }),
+        model_ids: JSON.stringify(modelIds),
         ext_config_json: JSON.stringify({}),
       };
 
@@ -269,7 +316,9 @@ export default function AlgorithmWizard() {
             const fieldId = `model_${key}_${itemId}_${subKey}`;
             const value = form.getFieldValue(fieldId);
 
-            if (subField.type === 'number' || subField.type === 'float' || subField.type === 'int') {
+            if (subField.type === 'int') {
+              item[subKey] = value !== undefined ? parseInt(value) : subField.default;
+            } else if (subField.type === 'number' || subField.type === 'float') {
               item[subKey] = value !== undefined ? parseFloat(value) : subField.default;
             } else if (subField.type === 'model_select') {
               item[subKey] = value ? parseInt(value) : null;
@@ -284,7 +333,9 @@ export default function AlgorithmWizard() {
         config[key] = items;
       } else {
         const value = form.getFieldValue(`config_${key}`);
-        if (field.type === 'number' || field.type === 'float' || field.type === 'int') {
+        if (field.type === 'int') {
+          config[key] = value !== undefined ? parseInt(value) : (field.default !== undefined ? field.default : null);
+        } else if (field.type === 'number' || field.type === 'float') {
           config[key] = value !== undefined ? parseFloat(value) : (field.default !== undefined ? field.default : null);
         } else if (field.type === 'model_select') {
           config[key] = value !== undefined && value !== null ? parseInt(value) : null;
@@ -553,42 +604,54 @@ export default function AlgorithmWizard() {
       const fieldId = `model_${fieldKey}_${itemId}_${subKey}`;
       const defaultValue = subField.default !== undefined ? subField.default : '';
 
+      if (subField.type === 'color') {
+        return (
+          <div key={fieldId} style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', marginBottom: 4, color: 'rgba(0, 0, 0, 0.85)' }}>
+              {subField.label || subKey}
+            </label>
+            <Form.Item name={fieldId} initialValue={defaultValue} style={{ margin: 0 }}>
+              <Input
+                type="color"
+                style={{ width: 80, height: 32, padding: 2, cursor: 'pointer' }}
+              />
+            </Form.Item>
+          </div>
+        );
+      }
+
       return (
         <Form.Item
           key={fieldId}
+          name={fieldId}
           label={subField.label || subKey}
+          initialValue={defaultValue}
           style={{ marginBottom: 12 }}
         >
           {subField.type === 'model_select' ? (
             <Select
-              id={fieldId}
-              defaultValue={defaultValue}
               placeholder="选择模型..."
             >
               {models.filter(m => m.enabled).map(m => (
                 <Option key={m.id} value={m.id}>{m.name} ({m.model_type})</Option>
               ))}
             </Select>
-          ) : subField.type === 'float' || subField.type === 'int' ? (
+          ) : subField.type === 'int' ? (
             <InputNumber
-              id={fieldId}
-              defaultValue={defaultValue}
+              min={subField.min}
+              max={subField.max}
+              step={subField.step || 1}
+              style={{ width: '100%' }}
+            />
+          ) : subField.type === 'float' || subField.type === 'number' ? (
+            <InputNumber
               min={subField.min}
               max={subField.max}
               step={subField.step || 0.01}
               style={{ width: '100%' }}
             />
-          ) : subField.type === 'color' ? (
-            <Input
-              type="color"
-              id={fieldId}
-              defaultValue={defaultValue || '#FF0000'}
-              style={{ width: 100 }}
-            />
           ) : (
             <Input
-              id={fieldId}
-              defaultValue={defaultValue}
               placeholder={subField.placeholder}
             />
           )}
@@ -733,7 +796,7 @@ export default function AlgorithmWizard() {
                   name="labelName"
                   initialValue="Object"
                 >
-                  <Input />
+                  <Input placeholder="Object" />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -742,7 +805,10 @@ export default function AlgorithmWizard() {
                   name="labelColor"
                   initialValue="#FF0000"
                 >
-                  <Input type="color" style={{ width: 100 }} />
+                  <Input
+                    type="color"
+                    style={{ width: 100, height: 32, padding: 2, cursor: 'pointer' }}
+                  />
                 </Form.Item>
               </Col>
             </Row>

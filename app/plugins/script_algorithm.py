@@ -48,11 +48,15 @@ class ScriptAlgorithm(BaseAlgorithm):
 
             # 解析模型引用（将 name 转换为 path）
             resolver = get_model_resolver()
+            logger.info(f"[{self.name}] 原始 config: {self.config}")
             resolved_config = resolver.resolve_models(self.config)
+            logger.info(f"[{self.name}] 解析后 config['models']: {resolved_config.get('models', 'NOT_FOUND')}")
 
             # 如果脚本有init函数，调用它（传递解析后的config）
             if hasattr(self.script_module, 'init'):
+                logger.info(f"[{self.name}] 调用脚本的 init() 函数...")
                 self.script_state = self.script_module.init(resolved_config)
+                logger.info(f"[{self.name}] init() 返回的 state: {self.script_state}")
                 logger.info(f"[{self.name}] 脚本init函数已调用")
             else:
                 self.script_state = None

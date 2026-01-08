@@ -128,16 +128,16 @@ def init(config: dict) -> Dict[str, Any]:
 def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: dict = None) -> dict:
     """
     处理函数 - 执行检测
-    
+
     这个函数会在每一帧上执行，进行目标检测。
-    
+
     Args:
         frame: np.ndarray, RGB格式的图像 (height, width, 3)
         config: dict, 配置字典
         roi_regions: list, ROI区域列表（可选）
             每个ROI包含: {'points': [[x1,y1], [x2,y2], ...], 'name': 'area1'}
         state: dict, init() 返回的状态对象
-        
+
     Returns:
         dict: 检测结果，格式：
             {
@@ -152,62 +152,89 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
                 ],
                 'metadata': {                           # 调试信息
                     'model_path': '/path/to/model.pt',
-                    'total_detections': 3
+                    'total_detections': 3,
+                    'detections_detail': [...]         # 检测详情
                 }
             }
     """
     from app import logger
-    
+    import time
+
+    start_time = time.time()
+
     # 1. 检查状态
     if not state or 'model' not in state:
         logger.warning("[简单YOLO检测] 模型未初始化")
-        return {'detections': []}
-    
+        return {'detections': [], 'metadata': {'error': 'Model not initialized'}}
+
     # 2. 获取配置参数
     model = state['model']
     confidence = config.get('confidence', 0.6)
     class_filter = config.get('class_filter', [])
-    
+
     # 3. 转换颜色空间
     # YOLO需要BGR格式，但系统传入的是RGB格式
     frame_bgr = cv2.cvtColor(frame.copy(), cv2.COLOR_RGB2BGR)
-    
+
     # 4. 执行YOLO检测
     kwargs = {
         'save': False,           # 不保存结果图片
         'conf': confidence,      # 置信度阈值
         'verbose': False         # 不打印详细日志
     }
-    
+
     # 如果配置了类别过滤，只检测指定类别
     if class_filter:
         kwargs['classes'] = class_filter
-    
+
     results = model.predict(frame_bgr, **kwargs)
-    
+
     # 5. 转换检测结果为标准格式
     detections = []
+    detections_detail = []  # 用于调试：记录所有检测详情
+
     if results and len(results) > 0:
         for det in results[0].boxes.data.tolist():
             x1, y1, x2, y2, conf, cls = det
-            
+
             # 获取类别名称
             class_name = results[0].names[int(cls)]
-            
-            detections.append({
+
+            detection = {
                 'box': (x1, y1, x2, y2),
                 'label': class_name,                                    # YOLO原始类别名
                 'label_name': config.get('label_name', class_name),    # 自定义显示名称
                 'class': int(cls),
                 'confidence': float(conf)
+            }
+
+            detections.append(detection)
+
+            # 记录检测详情（用于调试）
+            detections_detail.append({
+                'box': [float(x1), float(y1), float(x2), float(y2)],
+                'confidence': float(conf),
+                'class': int(cls),
+                'class_name': class_name
             })
-    
-    # 6. 返回结果
+
+    # 6. 计算处理时间
+    processing_time = (time.time() - start_time) * 1000
+
+    # 7. 返回结果（包含调试信息）
     return {
         'detections': detections,
         'metadata': {
-            'model_path': state['model_path'],
-            'total_detections': len(detections)
+            'model_path': state.get('model_path', 'unknown'),
+            'total_detections': len(detections),
+            'inference_time_ms': processing_time,
+            'confidence_threshold': confidence,
+            'class_filter': class_filter if class_filter else 'all',
+            'detections_detail': detections_detail,  # 所有检测的详细信息
+            'image_size': {
+                'height': frame.shape[0],
+                'width': frame.shape[1]
+            }
         }
     }
 

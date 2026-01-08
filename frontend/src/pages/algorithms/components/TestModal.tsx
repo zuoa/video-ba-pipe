@@ -20,6 +20,7 @@ import {
   Divider,
   Tooltip,
   Empty,
+  Collapse,
 } from 'antd';
 import {
   PlayCircleOutlined,
@@ -35,6 +36,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
   ThunderboltOutlined,
+  BugOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import type { Algorithm } from './AlgorithmTable';
@@ -66,6 +68,33 @@ interface TestResponse {
   result_image?: string;
   detections?: DetectionResult[];
   error?: string;
+  metadata?: {
+    model_count?: number;
+    inference_time_ms?: number;
+    total_detections?: number;
+    roi_mode?: string;
+    model_debug_info?: Array<{
+      model_name: string;
+      model_path: string;
+      success: boolean;
+      detections_count?: number;
+      detections?: Array<{
+        box: number[];
+        confidence: number;
+        class: number;
+        class_name: string;
+      }>;
+      confidence_threshold?: number;
+      class_filter?: number[];
+      error?: string;
+    }>;
+    merge_debug_info?: {
+      total_models: number;
+      iou_threshold: number;
+      detection_groups: number;
+      model_names: string[];
+    };
+  };
 }
 
 interface TestHistory {
@@ -457,14 +486,303 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                       </div>
                     )}
 
+                    {/* Multi-Model Debug Info */}
+                    {testResult.metadata?.model_debug_info && testResult.metadata.model_debug_info.length > 0 && (
+                      <div className="test-debug-details">
+                        <Divider>
+                          <Space>
+                            <BugOutlined />
+                            多模型调试信息
+                          </Space>
+                        </Divider>
+                        <Collapse
+                          defaultActiveKey={testResult.detection_count === 0 ? ['1'] : []}
+                          size="small"
+                          items={[
+                            {
+                              key: '1',
+                              label: <span>查看每个模型的详细检测情况</span>,
+                              children: (
+                                <div className="debug-info-content">
+                                  {testResult.metadata.model_debug_info.map((modelInfo, idx) => (
+                                    <Card
+                                      key={idx}
+                                      size="small"
+                                      title={
+                                        <Space>
+                                          <Tag color={modelInfo.success ? 'success' : 'error'}>
+                                            {modelInfo.model_name}
+                                          </Tag>
+                                          <span style={{ fontSize: 12 }}>
+                                            {modelInfo.model_path.split('/').pop()}
+                                          </span>
+                                        </Space>
+                                      }
+                                      style={{ marginBottom: 8 }}
+                                    >
+                                      {!modelInfo.success ? (
+                                        <Alert
+                                          type="error"
+                                          message="模型推理失败"
+                                          description={modelInfo.error}
+                                          showIcon
+                                          size="small"
+                                        />
+                                      ) : (
+                                        <>
+                                          <Descriptions size="small" column={2}>
+                                            <Descriptions.Item label="检测数量">
+                                              <Tag color="blue">{modelInfo.detections_count}</Tag>
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="置信度阈值">
+                                              {modelInfo.confidence_threshold}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="类别过滤" span={2}>
+                                              {modelInfo.class_filter?.join(', ') || '全部'}
+                                            </Descriptions.Item>
+                                          </Descriptions>
+
+                                          {modelInfo.detections && modelInfo.detections.length > 0 && (
+                                            <Table
+                                              size="small"
+                                              dataSource={modelInfo.detections.map((det, i) => ({
+                                                key: i,
+                                                ...det
+                                              }))}
+                                              pagination={false}
+                                              columns={[
+                                                {
+                                                  title: '序号',
+                                                  width: 50,
+                                                  render: (_: any, __: any, i: number) => i + 1
+                                                },
+                                                {
+                                                  title: '类别',
+                                                  dataIndex: 'class_name',
+                                                  width: 80,
+                                                  render: (name: string) => <Tag>{name}</Tag>
+                                                },
+                                                {
+                                                  title: '置信度',
+                                                  dataIndex: 'confidence',
+                                                  width: 100,
+                                                  render: (conf: number) => `${(conf * 100).toFixed(1)}%`
+                                                },
+                                                {
+                                                  title: '位置',
+                                                  dataIndex: 'box',
+                                                  render: (box: number[]) => {
+                                                    if (!box || box.length < 4) return '-';
+                                                    return `[${box[0].toFixed(0)}, ${box[1].toFixed(0)}, ${box[2].toFixed(0)}, ${box[3].toFixed(0)}]`;
+                                                  }
+                                                }
+                                              ]}
+                                              scroll={{ y: 150 }}
+                                            />
+                                          )}
+
+                                          {modelInfo.detections_count === 0 && (
+                                            <Alert
+                                              type="info"
+                                              message="该模型未检测到任何目标"
+                                              description="可能原因：置信度阈值过高、类别过滤不匹配、目标不在此模型检测范围内"
+                                              showIcon
+                                              size="small"
+                                            />
+                                          )}
+                                        </>
+                                      )}
+                                    </Card>
+                                  ))}
+
+                                  {testResult.metadata.merge_debug_info && (
+                                    <>
+                                      <Divider style={{ margin: '12px 0' }}>IOU合并信息</Divider>
+                                      <Descriptions size="small" column={2}>
+                                        <Descriptions.Item label="参与合并模型数">
+                                          {testResult.metadata.merge_debug_info.total_models}
+                                        </Descriptions.Item>
+                                        <Descriptions.Item label="IOU阈值">
+                                          {testResult.metadata.merge_debug_info.iou_threshold}
+                                        </Descriptions.Item>
+                                        <Descriptions.Item label="合并后组数">
+                                          <Tag color={testResult.metadata.merge_debug_info.detection_groups > 0 ? 'success' : 'warning'}>
+                                            {testResult.metadata.merge_debug_info.detection_groups}
+                                          </Tag>
+                                        </Descriptions.Item>
+                                        <Descriptions.Item label="模型名称">
+                                          {testResult.metadata.merge_debug_info.model_names.join(', ')}
+                                        </Descriptions.Item>
+                                      </Descriptions>
+
+                                      {testResult.metadata.merge_debug_info.detection_groups === 0 && (
+                                        <Alert
+                                          type="warning"
+                                          message="多模型IOU合并失败"
+                                          description={
+                                            <div>
+                                              <p>虽然各模型分别检测到了目标，但无法通过IOU匹配合并为确认目标。</p>
+                                              <p>可能原因：</p>
+                                              <ul style={{ marginLeft: 20, marginTop: 8 }}>
+                                                <li>各模型检测到的目标位置差异较大</li>
+                                                <li>IOU阈值设置过高（当前为 {testResult.metadata.merge_debug_info.iou_threshold}）</li>
+                                                <li>尝试降低 IOU 阈值或调整模型的扩展比例（expand_width/expand_height）</li>
+                                              </ul>
+                                            </div>
+                                          }
+                                          showIcon
+                                          style={{ marginTop: 8 }}
+                                        />
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            }
+                          ]}
+                        />
+                      </div>
+                    )}
+
+                    {/* Single-Model Debug Info (for simple_yolo_detector) */}
+                    {testResult.metadata?.detections_detail && !testResult.metadata?.model_debug_info && (
+                      <div className="test-debug-details">
+                        <Divider>
+                          <Space>
+                            <BugOutlined />
+                            检测调试信息
+                          </Space>
+                        </Divider>
+                        <Collapse
+                          defaultActiveKey={testResult.detection_count === 0 ? ['1'] : []}
+                          size="small"
+                          items={[
+                            {
+                              key: '1',
+                              label: <span>查看检测详情</span>,
+                              children: (
+                                <div className="debug-info-content">
+                                  <Card size="small" title="检测配置" style={{ marginBottom: 8 }}>
+                                    <Descriptions size="small" column={2}>
+                                      <Descriptions.Item label="模型路径">
+                                        <span style={{ fontSize: 12 }}>
+                                          {testResult.metadata.model_path?.split('/').pop() || 'unknown'}
+                                        </span>
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="置信度阈值">
+                                        {testResult.metadata.confidence_threshold}
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="类别过滤">
+                                        {Array.isArray(testResult.metadata.class_filter)
+                                          ? testResult.metadata.class_filter.join(', ')
+                                          : testResult.metadata.class_filter || '全部'}
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="推理时间">
+                                        {testResult.metadata.inference_time_ms?.toFixed(1)} ms
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="图像尺寸">
+                                        {testResult.metadata.image_size?.width} x {testResult.metadata.image_size?.height}
+                                      </Descriptions.Item>
+                                    </Descriptions>
+                                  </Card>
+
+                                  {testResult.metadata.detections_detail.length > 0 ? (
+                                    <Card size="small" title="所有检测结果" style={{ marginBottom: 8 }}>
+                                      <Table
+                                        size="small"
+                                        dataSource={testResult.metadata.detections_detail.map((det: any, i: number) => ({
+                                          key: i,
+                                          ...det
+                                        }))}
+                                        pagination={false}
+                                        columns={[
+                                          {
+                                            title: '序号',
+                                            width: 50,
+                                            render: (_: any, __: any, i: number) => i + 1
+                                          },
+                                          {
+                                            title: '类别',
+                                            dataIndex: 'class_name',
+                                            width: 80,
+                                            render: (name: string) => <Tag>{name}</Tag>
+                                          },
+                                          {
+                                            title: '置信度',
+                                            dataIndex: 'confidence',
+                                            width: 100,
+                                            render: (conf: number) => `${(conf * 100).toFixed(1)}%`
+                                          },
+                                          {
+                                            title: '位置',
+                                            dataIndex: 'box',
+                                            render: (box: number[]) => {
+                                              if (!box || box.length < 4) return '-';
+                                              return `[${box[0].toFixed(0)}, ${box[1].toFixed(0)}, ${box[2].toFixed(0)}, ${box[3].toFixed(0)}]`;
+                                            }
+                                          }
+                                        ]}
+                                        scroll={{ y: 200 }}
+                                      />
+                                    </Card>
+                                  ) : (
+                                    <Alert
+                                      type="info"
+                                      message="未检测到任何目标"
+                                      description={
+                                        <div>
+                                          <p>模型已成功运行，但在图片中未发现任何目标。</p>
+                                          <p>可能原因：</p>
+                                          <ul style={{ marginLeft: 20, marginTop: 8 }}>
+                                            <li>置信度阈值过高（当前为 {testResult.metadata.confidence_threshold}），建议降低到 0.3-0.5</li>
+                                            <li>类别过滤配置不匹配，当前过滤：{Array.isArray(testResult.metadata.class_filter) ? testResult.metadata.class_filter.join(', ') : '全部'}</li>
+                                            <li>图片中确实没有目标物体</li>
+                                            <li>模型训练数据不包含此类目标</li>
+                                          </ul>
+                                        </div>
+                                      }
+                                      showIcon
+                                    />
+                                  )}
+                                </div>
+                              )
+                            }
+                          ]}
+                        />
+                      </div>
+                    )}
+
+
                     {testResult.detections && testResult.detections.length === 0 && (
-                      <Alert
-                        message="未检测到任何目标"
-                        description="算法已成功运行，但在图片中未发现任何目标"
-                        type="info"
-                        showIcon
-                        icon={<InfoCircleOutlined />}
-                      />
+                      <>
+                        {testResult.metadata?.model_debug_info && testResult.metadata.model_debug_info.length > 1 ? (
+                          <Alert
+                            message="多模型检测未确认任何目标"
+                            description={
+                              <div>
+                                <p>算法已成功运行，但多模型未共同确认任何目标。</p>
+                                <p>请查看下方的"多模型调试信息"了解每个模型的检测情况，可能的原因：</p>
+                                <ul style={{ marginLeft: 20, marginTop: 8 }}>
+                                  <li>各模型检测到的目标位置差异较大，无法通过IOU匹配合并</li>
+                                  <li>部分模型未检测到目标（置信度阈值过高或类别不匹配）</li>
+                                  <li>IOU阈值设置过高，建议降低阈值或调整扩展比例</li>
+                                </ul>
+                              </div>
+                            }
+                            type="warning"
+                            showIcon
+                            icon={<BugOutlined />}
+                          />
+                        ) : (
+                          <Alert
+                            message="未检测到任何目标"
+                            description="算法已成功运行，但在图片中未发现任何目标"
+                            type="info"
+                            showIcon
+                            icon={<InfoCircleOutlined />}
+                          />
+                        )}
+                      </>
                     )}
                   </>
                 ) : (

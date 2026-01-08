@@ -368,14 +368,22 @@ def init(config: dict) -> Dict[str, Any]:
     loaded_models = []
     for idx, model_cfg in enumerate(models_config):
         try:
-            # 获取模型路径
-            model_id = model_cfg.get('model_id')
-            if model_id:
-                model_path = resolve_model(model_id)
-            else:
-                logger.error(f"[YOLO多模型] 模型{idx+1}缺少 model_id")
-                continue
-            
+            # 获取模型路径（优先使用 ModelResolver 解析后的路径）
+            model_path = model_cfg.get('_model_path')
+
+            if not model_path:
+                # 兼容旧方式：通过 model_id 动态解析
+                model_id = model_cfg.get('model_id')
+                if model_id:
+                    try:
+                        model_path = resolve_model(model_id)
+                    except Exception as e:
+                        logger.error(f"[YOLO多模型] 模型{idx+1}解析失败 (model_id={model_id}): {e}")
+                        continue
+                else:
+                    logger.error(f"[YOLO多模型] 模型{idx+1}缺少 model_id 或 _model_path")
+                    continue
+
             logger.info(f"[YOLO多模型] 加载模型{idx+1}: {model_path}")
             model = YOLO(model_path)
             
@@ -472,32 +480,63 @@ def process(frame: np.ndarray,
     
     # 4. 执行多模型检测
     stages_results = {}
+    model_debug_info = []  # 用于调试：记录每个模型的检测情况
+
     for model_info in state['models']:
         model = model_info['model']
         model_cfg = model_info['config']
-        
+
         try:
             conf_thresh = model_cfg.get('confidence', 0.6)
             class_filter = [model_cfg.get('class', 0)]
-            
+
             results = model.predict(
-                frame_to_detect, 
-                save=False, 
-                classes=class_filter, 
+                frame_to_detect,
+                save=False,
+                classes=class_filter,
                 conf=conf_thresh,
                 verbose=False
             )
-            
+
             if results and len(results) > 0:
                 model_name = model_cfg.get('label_name', f"Model{len(stages_results)}")
                 stages_results[model_name] = {
                     'result': results[0],
                     'model_config': model_cfg
                 }
-                logger.debug(f"[YOLO多模型] {model_name} 检测到 {len(results[0].boxes)} 个目标")
-                
+
+                # 记录调试信息
+                detections_count = len(results[0].boxes)
+                detections_detail = []
+                for box in results[0].boxes:
+                    xyxy = box.xyxy[0].tolist()
+                    detections_detail.append({
+                        'box': xyxy,
+                        'confidence': float(box.conf[0]),
+                        'class': int(box.cls[0]),
+                        'class_name': results[0].names[int(box.cls[0])]
+                    })
+
+                model_debug_info.append({
+                    'model_name': model_name,
+                    'model_path': model_info.get('path', 'unknown'),
+                    'success': True,
+                    'detections_count': detections_count,
+                    'detections': detections_detail,
+                    'confidence_threshold': conf_thresh,
+                    'class_filter': class_filter
+                })
+
+                logger.debug(f"[YOLO多模型] {model_name} 检测到 {detections_count} 个目标")
+
         except Exception as e:
             logger.error(f"[YOLO多模型] 模型推理失败: {e}")
+            model_debug_info.append({
+                'model_name': model_cfg.get('label_name', f"Model{len(stages_results)}"),
+                'model_path': model_info.get('path', 'unknown'),
+                'success': False,
+                'error': str(e)
+            })
     
     # 5. 处理检测结果
     detections = []
@@ -523,9 +562,17 @@ def process(frame: np.ndarray,
         # 多模型：IOU合并
         iou_threshold = config.get('iou_threshold', 0.5)
         detection_groups = find_multimodel_groups(stages_results, iou_threshold)
-        
+
         logger.info(f"[YOLO多模型] 发现 {len(detection_groups)} 个多模型确认目标")
-        
+
+        # 记录合并调试信息
+        merge_debug_info = {
+            'total_models': len(stages_results),
+            'iou_threshold': iou_threshold,
+            'detection_groups': len(detection_groups),
+            'model_names': list(stages_results.keys())
+        }
+
         # 为每个组生成一个检测结果
         for group in detection_groups:
             # 计算外接矩形
@@ -566,15 +613,23 @@ def process(frame: np.ndarray,
     
     # 7. 计算处理时间
     processing_time = (time.time() - start_time) * 1000
-    
+
+    # 8. 构建调试信息
+    debug_metadata = {
+        'model_count': len(state['models']),
+        'inference_time_ms': processing_time,
+        'total_detections': len(detections),
+        'roi_mode': roi_mode,
+        'model_debug_info': model_debug_info,  # 每个模型的详细检测情况
+    }
+
+    # 如果是多模型，添加合并调试信息
+    if len(stages_results) >= 2:
+        debug_metadata['merge_debug_info'] = merge_debug_info
+
     return {
         'detections': detections,
-        'metadata': {
-            'model_count': len(state['models']),
-            'inference_time_ms': processing_time,
-            'total_detections': len(detections),
-            'roi_mode': roi_mode
-        }
+        'metadata': debug_metadata
     }
 
 
