@@ -54,6 +54,9 @@ def get_algorithms():
     algorithms = Algorithm.select()
     result = []
     for a in algorithms:
+        # 获取扩展配置
+        ext_config = a.ext_config if hasattr(a, 'ext_config') else {}
+
         algo_dict = {
             'id': a.id,
             'name': a.name,
@@ -62,7 +65,9 @@ def get_algorithms():
             'script_config': a.script_config,
             'enabled_hooks': a.enabled_hooks,
             'created_at': a.created_at.isoformat() if a.created_at else None,
-            'updated_at': a.updated_at.isoformat() if a.updated_at else None
+            'updated_at': a.updated_at.isoformat() if a.updated_at else None,
+            # 合并执行配置字段
+            **ext_config
         }
         result.append(algo_dict)
     return jsonify(result)
@@ -71,6 +76,9 @@ def get_algorithms():
 def get_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
+        # 获取扩展配置
+        ext_config = algorithm.ext_config if hasattr(algorithm, 'ext_config') else {}
+
         algo_dict = {
             'id': algorithm.id,
             'name': algorithm.name,
@@ -79,7 +87,9 @@ def get_algorithm(id):
             'script_config': algorithm.script_config,
             'enabled_hooks': algorithm.enabled_hooks,
             'created_at': algorithm.created_at.isoformat() if algorithm.created_at else None,
-            'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None
+            'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
+            # 合并执行配置字段
+            **ext_config
         }
         return jsonify(algo_dict)
     except Algorithm.DoesNotExist:
@@ -90,24 +100,38 @@ def create_algorithm():
     data = request.json
     try:
         from datetime import datetime
-        
+
         # 验证必填字段
         if not data.get('name'):
             return jsonify({'error': '缺少必填字段: name'}), 400
         if not data.get('script_path'):
             return jsonify({'error': '缺少必填字段: script_path'}), 400
-        
+
+        # 构建扩展配置（执行配置）
+        ext_config = {}
+        exec_config_fields = [
+            'label_name', 'label_color',
+            'interval_seconds', 'runtime_timeout', 'memory_limit_mb',
+            'enable_window_check', 'window_size', 'window_mode', 'window_threshold',
+            'plugin_module', 'script_type', 'entry_function', 'script_version',
+            'model_json', 'model_ids'
+        ]
+        for field in exec_config_fields:
+            if field in data:
+                ext_config[field] = data[field]
+
         # 创建算法
         algorithm = Algorithm.create(
             name=data['name'],
             description=data.get('description'),
             script_path=data['script_path'],
             script_config=data.get('script_config', '{}'),
+            ext_config_json=json.dumps(ext_config),
             enabled_hooks=data.get('enabled_hooks'),
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
-        
+
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -116,11 +140,11 @@ def create_algorithm():
 def update_algorithm(id):
     try:
         from datetime import datetime
-        
+
         algorithm = Algorithm.get_by_id(id)
         data = request.json
 
-        # 更新字段
+        # 更新基本字段
         if 'name' in data:
             algorithm.name = data['name']
         if 'description' in data:
@@ -131,7 +155,28 @@ def update_algorithm(id):
             algorithm.script_config = data['script_config']
         if 'enabled_hooks' in data:
             algorithm.enabled_hooks = data['enabled_hooks']
-        
+
+        # 更新扩展配置（执行配置）
+        exec_config_fields = [
+            'label_name', 'label_color',
+            'interval_seconds', 'runtime_timeout', 'memory_limit_mb',
+            'enable_window_check', 'window_size', 'window_mode', 'window_threshold',
+            'plugin_module', 'script_type', 'entry_function', 'script_version',
+            'model_json', 'model_ids'
+        ]
+
+        # 获取当前的扩展配置
+        try:
+            ext_config = json.loads(algorithm.ext_config_json) if algorithm.ext_config_json else {}
+        except:
+            ext_config = {}
+
+        # 更新执行配置字段
+        for field in exec_config_fields:
+            if field in data:
+                ext_config[field] = data[field]
+
+        algorithm.ext_config_json = json.dumps(ext_config)
         algorithm.updated_at = datetime.now()
         algorithm.save()
 

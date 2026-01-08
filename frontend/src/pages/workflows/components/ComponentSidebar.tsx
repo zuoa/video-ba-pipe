@@ -28,6 +28,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
   const loadAlgorithms = async () => {
     try {
       const data = await getAlgorithms();
+      console.log('📋 加载的算法列表:', data);
       setAlgorithms(data || []);
     } catch (error) {
       console.error('加载算法失败:', error);
@@ -35,6 +36,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
   };
 
   const handleAddNode = (item: any) => {
+    console.log('➕ 添加节点:', item);
     onAddNode(item);
   };
 
@@ -98,6 +100,21 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                   icon: <BugOutlined />,
                   color: '#52c41a',
                   algorithmId: algo.id,
+                  dataId: algo.id,
+                  // 从算法的 ext_config_json 中读取执行配置作为默认值
+                  config: {
+                    interval_seconds: algo.interval_seconds || 1,
+                    runtime_timeout: algo.runtime_timeout || 30,
+                    memory_limit_mb: algo.memory_limit_mb || 512,
+                    label_name: algo.label_name || 'Object',
+                    label_color: algo.label_color || '#FF0000',
+                    window_detection: {
+                      enable: algo.enable_window_check || false,
+                      window_size: algo.window_size || 30,
+                      window_mode: algo.window_mode || 'ratio',
+                      window_threshold: algo.window_threshold !== undefined ? algo.window_threshold : 0.3,
+                    },
+                  },
                 })}
                 style={{ borderColor: '#52c41a' }}
               >

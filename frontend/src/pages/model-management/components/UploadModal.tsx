@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, Form, Input, Select, Row, Col, message, Upload } from 'antd';
 import { UploadOutlined, InboxOutlined } from '@ant-design/icons';
-import { createModel, uploadModel } from '@/services/api';
+import { uploadModel } from '@/services/api';
 import type { UploadFile } from 'antd/es/upload/interface';
 
 const { TextArea } = Input;
@@ -30,26 +30,32 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
         return;
       }
 
+      // 获取真实的 File 对象
+      const file = fileList[0].originFileObj || fileList[0];
+      if (!file || !(file instanceof File)) {
+        message.error('文件对象无效，请重新选择文件');
+        return;
+      }
+
       setUploading(true);
 
-      // 上传文件
-      const uploadResult = await uploadModel(fileList[0].originFileObj as File);
+      // 一次性上传文件并创建模型记录
+      await uploadModel(file as File, {
+        name: values.name,
+        model_type: values.model_type,
+        framework: values.framework,
+        version: values.version,
+        input_shape: values.input_shape,
+        description: values.description,
+      });
 
-      // 创建模型记录
-      const modelData = {
-        ...values,
-        file_path: uploadResult.saved_path,
-        filename: fileList[0].name,
-      };
-
-      await createModel(modelData);
       message.success('模型上传成功');
 
       form.resetFields();
       setFileList([]);
       onSuccess();
     } catch (error: any) {
-      message.error(error?.response?.data?.error || '上传失败');
+      message.error(error?.message || error?.response?.data?.error || '上传失败');
     } finally {
       setUploading(false);
     }

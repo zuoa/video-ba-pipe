@@ -31,7 +31,7 @@ from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, OutputNodeData, AlertNodeData
 
 
 class WorkflowExecutor:
@@ -81,26 +81,47 @@ class WorkflowExecutor:
         从节点配置中提取运行时配置
 
         Args:
-            node_data_dict: 节点的 data_dict
+            node_data_dict: 节点的 data_dict（来自 workflow JSON）
 
         Returns:
             运行时配置字典
         """
+        # 配置可能存储在两个地方：
+        # 1. 直接在 node_data_dict 中（旧格式）
+        # 2. 在 node_data_dict['config'] 中（新格式）
+        config = node_data_dict.get('config', {}) if isinstance(node_data_dict.get('config'), dict) else {}
+
+        # 兼容两种 label 格式：
+        # 1. 新格式: label_name + label_color (在 config 中)
+        # 2. 旧格式: label (直接在 node_data_dict 中)
+        if 'label_name' in config or 'label_color' in config:
+            label_config = {
+                'name': config.get('label_name', 'Object'),
+                'color': config.get('label_color', '#FF0000')
+            }
+        elif 'label_name' in node_data_dict or 'label_color' in node_data_dict:
+            label_config = {
+                'name': node_data_dict.get('label_name', 'Object'),
+                'color': node_data_dict.get('label_color', '#FF0000')
+            }
+        else:
+            label_config = node_data_dict.get('label', {
+                'name': 'Object',
+                'color': '#FF0000'
+            })
+
         return {
-            'interval_seconds': node_data_dict.get('interval_seconds', 1.0),
-            'runtime_timeout': node_data_dict.get('runtime_timeout', 30),
-            'memory_limit_mb': node_data_dict.get('memory_limit_mb', 512),
-            'window_detection': node_data_dict.get('window_detection', {
+            'interval_seconds': config.get('interval_seconds', node_data_dict.get('interval_seconds', 1.0)),
+            'runtime_timeout': config.get('runtime_timeout', node_data_dict.get('runtime_timeout', 30)),
+            'memory_limit_mb': config.get('memory_limit_mb', node_data_dict.get('memory_limit_mb', 512)),
+            'window_detection': config.get('window_detection', node_data_dict.get('window_detection', {
                 'enable': False,
                 'window_size': 30,
                 'window_mode': 'ratio',
                 'window_threshold': 0.3
-            }),
-            'label': node_data_dict.get('label', {
-                'name': 'Object',
-                'color': '#FF0000'
-            }),
-            'roi_regions': node_data_dict.get('roi_regions', [])
+            })),
+            'label': label_config,
+            'roi_regions': config.get('roi_regions', node_data_dict.get('roi_regions', []))
         }
 
     def _build_execution_graph(self):
@@ -162,6 +183,11 @@ class WorkflowExecutor:
 
                     # 从工作流数据中获取完整的 node_data
                     node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
+
+                    if not node_data_dict:
+                        logger.warning(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 在工作流数据中未找到配置")
+
+                    logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 的原始配置: {node_data_dict.get('config', {})}")
 
                     # 获取运行时配置（从节点配置）
                     runtime_config = self._get_node_runtime_config(node_data_dict)
@@ -249,6 +275,17 @@ class WorkflowExecutor:
                 indegrees[to_id] += 1
         return indegrees
 
+    def _calculate_node_indegrees_for_subset(self, node_subset):
+        """计算节点子集中每个节点的入度（只计算子集内的前驱节点）"""
+        indegrees = {node_id: 0 for node_id in node_subset}
+        for conn in self.connections:
+            from_id = conn['from']
+            to_id = conn['to']
+            # 只统计两端都在子集中的连接
+            if to_id in indegrees and from_id in node_subset:
+                indegrees[to_id] += 1
+        return indegrees
+
     def _get_node_dependencies(self, node_id):
         """获取节点的所有依赖节点（前驱节点）"""
         dependencies = []
@@ -263,11 +300,17 @@ class WorkflowExecutor:
         """
         构建拓扑层级
         返回: [[level0_nodes], [level1_nodes], [level2_nodes], ...]
-        例如: [[source], [algo1, algo2, algo3], [function], [alert1, alert2]]
+        例如: [[source], [algo1, algo2, algo3], [function]]
+
+        注意：不包含 alert 和 output 节点，因为它们会由上游节点通过 _execute_branch 自动执行
         """
         levels = []
-        remaining_nodes = set(self.nodes.keys())
-        level_indegrees = self._calculate_node_indegrees()
+        # 排除会被自动执行的节点（alert, output）
+        remaining_nodes = {
+            node_id for node_id in self.nodes.keys()
+            if not isinstance(self.nodes[node_id], (OutputNodeData, AlertNodeData))
+        }
+        level_indegrees = self._calculate_node_indegrees_for_subset(remaining_nodes)
 
         while remaining_nodes:
             # 找出当前入度为0的节点（可以执行的节点）
@@ -562,36 +605,26 @@ class WorkflowExecutor:
         """执行单个节点（不处理后续节点）"""
         return self._execute_node(node_id, context)
 
-    def _execute_algorithm_branch(self, node_id, context):
+    def _execute_branch(self, node_id, context):
         """
-        执行算法分支：从该节点开始，按连接关系顺序执行到结束
-        用于简单的线性分支：algorithm -> output/alert
+        执行节点分支：从该节点开始，按连接关系递归执行所有下游节点
+        用于算法节点和函数节点的分支执行
         """
-        current_node_id = node_id
-        current_context = context
+        result = self._execute_node(node_id, context)
+        if result is None:
+            return
 
-        while current_node_id:
-            result = self._execute_node(current_node_id, current_context)
-            if result is None:
-                break
+        next_nodes = self.execution_graph.get(node_id, [])
+        for next_info in next_nodes:
+            next_id = next_info['target']
+            condition = next_info.get('condition')
 
-            current_context = result
-            next_nodes = self.execution_graph.get(current_node_id, [])
+            if not self._evaluate_condition(condition, result):
+                logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件不满足: {condition}")
+                continue
 
-            # 查找下一个满足条件的节点
-            next_node_id = None
-            for next_info in next_nodes:
-                next_id = next_info['target']
-                condition = next_info.get('condition')
-
-                if self._evaluate_condition(condition, current_context):
-                    logger.info(f"[WorkflowWorker] {current_node_id} -> {next_id} 条件满足")
-                    next_node_id = next_id
-                    break
-                else:
-                    logger.info(f"[WorkflowWorker] {current_node_id} -> {next_id} 条件不满足: {condition}")
-
-            current_node_id = next_node_id
+            logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件满足，继续执行")
+            self._execute_branch(next_id, result)
 
     def _execute_level_nodes(self, level_nodes, context, executor=None):
         """
@@ -659,7 +692,7 @@ class WorkflowExecutor:
                     self._execute_branch(next_id, result)
         elif isinstance(node, AlgorithmNodeData):
             # 算法节点：执行并继续执行下游（形成完整分支）
-            self._execute_algorithm_branch(node_id, context)
+            self._execute_branch(node_id, context)
         else:
             # 其他节点（roi_draw, condition, output, alert）：直接执行单个节点
             self._execute_single_node(node_id, context)

@@ -230,14 +230,68 @@ export async function deleteModel(id: number) {
   });
 }
 
-export async function uploadModel(file: File) {
-  const formData = new FormData();
-  formData.append('model_file', file);
+export async function uploadModel(file: File, metadata?: {
+  name: string;
+  model_type: string;
+  framework: string;
+  version?: string;
+  input_shape?: string;
+  description?: string;
+}) {
+  // 验证文件对象
+  if (!file || !(file instanceof File)) {
+    throw new Error('无效的文件对象');
+  }
 
-  return request('/api/upload/model', {
-    method: 'POST',
-    data: formData,
+  console.log('开始上传模型文件:', {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+    metadata,
   });
+
+  const formData = new FormData();
+
+  // 添加文件
+  formData.append('file', file);
+
+  // 添加其他元数据
+  if (metadata) {
+    formData.append('name', metadata.name);
+    formData.append('model_type', metadata.model_type);
+    formData.append('framework', metadata.framework);
+    if (metadata.version) formData.append('version', metadata.version);
+    if (metadata.input_shape) formData.append('input_shape', metadata.input_shape);
+    if (metadata.description) formData.append('description', metadata.description);
+  }
+
+  // 验证 FormData
+  console.log('FormData 内容检查:');
+  for (const [key, value] of formData.entries()) {
+    console.log(`  ${key}:`, value instanceof File ? `File(${value.name}, ${value.size} bytes)` : value);
+  }
+
+  // 使用原生 fetch API 上传文件，避免 axios 处理 FormData 的问题
+  // 注意：URL 末尾需要斜杠，否则会返回 308 重定向
+  const token = localStorage.getItem('token');
+  const response = await fetch('/api/models/', {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // 不要设置 Content-Type，让浏览器自动设置 multipart/form-data 边界
+    },
+    body: formData,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error('上传失败:', data);
+    throw new Error(data.error || '上传失败');
+  }
+
+  console.log('上传成功:', data);
+  return data;
 }
 
 // 脚本

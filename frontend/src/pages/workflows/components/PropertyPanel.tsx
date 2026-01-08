@@ -49,6 +49,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       console.log('🔄 PropertyPanel useEffect 触发');
       console.log('📦 节点类型:', nodeType);
       console.log('📋 节点数据:', node.data);
+      console.log('🔧 节点 config:', node.data?.config);
       console.log('🎥 videoSourceId:', node.data.videoSourceId, 'videoSourceName:', node.data.videoSourceName);
       console.log('🚫 isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
 
@@ -102,6 +103,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       } else if (nodeType === 'algorithm') {
         formValues.confidence = node.data.confidence || 0.5;
 
+        // 执行配置
+        formValues.intervalSeconds = nodeConfig.interval_seconds || 1;
+        formValues.runtimeTimeout = nodeConfig.runtime_timeout || 30;
+        formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
+        formValues.labelName = nodeConfig.label_name || 'Object';
+        formValues.labelColor = nodeConfig.label_color || '#FF0000';
+
+        // 窗口检测配置
         const windowDetection = nodeConfig.window_detection || {};
         formValues.windowEnable = windowDetection.enable || false;
         formValues.windowSize = windowDetection.window_size || 30;
@@ -186,6 +195,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       if (nodeType === 'algorithm') {
         const config = node.data?.config || {};
 
+        // 保存执行配置
+        config.interval_seconds = values.intervalSeconds;
+        config.runtime_timeout = values.runtimeTimeout;
+        config.memory_limit_mb = values.memoryLimitMb;
+        config.label_name = values.labelName;
+        config.label_color = values.labelColor;
+
+        // 保存窗口检测配置
         if (values.windowEnable) {
           config.window_detection = {
             enable: true,
@@ -203,6 +220,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.windowSize;
         delete updatedData.windowMode;
         delete updatedData.windowThreshold;
+        delete updatedData.intervalSeconds;
+        delete updatedData.runtimeTimeout;
+        delete updatedData.memoryLimitMb;
+        delete updatedData.labelName;
+        delete updatedData.labelColor;
       } else if (nodeType === 'function') {
         const config = node.data?.config || {};
         
@@ -358,6 +380,53 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 <Option value={0.9}>0.9 (极高)</Option>
               </Select>
             </Form.Item>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">执行配置</span>
+              </div>
+
+              <Form.Item
+                label="检测间隔（秒）"
+                name="intervalSeconds"
+                extra="每N秒执行一次检测，1表示每帧都检测"
+              >
+                <InputNumber min={0.1} max={60} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item
+                label="运行超时（秒）"
+                name="runtimeTimeout"
+                extra="单次检测最大执行时间"
+              >
+                <InputNumber min={1} max={300} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item
+                label="内存限制（MB）"
+                name="memoryLimitMb"
+                extra="算法运行最大内存使用"
+              >
+                <InputNumber min={64} max={4096} step={64} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item
+                label="标签名称"
+                name="labelName"
+                extra="检测结果中显示的标签名称"
+              >
+                <Input placeholder="例如: Person" />
+              </Form.Item>
+
+              <Form.Item
+                label="标签颜色"
+                name="labelColor"
+              >
+                <Input type="color" style={{ width: 100 }} />
+              </Form.Item>
+            </div>
 
             <div className="form-divider" />
 

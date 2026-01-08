@@ -139,6 +139,7 @@ export default function AlgorithmWizard() {
             windowMode: algorithm.window_mode || 'ratio',
             windowThreshold: algorithm.window_threshold || 0.3,
             labelName: algorithm.label_name || 'Object',
+            labelColor: algorithm.label_color || '#FF0000',
           });
 
           try {
@@ -234,6 +235,7 @@ export default function AlgorithmWizard() {
         window_mode: values.windowMode,
         window_threshold: values.windowThreshold,
         label_name: values.labelName,
+        label_color: values.labelColor,
         model_json: JSON.stringify({ models: [] }),
         model_ids: JSON.stringify([]),
         ext_config_json: JSON.stringify({}),

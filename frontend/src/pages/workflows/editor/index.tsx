@@ -438,6 +438,8 @@ export default function WorkflowEditorPage() {
   };
 
   const handleAddNode = (nodeData: any) => {
+    console.log('🚀 [EDITOR] handleAddNode 收到的数据:', nodeData);
+
     const newNode: Node = {
       id: `${nodeData.type}-${Date.now()}`,
       type: nodeData.nodeType,
@@ -446,13 +448,15 @@ export default function WorkflowEditorPage() {
         type: nodeData.type,
         label: nodeData.label,
         description: nodeData.description,
-        dataId: null,
+        dataId: nodeData.dataId || null,
         algorithmId: nodeData.algorithmId || null,
         icon: nodeData.icon,
         color: nodeData.color,
-        config: null,
+        config: nodeData.config || {},  // 使用传入的 config，而不是 null
       },
     };
+
+    console.log('✅ [EDITOR] 创建的新节点:', newNode);
     setNodes((nds) => [...nds, newNode]);
   };
 

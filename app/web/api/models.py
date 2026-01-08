@@ -156,11 +156,29 @@ def upload_model():
         # 确定存储目录
         type_dir = model_type.lower()
         save_dir = os.path.join(MODELS_ROOT, type_dir)
-        os.makedirs(save_dir, exist_ok=True)
+
+        # 确保目录存在
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"创建目录失败: {save_dir}, 错误: {e}")
+            return jsonify({'success': False, 'error': f'创建存储目录失败: {e}'}), 500
+
+        # 处理文件重名
+        base_name, ext = os.path.splitext(filename)
+        counter = 0
+        final_filename = filename
+        while os.path.exists(os.path.join(save_dir, final_filename)):
+            counter += 1
+            final_filename = f"{base_name}_{counter}{ext}"
 
         # 保存文件
-        file_path = os.path.join(save_dir, filename)
-        file.save(file_path)
+        file_path = os.path.join(save_dir, final_filename)
+        try:
+            file.save(file_path)
+        except Exception as e:
+            logger.error(f"保存文件失败: {file_path}, 错误: {e}")
+            return jsonify({'success': False, 'error': f'保存文件失败: {e}'}), 500
 
         # 获取文件大小
         file_size = os.path.getsize(file_path)

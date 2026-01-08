@@ -33,6 +33,9 @@ class Algorithm(BaseModel):
     script_path = pw.TextField()
     script_config = pw.TextField(default='{}')
 
+    # === 扩展配置（执行配置等） ===
+    ext_config_json = pw.TextField(default='{}')
+
     # === Hook配置 ===
     enabled_hooks = pw.TextField(null=True)
 
@@ -44,6 +47,14 @@ class Algorithm(BaseModel):
         """获取解析后的脚本配置"""
         try:
             return json.loads(self.script_config) if self.script_config else {}
+        except:
+            return {}
+
+    @property
+    def ext_config(self):
+        """获取解析后的扩展配置"""
+        try:
+            return json.loads(self.ext_config_json) if self.ext_config_json else {}
         except:
             return {}
 
