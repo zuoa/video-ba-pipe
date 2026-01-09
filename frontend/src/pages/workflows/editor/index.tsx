@@ -228,6 +228,22 @@ export default function WorkflowEditorPage() {
               });
             }
 
+            // Alert 节点：从 data 中读取所有 alert 相关字段
+            if (nodeType === 'alert') {
+              nodeData.alertLevel = node.data?.alertLevel || 'info';
+              nodeData.alertMessage = node.data?.alertMessage || '检测到目标';
+              nodeData.alertType = node.data?.alertType || 'detection';
+              nodeData.messageFormat = node.data?.messageFormat || 'detailed';
+              nodeData.triggerCondition = node.data?.triggerCondition;
+              nodeData.suppression = node.data?.suppression;
+              console.log('🚨 Alert 节点加载数据:', {
+                节点ID: node.id,
+                alertLevel: nodeData.alertLevel,
+                alertType: nodeData.alertType,
+                messageFormat: nodeData.messageFormat,
+              });
+            }
+
             return {
               id: node.id,
               type: nodeType,
@@ -438,11 +454,12 @@ export default function WorkflowEditorPage() {
             input_nodes: saveData.data.input_nodes,
           });
         } else if (nodeType === 'alert') {
-          // Alert 节点：保存 alertLevel, alertType, alertMessage, triggerCondition, suppression 到 data 字段
+          // Alert 节点：保存 alertLevel, alertType, alertMessage, messageFormat, triggerCondition, suppression 到 data 字段
           saveData.data = {
             alertLevel: node.data?.alertLevel,
             alertType: node.data?.alertType,
             alertMessage: node.data?.alertMessage,
+            messageFormat: node.data?.messageFormat || 'detailed',  // 添加消息格式字段
             triggerCondition: node.data?.triggerCondition,
             suppression: node.data?.suppression,
           };
@@ -451,6 +468,7 @@ export default function WorkflowEditorPage() {
             alertLevel: saveData.data.alertLevel,
             alertType: saveData.data.alertType,
             alertMessage: saveData.data.alertMessage,
+            messageFormat: saveData.data.messageFormat,  // 添加日志
             triggerCondition: saveData.data.triggerCondition,
             suppression: saveData.data.suppression,
           });

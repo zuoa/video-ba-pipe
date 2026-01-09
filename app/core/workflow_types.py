@@ -116,6 +116,14 @@ class AlertNodeData(NodeContext):
     }
     """
 
+    message_format: Optional[str] = None
+    """
+    消息格式类型（用于 ExecutionLogCollector）
+    - 'detailed': 详细格式（包含节点ID和级别）
+    - 'simple': 简单格式（仅消息内容）
+    - 'summary': 汇总格式（按级别分组）
+    """
+
 OutputNodeData = AlertNodeData  # Output节点与Alert节点配置相同
 
 @dataclass
@@ -187,6 +195,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         alert_level = data.get('alertLevel') or data.get('alert_level')
         alert_message = data.get('alertMessage') or data.get('alert_message')
         alert_type = data.get('alertType') or data.get('alert_type')
+        message_format = data.get('messageFormat') or data.get('message_format')
         trigger_condition = data.get('triggerCondition') or data.get('trigger_condition')
         suppression = data.get('suppression')
 
@@ -196,6 +205,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             alert_level=alert_level,
             alert_message=alert_message,
             alert_type=alert_type,
+            message_format=message_format,
             trigger_condition=trigger_condition,
             suppression=suppression
         )

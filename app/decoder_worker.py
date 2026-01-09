@@ -176,9 +176,8 @@ class DecoderWorker:
                 kwargs['transport'] = self.stream_config['transport']
 
         elif stream_type == 'file':
-            # 文件流特定参数
-            if 'loop' in self.stream_config:
-                kwargs['loop'] = self.stream_config['loop']
+            # 文件流特定参数，默认循环播放
+            kwargs['loop'] = self.stream_config.get('loop', True)
 
         # HTTP-FLV 和 HLS 目前没有特定参数，但预留扩展空间
 

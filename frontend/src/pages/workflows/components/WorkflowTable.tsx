@@ -143,7 +143,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
 
         if (sourceNode && sourceNode.dataId) {
           const sourceId = sourceNode.dataId;
-          const source = videoSources.find((s) => s.id === sourceId);
+          const source = videoSources.find((s) => String(s.id) === String(sourceId));
           return source ? (
             <Tag color="blue" className="source-tag">
               {source.name}

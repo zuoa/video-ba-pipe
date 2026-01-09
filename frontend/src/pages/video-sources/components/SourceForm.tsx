@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Form,
@@ -41,6 +41,31 @@ const SourceForm: React.FC<SourceFormProps> = ({
   const [streamInfo, setStreamInfo] = useState<any>(null);
 
   const isEdit = !!editingSource;
+
+  // 当弹窗打开或 editingSource 变化时，回填表单数据
+  useEffect(() => {
+    if (visible && editingSource) {
+      console.log('📝 回填编辑数据:', editingSource);
+      // 使用 setTimeout 确保弹窗已打开
+      setTimeout(() => {
+        form.setFieldsValue({
+          source_code: editingSource.source_code,
+          name: editingSource.name,
+          source_url: editingSource.source_url,
+          source_decode_width: editingSource.source_decode_width,
+          source_decode_height: editingSource.source_decode_height,
+          source_fps: editingSource.source_fps,
+          enabled: editingSource.enabled !== undefined ? editingSource.enabled : true,
+          status: editingSource.status || 'STOPPED',
+        });
+      }, 0);
+    } else if (visible && !editingSource) {
+      // 新增模式，重置表单为初始值
+      console.log('📝 重置为新增模式');
+      form.resetFields();
+      setStreamInfo(null);
+    }
+  }, [visible, editingSource, form]);
 
   const handleDetect = async () => {
     const url = form.getFieldValue('source_url');

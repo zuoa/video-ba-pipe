@@ -32,6 +32,7 @@ from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_
 from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, OutputNodeData, AlertNodeData
+from app.core.execution_log_collector import ExecutionLogCollector
 
 
 class WorkflowExecutor:
@@ -499,14 +500,39 @@ class WorkflowExecutor:
     def _handle_algorithm_node(self, node_id, context):
         frame = context.get('frame')
         frame_timestamp = context.get('frame_timestamp')
+        log_collector = context.get('log_collector')  # 获取日志收集器
+
         if frame is None:
+            if log_collector:
+                log_collector.add_warning(node_id, "输入帧为空")
             return None
+
         roi_regions = context.get('roi_regions')
         upstream_results = self._get_upstream_results(node_id)
-        result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
-        if result:
-            self.node_results_cache[node_id] = result
-        return result
+
+        try:
+            result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
+            if result:
+                self.node_results_cache[node_id] = result
+
+                # 记录检测日志
+                detection_count = len(result.get('detections', []))
+                if log_collector:
+                    log_collector.add_info(
+                        node_id,
+                        f"检测到 {detection_count} 个目标",
+                        metadata={'detection_count': detection_count}
+                    )
+                    logger.info(f"[WorkflowWorker] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
+            return result
+        except Exception as e:
+            if log_collector:
+                log_collector.add_error(node_id, f"算法执行失败: {str(e)}")
+                logger.info(f"[WorkflowWorker] 算法节点 {node_id} 已记录错误日志")
+            logger.error(f"[WorkflowWorker] 算法节点 {node_id} 执行异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def _handle_condition_node(self, node_id, context):
         return context
@@ -519,13 +545,19 @@ class WorkflowExecutor:
         """处理函数节点：直接调用内置函数，不依赖 self.algorithms"""
         frame = context.get('frame')
         frame_timestamp = context.get('frame_timestamp')
+        log_collector = context.get('log_collector')  # 获取日志收集器
+
         if frame is None:
+            if log_collector:
+                log_collector.add_warning(node_id, "输入帧为空")
             logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 输入帧为空")
             return None
 
         # 获取节点配置（从 workflow_data 中读取完整配置）
         node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
         if not node_data_dict:
+            if log_collector:
+                log_collector.add_warning(node_id, "在工作流数据中未找到")
             logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 在工作流数据中未找到")
             return None
 
@@ -538,6 +570,8 @@ class WorkflowExecutor:
         # 获取上游结果
         upstream_results = self._get_upstream_results(node_id)
         if not upstream_results:
+            if log_collector:
+                log_collector.add_warning(node_id, "没有上游结果")
             logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 没有上游结果")
             return None
 
@@ -548,6 +582,8 @@ class WorkflowExecutor:
             from app.core.builtin_functions import BUILTIN_FUNCTIONS
 
             if function_name not in BUILTIN_FUNCTIONS:
+                if log_collector:
+                    log_collector.add_error(node_id, f"未知函数: {function_name}")
                 logger.error(f"[WorkflowWorker] 未知函数: {function_name}")
                 return None
 
@@ -588,6 +624,8 @@ class WorkflowExecutor:
             else:
                 # 双输入函数
                 if len(upstream_node_ids) < 2:
+                    if log_collector:
+                        log_collector.add_warning(node_id, f"双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
                     logger.warning(f"[WorkflowWorker] 双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
                     return None
 
@@ -606,6 +644,15 @@ class WorkflowExecutor:
                     all_detections.append(r['object_b'])
 
             logger.info(f"[WorkflowWorker] 函数节点 {node_id} 处理完成，匹配数: {len(results)}, 返回检测数: {len(all_detections)}")
+
+            # 记录函数执行日志
+            if log_collector:
+                log_collector.add_info(
+                    node_id,
+                    f"函数 {function_name} 处理完成，匹配数: {len(results)}",
+                    metadata={'function_name': function_name, 'matched_count': len(results)}
+                )
+                logger.info(f"[WorkflowWorker] 函数节点 {node_id} 已记录日志: 函数 {function_name} 处理完成，匹配数: {len(results)}")
 
             # 返回标准格式的结果
             result = {
@@ -630,11 +677,13 @@ class WorkflowExecutor:
             return result
 
         except Exception as exc:
+            if log_collector:
+                log_collector.add_error(node_id, f"处理异常: {str(exc)}")
             logger.error(f"[WorkflowWorker] 函数节点 {node_id} 处理异常: {exc}")
             import traceback
             traceback.print_exc()
             return None
-    
+
     def _get_upstream_results(self, node_id):
         """
         获取上游节点的执行结果
@@ -695,19 +744,23 @@ class WorkflowExecutor:
         if not node:
             logger.warning(f"[WorkflowWorker] 节点 {node_id} 不在 self.nodes 中，可用节点: {list(self.nodes.keys())}")
             return None
-        
+
         if not self._should_execute_node(node_id):
             interval = self._get_node_interval(node_id)
             logger.debug(f"[WorkflowWorker] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
             return None
-        
+
         node_type = node.node_type
         handler = self.node_handlers.get(node_type)
-        
+
         if not handler:
+            # 从 context 中获取 log_collector 并记录警告
+            log_collector = context.get('log_collector')
+            if log_collector:
+                log_collector.add_warning(node_id, f"未知节点类型: {node_type}")
             logger.warning(f"[WorkflowWorker] 未知节点类型: {node_type} (节点 {node_id})")
             return context
-        
+
         logger.info(f"[WorkflowWorker] 执行节点 {node_id} (类型: {node_type})")
         return handler(node_id, context)
 
@@ -734,7 +787,9 @@ class WorkflowExecutor:
                 continue
 
             logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件满足，继续执行")
-            self._execute_branch(next_id, result)
+            # 重要：始终传递原始的 context，而不是 result
+            # result 可能不包含 log_collector 等重要信息
+            self._execute_branch(next_id, context)
 
     def _execute_level_nodes(self, level_nodes, context, executor=None):
         """
@@ -799,8 +854,8 @@ class WorkflowExecutor:
                 condition = next_info.get('condition')
                 if self._evaluate_condition(condition, result):
                     logger.info(f"[WorkflowWorker] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
-                    # 继续执行下游（递归调用_execute_branch）
-                    self._execute_branch(next_id, result)
+                    # 重要：传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
+                    self._execute_branch(next_id, context)
         elif isinstance(node, AlgorithmNodeData):
             # 算法节点：执行并继续执行下游（形成完整分支）
             self._execute_branch(node_id, context)
@@ -841,14 +896,22 @@ class WorkflowExecutor:
                 - roi_mask: ROI 掩码
                 - label_color: 可视化颜色（可选）
                 - upstream_node_id: 上游节点 ID（用于可视化）
+                - log_collector: 日志收集器（用于生成告警消息）
         """
+        # 获取日志收集器
+        log_collector = context.get('log_collector')
+
         if 'frame' not in context or 'result' not in context:
+            if log_collector:
+                log_collector.add_warning(node_id, "缺少必需数据")
             logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据")
             return
 
         # 获取 Alert 节点配置
         alert_node = self.nodes.get(node_id)
         if not isinstance(alert_node, AlertNodeData):
+            if log_collector:
+                log_collector.add_warning(node_id, "不是 Alert 节点")
             logger.warning(f"[WorkflowWorker] 节点 {node_id} 不是 Alert 节点")
             return
 
@@ -869,7 +932,42 @@ class WorkflowExecutor:
         # 从 Alert 节点配置获取告警信息
         alert_type = alert_node.alert_type or "detection"
         alert_level = alert_node.alert_level or "info"
-        alert_message = alert_node.alert_message or ""
+
+        # 使用日志收集器生成告警消息
+        if log_collector:
+            # 获取消息格式类型（默认 'detailed'）
+            message_format = alert_node.message_format or 'detailed'
+
+            logger.info(f"[WorkflowWorker] Alert节点 {node_id} 开始构建告警消息，格式: {message_format}")
+            logger.info(f"[WorkflowWorker] 日志收集器 ID: {id(log_collector)}")
+            logger.info(f"[WorkflowWorker] 日志收集器包含 {len(log_collector.logs)} 条日志")
+
+            # 打印所有日志
+            for idx, log in enumerate(log_collector.logs):
+                logger.info(f"[WorkflowWorker] 日志 {idx + 1}: [{log['node_id']}] {log['content']}")
+
+            # 构建执行详情消息
+            execution_details = log_collector.build_alert_message(
+                format_type=message_format,
+                include_metadata=False
+            )
+
+            logger.info(f"[WorkflowWorker] 执行详情: {execution_details}")
+
+            # 组合用户自定义消息和执行详情
+            custom_message = alert_node.alert_message or ""
+            if custom_message and execution_details and execution_details != "无执行日志":
+                alert_message = f"{custom_message}\n\n执行详情:\n{execution_details}"
+            elif execution_details and execution_details != "无执行日志":
+                alert_message = execution_details
+            else:
+                alert_message = custom_message
+
+            logger.info(f"[WorkflowWorker] 最终告警消息: {alert_message}")
+        else:
+            # 如果没有日志收集器，使用原始消息
+            alert_message = alert_node.alert_message or ""
+            logger.warning(f"[WorkflowWorker] Alert节点 {node_id} 没有日志收集器")
 
         # 加载触发条件配置（窗口检测）
         trigger_condition = alert_node.trigger_condition
@@ -1030,6 +1128,7 @@ class WorkflowExecutor:
         main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
 
         # 创建告警记录
+        logger.info(f"[WorkflowWorker] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
         alert = Alert.create(
             video_source=self.video_source,
             workflow=self.workflow,
@@ -1044,6 +1143,8 @@ class WorkflowExecutor:
             window_stats=json.dumps(trigger_stats) if trigger_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None
         )
+        logger.info(f"[WorkflowWorker] Alert 创建成功，ID: {alert.id}")
+        logger.info(f"[WorkflowWorker] 数据库中的 alert_message: {alert.alert_message[:200] if alert.alert_message else 'None'}...")
         logger.info(f"[WorkflowWorker] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
 
         # 启动视频录制
@@ -1071,23 +1172,6 @@ class WorkflowExecutor:
                 logger.warning(f"[WorkflowWorker] 预警消息发布到RabbitMQ失败: {alert.id}")
         except Exception as e:
             logger.error(f"[WorkflowWorker] 发布预警消息到RabbitMQ时发生错误: {e}")
-    def _execute_branch(self, node_id, context):
-        result = self._execute_node(node_id, context)
-        if result is None:
-            return
-        
-        next_nodes = self.execution_graph.get(node_id, [])
-        for next_info in next_nodes:
-            next_id = next_info['target']
-            condition = next_info.get('condition')
-            
-            if not self._evaluate_condition(condition, result):
-                logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件不满足: {condition}")
-                continue
-            
-            logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件满足，继续执行")
-            self._execute_branch(next_id, result)
-    
     def run(self):
         logger.info(f"[WorkflowWorker:{os.getpid()}] 已加载 {len(self.algorithms)} 个算法，开始处理 {self.video_source.buffer_name}")
 
@@ -1128,9 +1212,16 @@ class WorkflowExecutor:
                     # 清空上一帧的结果缓存
                     self.node_results_cache.clear()
 
+                    # 创建执行日志收集器
+                    log_collector = ExecutionLogCollector()
+                    log_collector.frame_timestamp = frame_timestamp
+
+                    logger.info(f"[WorkflowWorker] 创建日志收集器，ID: {id(log_collector)}")
+
                     context = {
                         'frame': latest_frame.copy(),
-                        'frame_timestamp': frame_timestamp
+                        'frame_timestamp': frame_timestamp,
+                        'log_collector': log_collector  # 添加日志收集器到上下文
                     }
 
                     # 按拓扑层级执行所有节点

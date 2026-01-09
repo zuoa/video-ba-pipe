@@ -217,13 +217,13 @@ class RTSPStreamer(BaseStreamer):
 class FileStreamer(BaseStreamer):
     """文件流处理器实现，用于读取本地视频文件。"""
 
-    def __init__(self, file_path: str, loop: bool = False):
+    def __init__(self, file_path: str, loop: bool = True):
         """
         初始化文件流处理器。
 
         Args:
             file_path: 视频文件路径
-            loop: 是否循环播放
+            loop: 是否循环播放（默认True）
         """
         super().__init__(file_path)
         self.loop = loop

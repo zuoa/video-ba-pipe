@@ -67,7 +67,8 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
 
   // 渲染视频源项
   const renderSourceItem = (source: any) => {
-    const isSelected = source.id === value;
+    // 使用宽松相等 == 来匹配，避免类型不一致（字符串 vs 数字）导致的匹配失败
+    const isSelected = source.id == value;
 
     return (
       <List.Item

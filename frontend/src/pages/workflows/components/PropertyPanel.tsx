@@ -41,6 +41,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
   // 使用 useRef 而不是 useState，确保同步更新
   const isUpdatingVideoSourceRef = useRef(false);
+  // 保存上一个节点的ID，用于检测节点切换
+  const lastNodeIdRef = useRef<string | undefined>(node?.id);
 
   console.log('PropertyPanel render, node:', node);
   console.log('Available videoSources:', videoSources);
@@ -91,7 +93,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         const sourceId = node.data.videoSourceId;
         if (sourceId !== undefined && sourceId !== null) {
           // 找到匹配的视频源来确认类型
-          const matchingSource = videoSources.find(s => s.id == sourceId); // 使用 == 宽松匹配
+          const matchingSource = videoSources.find(s => String(s.id) === String(sourceId));
           if (matchingSource) {
             // 使用匹配到的源的id，确保类型一致
             formValues.videoSourceId = matchingSource.id;
@@ -135,9 +137,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       } else if (nodeType === 'roi') {
         formValues.roiMode = node.data.roiMode || 'postFilter';
       } else if (nodeType === 'alert') {
+        console.log('🔍 Alert节点回显 - node.data:', node.data);
+        console.log('🔍 messageFormat 值:', node.data.messageFormat);
         formValues.alertLevel = node.data.alertLevel || 'info';
         formValues.alertMessage = node.data.alertMessage || '检测到目标';
         formValues.alertType = node.data.alertType || 'detection';
+        formValues.messageFormat = node.data.messageFormat || 'detailed';
+        console.log('✅ formValues.messageFormat 设置为:', formValues.messageFormat);
 
         // 读取触发条件配置
         const triggerCondition = node.data.triggerCondition;
@@ -170,8 +176,21 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.recordDuration = node.data.recordDuration || 10;
       }
 
+      console.log('📝 [PropertyPanel] 即将设置表单值，messageFormat:', formValues.messageFormat);
+
+      // 先重置表单，清除旧值
+      form.resetFields();
+
+      // 然后设置新值
       form.setFieldsValue(formValues);
+
       console.log('✅ 表单初始化完成');
+
+      // 验证表单值是否正确设置
+      setTimeout(() => {
+        const currentValues = form.getFieldsValue();
+        console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
+      }, 100);
     }
   }, [node, node?.data, node?.id, form]); // 移除 videoSources 依赖，避免不必要的重渲染
 
@@ -208,7 +227,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       // 特殊处理视频源节点：添加视频源名称和编码
       const nodeType = node.data?.type || node.type;
       if ((nodeType === 'videoSource' || nodeType === 'source') && values.videoSourceId) {
-        const selectedSource = videoSources.find(s => s.id == values.videoSourceId);
+        const selectedSource = videoSources.find(s => String(s.id) === String(values.videoSourceId));
         if (selectedSource) {
           // 重要：也要更新 dataId，否则会被旧数据覆盖
           updatedData.dataId = selectedSource.id;
@@ -243,6 +262,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.labelColor;
       } else if (nodeType === 'alert') {
         // Alert 节点：保存触发条件和抑制配置
+
+        // 保存消息格式
+        console.log('📝 Alert节点保存 messageFormat:', values.messageFormat);
+        updatedData.messageFormat = values.messageFormat || 'detailed';
+        console.log('✅ updatedData.messageFormat 已设置为:', updatedData.messageFormat);
 
         // 保存触发条件配置
         if (values.triggerConditionEnable) {
@@ -355,7 +379,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       case 'source':
         // 获取当前选中的视频源
         const currentSourceId = node.data.videoSourceId;
-        const currentSource = videoSources.find(s => s.id == currentSourceId);
+        const currentSource = videoSources.find(s => String(s.id) === String(currentSourceId));
 
         console.log('渲染视频源配置 -', {
           currentSourceId,
@@ -762,7 +786,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           if (sourceType === 'videoSource' || sourceType === 'source') {
             const videoSourceId = sourceNode.data?.videoSourceId;
             if (videoSourceId) {
-              return videoSources.find(s => s.id == videoSourceId) || null;
+              return videoSources.find(s => String(s.id) === String(videoSourceId)) || null;
             }
           }
 
@@ -882,8 +906,23 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             <Form.Item
               label="告警消息"
               name="alertMessage"
+              extra="自定义告警消息前缀，会自动追加执行详情"
             >
               <Input placeholder="自定义告警消息" />
+            </Form.Item>
+            <Form.Item
+              label="消息格式"
+              name="messageFormat"
+              extra="执行详情的展示格式"
+            >
+              <Select
+                placeholder="请选择消息格式"
+                onChange={(value) => console.log('🔄 Select onChange:', value)}
+              >
+                <Option value="detailed">详细格式（包含节点ID）</Option>
+                <Option value="simple">简单格式（仅消息内容）</Option>
+                <Option value="summary">汇总格式（按级别分组）</Option>
+              </Select>
             </Form.Item>
 
             <div className="form-divider" />
@@ -1134,7 +1173,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           console.log('🎬 VideoSourceSelector onChange 被调用，新值:', value);
 
           // 查找选中的视频源
-          const selectedSource = videoSources.find(s => s.id == value);
+          const selectedSource = videoSources.find(s => String(s.id) === String(value));
           if (!selectedSource) {
             console.warn('⚠️ 未找到选中的视频源，value:', value);
             setSelectorVisible(false);

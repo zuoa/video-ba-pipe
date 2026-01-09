@@ -265,6 +265,10 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               description: '发送告警',
               icon: <BellOutlined />,
               color: '#f5222d',
+              alertLevel: 'info',
+              alertMessage: '检测到目标',
+              alertType: 'detection',
+              messageFormat: 'detailed',  // 添加默认消息格式
             })}
             style={{ borderColor: '#f5222d' }}
           >
