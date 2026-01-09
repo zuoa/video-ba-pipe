@@ -39,8 +39,22 @@ class WorkflowExecutor:
         self.workflow_id = workflow_id
         self.workflow = Workflow.get_by_id(workflow_id)
         self.workflow_data = self.workflow.data_dict
-        
-        self.nodes = {n['id']: create_node_data(n) for n in self.workflow_data.get('nodes', [])}
+
+        # 创建节点数据字典
+        workflow_nodes = self.workflow_data.get('nodes', [])
+        logger.info(f"[WorkflowWorker:{os.getpid()}] 工作流包含 {len(workflow_nodes)} 个节点")
+
+        self.nodes = {}
+        for n in workflow_nodes:
+            try:
+                node = create_node_data(n)
+                self.nodes[n['id']] = node
+                logger.debug(f"[WorkflowWorker:{os.getpid()}] 成功创建节点: {n['id']} (类型: {n.get('type')})")
+            except Exception as e:
+                logger.error(f"[WorkflowWorker:{os.getpid()}] 创建节点失败: {n['id']}, 错误: {e}")
+
+        logger.info(f"[WorkflowWorker:{os.getpid()}] 成功加载 {len(self.nodes)} 个节点")
+
         self.connections = self.workflow_data.get('connections', [])
         
         self.source_node = None
@@ -64,7 +78,7 @@ class WorkflowExecutor:
             'alert': self._handle_output_node,
             'function': self._handle_function_node,
         }
-        
+
         self.node_results_cache = {}
         
         self._build_execution_graph()
@@ -168,81 +182,91 @@ class WorkflowExecutor:
             logger.info(f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
         
         for node_id, node in self.nodes.items():
-            if node.node_type in ('algorithm', 'function'):
+            # 只加载算法节点，函数节点有独立的处理逻辑
+            if node.node_type == 'algorithm':
                 algo_id = node.data_id
+                logger.info(f"[WorkflowWorker:{os.getpid()}] 检查算法节点 {node_id}, data_id: {algo_id}")
+
                 if algo_id:
-                    algo = Algorithm.get_by_id(algo_id)
+                    try:
+                        algo = Algorithm.get_by_id(algo_id)
 
-                    # 从工作流数据中获取完整的 node_data
-                    node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
+                        # 从工作流数据中获取完整的 node_data
+                        node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
 
-                    if not node_data_dict:
-                        logger.warning(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 在工作流数据中未找到配置")
+                        if not node_data_dict:
+                            logger.warning(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 在工作流数据中未找到配置")
 
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 的原始配置: {node_data_dict.get('config', {})}")
+                        # 获取节点配置（用户在工作流编辑器中配置的）
+                        node_config = node_data_dict.get('config', {})
 
-                    # 获取节点配置（用户在工作流编辑器中配置的）
-                    node_config = node_data_dict.get('config', {})
+                        # 获取运行时配置（从节点配置）
+                        runtime_config = self._get_node_runtime_config(node_data_dict)
 
-                    # 获取运行时配置（从节点配置）
-                    runtime_config = self._get_node_runtime_config(node_data_dict)
+                        # 提取各项配置
+                        interval_seconds = runtime_config['interval_seconds']
+                        runtime_timeout = runtime_config['runtime_timeout']
+                        memory_limit_mb = runtime_config['memory_limit_mb']
+                        label_config = runtime_config['label']
+                        roi_regions = runtime_config['roi_regions']
 
-                    # 提取各项配置
-                    interval_seconds = runtime_config['interval_seconds']
-                    runtime_timeout = runtime_config['runtime_timeout']
-                    memory_limit_mb = runtime_config['memory_limit_mb']
-                    label_config = runtime_config['label']
-                    roi_regions = runtime_config['roi_regions']
+                        # 存储ROI配置
+                        self.algorithm_roi_configs[node_id] = roi_regions
+                        if roi_regions:
+                            logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} 配置了 {len(roi_regions)} 个ROI热区")
+                        else:
+                            logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} 未配置ROI热区，将使用全画面检测")
 
-                    # 存储ROI配置
-                    self.algorithm_roi_configs[node_id] = roi_regions
-                    if roi_regions:
-                        logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 配置了 {len(roi_regions)} 个ROI热区")
-                    else:
-                        logger.info(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} (算法ID {algo_id}) 未配置ROI热区，将使用全画面检测")
+                        # 构建完整配置（算法固有配置 + 节点配置 + 运行时配置）
+                        full_config = {
+                            "id": algo_id,
+                            "name": algo.name,
+                            "source_id": self.video_source.id,
+                            "script_path": algo.script_path,
+                            "entry_function": 'process',
+                            # 运行时配置
+                            "interval_seconds": interval_seconds,
+                            "runtime_timeout": runtime_timeout,
+                            "memory_limit_mb": memory_limit_mb,
+                            "label_name": label_config['name'],
+                            "label_color": label_config['color'],
+                        }
 
-                    # 构建完整配置（算法固有配置 + 节点配置 + 运行时配置）
-                    full_config = {
-                        "id": algo_id,
-                        "name": algo.name,
-                        "source_id": self.video_source.id,
-                        "script_path": algo.script_path,
-                        "entry_function": 'process',
-                        # 运行时配置
-                        "interval_seconds": interval_seconds,
-                        "runtime_timeout": runtime_timeout,
-                        "memory_limit_mb": memory_limit_mb,
-                        "label_name": label_config['name'],
-                        "label_color": label_config['color'],
-                    }
+                        # 合并算法固有配置（script_config）
+                        full_config.update(algo.config_dict)
 
-                    # 合并算法固有配置（script_config）
-                    full_config.update(algo.config_dict)
+                        # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
+                        full_config.update(node_config)
 
-                    # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
-                    full_config.update(node_config)
+                        logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
+                        self.algorithms[node_id] = ScriptAlgorithm(full_config)
 
-                    self.algorithms[node_id] = ScriptAlgorithm(full_config)
+                        # 存储算法元数据（用于后续访问）
+                        self.algorithm_datamap[node_id] = {
+                            'id': algo_id,
+                            'name': algo.name,
+                            'interval_seconds': interval_seconds,
+                            'label_name': label_config['name'],
+                            'label_color': label_config['color']
+                        }
 
-                    # 存储算法元数据（用于后续访问）
-                    self.algorithm_datamap[node_id] = {
-                        'id': algo_id,
-                        'name': algo.name,
-                        'interval_seconds': interval_seconds,
-                        'label_name': label_config['name'],
-                        'label_color': label_config['color']
-                    }
+                        self.algorithm_configs[node_id] = {
+                            'algorithm_id': algo_id,
+                            'node_id': node_id,
+                            'runtime_config': runtime_config
+                        }
 
-                    self.algorithm_configs[node_id] = {
-                        'algorithm_id': algo_id,
-                        'node_id': node_id,
-                        'runtime_config': runtime_config
-                    }
-
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 加载算法: {algo.name}, 脚本路径: {algo.script_path}")
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 运行时配置: interval={interval_seconds}s, timeout={runtime_timeout}s, memory={memory_limit_mb}MB")
+                        logger.info(f"[WorkflowWorker:{os.getpid()}] 成功加载算法: {algo.name}, 脚本路径: {algo.script_path}, 节点ID: {node_id}")
+                        logger.info(f"[WorkflowWorker:{os.getpid()}] 运行时配置: interval={interval_seconds}s, timeout={runtime_timeout}s, memory={memory_limit_mb}MB")
+                    except Exception as e:
+                        logger.error(f"[WorkflowWorker:{os.getpid()}] 加载算法节点 {node_id} 失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    logger.warning(f"[WorkflowWorker:{os.getpid()}] 算法节点 {node_id} 没有 data_id，跳过加载")
+            elif node.node_type == 'function':
+                logger.info(f"[WorkflowWorker:{os.getpid()}] 函数节点 {node_id} 使用独立处理逻辑，不需要加载到 self.algorithms")
 
         logger.info(f"[WorkflowWorker:{os.getpid()}] 算法处理间隔配置:")
         for node_id in self.algorithms.keys():
@@ -364,22 +388,31 @@ class WorkflowExecutor:
         return True
 
     def _check_function_node_ready(self, node_id):
-        """检查函数节点的所有上游节点是否都已执行完成"""
+        """检查函数节点的所有上游节点是否都已执行完成
+
+        只检查实际连线的上游节点（connections），忽略 input_nodes 配置
+        因为前端可能配置了多个 input_nodes，但实际只连线了一部分
+        """
         node = self.nodes.get(node_id)
         if not isinstance(node, FunctionNodeData):
             return True
 
-        if node.input_nodes:
-            for input_node_id in node.input_nodes:
-                if input_node_id not in self.node_results_cache:
-                    return False
-
-        # 检查连接的上游节点
+        # 只从连线中获取上游节点（忽略 input_nodes 配置）
+        connected_upstream = []
         for conn in self.connections:
             if conn['to'] == node_id:
                 from_node_id = conn['from']
-                if from_node_id not in self.node_results_cache:
-                    return False
+                connected_upstream.append(from_node_id)
+
+        if not connected_upstream:
+            # 没有连线，静默返回 False
+            return False
+
+        # 检查所有连线的上游节点是否都已完成
+        for upstream_id in connected_upstream:
+            if upstream_id not in self.node_results_cache:
+                # 上游节点未完成（可能因为执行间隔跳过），静默返回 False
+                return False
 
         return True
     
@@ -413,6 +446,7 @@ class WorkflowExecutor:
     def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None, upstream_results=None):
         algo = self.algorithms.get(node_id)
         if not algo:
+            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不在 self.algorithms 中，已加载的算法节点: {list(self.algorithms.keys())}")
             return None
 
         try:
@@ -421,8 +455,9 @@ class WorkflowExecutor:
             if roi_regions is not None:
                 logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用context中的ROI配置，包含 {len(roi_regions)} 个区域")
 
+            logger.info(f"[WorkflowWorker] 节点 {node_id} 调用 algo.process，upstream_results keys: {list(upstream_results.keys()) if upstream_results else 'None'}")
             result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
-            logger.info(result)
+            logger.info(f"[WorkflowWorker] 节点 {node_id} algo.process 返回: {result}")
             has_detection = bool(result and result.get("detections"))
             roi_mask = result.get('roi_mask')
 
@@ -481,34 +516,150 @@ class WorkflowExecutor:
         return context
 
     def _handle_function_node(self, node_id, context):
+        """处理函数节点：直接调用内置函数，不依赖 self.algorithms"""
         frame = context.get('frame')
         frame_timestamp = context.get('frame_timestamp')
         if frame is None:
+            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 输入帧为空")
             return None
-        roi_regions = context.get('roi_regions')
+
+        # 获取节点配置（从 workflow_data 中读取完整配置）
+        node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
+        if not node_data_dict:
+            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 在工作流数据中未找到")
+            return None
+
+        node_config = node_data_dict.get('config', {})
+        function_name = node_config.get('function_name', 'area_ratio')
+
+        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 原始配置: {node_config}")
+        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 开始处理，函数类型: {function_name}")
+
+        # 获取上游结果
         upstream_results = self._get_upstream_results(node_id)
-        result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
-        if result:
+        if not upstream_results:
+            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 没有上游结果")
+            return None
+
+        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 上游节点: {list(upstream_results.keys())}")
+
+        # 导入内置函数模块
+        try:
+            from app.core.builtin_functions import BUILTIN_FUNCTIONS
+
+            if function_name not in BUILTIN_FUNCTIONS:
+                logger.error(f"[WorkflowWorker] 未知函数: {function_name}")
+                return None
+
+            # 准备输入数据
+            upstream_node_ids = list(upstream_results.keys())
+            node_a_id = upstream_node_ids[0]
+            result_a = upstream_results.get(node_a_id, {})
+            detections_a = result_a.get('detections', [])
+
+            logger.info(f"[WorkflowWorker] 函数节点 {node_id} 从节点 {node_a_id} 获取 {len(detections_a)} 个检测结果")
+
+            # 判断是单输入还是双输入函数
+            single_input_functions = ['height_ratio_frame', 'width_ratio_frame', 'area_ratio_frame', 'size_absolute']
+            is_single_input = function_name in single_input_functions
+
+            # 准备函数配置
+            frame_height, frame_width = frame.shape[:2]
+            function_config = {
+                'threshold': node_config.get('threshold', 0.7),
+                'operator': node_config.get('operator', 'less_than'),
+                'frame_height': frame_height,
+                'frame_width': frame_width,
+                'dimension': node_config.get('dimension', 'height')
+            }
+
+            # 调用内置函数
+            func = BUILTIN_FUNCTIONS[function_name]
+
+            if is_single_input:
+                # 单输入函数
+                logger.info(f"[WorkflowWorker] 调用单输入函数 {function_name}")
+                results = func(detections_a, [], function_config)
+
+                # 收集匹配的检测框
+                all_detections = []
+                for r in results:
+                    all_detections.append(r['object_a'])
+            else:
+                # 双输入函数
+                if len(upstream_node_ids) < 2:
+                    logger.warning(f"[WorkflowWorker] 双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
+                    return None
+
+                node_b_id = upstream_node_ids[1]
+                result_b = upstream_results.get(node_b_id, {})
+                detections_b = result_b.get('detections', [])
+
+                logger.info(f"[WorkflowWorker] 调用双输入函数 {function_name}，节点A: {node_a_id}({len(detections_a)}个), 节点B: {node_b_id}({len(detections_b)}个)")
+
+                results = func(detections_a, detections_b, function_config)
+
+                # 收集匹配的检测框
+                all_detections = []
+                for r in results:
+                    all_detections.append(r['object_a'])
+                    all_detections.append(r['object_b'])
+
+            logger.info(f"[WorkflowWorker] 函数节点 {node_id} 处理完成，匹配数: {len(results)}, 返回检测数: {len(all_detections)}")
+
+            # 返回标准格式的结果
+            result = {
+                'node_id': node_id,
+                'has_detection': len(all_detections) > 0,
+                'result': {
+                    'detections': all_detections,
+                    'function_results': results,
+                    'metadata': {
+                        'function_name': function_name,
+                        'matched_count': len(results)
+                    }
+                },
+                'frame': frame,
+                'frame_timestamp': frame_timestamp,
+                'roi_mask': None,
+                'label_color': '#00FF00',  # 函数节点使用绿色
+                'upstream_node_id': node_a_id
+            }
+
             self.node_results_cache[node_id] = result
-        return result
+            return result
+
+        except Exception as exc:
+            logger.error(f"[WorkflowWorker] 函数节点 {node_id} 处理异常: {exc}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def _get_upstream_results(self, node_id):
-        node = self.nodes.get(node_id)
+        """
+        获取上游节点的执行结果
+
+        优先从连线（connections）中识别上游节点，如果没有则使用 input_nodes 配置
+        """
         upstream_results = {}
-        
-        if isinstance(node, FunctionNodeData) and node.input_nodes:
-            for input_node_id in node.input_nodes:
-                if input_node_id in self.node_results_cache:
-                    cached = self.node_results_cache[input_node_id]
-                    upstream_results[input_node_id] = cached.get('result', {})
-        
+
+        # 优先从连线中获取上游节点（更可靠）
         for conn in self.connections:
             if conn['to'] == node_id:
                 from_node_id = conn['from']
                 if from_node_id in self.node_results_cache:
                     cached = self.node_results_cache[from_node_id]
                     upstream_results[from_node_id] = cached.get('result', {})
-        
+
+        # 如果连线中没有结果，回退到 input_nodes 配置（向后兼容）
+        if not upstream_results:
+            node = self.nodes.get(node_id)
+            if isinstance(node, FunctionNodeData) and node.input_nodes:
+                for input_node_id in node.input_nodes:
+                    if input_node_id in self.node_results_cache:
+                        cached = self.node_results_cache[input_node_id]
+                        upstream_results[input_node_id] = cached.get('result', {})
+
         return upstream_results
     
     def _handle_roi_draw_node(self, node_id, context):
@@ -542,6 +693,7 @@ class WorkflowExecutor:
     def _execute_node(self, node_id, context):
         node = self.nodes.get(node_id)
         if not node:
+            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不在 self.nodes 中，可用节点: {list(self.nodes.keys())}")
             return None
         
         if not self._should_execute_node(node_id):
@@ -630,7 +782,7 @@ class WorkflowExecutor:
         # 对于函数节点，特殊处理
         if isinstance(node, FunctionNodeData):
             if not self._check_function_node_ready(node_id):
-                logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 的上游节点未完成，跳过")
+                # 上游节点未完成（可能因为执行间隔跳过），静默跳过
                 return
 
             # 执行函数节点
@@ -640,6 +792,7 @@ class WorkflowExecutor:
                 return
 
             # 函数节点执行完后，继续执行下游节点（通常是 alert）
+            # 是否触发告警由 Alert 节点的条件判断决定，而不是在这里拦截
             next_nodes = self.execution_graph.get(node_id, [])
             for next_info in next_nodes:
                 next_id = next_info['target']
@@ -699,6 +852,20 @@ class WorkflowExecutor:
             logger.warning(f"[WorkflowWorker] 节点 {node_id} 不是 Alert 节点")
             return
 
+        # 从 context 获取检测数据
+        has_detection = context.get('has_detection', False)
+        frame = context['frame']
+        frame_timestamp = context['frame_timestamp']
+        result = context['result']
+        roi_mask = context.get('roi_mask')
+        label_color = context.get('label_color', '#FF0000')  # 默认红色
+
+        logger.debug(
+            f"[WorkflowWorker] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={len(result.get('detections', []))}")
+        if not has_detection:
+            logger.debug(f"[WorkflowWorker] Alert 节点 {node_id} 未检测到目标，跳过告警处理")
+            return
+
         # 从 Alert 节点配置获取告警信息
         alert_type = alert_node.alert_type or "detection"
         alert_level = alert_node.alert_level or "info"
@@ -721,13 +888,7 @@ class WorkflowExecutor:
             suppression_config=suppression_config
         )
 
-        # 从 context 获取检测数据
-        has_detection = context.get('has_detection', False)
-        frame = context['frame']
-        frame_timestamp = context['frame_timestamp']
-        result = context['result']
-        roi_mask = context.get('roi_mask')
-        label_color = context.get('label_color', '#FF0000')  # 默认红色
+
 
         trigger_time = time.time()
 

@@ -118,12 +118,18 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.labelColor = nodeConfig.label_color || '#FF0000';
       } else if (nodeType === 'function') {
         formValues.functionName = node.data.functionName || 'area_ratio';
-        formValues.inputNodeA = node.data.inputNodeA || '';
-        formValues.inputNodeB = node.data.inputNodeB || '';
-        formValues.classFilterA = node.data.classFilterA || '';
-        formValues.classFilterB = node.data.classFilterB || '';
         formValues.threshold = node.data.threshold || 0.7;
         formValues.operator = node.data.operator || 'less_than';
+        formValues.dimension = node.data.dimension || 'height';
+
+        // 从 config 中回显类别过滤配置
+        const config = node.data?.config || {};
+        if (config.input_a?.class_filter) {
+          formValues.classFilterA = config.input_a.class_filter.join(',');
+        }
+        if (config.input_b?.class_filter) {
+          formValues.classFilterB = config.input_b.class_filter.join(',');
+        }
       } else if (nodeType === 'condition') {
         formValues.conditionType = node.data.conditionType || 'detection';
         formValues.targetCount = node.data.targetCount || 1;
@@ -250,34 +256,67 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.suppressionWindowMode;
         delete updatedData.suppressionWindowThreshold;
       } else if (nodeType === 'function') {
+        // 自动从连线中识别上游算法节点
+        const upstreamAlgorithmNodes = edges
+          .filter(edge => edge.target === node.id)
+          .map(edge => {
+            const sourceNode = nodes.find(n => n.id === edge.source);
+            return sourceNode;
+          })
+          .filter(n => n && (n.data?.type === 'algorithm' || n.type === 'algorithm'));
+
         const config = node.data?.config || {};
-        
+
         config.function_name = values.functionName;
-        config.input_a = {
-          node_id: values.inputNodeA,
-          class_filter: values.classFilterA ? values.classFilterA.split(',').map((n: string) => parseInt(n.trim())) : []
-        };
-        config.input_b = {
-          node_id: values.inputNodeB,
-          class_filter: values.classFilterB ? values.classFilterB.split(',').map((n: string) => parseInt(n.trim())) : []
-        };
+
+        // 自动保存上游节点ID
+        if (upstreamAlgorithmNodes.length > 0) {
+          config.input_a = {
+            node_id: upstreamAlgorithmNodes[0].id,
+            class_filter: values.classFilterA ? values.classFilterA.split(',').map((n: string) => parseInt(n.trim())) : []
+          };
+        }
+
         config.threshold = values.threshold;
         config.operator = values.operator;
-        
+
+        // 单输入函数列表
+        const singleInputFunctions = [
+          'height_ratio_frame',
+          'width_ratio_frame',
+          'area_ratio_frame',
+          'size_absolute'
+        ];
+
+        // 双输入函数且有两个上游节点时，设置 input_b
+        if (!singleInputFunctions.includes(values.functionName) && upstreamAlgorithmNodes.length > 1) {
+          config.input_b = {
+            node_id: upstreamAlgorithmNodes[1].id,
+            class_filter: values.classFilterB ? values.classFilterB.split(',').map((n: string) => parseInt(n.trim())) : []
+          };
+        }
+
+        // size_absolute 函数需要保存 dimension
+        if (values.functionName === 'size_absolute') {
+          config.dimension = values.dimension || 'height';
+        }
+
         updatedData.config = config;
         updatedData.functionName = values.functionName;
         updatedData.threshold = values.threshold;
-        
-        const inputNodes = [];
-        if (values.inputNodeA) inputNodes.push(values.inputNodeA);
-        if (values.inputNodeB) inputNodes.push(values.inputNodeB);
-        updatedData.input_nodes = inputNodes;
-        
+        if (values.functionName === 'size_absolute') {
+          updatedData.dimension = values.dimension || 'height';
+        }
+
+        // 保存所有上游节点ID列表
+        updatedData.input_nodes = upstreamAlgorithmNodes.map(n => n.id);
+
         delete updatedData.inputNodeA;
         delete updatedData.inputNodeB;
         delete updatedData.classFilterA;
         delete updatedData.classFilterB;
         delete updatedData.operator;
+        delete updatedData.dimension;
       }
 
       console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
@@ -483,78 +522,143 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         );
 
       case 'function':
+        // 自动识别上游算法节点
+        const getUpstreamAlgorithmNodes = () => {
+          const upstreamNodes = edges
+            .filter(edge => edge.target === node.id)
+            .map(edge => {
+              const sourceNode = nodes.find(n => n.id === edge.source);
+              return sourceNode;
+            })
+            .filter(n => n && (n.data?.type === 'algorithm' || n.type === 'algorithm'));
+
+          return upstreamNodes;
+        };
+
+        const upstreamNodes = getUpstreamAlgorithmNodes();
+
         return (
           <>
-            <Form.Item
-              label="计算函数"
-              name="functionName"
-            >
-              <Select>
-                <Option value="area_ratio">面积比</Option>
-                <Option value="height_ratio">高度比</Option>
-                <Option value="width_ratio">宽度比</Option>
-                <Option value="iou_check">IOU检查</Option>
-                <Option value="distance_check">距离检查</Option>
-              </Select>
-            </Form.Item>
-            
-            <div className="form-divider" />
-            
+            {/* 输入配置 */}
             <div className="config-section">
               <div className="config-section-header">
-                <span className="config-section-title">输入配置</span>
+                <span className="config-section-title">输入配置（自动识别）</span>
               </div>
-              
-              <Form.Item
-                label="输入节点A"
-                name="inputNodeA"
-                rules={[{ required: true, message: '请输入节点ID' }]}
-              >
-                <Input placeholder="如: algo1" />
-              </Form.Item>
-              
-              <Form.Item
-                label="类别过滤A"
-                name="classFilterA"
-              >
-                <Input placeholder="如: 0,1,2 (留空表示全部)" />
-              </Form.Item>
-              
-              <Form.Item
-                label="输入节点B"
-                name="inputNodeB"
-                rules={[{ required: true, message: '请输入节点ID' }]}
-              >
-                <Input placeholder="如: algo2" />
-              </Form.Item>
-              
-              <Form.Item
-                label="类别过滤B"
-                name="classFilterB"
-              >
-                <Input placeholder="如: 5,7 (留空表示全部)" />
-              </Form.Item>
+
+              {upstreamNodes.length === 0 ? (
+                <div className="info-box" style={{ background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                  <InfoCircleOutlined />
+                  <span>请先从上游算法节点连线到当前函数节点</span>
+                </div>
+              ) : (
+                <>
+                  <div className="info-box" style={{ background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a', marginBottom: 12 }}>
+                    <InfoCircleOutlined />
+                    <span>已自动识别 {upstreamNodes.length} 个上游算法节点</span>
+                  </div>
+
+                  {upstreamNodes.map((upstreamNode, index) => {
+                    const letter = index === 0 ? 'A' : 'B';
+                    return (
+                      <div key={upstreamNode.id} style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#262626' }}>
+                          输入节点{letter}：{upstreamNode.data?.label || upstreamNode.id}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <Tag color="blue">{upstreamNode.id}</Tag>
+                          <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+                            {upstreamNode.data?.dataId || 'N/A'}
+                          </span>
+                        </div>
+
+                        <Form.Item
+                          label={`类别过滤${letter}`}
+                          name={index === 0 ? 'classFilterA' : 'classFilterB'}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder={`如: 0,1,2 (留空表示全部类别)`} />
+                        </Form.Item>
+
+                        {index < upstreamNodes.length - 1 && <div className="form-divider" style={{ margin: '12px 0' }} />}
+                      </div>
+                    );
+                  })}
+
+                  {/* 单输入函数但连接了多个节点时的警告 */}
+                  <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.functionName !== currentValues.functionName}>
+                    {({ getFieldValue }) => {
+                      const functionName = getFieldValue('functionName') || 'area_ratio';
+                      const singleInputFunctions = [
+                        'height_ratio_frame',
+                        'width_ratio_frame',
+                        'area_ratio_frame',
+                        'size_absolute'
+                      ];
+
+                      if (singleInputFunctions.includes(functionName) && upstreamNodes.length > 1) {
+                        return (
+                          <div className="info-box" style={{ marginTop: 12, background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                            <InfoCircleOutlined />
+                            <span>此函数为单输入模式，将只使用第一个输入节点</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  </Form.Item>
+
+                  {/* 双输入函数但只连接了一个节点时的警告 */}
+                  <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.functionName !== currentValues.functionName}>
+                    {({ getFieldValue }) => {
+                      const functionName = getFieldValue('functionName') || 'area_ratio';
+                      const singleInputFunctions = [
+                        'height_ratio_frame',
+                        'width_ratio_frame',
+                        'area_ratio_frame',
+                        'size_absolute'
+                      ];
+
+                      if (!singleInputFunctions.includes(functionName) && upstreamNodes.length < 2) {
+                        return (
+                          <div className="info-box" style={{ marginTop: 12, background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                            <InfoCircleOutlined />
+                            <span>此函数需要2个输入节点，请再连接一个算法节点</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  </Form.Item>
+                </>
+              )}
             </div>
-            
+
             <div className="form-divider" />
-            
+
+            {/* 计算函数与判定条件 */}
             <div className="config-section">
               <div className="config-section-header">
-                <span className="config-section-title">判定条件</span>
+                <span className="config-section-title">计算函数与判定条件</span>
               </div>
-              
+
               <Form.Item
-                label="阈值"
-                name="threshold"
+                label="计算函数"
+                name="functionName"
               >
-                <InputNumber
-                  min={0}
-                  max={1000}
-                  step={0.1}
-                  style={{ width: '100%' }}
-                />
+                <Select>
+                  <Option value="area_ratio">面积比（双输入）</Option>
+                  <Option value="height_ratio">高度比（双输入）</Option>
+                  <Option value="width_ratio">宽度比（双输入）</Option>
+                  <Option value="iou_check">IOU检查（双输入）</Option>
+                  <Option value="distance_check">距离检查（双输入）</Option>
+                  <Option value="height_ratio_frame">高度占图片比例（单输入）</Option>
+                  <Option value="width_ratio_frame">宽度占图片比例（单输入）</Option>
+                  <Option value="area_ratio_frame">面积占图片比例（单输入）</Option>
+                  <Option value="size_absolute">绝对尺寸检测（单输入）</Option>
+                </Select>
               </Form.Item>
-              
+
               <Form.Item
                 label="运算符"
                 name="operator"
@@ -565,11 +669,61 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                   <Option value="equal">等于</Option>
                 </Select>
               </Form.Item>
-            </div>
-            
-            <div className="info-box">
-              <InfoCircleOutlined />
-              <span>节点ID可在画布中查看节点属性获取</span>
+
+              <Form.Item
+                label="阈值"
+                name="threshold"
+                extra={
+                  <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.functionName !== currentValues.functionName}>
+                    {({ getFieldValue }) => {
+                      const functionName = getFieldValue('functionName') || 'area_ratio';
+                      const singleInputFunctions = [
+                        'height_ratio_frame',
+                        'width_ratio_frame',
+                        'area_ratio_frame',
+                        'size_absolute'
+                      ];
+
+                      if (singleInputFunctions.includes(functionName)) {
+                        return '对于比例函数，值为0-1之间；对于绝对尺寸函数，值为像素值';
+                      }
+                      return '值为0-1之间的小数，如0.7表示70%';
+                    }}
+                  </Form.Item>
+                }
+              >
+                <InputNumber
+                  min={0}
+                  max={1000}
+                  step={0.01}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+
+              {/* 仅 size_absolute 函数显示 dimension 选择器 */}
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.functionName !== currentValues.functionName}>
+                {({ getFieldValue }) => {
+                  const functionName = getFieldValue('functionName') || 'area_ratio';
+
+                  if (functionName === 'size_absolute') {
+                    return (
+                      <Form.Item
+                        label="检测维度"
+                        name="dimension"
+                        extra="选择要检测的尺寸维度"
+                      >
+                        <Select>
+                          <Option value="height">高度</Option>
+                          <Option value="width">宽度</Option>
+                          <Option value="area">面积</Option>
+                        </Select>
+                      </Form.Item>
+                    );
+                  }
+
+                  return null;
+                }}
+              </Form.Item>
             </div>
           </>
         );
