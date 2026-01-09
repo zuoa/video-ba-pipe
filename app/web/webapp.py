@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 from flask_cors import CORS
 
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel
-from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH
+from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
@@ -408,6 +408,159 @@ def delete_video_source(id):
         return jsonify({'message': '视频源删除成功'})
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
+
+# Video file management API
+ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.m4v', '.webm', '.wmv'}
+
+@app.route('/api/video-sources/upload', methods=['POST'])
+def upload_video_file():
+    """上传视频文件到服务器"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': '没有上传文件'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+        # 验证文件类型
+        filename = secure_filename(file.filename)
+        if not filename:
+            return jsonify({'success': False, 'error': '无效的文件名'}), 400
+
+        file_ext = os.path.splitext(filename)[1].lower()
+        if file_ext not in ALLOWED_VIDEO_EXTENSIONS:
+            return jsonify({'success': False, 'error': f'不支持的文件格式，允许的格式: {", ".join(ALLOWED_VIDEO_EXTENSIONS)}'}), 400
+
+        # 避免文件名重复
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        final_filename = filename
+        while os.path.exists(os.path.join(VIDEO_SOURCE_PATH, final_filename)):
+            final_filename = f"{base}_{counter}{ext}"
+            counter += 1
+
+        # 保存文件
+        filepath = os.path.join(VIDEO_SOURCE_PATH, final_filename)
+        file.save(filepath)
+
+        # 获取文件信息
+        file_size = os.path.getsize(filepath)
+
+        # 可选：使用 ffprobe 获取视频信息
+        video_info = {}
+        try:
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_streams',
+                '-select_streams', 'v:0',
+                filepath
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=False)
+            if result.returncode == 0:
+                probe_data = json.loads(result.stdout)
+                if probe_data.get('streams'):
+                    stream = probe_data['streams'][0]
+                    video_info = {
+                        'width': stream.get('width', 0),
+                        'height': stream.get('height', 0),
+                        'fps': stream.get('r_frame_rate', '0/1'),
+                        'duration': stream.get('duration', 0),
+                        'codec': stream.get('codec_name', 'unknown')
+                    }
+        except Exception as e:
+            app.logger.warning(f"获取视频信息失败: {e}")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'filename': final_filename,
+                'path': filepath,
+                'size': file_size,
+                'info': video_info
+            }
+        })
+
+    except Exception as e:
+        app.logger.error(f"视频上传失败: {str(e)}")
+        return jsonify({'success': False, 'error': f'上传失败: {str(e)}'}), 500
+
+@app.route('/api/video-sources/files', methods=['GET'])
+def list_video_files():
+    """列出可用的视频文件"""
+    try:
+        files = []
+        if not os.path.exists(VIDEO_SOURCE_PATH):
+            return jsonify({'success': True, 'data': []})
+
+        for filename in os.listdir(VIDEO_SOURCE_PATH):
+            filepath = os.path.join(VIDEO_SOURCE_PATH, filename)
+            if os.path.isfile(filepath):
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext in ALLOWED_VIDEO_EXTENSIONS:
+                    file_size = os.path.getsize(filepath)
+                    file_stat = os.stat(filepath)
+
+                    files.append({
+                        'filename': filename,
+                        'path': filepath,
+                        'size': file_size,
+                        'created_at': file_stat.st_ctime,
+                        'modified_at': file_stat.st_mtime
+                    })
+
+        # 按修改时间倒序排列
+        files.sort(key=lambda x: x['modified_at'], reverse=True)
+
+        return jsonify({'success': True, 'data': files})
+
+    except Exception as e:
+        app.logger.error(f"列出视频文件失败: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/video-sources/files/<path:filename>', methods=['DELETE'])
+def delete_video_file(filename):
+    """删除视频文件"""
+    try:
+        # 安全处理文件名
+        filename = secure_filename(filename)
+        if not filename:
+            return jsonify({'success': False, 'error': '无效的文件名'}), 400
+
+        filepath = os.path.join(VIDEO_SOURCE_PATH, filename)
+
+        # 验证文件在允许的目录内
+        filepath = os.path.abspath(filepath)
+        source_path = os.path.abspath(VIDEO_SOURCE_PATH)
+        if not filepath.startswith(source_path + os.sep) and filepath != source_path:
+            return jsonify({'success': False, 'error': '路径遍历检测'}), 403
+
+        if not os.path.exists(filepath):
+            return jsonify({'success': False, 'error': '文件不存在'}), 404
+
+        if not os.path.isfile(filepath):
+            return jsonify({'success': False, 'error': '不是文件'}), 400
+
+        # 检查是否有视频源正在使用此文件
+        # 这里简单检查 source_url 是否包含此文件名
+        sources_using = VideoSource.select().where(VideoSource.source_url.contains(filename))
+        if sources_using.count() > 0:
+            source_names = [s.name for s in sources_using]
+            return jsonify({
+                'success': False,
+                'error': f'文件正在被以下视频源使用: {", ".join(source_names)}，请先删除这些视频源'
+            }), 400
+
+        # 删除文件
+        os.remove(filepath)
+
+        return jsonify({'success': True, 'message': f'文件 {filename} 已删除'})
+
+    except Exception as e:
+        app.logger.error(f"删除视频文件失败: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Alert API
 @app.route('/api/alerts', methods=['GET'])

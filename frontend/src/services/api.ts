@@ -196,6 +196,28 @@ export async function detectStreamInfo(url: string) {
   });
 }
 
+// 视频文件管理
+export async function uploadVideoFile(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request('/api/video-sources/upload', {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+  });
+}
+
+export async function getVideoFiles() {
+  return request('/api/video-sources/files');
+}
+
+export async function deleteVideoFile(filename: string) {
+  return request(`/api/video-sources/files/${filename}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function captureFrame(videoSourceId: number) {
   return request(`/api/workflows/capture_frame/${videoSourceId}`, {
     method: 'GET',

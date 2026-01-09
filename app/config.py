@@ -15,6 +15,10 @@ os.makedirs(FRAME_SAVE_PATH, exist_ok=True)
 VIDEO_SAVE_PATH = os.getenv('VIDEO_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/videos'))
 os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 
+# Video source files storage path (uploaded video files for analysis)
+VIDEO_SOURCE_PATH = os.getenv('VIDEO_SOURCE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/video_sources'))
+os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
+
 
 # Models storage path for uploaded AI model files
 MODEL_SAVE_PATH = os.getenv('MODEL_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/models'))
