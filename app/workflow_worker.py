@@ -732,30 +732,39 @@ class WorkflowExecutor:
         if not algo_node_id:
             logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少算法节点信息")
             return
-        
+
         if 'frame' not in context or 'result' not in context:
             logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据")
             return
-        
+
         has_detection = context.get('has_detection', False)
-        
+
         frame = context['frame']
         frame_timestamp = context['frame_timestamp']
         result = context['result']
         roi_mask = context.get('roi_mask')
-        
+
         algo_id = self.algorithm_configs[algo_node_id]['algorithm_id']
         algorithm_name = self.algorithm_datamap[algo_node_id].get('name')
         label_color = self.algorithm_datamap[algo_node_id].get('label_color', '#FF0000')
-        
+
+        # 获取节点配置（如果是 Alert 节点，可能有自定义的抑制时间）
+        node = self.nodes.get(node_id)
+        suppression_duration = ALERT_SUPPRESSION_DURATION  # 默认使用全局配置
+        if isinstance(node, AlertNodeData) and node.suppression_seconds is not None:
+            suppression_duration = node.suppression_seconds
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用自定义抑制时长: {suppression_duration}秒")
+        else:
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用全局抑制时长: {suppression_duration}秒")
+
         trigger_time = time.time()
-        
+
         window_passed, window_stats = self.window_detector.check_condition(
             source_id=self.video_source.id,
             algorithm_id=algo_id,
             current_time=trigger_time
         )
-        
+
         if not window_passed:
             if window_stats:
                 logger.info(
@@ -765,7 +774,7 @@ class WorkflowExecutor:
                     f"连续: {window_stats['max_consecutive']} 次)"
                 )
             return
-        
+
         if window_stats:
             logger.info(
                 f"[WorkflowWorker] 输出节点 {node_id} 满足窗口条件 "
@@ -773,12 +782,12 @@ class WorkflowExecutor:
                 f"比例: {window_stats['detection_ratio']:.2%}, "
                 f"连续: {window_stats['max_consecutive']} 次)"
             )
-        
+
         time_since_last_alert = trigger_time - self.algo_last_alert_time[algo_node_id]
-        if time_since_last_alert < ALERT_SUPPRESSION_DURATION:
+        if time_since_last_alert < suppression_duration:
             logger.info(
                 f"[WorkflowWorker] 输出节点 {node_id} 处于告警抑制期 "
-                f"(距上次告警 {time_since_last_alert:.1f}秒，需 {ALERT_SUPPRESSION_DURATION}秒)"
+                f"(距上次告警 {time_since_last_alert:.1f}秒，需 {suppression_duration}秒)"
             )
             return
         
@@ -824,13 +833,23 @@ class WorkflowExecutor:
         
         main_image = detection_images[-1]['image_path'] if detection_images else ""
         main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
-        
+
+        # 获取 Alert 节点配置
+        alert_node = self.nodes.get(node_id)
+        alert_message = ""
+        alert_level = "info"  # 默认级别
+        if isinstance(alert_node, AlertNodeData):
+            alert_message = alert_node.alert_message or ""
+            alert_level = alert_node.alert_level or "info"
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用自定义消息: {alert_message}, 级别: {alert_level}")
+
         alert = Alert.create(
             video_source=self.video_source,
             workflow=self.workflow,
             alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
             alert_type=algorithm_name,
-            alert_message="",
+            alert_level=alert_level,
+            alert_message=alert_message,
             alert_image=main_image,
             alert_image_ori=main_image_ori,
             alert_video="",

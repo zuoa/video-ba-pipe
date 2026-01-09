@@ -128,6 +128,23 @@ export default function WorkflowEditorPage() {
               config: node.config || node.data?.config,
             };
 
+            // 特殊处理：从 data 字段读取额外的配置
+            if (node.data && typeof node.data === 'object') {
+              // Alert 节点：读取 alertLevel, alertMessage, suppressionSeconds
+              if (nodeType === 'alert') {
+                nodeData.alertLevel = node.data.alertLevel;
+                nodeData.alertMessage = node.data.alertMessage;
+                nodeData.suppressionSeconds = node.data.suppressionSeconds;
+                console.log('🚨 [EDITOR] Alert 节点加载配置:', {
+                  id: node.id,
+                  alertLevel: nodeData.alertLevel,
+                  alertMessage: nodeData.alertMessage,
+                  suppressionSeconds: nodeData.suppressionSeconds,
+                });
+              }
+              // ROI 节点已经在后面处理
+            }
+
             // 特殊处理：保留 videoSourceId 和 videoSourceName
             if (nodeType === 'videoSource') {
               const sourceId = node.videoSourceId || node.data?.videoSourceId || node.dataId || node.data_id;
@@ -392,6 +409,19 @@ export default function WorkflowEditorPage() {
             区域列表: roiRegions.map((r: any) => r.name),
           });
           saveData.dataId = node.data?.dataId;
+        } else if (nodeType === 'alert') {
+          // Alert 节点：保存 alertLevel, alertMessage, suppressionSeconds 到 data 字段
+          saveData.data = {
+            alertLevel: node.data?.alertLevel,
+            alertMessage: node.data?.alertMessage,
+            suppressionSeconds: node.data?.suppressionSeconds,
+          };
+          console.log('🚨 [EDITOR] Alert 节点保存数据:', {
+            id: node.id,
+            alertLevel: saveData.data.alertLevel,
+            alertMessage: saveData.data.alertMessage,
+            suppressionSeconds: saveData.data.suppressionSeconds,
+          });
         } else {
           saveData.dataId = node.data?.dataId;
           saveData.algorithmId = node.data?.algorithmId || null;

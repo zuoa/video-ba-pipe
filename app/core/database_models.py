@@ -155,6 +155,7 @@ class Alert(BaseModel):
     workflow = pw.ForeignKeyField(Workflow, backref='alerts', on_delete='SET NULL', null=True)
     alert_time = pw.DateTimeField()
     alert_type = pw.CharField()
+    alert_level = pw.CharField(default='info')  # 告警级别: info, warning, error, critical
     alert_message = pw.TextField(null=True)
     alert_image = pw.TextField(null=True)
     alert_image_ori = pw.TextField(null=True)

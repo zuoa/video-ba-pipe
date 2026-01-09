@@ -141,6 +141,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       } else if (nodeType === 'alert') {
         formValues.alertLevel = node.data.alertLevel || 'info';
         formValues.alertMessage = node.data.alertMessage || '检测到目标';
+        formValues.suppressionSeconds = node.data.suppressionSeconds;
       } else if (nodeType === 'record') {
         formValues.recordDuration = node.data.recordDuration || 10;
       }
@@ -232,6 +233,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.memoryLimitMb;
         delete updatedData.labelName;
         delete updatedData.labelColor;
+      } else if (nodeType === 'alert') {
+        // Alert 节点的字段直接保存，但要过滤 undefined 值
+        if (values.suppressionSeconds !== undefined && values.suppressionSeconds !== null) {
+          updatedData.suppressionSeconds = values.suppressionSeconds;
+        } else {
+          // 如果留空，删除该字段以使用全局配置
+          delete updatedData.suppressionSeconds;
+        }
       } else if (nodeType === 'function') {
         const config = node.data?.config || {};
         
@@ -752,6 +761,19 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               name="alertMessage"
             >
               <Input placeholder="自定义告警消息" />
+            </Form.Item>
+            <Form.Item
+              label="告警抑制时间（秒）"
+              name="suppressionSeconds"
+              extra="留空使用全局配置，否则使用自定义值"
+            >
+              <InputNumber
+                min={1}
+                max={3600}
+                step={1}
+                placeholder="全局配置"
+                style={{ width: '100%' }}
+              />
             </Form.Item>
           </>
         );

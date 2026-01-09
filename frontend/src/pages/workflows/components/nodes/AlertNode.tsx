@@ -25,6 +25,12 @@ const AlertNode = ({ data }: any) => {
           </span>
         </div>
       )}
+      {(data.suppressionSeconds !== undefined && data.suppressionSeconds !== null) && (
+        <div className="node-meta">
+          <span className="meta-label">抑制:</span>
+          <span className="meta-value">{data.suppressionSeconds}秒</span>
+        </div>
+      )}
     </div>
   );
 };

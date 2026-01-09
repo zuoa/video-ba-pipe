@@ -1,0 +1,290 @@
+.alertDetailModal {
+  position: relative;
+}
+
+.alertDetailModal .ant-modal-header {
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-bottom: none;
+  padding: 16px 24px;
+}
+
+.alertDetailModal .ant-modal-title {
+  color: #fff;
+  font-weight: 600;
+}
+
+.alertDetailModal .ant-modal-close-x {
+  color: #fff;
+}
+
+.alertDetailModal .ant-modal-close-x:hover {
+  color: #f0f0f0;
+}
+
+.alertDetailModal .ant-modal-body {
+  padding: 24px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* 导航按钮样式 */
+.modalNavButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.modalNavButtons .ant-btn {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.modalNavButtons .ant-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.modalNavButtons .ant-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 内容区域样式 */
+.alertContent {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* 基本信息卡片 */
+.infoCard {
+  background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 8px;
+  border: 1px solid #e8e8e8;
+}
+
+.infoCard .ant-descriptions {
+  background: transparent;
+}
+
+.infoCard .ant-descriptions-item-label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.infoCard .ant-descriptions-item-content {
+  color: #34495e;
+}
+
+/* 标题样式 */
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #3498db;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionTitle::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 2px;
+}
+
+/* 统计标签样式 */
+.statsTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #000000;
+}
+
+.statsTags .ant-tag {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  margin: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 检测图片网格 */
+.detectionImageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.detectionImageItem {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.detectionImageItem:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.detectionImageItem .ant-image {
+  width: 100%;
+  aspect-ratio: 16/9;
+  display: block;
+}
+
+.detectionImageItem .ant-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detectionImageIndex {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+  color: #fff;
+  padding: 8px;
+  font-size: 12px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* 媒体展示区域 */
+.mediaSection {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.mediaCard {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.mediaCard:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.mediaCardLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mediaCardLabel::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #000000;
+  border-radius: 50%;
+}
+
+.mediaCardImage {
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.mediaCardImage .ant-image {
+  width: 100%;
+  display: block;
+}
+
+.mediaCardImage .ant-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.mediaCardVideo {
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  background: #000;
+}
+
+.mediaCardVideo video {
+  width: 100%;
+  display: block;
+  border-radius: 6px;
+}
+
+/* 自定义滚动条 */
+.alertDetailModal .ant-modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.alertDetailModal .ant-modal-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.alertDetailModal .ant-modal-body::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  border-radius: 4px;
+}
+
+.alertDetailModal .ant-modal-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #333333 0%, #555555 100%);
+}
+
+/* 图片预览组样式 */
+.alertDetailModal .ant-image-preview-group {
+  width: 100%;
+}
+
+/* 空状态样式 */
+.emptyState {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .detectionImageGrid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .mediaSection {
+    grid-template-columns: 1fr;
+  }
+
+  .statsTags {
+    flex-direction: column;
+  }
+}

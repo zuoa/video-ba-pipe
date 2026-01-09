@@ -90,6 +90,19 @@ class RoiDrawNodeData(NodeContext):
 @dataclass
 class AlertNodeData(NodeContext):
     node_type: str = "alert"
+    alert_level: Optional[str] = None
+    """告警级别: info, warning, error, critical"""
+
+    alert_message: Optional[str] = None
+    """告警消息模板"""
+
+    suppression_seconds: Optional[int] = None
+    """
+    告警抑制时长（秒）
+    - 如果为 None，使用全局配置 ALERT_SUPPRESSION_DURATION
+    - 如果设置了值，则使用该值作为此告警节点的抑制时长
+    - 在抑制期内，相同的告警不会重复触发
+    """
 
 
 @dataclass
@@ -155,6 +168,19 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             node_type=node_type,
             node_id=node_id,
             roi_regions=roi_regions
+        )
+    elif node_type == 'alert':
+        # Alert 节点读取配置（支持驼峰和蛇形两种命名）
+        alert_level = data.get('alertLevel') or data.get('alert_level')
+        alert_message = data.get('alertMessage') or data.get('alert_message')
+        suppression_seconds = data.get('suppressionSeconds') or data.get('suppression_seconds')
+
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            alert_level=alert_level,
+            alert_message=alert_message,
+            suppression_seconds=int(suppression_seconds) if suppression_seconds is not None else None
         )
     else:
         return node_class(
