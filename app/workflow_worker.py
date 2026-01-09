@@ -15,11 +15,11 @@ from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import (
-    FRAME_SAVE_PATH, 
-    VIDEO_SAVE_PATH, 
-    RECORDING_ENABLED, 
-    PRE_ALERT_DURATION, 
-    POST_ALERT_DURATION, 
+    FRAME_SAVE_PATH,
+    VIDEO_SAVE_PATH,
+    RECORDING_ENABLED,
+    PRE_ALERT_DURATION,
+    POST_ALERT_DURATION,
     RECORDING_FPS,
     RINGBUFFER_DURATION,
     ALERT_SUPPRESSION_DURATION
@@ -71,11 +71,8 @@ class WorkflowExecutor:
         self._init_resources()
         
         self.node_last_exec_time = {}
-        self.algo_last_alert_time = {}
         for node_id in self.nodes.keys():
             self.node_last_exec_time[node_id] = 0
-        for node_id in self.algorithms.keys():
-            self.algo_last_alert_time[node_id] = 0
     
     def _get_node_runtime_config(self, node_data_dict):
         """
@@ -115,12 +112,6 @@ class WorkflowExecutor:
             'interval_seconds': config.get('interval_seconds', node_data_dict.get('interval_seconds', 1.0)),
             'runtime_timeout': config.get('runtime_timeout', node_data_dict.get('runtime_timeout', 30)),
             'memory_limit_mb': config.get('memory_limit_mb', node_data_dict.get('memory_limit_mb', 512)),
-            'window_detection': config.get('window_detection', node_data_dict.get('window_detection', {
-                'enable': False,
-                'window_size': 30,
-                'window_mode': 'ratio',
-                'window_threshold': 0.3
-            })),
             'label': label_config,
             'roi_regions': config.get('roi_regions', node_data_dict.get('roi_regions', []))
         }
@@ -200,7 +191,6 @@ class WorkflowExecutor:
                     interval_seconds = runtime_config['interval_seconds']
                     runtime_timeout = runtime_config['runtime_timeout']
                     memory_limit_mb = runtime_config['memory_limit_mb']
-                    window_detection_config = runtime_config['window_detection']
                     label_config = runtime_config['label']
                     roi_regions = runtime_config['roi_regions']
 
@@ -235,7 +225,7 @@ class WorkflowExecutor:
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
                     self.algorithms[node_id] = ScriptAlgorithm(full_config)
-                    
+
                     # 存储算法元数据（用于后续访问）
                     self.algorithm_datamap[node_id] = {
                         'id': algo_id,
@@ -244,29 +234,20 @@ class WorkflowExecutor:
                         'label_name': label_config['name'],
                         'label_color': label_config['color']
                     }
-                    
+
                     self.algorithm_configs[node_id] = {
                         'algorithm_id': algo_id,
                         'node_id': node_id,
                         'runtime_config': runtime_config
                     }
 
-                    # 加载窗口检测配置
-                    self.window_detector.load_config_with_override(
-                        source_id=self.video_source.id,
-                        algorithm_id=algo_id,
-                        window_config=window_detection_config
-                    )
-
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 加载算法: {algo.name}, 脚本路径: {algo.script_path}")
                     logger.info(f"[WorkflowWorker:{os.getpid()}] 运行时配置: interval={interval_seconds}s, timeout={runtime_timeout}s, memory={memory_limit_mb}MB")
-                    logger.info(f"[WorkflowWorker:{os.getpid()}] 窗口检测配置: {window_detection_config}")
-        
+
         logger.info(f"[WorkflowWorker:{os.getpid()}] 算法处理间隔配置:")
         for node_id in self.algorithms.keys():
             interval = self.algorithm_datamap[node_id].get('interval_seconds', 1)
             logger.info(f"  - 节点 {node_id} ({self.algorithm_datamap[node_id].get('name')}): {interval}秒/次")
-        logger.info(f"[WorkflowWorker:{os.getpid()}] 告警抑制时长: {ALERT_SUPPRESSION_DURATION}秒")
     
     def _get_parallel_branch_nodes(self):
         branch_nodes = []
@@ -449,52 +430,18 @@ class WorkflowExecutor:
             algorithm_name = self.algorithm_datamap[node_id].get('name')
             label_color = self.algorithm_datamap[node_id].get('label_color', '#FF0000')
 
-            # 确保窗口检测配置已加载
-            window_config = self.window_detector.configs.get((self.video_source.id, algo_id))
-            if window_config is None:
-                self.window_detector.load_config(self.video_source.id, algo_id)
-                window_config = self.window_detector.configs.get((self.video_source.id, algo_id))
-
-            # 窗口检测逻辑（参考ai_worker实现）
-            image_path = None
-            if window_config and window_config.get('enable', False):
-                # 启用窗口检测时，每一帧都记录检测结果
-                # 如果检测到目标，保存检测图片
-                if has_detection:
-                    img_path = f"{self.video_source.source_code}/{algorithm_name}/det_{int(frame_timestamp)}.jpg"
-                    img_path_absolute = os.path.join(FRAME_SAVE_PATH, img_path)
-
-                    # 获取effective_roi_regions用于可视化
-                    effective_roi_regions = self.algorithm_roi_configs.get(node_id, [])
-                    algo.visualize(frame, result.get("detections"),
-                                 save_path=img_path_absolute, label_color=label_color,
-                                 roi_mask=roi_mask, roi_regions=effective_roi_regions)
-
-                    img_ori_path = f"{img_path}.ori.jpg"
-                    img_ori_path_absolute = os.path.join(FRAME_SAVE_PATH, img_ori_path)
-                    save_frame(frame, img_ori_path_absolute)
-
-                    image_path = img_path
-                    logger.info(f"[WorkflowWorker] 检测到目标，已保存图片: {img_path}")
-
-                # 记录到窗口检测器（每帧都记录，无论是否检测到目标）
-                self.window_detector.add_record(
-                    source_id=self.video_source.id,
-                    algorithm_id=algo_id,
-                    timestamp=frame_timestamp,
-                    has_detection=has_detection,
-                    image_path=image_path
-                )
-
             logger.info(f"[WorkflowWorker] 算法节点 {node_id} 处理完成，检测到目标: {has_detection}")
 
+            # 返回结果，包含节点 ID 和 label_color（用于下游 Alert 节点）
             return {
                 'node_id': node_id,
                 'has_detection': has_detection,
                 'result': result,
                 'frame': frame,
                 'frame_timestamp': frame_timestamp,
-                'roi_mask': roi_mask
+                'roi_mask': roi_mask,
+                'label_color': label_color,
+                'upstream_node_id': node_id  # 上游节点 ID 就是当前节点 ID
             }
 
         except Exception as exc:
@@ -728,47 +675,88 @@ class WorkflowExecutor:
                 self._execute_level_nodes(level_nodes, context, executor)
 
     def _execute_output(self, node_id, context):
-        algo_node_id = context.get('node_id')
-        if not algo_node_id:
-            logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少算法节点信息")
-            return
+        """
+        执行输出/告警节点
 
+        Args:
+            node_id: Alert 节点 ID
+            context: 上下文数据，包含:
+                - frame: 当前帧
+                - frame_timestamp: 帧时间戳
+                - has_detection: 是否检测到目标
+                - result: 检测结果
+                - roi_mask: ROI 掩码
+                - label_color: 可视化颜色（可选）
+                - upstream_node_id: 上游节点 ID（用于可视化）
+        """
         if 'frame' not in context or 'result' not in context:
             logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据")
             return
 
-        has_detection = context.get('has_detection', False)
+        # 获取 Alert 节点配置
+        alert_node = self.nodes.get(node_id)
+        if not isinstance(alert_node, AlertNodeData):
+            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不是 Alert 节点")
+            return
 
+        # 从 Alert 节点配置获取告警信息
+        alert_type = alert_node.alert_type or "detection"
+        alert_level = alert_node.alert_level or "info"
+        alert_message = alert_node.alert_message or ""
+
+        # 获取抑制配置
+        suppression_config = alert_node.suppression
+        # 如果未配置 suppression，使用默认策略（simple模式，使用全局配置的抑制时间）
+        if not suppression_config:
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置抑制策略，使用默认策略 (simple模式, {ALERT_SUPPRESSION_DURATION}秒抑制)")
+            suppression_config = {
+                'mode': 'simple',
+                'simple_seconds': ALERT_SUPPRESSION_DURATION
+            }
+
+        # 加载该 Alert 节点的抑制配置
+        self.window_detector.load_config_with_override(
+            source_id=self.video_source.id,
+            node_id=node_id,
+            suppression_config=suppression_config
+        )
+
+        # 从 context 获取检测数据
+        has_detection = context.get('has_detection', False)
         frame = context['frame']
         frame_timestamp = context['frame_timestamp']
         result = context['result']
         roi_mask = context.get('roi_mask')
-
-        algo_id = self.algorithm_configs[algo_node_id]['algorithm_id']
-        algorithm_name = self.algorithm_datamap[algo_node_id].get('name')
-        label_color = self.algorithm_datamap[algo_node_id].get('label_color', '#FF0000')
-
-        # 获取节点配置（如果是 Alert 节点，可能有自定义的抑制时间）
-        node = self.nodes.get(node_id)
-        suppression_duration = ALERT_SUPPRESSION_DURATION  # 默认使用全局配置
-        if isinstance(node, AlertNodeData) and node.suppression_seconds is not None:
-            suppression_duration = node.suppression_seconds
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用自定义抑制时长: {suppression_duration}秒")
-        else:
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用全局抑制时长: {suppression_duration}秒")
+        label_color = context.get('label_color', '#FF0000')  # 默认红色
 
         trigger_time = time.time()
 
+        # 记录本次检测结果到窗口检测器
+        image_path = None
+        if has_detection:
+            # 如果检测到目标，可以保存检测图片（可选）
+            pass  # 图片保存在后面
+
+        # 记录到窗口检测器
+        self.window_detector.add_record(
+            source_id=self.video_source.id,
+            node_id=node_id,
+            timestamp=frame_timestamp,
+            has_detection=has_detection,
+            image_path=image_path
+        )
+
+        # 检查是否满足抑制条件
         window_passed, window_stats = self.window_detector.check_condition(
             source_id=self.video_source.id,
-            algorithm_id=algo_id,
+            node_id=node_id,
             current_time=trigger_time
         )
 
         if not window_passed:
             if window_stats:
                 logger.info(
-                    f"[WorkflowWorker] 输出节点 {node_id} 窗口条件未满足 "
+                    f"[WorkflowWorker] 输出节点 {node_id} 抑制条件满足，跳过告警 "
                     f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
                     f"比例: {window_stats['detection_ratio']:.2%}, "
                     f"连续: {window_stats['max_consecutive']} 次)"
@@ -777,33 +765,25 @@ class WorkflowExecutor:
 
         if window_stats:
             logger.info(
-                f"[WorkflowWorker] 输出节点 {node_id} 满足窗口条件 "
+                f"[WorkflowWorker] 输出节点 {node_id} 满足告警条件 "
                 f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
                 f"比例: {window_stats['detection_ratio']:.2%}, "
                 f"连续: {window_stats['max_consecutive']} 次)"
             )
 
-        time_since_last_alert = trigger_time - self.algo_last_alert_time[algo_node_id]
-        if time_since_last_alert < suppression_duration:
-            logger.info(
-                f"[WorkflowWorker] 输出节点 {node_id} 处于告警抑制期 "
-                f"(距上次告警 {time_since_last_alert:.1f}秒，需 {suppression_duration}秒)"
-            )
-            return
-        
-        self.algo_last_alert_time[algo_node_id] = trigger_time
-        
+        # 获取窗口内的检测记录（用于保存检测图片）
         detection_records = self.window_detector.get_detection_records(
             source_id=self.video_source.id,
-            algorithm_id=algo_id,
+            node_id=node_id,
             current_time=trigger_time
         )
-        
+
         logger.info(f"[WorkflowWorker] 窗口内检测到 {len(detection_records)} 次目标")
-        
+
+        # 处理检测图片
         detection_images = []
-        for i, (timestamp, has_detection, img_path) in enumerate(detection_records):
-            if has_detection and img_path:
+        for timestamp, has_det, img_path in detection_records:
+            if has_det and img_path:
                 img_ori_path = f"{img_path}.ori.jpg"
                 detection_images.append({
                     'image_path': img_path,
@@ -811,43 +791,49 @@ class WorkflowExecutor:
                     'timestamp': timestamp,
                     'detection_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
                 })
-        
+
+        # 如果没有检测图片，保存当前帧
         if not detection_images:
-            filepath = f"{self.video_source.source_code}/{algorithm_name}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+            filepath = f"{self.video_source.source_code}/{alert_type}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
-            # 获取effective_roi_regions用于可视化
-            effective_roi_regions = self.algorithm_roi_configs.get(algo_node_id, [])
-            self.algorithms[algo_node_id].visualize(frame, result.get("detections"),
-                         save_path=filepath_absolute, label_color=label_color,
-                         roi_mask=roi_mask, roi_regions=effective_roi_regions)
-            
+
+            # 获取上游节点 ID（用于可视化）
+            upstream_node_id = context.get('upstream_node_id')
+
+            # 如果有上游算法节点，使用其 visualize 方法
+            if upstream_node_id and upstream_node_id in self.algorithms:
+                effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
+                self.algorithms[upstream_node_id].visualize(
+                    frame, result.get("detections"),
+                    save_path=filepath_absolute,
+                    label_color=label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=effective_roi_regions
+                )
+            else:
+                # 没有上游算法节点，保存原始帧
+                save_frame(frame, filepath_absolute)
+
             filepath_ori = f"{filepath}.ori.jpg"
             filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
             save_frame(frame, filepath_ori_absolute)
-            
+
             detection_images.append({
                 'image_path': filepath,
                 'image_ori_path': filepath_ori,
-                'timestamp': frame_timestamp
+                'timestamp': frame_timestamp,
+                'detection_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(frame_timestamp))
             })
-        
+
         main_image = detection_images[-1]['image_path'] if detection_images else ""
         main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
 
-        # 获取 Alert 节点配置
-        alert_node = self.nodes.get(node_id)
-        alert_message = ""
-        alert_level = "info"  # 默认级别
-        if isinstance(alert_node, AlertNodeData):
-            alert_message = alert_node.alert_message or ""
-            alert_level = alert_node.alert_level or "info"
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 使用自定义消息: {alert_message}, 级别: {alert_level}")
-
+        # 创建告警记录
         alert = Alert.create(
             video_source=self.video_source,
             workflow=self.workflow,
             alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
-            alert_type=algorithm_name,
+            alert_type=alert_type,
             alert_level=alert_level,
             alert_message=alert_message,
             alert_image=main_image,
@@ -857,8 +843,9 @@ class WorkflowExecutor:
             window_stats=json.dumps(window_stats) if window_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None
         )
-        logger.info(f"[WorkflowWorker] 输出节点 {node_id} 创建告警，检测序列包含 {len(detection_images)} 张图片")
-        
+        logger.info(f"[WorkflowWorker] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
+
+        # 启动视频录制
         if self.video_recorder:
             try:
                 video_path = self.video_recorder.start_recording(
@@ -873,7 +860,8 @@ class WorkflowExecutor:
                 logger.info(f"[WorkflowWorker] 已启动视频录制任务: {video_path}")
             except Exception as rec_err:
                 logger.error(f"[WorkflowWorker] 启动视频录制失败: {rec_err}", exc_info=True)
-        
+
+        # 发布到 RabbitMQ
         try:
             alert_message = format_alert_message(alert)
             if publish_alert_to_rabbitmq(alert_message):
@@ -882,7 +870,6 @@ class WorkflowExecutor:
                 logger.warning(f"[WorkflowWorker] 预警消息发布到RabbitMQ失败: {alert.id}")
         except Exception as e:
             logger.error(f"[WorkflowWorker] 发布预警消息到RabbitMQ时发生错误: {e}")
-    
     def _execute_branch(self, node_id, context):
         result = self._execute_node(node_id, context)
         if result is None:

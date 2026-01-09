@@ -116,15 +116,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
         formValues.labelName = nodeConfig.label_name || 'Object';
         formValues.labelColor = nodeConfig.label_color || '#FF0000';
-
-        // 窗口检测配置
-        const windowDetection = nodeConfig.window_detection || {};
-        formValues.windowEnable = windowDetection.enable || false;
-        formValues.windowSize = windowDetection.window_size || 30;
-        formValues.windowMode = windowDetection.window_mode || 'ratio';
-        formValues.windowThreshold = windowDetection.window_threshold !== undefined
-          ? windowDetection.window_threshold
-          : 0.3;
       } else if (nodeType === 'function') {
         formValues.functionName = node.data.functionName || 'area_ratio';
         formValues.inputNodeA = node.data.inputNodeA || '';
@@ -141,7 +132,23 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       } else if (nodeType === 'alert') {
         formValues.alertLevel = node.data.alertLevel || 'info';
         formValues.alertMessage = node.data.alertMessage || '检测到目标';
-        formValues.suppressionSeconds = node.data.suppressionSeconds;
+        formValues.alertType = node.data.alertType || 'detection';
+
+        // 读取 suppression 配置
+        const suppression = node.data.suppression;
+        if (suppression) {
+          formValues.suppressionMode = suppression.mode || 'simple';
+          formValues.suppressionSimpleSeconds = suppression.simple_seconds || 60;
+          formValues.suppressionWindowSize = suppression.window_size || 30;
+          formValues.suppressionWindowMode = suppression.window_mode || 'ratio';
+          formValues.suppressionWindowThreshold = suppression.window_threshold !== undefined
+            ? suppression.window_threshold
+            : 0.3;
+        } else {
+          // 默认配置
+          formValues.suppressionMode = 'simple';
+          formValues.suppressionSimpleSeconds = 60;
+        }
       } else if (nodeType === 'record') {
         formValues.recordDuration = node.data.recordDuration || 10;
       }
@@ -210,37 +217,38 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
 
-        // 保存窗口检测配置
-        if (values.windowEnable) {
-          config.window_detection = {
-            enable: true,
-            window_size: values.windowSize || 30,
-            window_mode: values.windowMode || 'ratio',
-            window_threshold: values.windowThreshold !== undefined ? values.windowThreshold : 0.3,
-          };
-        } else {
-          delete config.window_detection;
-        }
-
         updatedData.config = config;
 
-        delete updatedData.windowEnable;
-        delete updatedData.windowSize;
-        delete updatedData.windowMode;
-        delete updatedData.windowThreshold;
         delete updatedData.intervalSeconds;
         delete updatedData.runtimeTimeout;
         delete updatedData.memoryLimitMb;
         delete updatedData.labelName;
         delete updatedData.labelColor;
       } else if (nodeType === 'alert') {
-        // Alert 节点的字段直接保存，但要过滤 undefined 值
-        if (values.suppressionSeconds !== undefined && values.suppressionSeconds !== null) {
-          updatedData.suppressionSeconds = values.suppressionSeconds;
-        } else {
-          // 如果留空，删除该字段以使用全局配置
-          delete updatedData.suppressionSeconds;
+        // Alert 节点：保存 suppression 配置
+        const suppressionConfig: any = {
+          mode: values.suppressionMode || 'simple',
+        };
+
+        // 根据 mode 设置不同的配置
+        if (values.suppressionMode === 'simple') {
+          suppressionConfig.simple_seconds = values.suppressionSimpleSeconds || 60;
+        } else if (values.suppressionMode === 'window') {
+          suppressionConfig.window_size = values.suppressionWindowSize || 30;
+          suppressionConfig.window_mode = values.suppressionWindowMode || 'ratio';
+          suppressionConfig.window_threshold = values.suppressionWindowThreshold !== undefined
+            ? values.suppressionWindowThreshold
+            : 0.3;
         }
+
+        updatedData.suppression = suppressionConfig;
+
+        // 清理临时字段
+        delete updatedData.suppressionMode;
+        delete updatedData.suppressionSimpleSeconds;
+        delete updatedData.suppressionWindowSize;
+        delete updatedData.suppressionWindowMode;
+        delete updatedData.suppressionWindowThreshold;
       } else if (nodeType === 'function') {
         const config = node.data?.config || {};
         
@@ -441,70 +449,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 name="labelColor"
               >
                 <Input type="color" style={{ width: 100 }} />
-              </Form.Item>
-            </div>
-
-            <div className="form-divider" />
-
-            <div className="config-section">
-              <div className="config-section-header">
-                <span className="config-section-title">时间窗口检测（误报抑制）</span>
-              </div>
-
-              <Form.Item
-                label="启用窗口检测"
-                name="windowEnable"
-                valuePropName="checked"
-              >
-                <Switch />
-              </Form.Item>
-
-              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.windowEnable !== currentValues.windowEnable}>
-                {({ getFieldValue }) => {
-                  const windowEnable = getFieldValue('windowEnable');
-                  if (!windowEnable) return null;
-
-                  return (
-                    <div className="window-config-fields">
-                      <Form.Item
-                        label="窗口大小（秒）"
-                        name="windowSize"
-                      >
-                        <InputNumber min={1} max={300} style={{ width: '100%' }} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="检测模式"
-                        name="windowMode"
-                      >
-                        <Select>
-                          <Option value="count">检测次数 (count)</Option>
-                          <Option value="ratio">检测比例 (ratio)</Option>
-                          <Option value="consecutive">连续检测 (consecutive)</Option>
-                        </Select>
-                      </Form.Item>
-
-                      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.windowMode !== currentValues.windowMode}>
-                        {({ getFieldValue }) => {
-                          const windowMode = getFieldValue('windowMode') || 'ratio';
-                          return (
-                            <Form.Item
-                              label={windowMode === 'ratio' ? '检测阈值（比例）' : '检测阈值（次数）'}
-                              name="windowThreshold"
-                              extra={windowMode === 'ratio' ? '0-1之间的小数，如0.3表示30%' : '正整数，最少检测次数'}
-                            >
-                              {windowMode === 'ratio' ? (
-                                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-                              ) : (
-                                <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
-                              )}
-                            </Form.Item>
-                          );
-                        }}
-                      </Form.Item>
-                    </div>
-                  );
-                }}
               </Form.Item>
             </div>
           </>
@@ -757,24 +701,119 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               </Select>
             </Form.Item>
             <Form.Item
+              label="告警类型"
+              name="alertType"
+              extra="用于区分不同类型的告警"
+            >
+              <Input placeholder="例如: person, vehicle, fire" />
+            </Form.Item>
+            <Form.Item
               label="告警消息"
               name="alertMessage"
             >
               <Input placeholder="自定义告警消息" />
             </Form.Item>
-            <Form.Item
-              label="告警抑制时间（秒）"
-              name="suppressionSeconds"
-              extra="留空使用全局配置，否则使用自定义值"
-            >
-              <InputNumber
-                min={1}
-                max={3600}
-                step={1}
-                placeholder="全局配置"
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">告警抑制配置</span>
+              </div>
+
+              <Form.Item
+                label="抑制模式"
+                name="suppressionMode"
+                extra="选择告警抑制方式"
+              >
+                <Select>
+                  <Option value="simple">简单时间抑制</Option>
+                  <Option value="window">时间窗口检测</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.suppressionMode !== currentValues.suppressionMode}>
+                {({ getFieldValue }) => {
+                  const suppressionMode = getFieldValue('suppressionMode') || 'simple';
+
+                  if (suppressionMode === 'simple') {
+                    return (
+                      <Form.Item
+                        label="抑制时间（秒）"
+                        name="suppressionSimpleSeconds"
+                        extra="在此时间窗口内只触发一次告警"
+                      >
+                        <InputNumber min={1} max={3600} step={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    );
+                  } else if (suppressionMode === 'window') {
+                    return (
+                      <>
+                        <Form.Item
+                          label="时间窗口（秒）"
+                          name="suppressionWindowSize"
+                          extra="统计检测情况的时间窗口"
+                        >
+                          <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                        </Form.Item>
+
+                        <Form.Item
+                          label="检测模式"
+                          name="suppressionWindowMode"
+                        >
+                          <Select>
+                            <Option value="count">检测次数 (count)</Option>
+                            <Option value="ratio">检测比例 (ratio)</Option>
+                            <Option value="consecutive">连续检测 (consecutive)</Option>
+                          </Select>
+                        </Form.Item>
+
+                        <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.suppressionWindowMode !== currentValues.suppressionWindowMode}>
+                          {({ getFieldValue }) => {
+                            const windowMode = getFieldValue('suppressionWindowMode') || 'ratio';
+
+                            // 根据不同模式设置不同的标签和提示
+                            let label = '检测阈值';
+                            let extra = '';
+                            let inputType = 'number';
+
+                            if (windowMode === 'ratio') {
+                              label = '检测阈值（比例）';
+                              extra = '0-1之间的小数，如0.3表示30%';
+                              inputType = 'ratio';
+                            } else if (windowMode === 'count') {
+                              label = '检测阈值（次数）';
+                              extra = '正整数，时间窗口内最少检测次数';
+                              inputType = 'count';
+                            } else if (windowMode === 'consecutive') {
+                              label = '检测阈值（次数）';
+                              extra = '正整数，最少连续检测次数';
+                              inputType = 'count';
+                            }
+
+                            return (
+                              <Form.Item
+                                label={label}
+                                name="suppressionWindowThreshold"
+                                extra={extra}
+                              >
+                                {inputType === 'ratio' ? (
+                                  <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                                ) : (
+                                  <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
+                                )}
+                              </Form.Item>
+                            );
+                          }}
+                        </Form.Item>
+                      </>
+                    );
+                  }
+
+                  return null;
+                }}
+              </Form.Item>
+            </div>
           </>
         );
 

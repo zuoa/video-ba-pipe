@@ -1,153 +1,150 @@
 """
 时间窗口检测器 - 纯内存实现
 用于在时间窗口内统计检测结果，避免单次误报
+
+支持的抑制模式：
+1. simple: 简单时间抑制（X秒内只触发1次）
+2. window: 时间窗口检测（窗口内检测比例/连续次数达到阈值）
 """
 import time
 from collections import deque
 from typing import Dict, Tuple, Optional
 
 from app import logger
-from app.core.database_models import Algorithm
 
 
 class WindowDetector:
     """纯内存时间窗口检测器"""
-    
+
     def __init__(self):
-        # 检测记录缓冲区: {(source_id, algo_id): deque([(timestamp, has_detection), ...])}
+        # 检测记录缓冲区: {(source_id, node_id): deque([(timestamp, has_detection, image_path), ...])}
         self.buffers: Dict[Tuple[int, str], deque] = {}
-        
-        # 配置缓存: {(source_id, algo_id): config_dict}
+
+        # 配置缓存: {(source_id, node_id): config_dict}
         self.configs: Dict[Tuple[int, str], dict] = {}
-        
-        # 统计缓存（避免重复计算）: {(source_id, algo_id): (cache_time, stats)}
+
+        # 统计缓存（避免重复计算）: {(source_id, node_id): (cache_time, stats)}
         self.stats_cache: Dict[Tuple[int, str], Tuple[float, dict]] = {}
         self.cache_ttl = 0.5  # 缓存有效期0.5秒
-        
+
         # 清理任务
         self.cleanup_interval = 60  # 60秒清理一次
         self.last_cleanup = time.time()
-        
+
         # 内存限制
         self.max_records_per_buffer = 3000  # 每个缓冲区最多3000条记录
-        
-    def load_config(self, source_id: int, algorithm_id: str):
+
+    def load_config_with_override(self, source_id: int, node_id: str, suppression_config: dict):
         """
-        从数据库加载窗口配置
-        从Algorithm表读取时间窗口配置
-        """
-        key = (source_id, algorithm_id)
-
-        try:
-            # 获取Algorithm配置
-            algorithm = Algorithm.get_by_id(algorithm_id)
-
-            # 从算法表读取配置
-            config = {
-                'enable': algorithm.enable_window_check,
-                'window_size': algorithm.window_size,
-                'mode': algorithm.window_mode,
-                'threshold': algorithm.window_threshold,
-            }
-
-            self.configs[key] = config
-            logger.info(f"[WindowDetector] 加载配置 Source={source_id}, Algo={algorithm_id}: {config}")
-
-        except Exception as e:
-            logger.error(f"[WindowDetector] 加载配置失败 Source={source_id}, Algo={algorithm_id}: {e}")
-            # 使用默认配置
-            self.configs[key] = {
-                'enable': False,
-                'window_size': 30,
-                'mode': 'ratio',
-                'threshold': 0.3
-            }
-
-    def load_config_with_override(self, source_id: int, algorithm_id: str, window_config: dict):
-        """
-        使用指定的窗口配置（支持节点级配置覆盖）
+        使用指定的抑制配置（统一支持 simple 和 window 两种模式）
 
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
-            window_config: 窗口配置字典，包含:
-                - enable: 是否启用窗口检测
-                - window_size: 时间窗口大小（秒）
-                - window_mode: 检测模式 ('count', 'ratio', 'consecutive')
-                - window_threshold: 检测阈值
+            node_id: 节点ID（Alert 节点）
+            suppression_config: 抑制配置字典，包含:
+                - mode: "simple" | "window"
+                - simple_seconds: simple模式的抑制秒数
+                - window_size: window模式的时间窗口大小（秒）
+                - window_mode: window模式的检测模式 ('ratio', 'consecutive')
+                - window_threshold: window模式的检测阈值
         """
-        key = (source_id, algorithm_id)
+        key = (source_id, node_id)
+        mode = suppression_config.get('mode', 'simple')
 
-        # 规范化配置字段名
-        config = {
-            'enable': window_config.get('enable', False),
-            'window_size': window_config.get('window_size', 30),
-            'mode': window_config.get('window_mode', 'ratio'),
-            'threshold': window_config.get('window_threshold', 0.3),
-        }
+        # 规范化为统一配置格式
+        if mode == 'simple':
+            # simple 模式：X秒内只触发1次
+            # 转换为 window 模式：window_size=simple_seconds, mode='consecutive', threshold=1
+            simple_seconds = suppression_config.get('simple_seconds', 60)
+            config = {
+                'enable': True,
+                'mode': 'consecutive',  # 连续检测
+                'window_size': simple_seconds,
+                'threshold': 1,  # 检测到1次就触发
+                'original_mode': 'simple',  # 保留原始模式信息
+            }
+        elif mode == 'window':
+            # window 模式：时间窗口检测
+            config = {
+                'enable': True,
+                'mode': suppression_config.get('window_mode', 'ratio'),
+                'window_size': suppression_config.get('window_size', 30),
+                'threshold': suppression_config.get('window_threshold', 0.3),
+                'original_mode': 'window',
+            }
+        else:
+            logger.warning(f"[WindowDetector] 未知的抑制模式: {mode}，禁用检测")
+            config = {
+                'enable': False,
+                'mode': 'ratio',
+                'window_size': 30,
+                'threshold': 0.3,
+                'original_mode': mode,
+            }
 
         self.configs[key] = config
-        logger.info(f"[WindowDetector] 加载配置（覆盖模式）Source={source_id}, Algo={algorithm_id}: {config}")
-    
-    def add_record(self, source_id: int, algorithm_id: str, timestamp: float, has_detection: bool, image_path: str = None):
+        logger.info(f"[WindowDetector] 加载抑制配置 Source={source_id}, Node={node_id}: {config}")
+
+    def add_record(self, source_id: int, node_id: str, timestamp: float, has_detection: bool, image_path: str = None):
         """
         添加检测记录（轻量级操作）
-        
+
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
+            node_id: 节点ID
             timestamp: 帧时间戳
             has_detection: 是否检测到目标
             image_path: 检测图片路径（仅在检测到目标时提供）
         """
-        key = (source_id, algorithm_id)
-        
+        key = (source_id, node_id)
+
         # 初始化缓冲区
         if key not in self.buffers:
             self.buffers[key] = deque(maxlen=self.max_records_per_buffer)
-        
+
         # 添加记录（包含图片路径）
         record = (timestamp, has_detection, image_path)
         self.buffers[key].append(record)
-        
-        # 清除该算法的缓存
+
+        # 清除该节点的缓存
         if key in self.stats_cache:
             del self.stats_cache[key]
-        
+
         # 定期清理
         self._periodic_cleanup()
-    
-    def check_condition(self, source_id: int, algorithm_id: str, current_time: float) -> Tuple[bool, Optional[dict]]:
+
+    def check_condition(self, source_id: int, node_id: str, current_time: float) -> Tuple[bool, Optional[dict]]:
         """
-        检查是否满足窗口条件
-        
+        检查是否满足抑制条件
+
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
+            node_id: 节点ID
             current_time: 当前时间戳
-            
+
         Returns:
             (是否通过, 窗口统计信息)
         """
-        key = (source_id, algorithm_id)
-        
-        # 确保配置已加载
+        key = (source_id, node_id)
+
+        # 未配置时，默认通过（不抑制）
         if key not in self.configs:
-            self.load_config(source_id, algorithm_id)
-        
+            logger.warning(f"[WindowDetector] 节点 {node_id} 未配置抑制策略，默认通过")
+            return True, None
+
         config = self.configs[key]
-        
-        # 未启用窗口检测，直接返回True
+
+        # 未启用抑制，直接返回True
         if not config.get('enable', False):
             return True, None
-        
+
         # 获取窗口统计
         stats = self._get_window_stats(key, current_time, config)
-        
+
         # 根据模式判断
         mode = config['mode']
         threshold = config['threshold']
-        
+
         if mode == 'count':
             passed = stats['detection_count'] >= threshold
         elif mode == 'ratio':
@@ -157,9 +154,9 @@ class WindowDetector:
         else:
             logger.warning(f"[WindowDetector] 未知的窗口模式: {mode}，默认不通过")
             passed = False
-        
+
         return passed, stats
-    
+
     def _get_window_stats(self, key: Tuple[int, str], current_time: float, config: dict) -> dict:
         """获取窗口统计（带缓存）"""
         
@@ -247,54 +244,45 @@ class WindowDetector:
         
         self.last_cleanup = current_time
     
-    def get_stats(self, source_id: int, algorithm_id: str, current_time: Optional[float] = None) -> dict:
+    def get_stats(self, source_id: int, node_id: str, current_time: Optional[float] = None) -> dict:
         """
         获取当前窗口统计（用于监控面板）
-        
+
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
+            node_id: 节点ID
             current_time: 当前时间戳，None则使用当前时间
-            
+
         Returns:
             窗口统计信息
         """
         if current_time is None:
             current_time = time.time()
-        
-        key = (source_id, algorithm_id)
-        
-        # 确保配置已加载
+
+        key = (source_id, node_id)
+
+        # 未配置时返回空统计
         if key not in self.configs:
-            self.load_config(source_id, algorithm_id)
-        
+            return self._empty_stats()
+
         config = self.configs[key]
         stats = self._get_window_stats(key, current_time, config)
-        
+
         # 添加配置信息
         stats['config'] = config
-        
+
         return stats
-    
-    def clear_buffer(self, source_id: int, algorithm_id: str):
+
+    def clear_buffer(self, source_id: int, node_id: str):
         """清空指定的缓冲区"""
-        key = (source_id, algorithm_id)
+        key = (source_id, node_id)
         if key in self.buffers:
             self.buffers[key].clear()
-            logger.info(f"[WindowDetector] 清空缓冲区 Source={source_id}, Algo={algorithm_id}")
+            logger.info(f"[WindowDetector] 清空缓冲区 Source={source_id}, Node={node_id}")
         if key in self.stats_cache:
             del self.stats_cache[key]
         if key in self.configs:
             del self.configs[key]
-    
-    def reload_config(self, source_id: int, algorithm_id: str):
-        """重新加载配置（配置变更时调用）"""
-        key = (source_id, algorithm_id)
-        if key in self.configs:
-            del self.configs[key]
-        if key in self.stats_cache:
-            del self.stats_cache[key]
-        self.load_config(source_id, algorithm_id)
     
     def get_memory_usage(self) -> dict:
         """获取内存使用情况"""
@@ -312,61 +300,61 @@ class WindowDetector:
             'cache_count': len(self.stats_cache)
         }
     
-    def get_window_records(self, source_id: int, algorithm_id: str, current_time: float) -> list:
+    def get_window_records(self, source_id: int, node_id: str, current_time: float) -> list:
         """
         获取窗口内的所有检测记录
-        
+
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
+            node_id: 节点ID
             current_time: 当前时间戳
-            
+
         Returns:
-            窗口内的检测记录列表 [(timestamp, has_detection), ...]
+            窗口内的检测记录列表 [(timestamp, has_detection, image_path), ...]
         """
-        key = (source_id, algorithm_id)
-        
+        key = (source_id, node_id)
+
         if key not in self.buffers:
             return []
-        
+
         # 确保配置已加载
         if key not in self.configs:
-            self.load_config(source_id, algorithm_id)
-        
+            return []
+
         config = self.configs[key]
         window_size = config['window_size']
         window_start = current_time - window_size
-        
+
         records = self.buffers[key]
-        
+
         # 过滤窗口内的记录
         window_records = [
             (ts, detected, img_path) for ts, detected, img_path in records
             if ts >= window_start
         ]
-        
+
         return window_records
-    
-    def get_detection_records(self, source_id: int, algorithm_id: str, current_time: float) -> list:
+
+    def get_detection_records(self, source_id: int, node_id: str, current_time: float) -> list:
         """
         获取窗口内检测到目标的记录（用于保存图片）
-        
+
         Args:
             source_id: 视频源ID
-            algorithm_id: 算法ID
+            node_id: 节点ID
             current_time: 当前时间戳
-            
+
         Returns:
-            检测到目标的记录列表 [(timestamp, has_detection), ...]
+            检测到目标的记录列表 [(timestamp, has_detection, image_path), ...]
         """
-        window_records = self.get_window_records(source_id, algorithm_id, current_time)
-        
+        window_records = self.get_window_records(source_id, node_id, current_time)
+
         # 只返回检测到目标的记录
         detection_records = [
             (ts, detected, img_path) for ts, detected, img_path in window_records
             if detected
         ]
-        
+
         return detection_records
     
     def _empty_stats(self) -> dict:

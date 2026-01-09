@@ -130,16 +130,18 @@ export default function WorkflowEditorPage() {
 
             // 特殊处理：从 data 字段读取额外的配置
             if (node.data && typeof node.data === 'object') {
-              // Alert 节点：读取 alertLevel, alertMessage, suppressionSeconds
+              // Alert 节点：读取 alertLevel, alertType, alertMessage, suppression
               if (nodeType === 'alert') {
                 nodeData.alertLevel = node.data.alertLevel;
+                nodeData.alertType = node.data.alertType;
                 nodeData.alertMessage = node.data.alertMessage;
-                nodeData.suppressionSeconds = node.data.suppressionSeconds;
+                nodeData.suppression = node.data.suppression;
                 console.log('🚨 [EDITOR] Alert 节点加载配置:', {
                   id: node.id,
                   alertLevel: nodeData.alertLevel,
+                  alertType: nodeData.alertType,
                   alertMessage: nodeData.alertMessage,
-                  suppressionSeconds: nodeData.suppressionSeconds,
+                  suppression: nodeData.suppression,
                 });
               }
               // ROI 节点已经在后面处理
@@ -410,17 +412,19 @@ export default function WorkflowEditorPage() {
           });
           saveData.dataId = node.data?.dataId;
         } else if (nodeType === 'alert') {
-          // Alert 节点：保存 alertLevel, alertMessage, suppressionSeconds 到 data 字段
+          // Alert 节点：保存 alertLevel, alertType, alertMessage, suppression 到 data 字段
           saveData.data = {
             alertLevel: node.data?.alertLevel,
+            alertType: node.data?.alertType,
             alertMessage: node.data?.alertMessage,
-            suppressionSeconds: node.data?.suppressionSeconds,
+            suppression: node.data?.suppression,
           };
           console.log('🚨 [EDITOR] Alert 节点保存数据:', {
             id: node.id,
             alertLevel: saveData.data.alertLevel,
+            alertType: saveData.data.alertType,
             alertMessage: saveData.data.alertMessage,
-            suppressionSeconds: saveData.data.suppressionSeconds,
+            suppression: saveData.data.suppression,
           });
         } else {
           saveData.dataId = node.data?.dataId;
