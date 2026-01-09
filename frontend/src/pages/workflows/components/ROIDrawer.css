@@ -1,0 +1,85 @@
+.roi-drawer-container {
+  display: flex;
+  gap: 16px;
+  height: 70vh;
+  min-height: 500px;
+}
+
+.roi-controls {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  overflow-y: auto;
+}
+
+.control-divider {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 12px 0;
+}
+
+.stats {
+  padding: 12px;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #595959;
+  line-height: 1.8;
+}
+
+.roi-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.roi-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  cursor: crosshair;
+  display: block;
+}
+
+.canvas-loading,
+.canvas-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #fff;
+}
+
+.canvas-empty p {
+  margin-top: 16px;
+  font-size: 14px;
+  color: #8c8c8c;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .roi-drawer-container {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .roi-controls {
+    width: 100%;
+  }
+
+  .roi-canvas-wrapper {
+    min-height: 400px;
+  }
+}

@@ -126,13 +126,17 @@ class Orchestrator:
 
                 exit_code = self.running_processes[source.id]['decoder'].poll()
                 if exit_code is not None:
-                    logger.warn(f"🚨 视频源 ID {source.id} 的解码器工作进程已退出:{exit_code}！")
+                    logger.warning(f"🚨 视频源 ID {source.id} 的解码器工作进程已退出 (退出码:{exit_code})，准备自动重启")
                     need_reboot = True
 
                 if need_reboot:
-                    source.status = 'FAILED'
-                    source.save()
+                    # 清理旧进程和资源
                     self._stop_source(source)
+                    # 重置状态为STOPPED，让manage_sources在下一轮自动重启
+                    source.status = 'STOPPED'
+                    source.decoder_pid = None
+                    source.save()
+                    logger.info(f"✅ 视频源 ID {source.id} 已标记为STOPPED，将在下一轮管理循环中自动重启")
     
     def _start_workflow(self, workflow: Workflow):
         logger.info(f"  -> 正在启动工作流 ID {workflow.id}: {workflow.name}")
@@ -242,7 +246,7 @@ class Orchestrator:
             process_info = self.workflow_processes[workflow_id]
             exit_code = process_info['process'].poll()
             if exit_code is not None:
-                logger.warning(f"🚨 工作流 ID {workflow_id} 的进程已退出: {exit_code}")
+                logger.warning(f"🚨 工作流 ID {workflow_id} 的进程已退出 (退出码:{exit_code})，准备自动重启")
 
                 # 停止输出读取线程
                 if 'stdout_reader' in process_info:
@@ -257,7 +261,9 @@ class Orchestrator:
                 except:
                     pass
 
+                # 清理进程记录，让manage_workflows在下一轮自动重启
                 del self.workflow_processes[workflow_id]
+                logger.info(f"✅ 工作流 ID {workflow_id} 已清理进程记录，将在下一轮管理循环中自动重启")
 
     def run(self):
         print("🚀 编排器启动，开始动态管理视频源和工作流...")

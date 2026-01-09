@@ -18,45 +18,35 @@
   }
 }
 
-/* 分类标签 */
-.category-tabs {
+/* 搜索栏 */
+.search-bar {
   padding: 20px 24px;
   border-bottom: 1px solid #f0f0f0;
   background: linear-gradient(135deg, #fafafa 0%, #ffffff 100%);
 }
 
-.category-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+.search-input {
   border-radius: 8px;
-  border: 1px solid #f0f0f0;
-  background: #ffffff;
-  color: #595959;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  border: 1px solid #e8e8e8;
   transition: all 0.3s;
 }
 
-.category-tab:hover {
-  background: #f5f5f5;
-  border-color: #d9d9d9;
-  color: #262626;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.category-tab.active {
-  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+.search-input:hover {
   border-color: #000000;
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.category-tab .anticon {
+.search-input:focus,
+.search-input.ant-input-affix-wrapper-focused {
+  border-color: #000000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.search-input .ant-input {
   font-size: 14px;
+}
+
+.search-input .ant-input-prefix {
+  color: #8c8c8c;
 }
 
 /* 表格容器 */
@@ -111,19 +101,31 @@
 /* 名称单元格 */
 .name-cell {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 
 .name-icon {
   color: #8c8c8c;
   font-size: 14px;
+  margin-top: 2px;
+}
+
+.name-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .name-text {
   font-size: 14px;
   font-weight: 500;
   color: #111827;
+}
+
+.time-text {
+  font-size: 13px;
+  color: #8c8c8c;
 }
 
 /* 操作按钮 */
@@ -186,6 +188,19 @@
   border-color: #ff7875;
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(255, 77, 79, 0.3);
+}
+
+.action-btn-upload {
+  background: #f0f5ff;
+  color: #597ef7;
+  border-color: #adc6ff;
+}
+
+.action-btn-upload:hover {
+  background: #d6e4ff;
+  border-color: #85a5ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(89, 126, 247, 0.3);
 }
 
 /* 分页 */

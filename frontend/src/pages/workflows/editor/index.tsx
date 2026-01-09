@@ -184,6 +184,15 @@ export default function WorkflowEditorPage() {
               });
             }
 
+            // ROI 节点：从 data.roiRegions 读取
+            if (nodeType === 'roi') {
+              nodeData.roiRegions = node.data?.roiRegions || [];
+              console.log('🎯 ROI 节点加载 roiRegions:', {
+                节点ID: node.id,
+                区域数: nodeData.roiRegions.length,
+              });
+            }
+
             return {
               id: node.id,
               type: nodeType,
@@ -371,6 +380,18 @@ export default function WorkflowEditorPage() {
             videoSourceName: saveData.videoSourceName,
             videoSourceCode: saveData.videoSourceCode,
           });
+        } else if (nodeType === 'roi') {
+          // ROI 节点：保存 roiRegions 到 data 字段
+          const roiRegions = node.data?.roiRegions || [];
+          saveData.data = {
+            roiRegions: roiRegions
+          };
+          console.log('🎯 [EDITOR] ROI 节点保存数据:', {
+            id: node.id,
+            区域数: roiRegions.length,
+            区域列表: roiRegions.map((r: any) => r.name),
+          });
+          saveData.dataId = node.data?.dataId;
         } else {
           saveData.dataId = node.data?.dataId;
           saveData.algorithmId = node.data?.algorithmId || null;
@@ -453,6 +474,8 @@ export default function WorkflowEditorPage() {
         icon: nodeData.icon,
         color: nodeData.color,
         config: nodeData.config || {},  // 使用传入的 config，而不是 null
+        // ROI 节点初始化空的 roiRegions 数组
+        ...(nodeData.type === 'roi' ? { roiRegions: [] } : {}),
       },
     };
 
@@ -667,6 +690,8 @@ export default function WorkflowEditorPage() {
               <PropertyPanel
                 node={selectedNode}
                 videoSources={videoSources}
+                edges={edges}
+                nodes={nodes}
                 onUpdate={handleUpdateNode}
                 onDelete={handleDeleteNode}
               />

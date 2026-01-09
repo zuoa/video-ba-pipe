@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Form, Input, Select, Button, Empty, Tabs, Space, Tag, Switch, InputNumber, Typography } from 'antd';
+import { Form, Input, Select, Button, Empty, Tabs, Space, Tag, Switch, InputNumber, Typography, List } from 'antd';
 import {
   SettingOutlined,
   DeleteOutlined,
   InfoCircleOutlined,
   SearchOutlined,
   VideoCameraOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { getNodeTypes } from './nodes';
 import VideoSourceSelector from './VideoSourceSelector';
+import ROIDrawer, { ROIRegion } from './ROIDrawer';
 import './PropertyPanel.css';
 
 const { TextArea } = Input;
@@ -18,6 +20,8 @@ const { Text } = Typography;
 export interface PropertyPanelProps {
   node: any;
   videoSources: any[];
+  edges?: any[];
+  nodes?: any[];
   onUpdate: (data: any) => void;
   onDelete: () => void;
 }
@@ -25,12 +29,15 @@ export interface PropertyPanelProps {
 const PropertyPanel: React.FC<PropertyPanelProps> = ({
   node,
   videoSources,
+  edges = [],
+  nodes = [],
   onUpdate,
   onDelete,
 }) => {
   const [form] = Form.useForm();
   const [activeTab, setActiveTab] = useState('basic');
   const [selectorVisible, setSelectorVisible] = useState(false);
+  const [roiDrawerVisible, setRoiDrawerVisible] = useState(false);
 
   // 使用 useRef 而不是 useState，确保同步更新
   const isUpdatingVideoSourceRef = useRef(false);
@@ -615,20 +622,113 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         );
       
       case 'roi':
+        // 获取关联的视频源 - 通过 edges 找到连接的 videoSource 节点
+        const getRoiVideoSource = () => {
+          // 找到连接到当前 ROI 节点的输入边
+          const inputEdge = edges.find(edge => edge.target === node.id);
+          if (!inputEdge) return null;
+
+          // 找到源节点
+          const sourceNode = nodes.find(n => n.id === inputEdge.source);
+          if (!sourceNode) return null;
+
+          // 检查源节点是否是视频源节点
+          const sourceType = sourceNode.data?.type || sourceNode.type;
+          if (sourceType === 'videoSource' || sourceType === 'source') {
+            const videoSourceId = sourceNode.data?.videoSourceId;
+            if (videoSourceId) {
+              return videoSources.find(s => s.id == videoSourceId) || null;
+            }
+          }
+
+          // 如果连接的不是视频源，继续递归查找
+          // 这里简化处理，返回第一个可用的视频源
+          return videoSources[0] || null;
+        };
+
+        const roiVideoSource = getRoiVideoSource();
+        const roiRegions = node.data.roiRegions || [];
+
         return (
           <>
-            <Form.Item
-              label="ROI 模式"
-              name="roiMode"
-            >
-              <Select>
-                <Option value="preMask">前置掩码</Option>
-                <Option value="postFilter">后置过滤</Option>
-              </Select>
-            </Form.Item>
-            <div className="info-box">
-              <InfoCircleOutlined />
-              <span>请在视频源配置中绘制 ROI 区域</span>
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">ROI 区域管理</span>
+              </div>
+
+              <div className="roi-status-box">
+                <div className="roi-status-info">
+                  <InfoCircleOutlined />
+                  <span>
+                    {roiRegions.length > 0
+                      ? `已配置 ${roiRegions.length} 个区域`
+                      : '未配置区域'}
+                  </span>
+                </div>
+                <Button
+                  type="primary"
+                  icon={<EditOutlined />}
+                  onClick={() => setRoiDrawerVisible(true)}
+                  disabled={!roiVideoSource}
+                >
+                  {roiRegions.length > 0 ? '编辑区域' : '绘制区域'}
+                </Button>
+              </div>
+
+              {!roiVideoSource && (
+                <div className="info-box" style={{ marginTop: 12 }}>
+                  <InfoCircleOutlined />
+                  <span>请确保工作流中有可用的视频源并正确连接</span>
+                </div>
+              )}
+
+              {roiVideoSource && (
+                <div className="info-box" style={{
+                  marginTop: 12,
+                  background: 'linear-gradient(to right, #f6ffed, #fcffe6)',
+                  borderColor: '#d9f7be',
+                  color: '#389e0d'
+                }}>
+                  <InfoCircleOutlined />
+                  <span>视频源: {roiVideoSource.name}</span>
+                </div>
+              )}
+
+              {roiRegions.length > 0 && (
+                <div className="roi-regions-list">
+                  <Text strong>已配置的 ROI 区域:</Text>
+                  <List
+                    size="small"
+                    dataSource={roiRegions}
+                    renderItem={(region: ROIRegion, index: number) => (
+                      <List.Item
+                        key={index}
+                        style={{
+                          padding: '8px 12px',
+                          background: '#fafafa',
+                          borderRadius: 4,
+                          marginTop: 8,
+                          border: '1px solid #d9d9d9'
+                        }}
+                      >
+                        <div style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text strong>{region.name}</Text>
+                            <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
+                              {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
+                            </Tag>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#8c8c8c' }}>
+                            {region.polygon.length} 个顶点
+                          </div>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              )}
             </div>
           </>
         );
@@ -812,6 +912,64 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           setSelectorVisible(false);
         }}
         onCancel={() => setSelectorVisible(false)}
+      />
+
+      <ROIDrawer
+        visible={roiDrawerVisible}
+        videoSourceId={(() => {
+          // 获取关联的视频源 ID
+          const inputEdge = edges.find(edge => edge.target === node.id);
+          if (!inputEdge) return null;
+
+          const sourceNode = nodes.find(n => n.id === inputEdge.source);
+          if (!sourceNode) return null;
+
+          const sourceType = sourceNode.data?.type || sourceNode.type;
+          if (sourceType === 'videoSource' || sourceType === 'source') {
+            return sourceNode.data?.videoSourceId || null;
+          }
+
+          return null;
+        })()}
+        videoSourceName={(() => {
+          // 获取关联的视频源名称
+          const inputEdge = edges.find(edge => edge.target === node.id);
+          if (!inputEdge) return undefined;
+
+          const sourceNode = nodes.find(n => n.id === inputEdge.source);
+          if (!sourceNode) return undefined;
+
+          const sourceType = sourceNode.data?.type || sourceNode.type;
+          if (sourceType === 'videoSource' || sourceType === 'source') {
+            return sourceNode.data?.videoSourceName;
+          }
+
+          return undefined;
+        })()}
+        sourceCode={(() => {
+          // 获取关联的视频源 source_code
+          const inputEdge = edges.find(edge => edge.target === node.id);
+          if (!inputEdge) return undefined;
+
+          const sourceNode = nodes.find(n => n.id === inputEdge.source);
+          if (!sourceNode) return undefined;
+
+          const sourceType = sourceNode.data?.type || sourceNode.type;
+          if (sourceType === 'videoSource' || sourceType === 'source') {
+            return sourceNode.data?.videoSourceCode;
+          }
+
+          return undefined;
+        })()}
+        initialRegions={node.data.roiRegions || []}
+        onClose={() => setRoiDrawerVisible(false)}
+        onSave={(regions) => {
+          console.log('💾 保存 ROI 区域:', regions);
+          const updatedData = {
+            roiRegions: regions,
+          };
+          onUpdate(updatedData);
+        }}
       />
     </div>
   );

@@ -60,6 +60,7 @@ class WorkflowExecutor:
             'condition': self._handle_condition_node,
             'output': self._handle_output_node,
             'roi_draw': self._handle_roi_draw_node,
+            'roi': self._handle_roi_draw_node,  # 支持前后端两种类型名称
             'alert': self._handle_output_node,
             'function': self._handle_function_node,
         }
@@ -360,6 +361,7 @@ class WorkflowExecutor:
         priority_map = {
             'source': 0,
             'roi_draw': 1,
+            'roi': 1,  # 支持前后端两种类型名称
             'algorithm': 2,
             'function': 3,
             'condition': 4,

@@ -129,7 +129,7 @@ export default function VideoSources() {
 
       <ImagePreview
         visible={previewVisible}
-        src={`/api/image/snapshots/${previewSource?.id}.jpg`}
+        src={`/api/image/snapshots/${previewSource?.source_code}.jpg`}
         title={previewSource?.name}
         onClose={() => setPreviewVisible(false)}
       />

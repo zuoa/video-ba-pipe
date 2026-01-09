@@ -22,7 +22,7 @@ export default function Scripts() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
   const [selectedScript, setSelectedScript] = useState<any>(null);
-  const [activeCategory, setActiveCategory] = useState('');
+  const [searchText, setSearchText] = useState('');
 
   const loadScripts = useCallback(async () => {
     setLoading(true);
@@ -42,13 +42,17 @@ export default function Scripts() {
 
   useEffect(() => {
     filterScripts();
-  }, [scripts, activeCategory]);
+  }, [scripts, searchText]);
 
   const filterScripts = () => {
-    if (!activeCategory) {
+    if (!searchText) {
       setFilteredScripts(scripts);
     } else {
-      setFilteredScripts(scripts.filter((s) => s.category === activeCategory));
+      const lowerSearch = searchText.toLowerCase();
+      setFilteredScripts(scripts.filter((s) =>
+        s.path?.toLowerCase().includes(lowerSearch) ||
+        s.name?.toLowerCase().includes(lowerSearch)
+      ));
     }
   };
 
@@ -87,19 +91,25 @@ export default function Scripts() {
     message.success('脚本保存成功');
   };
 
-  const handleUseTemplate = (templateContent: string, templatePath: string) => {
-    setSelectedScript({ content: templateContent, path: templatePath });
+  const handleUseTemplate = (templateContent: string, templatePath: string, isClone: boolean = false) => {
+    setSelectedScript({ content: templateContent, path: isClone ? undefined : templatePath });
     setTemplateModalVisible(false);
     setUploadModalVisible(true);
   };
 
-  const categories = [
-    { key: '', label: '全部', icon: <CodeOutlined /> },
-    { key: 'detectors', label: '检测脚本', icon: <CodeOutlined /> },
-    { key: 'filters', label: '过滤脚本', icon: <FileTextOutlined /> },
-    { key: 'hooks', label: 'Hook脚本', icon: <CodeOutlined /> },
-    { key: 'postprocessors', label: '后处理脚本', icon: <FileTextOutlined /> },
-  ];
+  const handleDownloadTemplate = (template: any) => {
+    // 创建 Blob 并下载
+    const blob = new Blob([template.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = template.name + '.py';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    message.success(`模板 ${template.name} 已下载`);
+  };
 
   return (
     <div className="scripts-page">
@@ -143,9 +153,8 @@ export default function Scripts() {
       <ScriptTable
         scripts={filteredScripts}
         loading={loading}
-        categories={categories}
-        activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
+        searchText={searchText}
+        onSearchChange={setSearchText}
         onEdit={handleEdit}
         onDelete={handleDelete}
       />
@@ -174,6 +183,7 @@ export default function Scripts() {
         visible={templateModalVisible}
         onClose={() => setTemplateModalVisible(false)}
         onUseTemplate={handleUseTemplate}
+        onDownloadTemplate={handleDownloadTemplate}
       />
     </div>
   );

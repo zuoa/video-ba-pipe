@@ -7,8 +7,10 @@ import {
   InfoCircleOutlined,
   VideoCameraOutlined,
   PlayCircleOutlined,
+  FileImageOutlined,
 } from '@ant-design/icons';
 import { Alert, Task, DetectionImage } from '../types';
+import './AlertDetailModal.css';
 
 const { Title, Text } = Typography;
 
@@ -54,80 +56,99 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
         open={visible}
         onCancel={onClose}
         footer={null}
-        width={800}
+        width={900}
+        className="alertDetailModal"
         title={
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Space>
-              <InfoCircleOutlined />
+          <Space style={{ width: '100%', justifyContent: 'space-between' }} size="large">
+            <Space size="middle">
+              <InfoCircleOutlined style={{ fontSize: 18 }} />
               <span>告警详情</span>
-              <Text type="secondary">({currentIndex + 1} / {total})</Text>
+              <Text style={{ color: 'rgba(255, 255, 255, 0.85)' }}>
+                ({currentIndex + 1} / {total})
+              </Text>
             </Space>
-            <Space>
+            <Space className="modalNavButtons">
               <Button
                 icon={<LeftOutlined />}
                 onClick={() => onNavigate('prev')}
                 disabled={currentIndex === 0}
-              />
+              >
+                上一条
+              </Button>
               <Button
                 icon={<RightOutlined />}
                 onClick={() => onNavigate('next')}
                 disabled={currentIndex === total - 1}
-              />
+              >
+                下一条
+              </Button>
             </Space>
           </Space>
         }
       >
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
+        <div className="alertContent">
           {/* 基本信息 */}
-          <Descriptions bordered column={2} size="small">
-            <Descriptions.Item label="任务">{taskName}</Descriptions.Item>
-            <Descriptions.Item label="告警类型">
-              <Tag color="blue">{alert.alert_type}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="告警时间">
-              {new Date(alert.alert_time).toLocaleString('zh-CN')}
-            </Descriptions.Item>
-            <Descriptions.Item label="检测数量">{alert.detection_count}</Descriptions.Item>
-            <Descriptions.Item label="告警消息" span={2}>
-              {alert.alert_message}
-            </Descriptions.Item>
-          </Descriptions>
+          <div className="infoCard">
+            <Descriptions bordered={false} column={2} size="small">
+              <Descriptions.Item label="任务">{taskName}</Descriptions.Item>
+              <Descriptions.Item label="告警类型">
+                <Tag color="blue" style={{ margin: 0 }}>{alert.alert_type}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="告警时间">
+                {new Date(alert.alert_time).toLocaleString('zh-CN')}
+              </Descriptions.Item>
+              <Descriptions.Item label="检测数量">
+                <Tag color="green" style={{ margin: 0 }}>{alert.detection_count}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="告警消息" span={2}>
+                {alert.alert_message}
+              </Descriptions.Item>
+            </Descriptions>
+          </div>
 
           {/* 窗口统计 */}
           {alert.detection_count > 1 && Object.keys(windowStats).length > 0 && (
             <>
-              <Title level={5}>时间窗口检测</Title>
-              <Space>
-                <Tag>检测帧数: {windowStats.detection_count} / {windowStats.total_count}</Tag>
-                <Tag>检测比例: {(windowStats.detection_ratio * 100).toFixed(1)}%</Tag>
-                <Tag>最大连续: {windowStats.max_consecutive} 次</Tag>
-              </Space>
+              <Title level={5} className="sectionTitle">
+                <VideoCameraOutlined />
+                时间窗口检测统计
+              </Title>
+              <div className="statsTags">
+                <Tag color="blue">
+                  检测帧数: <strong>{windowStats.detection_count}</strong> / {windowStats.total_count}
+                </Tag>
+                <Tag color="purple">
+                  检测比例: <strong>{(windowStats.detection_ratio * 100).toFixed(1)}%</strong>
+                </Tag>
+                <Tag color="orange">
+                  最大连续: <strong>{windowStats.max_consecutive}</strong> 次
+                </Tag>
+              </div>
 
               {detectionImages.length > 0 && (
                 <>
-                  <Title level={5}>检测图片序列</Title>
+                  <Title level={5} className="sectionTitle">
+                    <FileImageOutlined />
+                    检测图片序列
+                  </Title>
                   <Image.PreviewGroup
                     preview={{
                       current: imagePreview,
                       onChange: setImagePreview,
                     }}
                   >
-                    <List
-                      grid={{ gutter: 8, column: 4 }}
-                      dataSource={detectionImages}
-                      renderItem={(img: DetectionImage | any, index: number) => (
-                        <List.Item>
+                    <div className="detectionImageGrid">
+                      {detectionImages.map((img: DetectionImage | any, index: number) => (
+                        <div key={index} className="detectionImageItem">
                           <Image
-                            width="100%"
                             src={`/api/image/frames/${img.image_path}`}
                             alt={`检测 ${index + 1}`}
+                            preview={{ title: `第 ${index + 1} 次检测` }}
                           />
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            第 {index + 1} 次
-                          </Text>
-                        </List.Item>
-                      )}
-                    />
+                          <div className="detectionImageIndex">第 {index + 1} 次</div>
+                        </div>
+                      ))}
+                    </div>
                   </Image.PreviewGroup>
                 </>
               )}
@@ -137,44 +158,51 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           {/* 告警媒体 */}
           {(alert.alert_image || alert.alert_image_ori || alert.alert_video) && (
             <>
-              <Title level={5}>告警媒体</Title>
-              <Space direction="horizontal" wrap>
+              <Title level={5} className="sectionTitle">
+                <PlayCircleOutlined />
+                告警媒体资源
+              </Title>
+              <div className="mediaSection">
                 {alert.alert_image && (
-                  <div>
-                    <Text type="secondary">告警图片</Text>
-                    <Image
-                      width={200}
-                      src={`/api/image/frames/${alert.alert_image}`}
-                      style={{ marginTop: 8 }}
-                    />
+                  <div className="mediaCard">
+                    <div className="mediaCardLabel">告警图片</div>
+                    <div className="mediaCardImage">
+                      <Image
+                        src={`/api/image/frames/${alert.alert_image}`}
+                        alt="告警图片"
+                        preview={{ title: '告警图片' }}
+                      />
+                    </div>
                   </div>
                 )}
                 {alert.alert_image_ori && (
-                  <div>
-                    <Text type="secondary">原始图片</Text>
-                    <Image
-                      width={200}
-                      src={`/api/image/frames/${alert.alert_image_ori}`}
-                      style={{ marginTop: 8 }}
-                    />
+                  <div className="mediaCard">
+                    <div className="mediaCardLabel">原始图片</div>
+                    <div className="mediaCardImage">
+                      <Image
+                        src={`/api/image/frames/${alert.alert_image_ori}`}
+                        alt="原始图片"
+                        preview={{ title: '原始图片' }}
+                      />
+                    </div>
                   </div>
                 )}
                 {alert.alert_video && (
-                  <div>
-                    <Text type="secondary">告警视频</Text>
-                    <video
-                      width={200}
-                      controls
-                      preload="metadata"
-                      src={`/api/video/videos/${alert.alert_video}`}
-                      style={{ marginTop: 8 }}
-                    />
+                  <div className="mediaCard">
+                    <div className="mediaCardLabel">告警视频</div>
+                    <div className="mediaCardVideo">
+                      <video
+                        controls
+                        preload="metadata"
+                        src={`/api/video/videos/${alert.alert_video}`}
+                      />
+                    </div>
                   </div>
                 )}
-              </Space>
+              </div>
             </>
           )}
-        </Space>
+        </div>
       </Modal>
     </>
   );

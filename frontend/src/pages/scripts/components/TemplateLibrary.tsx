@@ -1,23 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, message, Empty, Spin, Space, Button } from 'antd';
+import { Modal, message, Empty, Spin, Space, Button, Tooltip } from 'antd';
 import {
   FileTextOutlined,
   EyeOutlined,
   CopyOutlined,
   ReloadOutlined,
+  DownloadOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import './TemplateLibrary.css';
 
 export interface TemplateLibraryProps {
   visible: boolean;
   onClose: () => void;
-  onUseTemplate: (content: string, path: string) => void;
+  onUseTemplate: (content: string, path: string, isClone: boolean) => void;
+  onDownloadTemplate: (template: any) => void;
 }
 
 const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
   visible,
   onClose,
   onUseTemplate,
+  onDownloadTemplate,
 }) => {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,7 +58,15 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
   };
 
   const handleUseTemplate = (template: any) => {
-    onUseTemplate(template.content, template.path);
+    onUseTemplate(template.content, template.path, false);
+  };
+
+  const handleCloneTemplate = (template: any) => {
+    onUseTemplate(template.content, template.path, true);
+  };
+
+  const handleDownloadTemplate = (template: any) => {
+    onDownloadTemplate(template);
   };
 
   const getCategoryColor = (path: string) => {
@@ -123,23 +135,49 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
                     </div>
                   </div>
                   <div className="template-actions">
-                    <Button
-                      size="small"
-                      icon={<EyeOutlined />}
-                      onClick={() => handleViewTemplate(template)}
-                      className="action-btn action-btn-view"
-                    >
-                      查看
-                    </Button>
-                    <Button
-                      size="small"
-                      type="primary"
-                      icon={<CopyOutlined />}
-                      onClick={() => handleUseTemplate(template)}
-                      className="action-btn action-btn-use"
-                    >
-                      使用
-                    </Button>
+                    <Space size="small">
+                      <Tooltip title="查看模板代码">
+                        <Button
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => handleViewTemplate(template)}
+                          className="action-btn action-btn-view"
+                        >
+                          查看
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="下载到本地">
+                        <Button
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => handleDownloadTemplate(template)}
+                          className="action-btn action-btn-download"
+                        >
+                          下载
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="在线编辑此模板">
+                        <Button
+                          size="small"
+                          icon={<CopyOutlined />}
+                          onClick={() => handleUseTemplate(template)}
+                          className="action-btn action-btn-use"
+                        >
+                          使用
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="克隆为新脚本">
+                        <Button
+                          size="small"
+                          type="primary"
+                          icon={<PlusOutlined />}
+                          onClick={() => handleCloneTemplate(template)}
+                          className="action-btn action-btn-clone"
+                        >
+                          克隆
+                        </Button>
+                      </Tooltip>
+                    </Space>
                   </div>
                 </div>
               ))
@@ -165,18 +203,28 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
         onCancel={() => setViewModalVisible(false)}
         footer={
           <Space>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => {
+                if (viewingTemplate) {
+                  handleDownloadTemplate(viewingTemplate);
+                }
+              }}
+            >
+              下载模板
+            </Button>
             <Button onClick={() => setViewModalVisible(false)}>关闭</Button>
             <Button
               type="primary"
-              icon={<CopyOutlined />}
+              icon={<PlusOutlined />}
               onClick={() => {
                 if (viewingTemplate) {
-                  handleUseTemplate(viewingTemplate);
+                  handleCloneTemplate(viewingTemplate);
                   setViewModalVisible(false);
                 }
               }}
             >
-              使用此模板
+              克隆为新脚本
             </Button>
           </Space>
         }

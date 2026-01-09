@@ -58,12 +58,9 @@ class RoiDrawNodeData(NodeContext):
     roi_regions: Optional[List[Dict[str, Any]]] = None
     """
     ROI区域配置列表，每个区域包含：
-    - polygon: 多边形顶点坐标数组 [[x1,y1], [x2,y2], ...]
-    - x: 左上角X坐标（外接矩形）
-    - y: 左上角Y坐标（外接矩形）
-    - width: 区域宽度（外接矩形）
-    - height: 区域高度（外接矩形）
+    - name: 区域名称（如：大门、停车场）
     - mode: 检测模式 ("pre_mask" 或 "post_filter")
+    - polygon: 多边形顶点坐标数组 [[x1,y1], [x2,y2], ...]（相对坐标 0-1）
 
     该节点功能：
     1. 记录热区坐标信息到context['roi_regions']
@@ -73,6 +70,20 @@ class RoiDrawNodeData(NodeContext):
     使用示例：
     source -> roi_draw -> algorithm
     algorithm节点会自动使用roi_draw节点配置的roi_regions
+
+    数据格式（从 data.roi_regions 读取）：
+    [
+      {
+        "name": "区域1",
+        "mode": "pre_mask",
+        "polygon": [{"x": 0.1, "y": 0.2}, {"x": 0.3, "y": 0.4}, ...]
+      },
+      {
+        "name": "区域2",
+        "mode": "post_filter",
+        "polygon": [{"x": 0.5, "y": 0.6}, {"x": 0.7, "y": 0.8}, ...]
+      }
+    ]
     """
 
 
@@ -137,10 +148,13 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             data_id=data_id
         )
     elif node_type in ('roi_draw', 'roi'):  # 支持前后端两种类型名称
+        # 从 data 读取新的数据格式（支持驼峰和蛇形两种命名）
+        roi_regions = data.get('roiRegions') or data.get('roi_regions', [])
+
         return node_class(
             node_type=node_type,
             node_id=node_id,
-            roi_regions=data.get('roi_regions', [])
+            roi_regions=roi_regions
         )
     else:
         return node_class(

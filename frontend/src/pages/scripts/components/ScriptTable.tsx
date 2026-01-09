@@ -1,21 +1,21 @@
 import React from 'react';
-import { Table, Button, Space, Tag, Empty } from 'antd';
+import { Table, Button, Space, Tag, Empty, Input } from 'antd';
 import {
   EditOutlined,
   DeleteOutlined,
   CodeOutlined,
-  SettingOutlined,
-  PlusOutlined,
+  SearchOutlined,
+  CloudUploadOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
-import { StatusBadge } from '@/components/common';
+import type { ChangeEvent } from 'react';
 import './ScriptTable.css';
 
 export interface ScriptTableProps {
   scripts: any[];
   loading: boolean;
-  categories: Array<{ key: string; label: string; icon: React.ReactNode }>;
-  activeCategory: string;
-  onCategoryChange: (category: string) => void;
+  searchText: string;
+  onSearchChange: (value: string) => void;
   onEdit: (script: any) => void;
   onDelete: (scriptPath: string) => void;
 }
@@ -23,33 +23,49 @@ export interface ScriptTableProps {
 const ScriptTable: React.FC<ScriptTableProps> = ({
   scripts,
   loading,
-  categories,
-  activeCategory,
-  onCategoryChange,
+  searchText,
+  onSearchChange,
   onEdit,
   onDelete,
 }) => {
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      detectors: 'blue',
-      filters: 'green',
-      hooks: 'orange',
-      postprocessors: 'purple',
-    };
-    return colors[category] || 'default';
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    onSearchChange(e.target.value);
   };
 
-  const getStatusConfig = (status: string) => {
-    if (status === 'active') {
-      return { text: '已启用', color: 'success' };
-    }
-    if (status === 'available') {
-      return { text: '可用', color: 'processing' };
-    }
-    return { text: '未注册', color: 'default' };
+  const formatLastModified = (timestamp: number) => {
+    if (!timestamp) return '-';
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 7) return `${diffDays}天前`;
+    return date.toLocaleDateString('zh-CN');
   };
 
   const columns = [
+    {
+      title: '脚本名称',
+      dataIndex: 'name',
+      key: 'name',
+      width: 250,
+      render: (name: string, record: any) => (
+        <div className="name-cell">
+          <CodeOutlined className="name-icon" />
+          <div className="name-info">
+            <span className="name-text">{name || record.path}</span>
+            {record.path && name !== record.path && (
+              <code className="path-code">{record.path}</code>
+            )}
+          </div>
+        </div>
+      ),
+    },
     {
       title: '路径',
       dataIndex: 'path',
@@ -62,40 +78,30 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
       ),
     },
     {
-      title: '类别',
-      dataIndex: 'category',
-      key: 'category',
-      width: 140,
-      render: (category: string) => (
-        <Tag color={getCategoryColor(category)}>{category || '未知'}</Tag>
-      ),
-    },
-    {
-      title: '名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 200,
-      render: (name: string) => (
-        <div className="name-cell">
-          <CodeOutlined className="name-icon" />
-          <span className="name-text">{name}</span>
-        </div>
-      ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
+      title: '使用状态',
+      key: 'in_use',
       width: 120,
-      render: (status: string) => {
-        const config = getStatusConfig(status);
-        return <Tag color={config.color}>{config.text}</Tag>;
-      },
+      render: (_: any, record: any) => (
+        record.algorithm_id ? (
+          <Tag icon={<CheckCircleOutlined />} color="success">在用</Tag>
+        ) : (
+          <Tag>未使用</Tag>
+        )
+      ),
+    },
+    {
+      title: '最后修改',
+      dataIndex: 'modified_time',
+      key: 'modified_time',
+      width: 140,
+      render: (timestamp: number) => (
+        <span className="time-text">{formatLastModified(timestamp)}</span>
+      ),
     },
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 200,
       render: (_: any, record: any) => (
         <Space size="small">
           <Button
@@ -106,30 +112,43 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
           >
             编辑
           </Button>
-          {record.algorithm_id ? (
-            <Button
-              size="small"
-              icon={<SettingOutlined />}
-              className="action-btn action-btn-config"
-              title="配置算法"
-            >
-              配置
-            </Button>
-          ) : (
-            <Button
-              size="small"
-              icon={<PlusOutlined />}
-              className="action-btn action-btn-register"
-              title="注册算法"
-            >
-              注册
-            </Button>
-          )}
+          <Button
+            size="small"
+            icon={<CloudUploadOutlined />}
+            onClick={() => {
+              // 触发文件上传对话框
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.py';
+              input.onchange = async (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = async (event) => {
+                    const content = event.target?.result as string;
+                    // TODO: 调用上传 API
+                    await fetch(`/api/scripts/${record.path}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content })
+                    });
+                  };
+                  reader.readAsText(file);
+                }
+              };
+              input.click();
+            }}
+            className="action-btn action-btn-upload"
+            title="上传文件"
+          >
+            上传
+          </Button>
           <Button
             size="small"
             icon={<DeleteOutlined />}
             onClick={() => onDelete(record.path)}
             className="action-btn action-btn-delete"
+            danger
           >
             删除
           </Button>
@@ -140,20 +159,17 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
 
   return (
     <div className="script-table-wrapper">
-      {/* 分类标签 */}
-      <div className="category-tabs">
-        <Space size="small">
-          {categories.map((cat) => (
-            <button
-              key={cat.key}
-              className={`category-tab ${activeCategory === cat.key ? 'active' : ''}`}
-              onClick={() => onCategoryChange(cat.key)}
-            >
-              {cat.icon}
-              <span>{cat.label}</span>
-            </button>
-          ))}
-        </Space>
+      {/* 搜索栏 */}
+      <div className="search-bar">
+        <Input
+          placeholder="搜索脚本名称或路径..."
+          value={searchText}
+          onChange={handleSearchChange}
+          prefix={<SearchOutlined />}
+          allowClear
+          size="large"
+          className="search-input"
+        />
       </div>
 
       {/* 表格 */}

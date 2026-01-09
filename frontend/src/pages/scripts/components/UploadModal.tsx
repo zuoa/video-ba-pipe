@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Checkbox, Space, message } from 'antd';
-import { UploadOutlined, CodeOutlined } from '@ant-design/icons';
+import { Modal, Form, Input, Select, Checkbox, Space, message, Tabs, Upload, Dragger } from 'antd';
+import { UploadOutlined, CodeOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
+import type { UploadChangeParam } from 'antd/es/upload';
 import { createScript } from '@/services/api';
 import CodeEditor from './CodeEditor';
 
 const { Option } = Select;
 const { TextArea } = Input;
+const { TabPane } = Tabs;
 
 export interface UploadModalProps {
   visible: boolean;
@@ -23,40 +25,73 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const [form] = Form.useForm();
   const [codeContent, setCodeContent] = useState('');
   const [createAlgorithm, setCreateAlgorithm] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'code' | 'file'>('code');
+  const [fileList, setFileList] = useState<any[]>([]);
 
   useEffect(() => {
     if (visible) {
       if (script?.content) {
         setCodeContent(script.content);
+        setUploadMode('code');
         if (script.path) {
-          const parts = script.path.split('/');
-          const category = parts[0] || 'detectors';
           form.setFieldsValue({
             path: script.path,
-            category: category,
           });
         }
       } else {
         form.resetFields();
         setCodeContent('');
         setCreateAlgorithm(false);
+        setFileList([]);
+        setUploadMode('code');
       }
     }
   }, [visible, script, form]);
+
+  const handleFileChange = (info: UploadChangeParam) => {
+    setFileList(info.fileList);
+
+    if (info.fileList.length > 0) {
+      const file = info.fileList[0].originFileObj;
+
+      // 读取文件内容
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setCodeContent(content);
+
+        // 自动填充路径（如果为空）
+        const pathValue = form.getFieldValue('path');
+        if (!pathValue && file.name) {
+          form.setFieldsValue({ path: file.name });
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      setCodeContent('');
+    }
+  };
+
+  const beforeUpload = (file: File) => {
+    if (!file.name.endsWith('.py')) {
+      message.error('只能上传 .py 文件');
+      return Upload.LIST_IGNORE;
+    }
+    return false; // 阻止自动上传
+  };
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
 
       if (!codeContent.trim()) {
-        message.error('请输入脚本内容');
+        message.error(uploadMode === 'code' ? '请输入脚本内容' : '请上传脚本文件');
         return;
       }
 
       await createScript({
         path: values.path,
         content: codeContent,
-        category: values.category,
         create_algorithm: createAlgorithm,
       });
 
@@ -90,8 +125,8 @@ const UploadModal: React.FC<UploadModalProps> = ({
       open={visible}
       onCancel={handleCancel}
       onOk={handleSubmit}
-      width={800}
-      okText="上传"
+      width={900}
+      okText="创建"
       cancelText="取消"
       className="upload-modal"
       centered
@@ -99,50 +134,89 @@ const UploadModal: React.FC<UploadModalProps> = ({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{
-          category: 'detectors',
-        }}
       >
         <Form.Item
           label="脚本路径"
           name="path"
           rules={[{ required: true, message: '请输入脚本路径' }]}
-          help="相对于 app/user_scripts/ 的路径，例如: detectors/my_detector.py"
+          help="相对于 app/user_scripts/ 的路径，例如: my_detector.py 或 detectors/my_detector.py"
         >
           <Input
             prefix={<CodeOutlined />}
-            placeholder="detectors/my_detector.py"
+            placeholder="my_detector.py"
             size="large"
           />
         </Form.Item>
 
-        <Form.Item
-          label="类别"
-          name="category"
-          rules={[{ required: true, message: '请选择类别' }]}
-        >
-          <Select size="large">
-            <Option value="detectors">检测脚本 (detectors)</Option>
-            <Option value="filters">过滤脚本 (filters)</Option>
-            <Option value="hooks">Hook脚本 (hooks)</Option>
-            <Option value="postprocessors">后处理脚本 (postprocessors)</Option>
-          </Select>
-        </Form.Item>
-
-        <Form.Item label="脚本内容" required>
-          <CodeEditor
-            value={codeContent}
-            onChange={setCodeContent}
-            height={400}
-          />
-        </Form.Item>
+        <Tabs
+          activeKey={uploadMode}
+          onChange={(key) => setUploadMode(key as 'code' | 'file')}
+          items={[
+            {
+              key: 'code',
+              label: (
+                <span>
+                  <CodeOutlined />
+                  在线编辑
+                </span>
+              ),
+              children: (
+                <Form.Item label="脚本内容" required>
+                  <CodeEditor
+                    value={codeContent}
+                    onChange={setCodeContent}
+                    height={400}
+                  />
+                </Form.Item>
+              ),
+            },
+            {
+              key: 'file',
+              label: (
+                <span>
+                  <FileTextOutlined />
+                  文件上传
+                </span>
+              ),
+              children: (
+                <Form.Item label="上传 .py 文件" required>
+                  <Dragger
+                    fileList={fileList}
+                    onChange={handleFileChange}
+                    beforeUpload={beforeUpload}
+                    accept=".py"
+                    maxCount={1}
+                  >
+                    <p className="ant-upload-drag-icon">
+                      <InboxOutlined />
+                    </p>
+                    <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+                    <p className="ant-upload-hint">
+                      支持 .py 文件，文件将自动读取并填充到编辑器
+                    </p>
+                  </Dragger>
+                  {codeContent && (
+                    <div style={{ marginTop: 16 }}>
+                      <p>文件内容预览：</p>
+                      <CodeEditor
+                        value={codeContent}
+                        onChange={setCodeContent}
+                        height={300}
+                      />
+                    </div>
+                  )}
+                </Form.Item>
+              ),
+            },
+          ]}
+        />
 
         <Form.Item>
           <Checkbox
             checked={createAlgorithm}
             onChange={(e) => setCreateAlgorithm(e.target.checked)}
           >
-            同时创建算法记录
+            同时创建算法记录（可直接在任务中使用）
           </Checkbox>
         </Form.Item>
       </Form>
