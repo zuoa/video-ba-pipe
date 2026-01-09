@@ -78,3 +78,28 @@ RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30')
 
 # 是否启用RabbitMQ预警发布
 RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+# ============ 健康监控配置 ============
+# 是否启用健康监控
+HEALTH_MONITOR_ENABLED = os.getenv('HEALTH_MONITOR_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+# 无帧警告阈值（秒）- 超过此时间无帧输出则警告
+NO_FRAME_WARNING_THRESHOLD = int(os.getenv('NO_FRAME_WARNING_THRESHOLD', '15'))
+
+# 无帧严重阈值（秒）- 超过此时间无帧输出则判定为异常/重启
+NO_FRAME_CRITICAL_THRESHOLD = int(os.getenv('NO_FRAME_CRITICAL_THRESHOLD', '30'))
+
+# 低帧率比例 - 帧率低于期望帧率的此比例则告警
+LOW_FPS_RATIO = float(os.getenv('LOW_FPS_RATIO', '0.5'))
+
+# 帧率检查间隔（秒）
+FPS_CHECK_INTERVAL = int(os.getenv('FPS_CHECK_INTERVAL', '10'))
+
+# 高错误计数阈值 - 连续错误次数超过此值则告警
+HIGH_ERROR_COUNT_THRESHOLD = int(os.getenv('HIGH_ERROR_COUNT_THRESHOLD', '10'))
+
+# 最大连续错误次数 - 超过此次数则退出
+MAX_CONSECUTIVE_ERRORS = int(os.getenv('MAX_CONSECUTIVE_ERRORS', '60'))
+
+# 监控时间戳更新间隔（秒）- DecoderWorker定期更新last_write_time的间隔
+MONITOR_UPDATE_INTERVAL = float(os.getenv('MONITOR_UPDATE_INTERVAL', '1.0'))

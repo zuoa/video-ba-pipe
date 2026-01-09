@@ -14,7 +14,7 @@ import time
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
 
-from app.core.database_models import Algorithm, VideoSource, Alert, MLModel
+from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
@@ -408,6 +408,185 @@ def delete_video_source(id):
         return jsonify({'message': '视频源删除成功'})
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
+
+# ========== 健康监控API ==========
+
+@app.route('/api/video-sources/<int:source_id>/health', methods=['GET'])
+def get_source_health(source_id):
+    """获取视频源的健康状态"""
+    try:
+        source = VideoSource.get_by_id(source_id)
+
+        # 尝试获取 ring buffer 的健康状态
+        from app.core.ringbuffer import VideoRingBuffer
+
+        buffer_name = source.buffer_name
+        if not buffer_name:
+            return jsonify({
+                'source_id': source_id,
+                'status': source.status,
+                'error': 'No buffer configured'
+            }), 404
+
+        try:
+            # 连接到现有的 buffer
+            buffer = VideoRingBuffer(
+                name=buffer_name,
+                create=False,
+                frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+                fps=source.source_fps,
+                duration_seconds=30  # 这里的 duration_seconds 只是估算，实际由创建时决定
+            )
+            health_status = buffer.get_health_status()
+            buffer.close()
+
+            return jsonify({
+                'source_id': source_id,
+                'name': source.name,
+                'status': source.status,
+                'enabled': source.enabled,
+                'last_write_time': health_status['last_write_time'],
+                'time_since_last_frame': health_status['time_since_last_frame'],
+                'consecutive_errors': health_status['consecutive_errors'],
+                'frame_count': health_status['frame_count'],
+                'is_healthy': health_status['is_healthy']
+            })
+        except FileNotFoundError:
+            # buffer 不存在
+            return jsonify({
+                'source_id': source_id,
+                'name': source.name,
+                'status': source.status,
+                'enabled': source.enabled,
+                'error': 'Buffer not found',
+                'is_healthy': False
+            })
+        except Exception as e:
+            app.logger.error(f"获取 buffer 健康状态失败: {e}")
+            return jsonify({
+                'source_id': source_id,
+                'name': source.name,
+                'status': source.status,
+                'enabled': source.enabled,
+                'error': str(e),
+                'is_healthy': False
+            })
+
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
+
+@app.route('/api/video-sources/<int:source_id>/health-logs', methods=['GET'])
+def get_source_health_logs(source_id):
+    """获取视频源的健康事件日志"""
+    try:
+        source = VideoSource.get_by_id(source_id)
+
+        # 获取查询参数
+        event_type = request.args.get('event_type')
+        severity = request.args.get('severity')
+        limit = int(request.args.get('limit', 100))
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 30))
+
+        # 构建查询
+        query = SourceHealthLog.select().where(SourceHealthLog.source == source_id)
+
+        if event_type:
+            query = query.where(SourceHealthLog.event_type == event_type)
+        if severity:
+            query = query.where(SourceHealthLog.severity == severity)
+
+        # 获取总数
+        total = query.count()
+
+        # 计算分页
+        total_pages = (total + per_page - 1) // per_page
+        offset = (page - 1) * per_page
+
+        # 获取分页数据
+        logs = query.order_by(SourceHealthLog.created_at.desc()).limit(per_page).offset(offset)
+
+        return jsonify({
+            'data': [{
+                'id': log.id,
+                'event_type': log.event_type,
+                'details': log.details_dict,
+                'severity': log.severity,
+                'created_at': log.created_at.isoformat()
+            } for log in logs],
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'total_pages': total_pages
+            }
+        })
+
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
+    except Exception as e:
+        app.logger.error(f"获取健康日志失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/health/event-types', methods=['GET'])
+def get_health_event_types():
+    """获取所有健康事件类型"""
+    event_types = [
+        {'value': 'no_frame_warning', 'label': '无帧警告'},
+        {'value': 'no_frame_critical', 'label': '无帧严重'},
+        {'value': 'process_exit', 'label': '进程退出'},
+        {'value': 'low_fps', 'label': '低帧率'},
+        {'value': 'high_error_rate', 'label': '高错误率'}
+    ]
+    return jsonify(event_types)
+
+@app.route('/api/health/stats', methods=['GET'])
+def get_health_stats():
+    """获取整体健康统计信息"""
+    try:
+        import time
+        from datetime import datetime, timedelta
+
+        # 统计各类状态的视频源数量
+        total_sources = VideoSource.select().count()
+        running_count = VideoSource.select().where(VideoSource.status == 'RUNNING').count()
+        stopped_count = VideoSource.select().where(VideoSource.status == 'STOPPED').count()
+        error_count = VideoSource.select().where(VideoSource.status == 'ERROR').count()
+
+        # 统计最近24小时的健康事件
+        start_time = datetime.now() - timedelta(hours=24)
+        recent_logs = SourceHealthLog.select().where(SourceHealthLog.created_at >= start_time)
+
+        # 按严重级别统计
+        severity_stats = {}
+        for log in recent_logs:
+            severity = log.severity
+            severity_stats[severity] = severity_stats.get(severity, 0) + 1
+
+        # 按事件类型统计
+        event_type_stats = {}
+        for log in recent_logs:
+            event_type = log.event_type
+            event_type_stats[event_type] = event_type_stats.get(event_type, 0) + 1
+
+        return jsonify({
+            'sources': {
+                'total': total_sources,
+                'running': running_count,
+                'stopped': stopped_count,
+                'error': error_count,
+                'enabled': VideoSource.select().where(VideoSource.enabled == True).count()
+            },
+            'last_24h_events': {
+                'by_severity': severity_stats,
+                'by_event_type': event_type_stats,
+                'total': recent_logs.count()
+            }
+        })
+
+    except Exception as e:
+        app.logger.error(f"获取健康统计失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # Video file management API
 ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.m4v', '.webm', '.wmv'}

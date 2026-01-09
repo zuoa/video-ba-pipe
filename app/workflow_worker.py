@@ -901,10 +901,32 @@ class WorkflowExecutor:
         # 获取日志收集器
         log_collector = context.get('log_collector')
 
+        # 如果 context 中没有上游结果，从 node_results_cache 中获取
+        if 'result' not in context or 'has_detection' not in context:
+            # 查找 Alert 节点的上游节点
+            upstream_node_id = None
+            for conn in self.connections:
+                if conn['to'] == node_id:
+                    upstream_node_id = conn['from']
+                    break
+
+            if upstream_node_id and upstream_node_id in self.node_results_cache:
+                cached_data = self.node_results_cache[upstream_node_id]
+                # 将缓存的数据合并到 context
+                context.update({
+                    'result': cached_data.get('result'),
+                    'has_detection': cached_data.get('has_detection'),
+                    'roi_mask': cached_data.get('roi_mask'),
+                    'label_color': cached_data.get('label_color', '#FF0000'),
+                    'upstream_node_id': cached_data.get('upstream_node_id', upstream_node_id)
+                })
+                logger.info(f"[WorkflowWorker] Alert 节点 {node_id} 从缓存获取上游节点 {upstream_node_id} 的结果")
+
+        # 再次检查必需数据
         if 'frame' not in context or 'result' not in context:
             if log_collector:
-                log_collector.add_warning(node_id, "缺少必需数据")
-            logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据")
+                log_collector.add_warning(node_id, "缺少必需数据：上游节点未产生结果")
+            logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据：上游节点未执行或未产生结果")
             return
 
         # 获取 Alert 节点配置

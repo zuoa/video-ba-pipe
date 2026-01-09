@@ -7,8 +7,15 @@ from queue import Queue
 from playhouse.shortcuts import model_to_dict
 
 from app import logger
-from app.config import RINGBUFFER_DURATION, RECORDING_FPS
-from app.core.database_models import db, VideoSource, Workflow
+from app.config import (
+    RINGBUFFER_DURATION,
+    RECORDING_FPS,
+    NO_FRAME_WARNING_THRESHOLD,
+    NO_FRAME_CRITICAL_THRESHOLD,
+    HIGH_ERROR_COUNT_THRESHOLD,
+    HEALTH_MONITOR_ENABLED
+)
+from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -48,30 +55,156 @@ class Orchestrator:
         self.running_processes = {}
         self.workflow_processes = {}
         self.buffers = {}
+        self.source_start_times = {}  # 记录视频源启动时间
+        self.last_health_log_times = {}  # 记录上次健康日志时间
         db.connect()
 
         VideoSource.update(status='STOPPED', decoder_pid=None).execute()
+
+        # 健康监控配置
+        self.health_check_enabled = HEALTH_MONITOR_ENABLED
+        self.start_grace_period = 60  # 启动后60秒内不进行健康检查
+        self.health_log_interval = 30  # 健康日志记录间隔（秒），避免日志泛滥
+
+    def _check_source_health(self, source: VideoSource):
+        """
+        检查单个视频源的健康状态
+
+        Args:
+            source: 视频源对象
+
+        Returns:
+            bool: True 表示健康，False 表示需要重启
+        """
+        if source.id not in self.buffers:
+            return True
+
+        # 检查是否在启动宽限期内
+        if source.id in self.source_start_times:
+            time_since_start = time.time() - self.source_start_times[source.id]
+            if time_since_start < self.start_grace_period:
+                # 在宽限期内，跳过健康检查
+                return True
+
+        buffer = self.buffers[source.id]
+        health_status = buffer.get_health_status()
+
+        time_since_last_frame = health_status['time_since_last_frame']
+        error_count = health_status['consecutive_errors']
+        frame_count = health_status['frame_count']
+
+        need_reboot = False
+
+        # 如果从未写入过帧，跳过检查（可能在初始化）
+        if frame_count == 0:
+            return True
+
+        # 检查1: 长时间无帧
+        if time_since_last_frame > NO_FRAME_CRITICAL_THRESHOLD:
+            # 检查日志记录频率
+            last_log_time = self.last_health_log_times.get(source.id, 0)
+            if time.time() - last_log_time >= self.health_log_interval:
+                logger.critical(
+                    f"🚨 视频源 {source.id} ({source.name}) "
+                    f"已 {time_since_last_frame:.1f} 秒未出帧，判定为异常"
+                )
+                self._log_health_event(
+                    source=source,
+                    event_type='no_frame_critical',
+                    details={
+                        'no_frame_duration': time_since_last_frame,
+                        'last_write_time': health_status['last_write_time']
+                    },
+                    severity='critical'
+                )
+                self.last_health_log_times[source.id] = time.time()
+            need_reboot = True
+
+        # 检查2: 即将超时警告
+        elif time_since_last_frame > NO_FRAME_WARNING_THRESHOLD:
+            # 检查日志记录频率
+            last_log_time = self.last_health_log_times.get(source.id, 0)
+            if time.time() - last_log_time >= self.health_log_interval:
+                logger.warning(
+                    f"⚠️  视频源 {source.id} ({source.name}) "
+                    f"已 {time_since_last_frame:.1f} 秒未出帧"
+                )
+                self._log_health_event(
+                    source=source,
+                    event_type='no_frame_warning',
+                    details={
+                        'no_frame_duration': time_since_last_frame
+                    },
+                    severity='warning'
+                )
+                self.last_health_log_times[source.id] = time.time()
+
+        # 检查3: 连续错误计数
+        if error_count > HIGH_ERROR_COUNT_THRESHOLD:
+            logger.warning(
+                f"⚠️  视频源 {source.id} ({source.name}) "
+                f"连续错误次数: {error_count}"
+            )
+            self._log_health_event(
+                source=source,
+                event_type='high_error_rate',
+                details={
+                    'error_count': error_count
+                },
+                severity='warning'
+            )
+
+        return not need_reboot
+
+    def _log_health_event(self, source, event_type, details, severity='info'):
+        """
+        记录健康事件
+
+        Args:
+            source: 视频源对象
+            event_type: 事件类型
+            details: 事件详情（字典）
+            severity: 严重级别：info, warning, critical, error
+        """
+        import json
+        from datetime import datetime
+
+        logger.info(
+            f"健康事件 [{event_type}] - 视频源 {source.id} ({source.name}): {details}"
+        )
+
+        # 记录到数据库
+        try:
+            SourceHealthLog.create(
+                source=source,
+                event_type=event_type,
+                details=json.dumps(details),
+                severity=severity,
+                created_at=datetime.now()
+            )
+        except Exception as e:
+            logger.error(f"记录健康事件到数据库失败: {e}")
 
     def _start_source(self, source: VideoSource):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
         # 创建共享内存环形缓冲区
         buffer = VideoRingBuffer(
-            name=source.buffer_name, 
+            name=source.buffer_name,
             create=True,
             frame_shape=(source.source_decode_height, source.source_decode_width, 3),
             fps=source.source_fps,
             duration_seconds=RINGBUFFER_DURATION
         )
         self.buffers[source.id] = buffer
-        
+
         logger.info(f"创建RingBuffer: fps={source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
 
         # 启动解码器进程
         decoder_args = [
-            'python', 'decoder_worker.py', 
-            '--url', source.source_url,  
-            '--source-id', str(source.id), 
+            'python', 'decoder_worker.py',
+            '--url', source.source_url,
+            '--source-id', str(source.id),
             '--sample-mode', 'fps',
             '--sample-fps', str(source.source_fps),
             '--width', str(source.source_decode_width),
@@ -86,6 +219,10 @@ class Orchestrator:
 
         self.running_processes[source.id] = {'decoder': decoder_p}
 
+        # 记录启动时间（用于健康检查宽限期）
+        self.source_start_times[source.id] = time.time()
+        logger.info(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
+
     def _stop_source(self, source: VideoSource):
         print(f"  -> 正在停止视频源 ID {source.id}: {source.name}")
 
@@ -97,6 +234,14 @@ class Orchestrator:
             self.buffers[source.id].close()
             self.buffers[source.id].unlink()
             del self.buffers[source.id]
+
+        # 清除启动时间记录
+        if source.id in self.source_start_times:
+            del self.source_start_times[source.id]
+
+        # 清除健康日志时间记录
+        if source.id in self.last_health_log_times:
+            del self.last_health_log_times[source.id]
 
         source.status = 'STOPPED'
         source.decoder_pid = None
@@ -118,16 +263,45 @@ class Orchestrator:
             logger.info(f"视频源 ID {source.id} 被禁用，正在停止...")
             self._stop_source(source)
 
+        # 查找 ERROR 状态的视频源，尝试重启
+        error_sources = VideoSource.select().where(VideoSource.status == 'ERROR')
+        for source in error_sources:
+            logger.info(f"尝试重启异常视频源 {source.id}")
+            self._stop_source(source)
+            source.status = 'STOPPED'
+            source.decoder_pid = None
+            source.save()
+
         # 健康检查
         running_sources = VideoSource.select().where(VideoSource.status == 'RUNNING')
         for source in running_sources:
             if source.id in self.running_processes:
                 need_reboot = False
 
+                # 检查1: 进程是否退出
                 exit_code = self.running_processes[source.id]['decoder'].poll()
                 if exit_code is not None:
-                    logger.warning(f"🚨 视频源 ID {source.id} 的解码器工作进程已退出 (退出码:{exit_code})，准备自动重启")
+                    logger.warning(
+                        f"🚨 视频源 ID {source.id} 的解码器进程已退出 "
+                        f"(退出码:{exit_code})，准备自动重启"
+                    )
+                    self._log_health_event(
+                        source=source,
+                        event_type='process_exit',
+                        details={'exit_code': exit_code},
+                        severity='error'
+                    )
                     need_reboot = True
+
+                # 检查2: 健康状态检查（仅在启用且进程正常运行时）
+                elif self.health_check_enabled:
+                    is_healthy = self._check_source_health(source)
+
+                    # 重新获取 source，因为 _check_source_health 可能修改了状态
+                    source = VideoSource.get_by_id(source.id)
+
+                    if not is_healthy or source.status == 'ERROR':
+                        need_reboot = True
 
                 if need_reboot:
                     # 清理旧进程和资源

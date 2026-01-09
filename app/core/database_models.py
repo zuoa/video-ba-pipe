@@ -320,3 +320,28 @@ class User(BaseModel):
         table_name = 'users'
 
 
+class SourceHealthLog(BaseModel):
+    """视频源健康日志"""
+    source = pw.ForeignKeyField(VideoSource, backref='health_logs', on_delete='CASCADE')
+    event_type = pw.CharField()  # 事件类型：no_frame_warning, no_frame_critical, process_exit, low_fps, high_error_rate
+    details = pw.TextField()  # 事件详情（JSON格式）
+    severity = pw.CharField(default='info')  # 严重级别：info, warning, critical, error
+    created_at = pw.DateTimeField()
+
+    class Meta:
+        table_name = 'source_health_logs'
+        indexes = (
+            (('source', 'created_at'), False),  # 用于查询某个源的历史
+            ('event_type', False),               # 用于按类型查询
+            ('created_at', False),               # 用于时间范围查询
+        )
+
+    @property
+    def details_dict(self):
+        """获取解析后的详情"""
+        try:
+            return json.loads(self.details) if self.details else {}
+        except:
+            return {}
+
+

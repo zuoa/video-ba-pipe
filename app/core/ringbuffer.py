@@ -43,8 +43,8 @@ class VideoRingBuffer:
         # 计算单帧大小（字节）
         self.frame_size = int(np.prod(frame_shape))
 
-        # 元数据大小：写指针(8) + 读指针(8) + 帧计数(8) + 锁标志(1)
-        self.metadata_size = 25
+        # 元数据大小：写指针(8) + 读指针(8) + 帧计数(8) + 锁标志(1) + 最后写入时间(8) + 连续错误数(8)
+        self.metadata_size = 41
         
         # 时间戳数组大小：每帧一个double (8字节)
         self.timestamp_size = 8 * self.capacity
@@ -68,7 +68,7 @@ class VideoRingBuffer:
                 size=self.total_size
             )
             # 初始化元数据
-            self._write_metadata(0, 0, 0, False)
+            self._write_metadata(0, 0, 0, False, 0.0, 0)
         else:
             self.shm = shared_memory.SharedMemory(name=name)
 
@@ -81,14 +81,16 @@ class VideoRingBuffer:
             self._lock = Lock()
 
     def _write_metadata(self, write_idx: int, read_idx: int,
-                        count: int, locked: bool):
+                        count: int, locked: bool, last_write_time: float = 0.0,
+                        consecutive_errors: int = 0):
         """写入元数据到共享内存"""
-        struct.pack_into('QQQ?', self.shm.buf, 0,
-                         write_idx, read_idx, count, locked)
+        struct.pack_into('QQQ?dd', self.shm.buf, 0,
+                         write_idx, read_idx, count, locked,
+                         last_write_time, consecutive_errors)
 
-    def _read_metadata(self) -> Tuple[int, int, int, bool]:
+    def _read_metadata(self) -> Tuple[int, int, int, bool, float, int]:
         """从共享内存读取元数据"""
-        return struct.unpack_from('QQQ?', self.shm.buf, 0)
+        return struct.unpack_from('QQQ?dd', self.shm.buf, 0)
 
     def _cas_write_pointer(self, expected: int, new: int) -> bool:
         """
@@ -96,9 +98,9 @@ class VideoRingBuffer:
         注意：Python的GIL提供了基本的原子性，但对于多进程需要额外处理
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
             if write_idx == expected:
-                self._write_metadata(new, read_idx, count + 1, locked)
+                self._write_metadata(new, read_idx, count + 1, locked, last_write, errors)
                 return True
             return False
 
@@ -141,7 +143,7 @@ class VideoRingBuffer:
             timestamp = time.time()
 
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
 
             # 计算新的写指针位置
             new_write_idx = (write_idx + 1) % self.capacity
@@ -153,10 +155,10 @@ class VideoRingBuffer:
 
             # 写入帧数据
             offset = self._get_frame_offset(write_idx)
-            
+
             # 确保帧是uint8类型且是C连续的（内存布局连续）
             frame_data = np.ascontiguousarray(frame, dtype=np.uint8)
-            
+
             # Validate size
             expected_size = int(np.prod(self.frame_shape))
             actual_size = frame_data.size
@@ -166,7 +168,7 @@ class VideoRingBuffer:
                     f"expected {expected_size}. Frame shape: {frame.shape}, "
                     f"expected shape: {self.frame_shape}"
                 )
-            
+
             # 使用numpy数组视图直接写入共享内存
             # 创建一个指向共享内存的numpy数组视图
             shm_array = np.ndarray(
@@ -177,12 +179,13 @@ class VideoRingBuffer:
             )
             # 将帧数据展平并复制
             shm_array[:] = frame_data.ravel()
-            
+
             # 写入时间戳
             self._write_timestamp(write_idx, timestamp)
 
             # 更新元数据
-            self._write_metadata(new_write_idx, read_idx, count + 1, locked)
+            self._write_metadata(new_write_idx, read_idx, count + 1, locked,
+                                 timestamp, 0)  # 重置连续错误计数
 
             return True
 
@@ -194,7 +197,7 @@ class VideoRingBuffer:
             视频帧数据，如果缓冲区为空则返回 None
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
 
             if count == 0:
                 return None
@@ -208,7 +211,8 @@ class VideoRingBuffer:
 
             # 更新读指针
             new_read_idx = (read_idx + 1) % self.capacity
-            self._write_metadata(write_idx, new_read_idx, count - 1, locked)
+            self._write_metadata(write_idx, new_read_idx, count - 1, locked,
+                                 last_write, errors)
 
             return frame.copy()  # 返回副本以避免数据竞争
 
@@ -223,7 +227,7 @@ class VideoRingBuffer:
             视频帧数据
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, _, _ = self._read_metadata()
 
             if count == 0 or abs(index) >= count:
                 return None
@@ -243,7 +247,7 @@ class VideoRingBuffer:
             )
 
             return frame.copy()
-    
+
     def peek_with_timestamp(self, index: int = 0) -> Optional[Tuple[np.ndarray, float]]:
         """
         查看缓冲区中的帧及其时间戳但不移除
@@ -255,7 +259,7 @@ class VideoRingBuffer:
             (视频帧数据, 时间戳) 或 None
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, _, _ = self._read_metadata()
 
             if count == 0 or abs(index) >= count:
                 return None
@@ -274,7 +278,7 @@ class VideoRingBuffer:
             frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape(
                 self.frame_shape
             )
-            
+
             # 读取时间戳
             timestamp = self._read_timestamp(actual_idx)
 
@@ -291,7 +295,7 @@ class VideoRingBuffer:
             [(帧, 时间戳), ...] 按时间从旧到新排序
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, _, _ = self._read_metadata()
 
             if count == 0:
                 return []
@@ -302,12 +306,12 @@ class VideoRingBuffer:
             cutoff_time = latest_timestamp - seconds
 
             frames = []
-            
+
             # 从最旧的帧开始遍历
             for i in range(count):
                 actual_idx = (read_idx + i) % self.capacity
                 timestamp = self._read_timestamp(actual_idx)
-                
+
                 # 只收集在时间范围内的帧
                 if timestamp >= cutoff_time:
                     offset = self._get_frame_offset(actual_idx)
@@ -318,7 +322,7 @@ class VideoRingBuffer:
                     frames.append((frame.copy(), timestamp))
 
             return frames
-    
+
     def get_frames_in_time_range(self, start_time: float, end_time: float) -> List[Tuple[np.ndarray, float]]:
         """
         获取指定时间范围内的所有帧
@@ -331,18 +335,18 @@ class VideoRingBuffer:
             [(帧, 时间戳), ...] 按时间从旧到新排序
         """
         with self._lock:
-            write_idx, read_idx, count, locked = self._read_metadata()
+            write_idx, read_idx, count, locked, _, _ = self._read_metadata()
 
             if count == 0:
                 return []
 
             frames = []
-            
+
             # 遍历所有帧
             for i in range(count):
                 actual_idx = (read_idx + i) % self.capacity
                 timestamp = self._read_timestamp(actual_idx)
-                
+
                 # 只收集在时间范围内的帧
                 if start_time <= timestamp <= end_time:
                     offset = self._get_frame_offset(actual_idx)
@@ -356,7 +360,7 @@ class VideoRingBuffer:
 
     def get_stats(self) -> dict:
         """获取缓冲区统计信息"""
-        write_idx, read_idx, count, locked = self._read_metadata()
+        write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
         return {
             'capacity': self.capacity,
             'count': count,
@@ -366,12 +370,89 @@ class VideoRingBuffer:
             'free_slots': self.capacity - count,
             'is_full': count >= self.capacity,
             'is_empty': count == 0,
+            'last_write_time': last_write,
+            'consecutive_errors': errors,
         }
 
     def clear(self):
         """清空缓冲区"""
         with self._lock:
-            self._write_metadata(0, 0, 0, False)
+            self._write_metadata(0, 0, 0, False, 0.0, 0)
+
+    # ==================== 健康监控相关方法 ====================
+
+    def get_last_write_time(self) -> float:
+        """获取最后写入时间"""
+        with self._lock:
+            _, _, _, _, last_write, _ = self._read_metadata()
+            return last_write
+
+    def update_last_write_time(self, timestamp: float = None):
+        """
+        更新最后写入时间（用于健康监控）
+        注意：此方法仅更新时间戳，不写入帧数据
+
+        Args:
+            timestamp: 时间戳，如果为None则使用当前时间
+        """
+        if timestamp is None:
+            timestamp = time.time()
+
+        with self._lock:
+            write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
+            self._write_metadata(write_idx, read_idx, count, locked, timestamp, errors)
+
+    def get_consecutive_errors(self) -> int:
+        """获取连续错误计数"""
+        with self._lock:
+            _, _, _, _, _, errors = self._read_metadata()
+            return errors
+
+    def increment_error_count(self):
+        """增加错误计数"""
+        with self._lock:
+            write_idx, read_idx, count, locked, last_write, errors = self._read_metadata()
+            self._write_metadata(write_idx, read_idx, count, locked, last_write, errors + 1)
+
+    def reset_error_count(self):
+        """重置错误计数"""
+        with self._lock:
+            write_idx, read_idx, count, locked, last_write, _ = self._read_metadata()
+            self._write_metadata(write_idx, read_idx, count, locked, last_write, 0)
+
+    def get_health_status(self) -> dict:
+        """
+        获取健康状态信息
+
+        Returns:
+            包含健康状态的字典
+        """
+        stats = self.get_stats()
+        current_time = time.time()
+        last_write = stats['last_write_time']
+
+        # 如果 last_write_time 为 0，表示从未写入过帧
+        if last_write == 0:
+            time_since_last_frame = 0  # 未初始化，不计算时间差
+        else:
+            time_since_last_frame = current_time - last_write
+
+        # 判断健康状态：
+        # - 如果从未写入过帧 (frame_count == 0)，认为是初始化状态，不算不健康
+        # - 如果有帧写入，检查最后写入时间
+        frame_count = stats['count']
+        if frame_count == 0:
+            is_healthy = True  # 未初始化，默认健康
+        else:
+            is_healthy = time_since_last_frame < 30  # 30秒内有帧输出认为健康
+
+        return {
+            'last_write_time': last_write,
+            'time_since_last_frame': time_since_last_frame,
+            'consecutive_errors': stats['consecutive_errors'],
+            'frame_count': frame_count,
+            'is_healthy': is_healthy,
+        }
 
     def close(self):
         """关闭共享内存连接"""

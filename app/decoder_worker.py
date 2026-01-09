@@ -8,11 +8,17 @@ from multiprocessing import resource_tracker
 
 from app import logger
 from app.config import (
-    SNAPSHOT_ENABLED, 
-    SNAPSHOT_SAVE_PATH, 
-    SNAPSHOT_INTERVAL, 
+    SNAPSHOT_ENABLED,
+    SNAPSHOT_SAVE_PATH,
+    SNAPSHOT_INTERVAL,
     IS_EXTREME_DECODE_MODE,
-    RECORDING_FPS
+    RECORDING_FPS,
+    NO_FRAME_CRITICAL_THRESHOLD,
+    LOW_FPS_RATIO,
+    FPS_CHECK_INTERVAL,
+    MAX_CONSECUTIVE_ERRORS,
+    MONITOR_UPDATE_INTERVAL,
+    HEALTH_MONITOR_ENABLED
 )
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
@@ -63,6 +69,14 @@ class DecoderWorker:
         # Snapshot
         self.last_snapshot_time = 0
         self.snapshot_interval = SNAPSHOT_INTERVAL
+
+        # 健康监控
+        self.last_frame_time = None  # 最后一次成功获取帧的时间
+        self.last_monitor_update = 0  # 上次更新监控时间戳的时间
+        self.last_warning_time = 0  # 上次输出警告的时间
+        self.warning_interval = 10  # 警告间隔（秒）
+        self.expected_fps = self.target_fps if self.sample_mode == 'fps' else 1
+        self.fps_check_grace_period = 30  # 帧率检查宽限期（秒），启动后30秒内不检查帧率
 
     def setup(self, source=None):
         """初始化所有组件"""
@@ -233,7 +247,12 @@ class DecoderWorker:
             written_count = 0
             skipped_count = 0
             error_count = 0
-            max_consecutive_errors = 60
+            max_consecutive_errors = MAX_CONSECUTIVE_ERRORS
+
+            # 帧率监控变量
+            start_time = time.time()
+            last_fps_check_time = start_time
+            last_fps_check_frame_count = 0
 
             while self.running:
                 try:
@@ -241,10 +260,14 @@ class DecoderWorker:
                     if IS_EXTREME_DECODE_MODE:
                         frame = self.decoder.get_latest_frame()
                     else:
-                        frame = self.decoder.get_frame(timeout=1.0)
+                        frame = self.decoder.get_frame(timeout=0.5)
 
                     if frame is not None:
                         frame_count += 1
+                        current_time = time.time()
+
+                        # 更新最后出帧时间
+                        self.last_frame_time = current_time
 
                         # 判断是否写入此帧
                         if self.should_write_frame():
@@ -253,18 +276,75 @@ class DecoderWorker:
                             written_count += 1
                             error_count = 0  # 重置错误计数
 
-                            # logger.info(f"已写入 {written_count} 帧 (总解码: {frame_count}, 跳过: {skipped_count})")
+                            # 定期更新监控时间戳（避免每次写帧都更新）
+                            if HEALTH_MONITOR_ENABLED and \
+                               current_time - self.last_monitor_update >= MONITOR_UPDATE_INTERVAL:
+                                self.buffer.update_last_write_time(current_time)
+                                self.last_monitor_update = current_time
+
+                            # 定期输出状态和快照
                             if frame_count % 100 == 0:
                                 logger.info(f"已解码 {frame_count} 帧, 写入 {written_count} 帧, 跳过 {skipped_count} 帧")
                                 self.snapshot(frame)
                         else:
                             skipped_count += 1
 
+                        # 定期检查帧率
+                        if current_time - last_fps_check_time >= FPS_CHECK_INTERVAL:
+                            # 计算最近10秒的帧率（用于实时监控）
+                            recent_frame_count = frame_count - last_fps_check_frame_count
+                            recent_fps = recent_frame_count / FPS_CHECK_INTERVAL
+
+                            # 计算整体平均帧率（用于参考）
+                            time_since_start = current_time - start_time
+                            overall_fps = frame_count / time_since_start if time_since_start > 0 else 0
+
+                            # 检查低帧率（仅在宽限期后，使用最近10秒帧率检测实时下降）
+                            if time_since_start > self.fps_check_grace_period:
+                                if self.expected_fps > 0 and recent_fps < self.expected_fps * LOW_FPS_RATIO:
+                                    logger.warning(
+                                        f"帧率异常: 期望 {self.expected_fps:.2f} fps, "
+                                        f"最近10秒 {recent_fps:.2f} fps "
+                                        f"({recent_fps/self.expected_fps*100:.1f}%), "
+                                        f"整体平均 {overall_fps:.2f} fps"
+                                    )
+
+                            last_fps_check_time = current_time
+                            last_fps_check_frame_count = frame_count
+
+                            # 输出当前状态（同时显示两种帧率）
+                            logger.info(
+                                f"解码状态: 已解码 {frame_count} 帧, "
+                                f"写入 {written_count} 帧, "
+                                f"最近10秒 {recent_fps:.2f} fps, "
+                                f"整体平均 {overall_fps:.2f} fps"
+                            )
+
                     else:
                         # 检查流是否仍在运行
                         if not self.streamer.is_running():
                             logger.warning("视频流已停止")
                             break
+
+                        # 检查是否长时间无帧
+                        if HEALTH_MONITOR_ENABLED and self.last_frame_time is not None:
+                            time_no_frame = time.time() - self.last_frame_time
+                            if time_no_frame >= NO_FRAME_CRITICAL_THRESHOLD:
+                                logger.critical(
+                                    f"已 {time_no_frame:.1f} 秒无有效帧输出，"
+                                    f"可能解码器卡死或流断开，主动退出"
+                                )
+                                # 记录错误到buffer
+                                if self.buffer:
+                                    self.buffer.increment_error_count()
+                                break
+                            elif time_no_frame >= NO_FRAME_CRITICAL_THRESHOLD * 0.7:
+                                # 70% 阈值时警告（限制频率）
+                                if time.time() - self.last_warning_time >= self.warning_interval:
+                                    logger.warning(
+                                        f"已 {time_no_frame:.1f} 秒无有效帧输出"
+                                    )
+                                    self.last_warning_time = time.time()
 
                         if not IS_EXTREME_DECODE_MODE:
                             error_count += 1
@@ -278,11 +358,20 @@ class DecoderWorker:
                 except Exception as e:
                     logger.error(f"处理帧时出错: {e}", exc_info=True)
                     error_count += 1
+                    if self.buffer:
+                        self.buffer.increment_error_count()
                     if error_count >= max_consecutive_errors:
                         logger.error("错误过多，停止工作")
                         break
 
-            logger.info(f"解码完成，共处理 {frame_count} 帧")
+            # 结束统计
+            total_duration = time.time() - start_time
+            avg_fps = frame_count / total_duration if total_duration > 0 else 0
+            logger.info(
+                f"解码完成: 总时长 {total_duration:.1f}s, "
+                f"总帧数 {frame_count}, "
+                f"平均帧率 {avg_fps:.2f} fps"
+            )
 
         except Exception as e:
             logger.error(f"解码过程出错: {e}", exc_info=True)
