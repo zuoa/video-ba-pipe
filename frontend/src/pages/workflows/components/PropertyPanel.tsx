@@ -117,13 +117,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.labelName = nodeConfig.label_name || 'Object';
         formValues.labelColor = nodeConfig.label_color || '#FF0000';
       } else if (nodeType === 'function') {
-        formValues.functionName = node.data.functionName || 'area_ratio';
-        formValues.threshold = node.data.threshold || 0.7;
-        formValues.operator = node.data.operator || 'less_than';
-        formValues.dimension = node.data.dimension || 'height';
-
-        // 从 config 中回显类别过滤配置
+        // 从 config 中读取函数配置
         const config = node.data?.config || {};
+        formValues.functionName = config.function_name || 'area_ratio';
+        formValues.threshold = config.threshold ?? 0.7;
+        formValues.operator = config.operator || 'less_than';
+        formValues.dimension = config.dimension || 'height';
         if (config.input_a?.class_filter) {
           formValues.classFilterA = config.input_a.class_filter.join(',');
         }
@@ -140,20 +139,32 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.alertMessage = node.data.alertMessage || '检测到目标';
         formValues.alertType = node.data.alertType || 'detection';
 
-        // 读取 suppression 配置
-        const suppression = node.data.suppression;
-        if (suppression) {
-          formValues.suppressionMode = suppression.mode || 'simple';
-          formValues.suppressionSimpleSeconds = suppression.simple_seconds || 60;
-          formValues.suppressionWindowSize = suppression.window_size || 30;
-          formValues.suppressionWindowMode = suppression.window_mode || 'ratio';
-          formValues.suppressionWindowThreshold = suppression.window_threshold !== undefined
-            ? suppression.window_threshold
+        // 读取触发条件配置
+        const triggerCondition = node.data.triggerCondition;
+        if (triggerCondition) {
+          formValues.triggerConditionEnable = triggerCondition.enable !== undefined ? triggerCondition.enable : true;
+          formValues.triggerConditionWindowSize = triggerCondition.window_size || 30;
+          formValues.triggerConditionMode = triggerCondition.mode || 'ratio';
+          formValues.triggerConditionThreshold = triggerCondition.threshold !== undefined
+            ? triggerCondition.threshold
             : 0.3;
         } else {
-          // 默认配置
-          formValues.suppressionMode = 'simple';
-          formValues.suppressionSimpleSeconds = 60;
+          // 默认禁用触发条件
+          formValues.triggerConditionEnable = false;
+          formValues.triggerConditionWindowSize = 30;
+          formValues.triggerConditionMode = 'ratio';
+          formValues.triggerConditionThreshold = 0.3;
+        }
+
+        // 读取抑制配置
+        const suppression = node.data.suppression;
+        if (suppression) {
+          formValues.suppressionEnable = suppression.enable !== undefined ? suppression.enable : true;
+          formValues.suppressionSeconds = suppression.seconds || 60;
+        } else {
+          // 默认禁用抑制
+          formValues.suppressionEnable = false;
+          formValues.suppressionSeconds = 60;
         }
       } else if (nodeType === 'record') {
         formValues.recordDuration = node.data.recordDuration || 10;
@@ -231,30 +242,43 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.labelName;
         delete updatedData.labelColor;
       } else if (nodeType === 'alert') {
-        // Alert 节点：保存 suppression 配置
-        const suppressionConfig: any = {
-          mode: values.suppressionMode || 'simple',
-        };
+        // Alert 节点：保存触发条件和抑制配置
 
-        // 根据 mode 设置不同的配置
-        if (values.suppressionMode === 'simple') {
-          suppressionConfig.simple_seconds = values.suppressionSimpleSeconds || 60;
-        } else if (values.suppressionMode === 'window') {
-          suppressionConfig.window_size = values.suppressionWindowSize || 30;
-          suppressionConfig.window_mode = values.suppressionWindowMode || 'ratio';
-          suppressionConfig.window_threshold = values.suppressionWindowThreshold !== undefined
-            ? values.suppressionWindowThreshold
-            : 0.3;
+        // 保存触发条件配置
+        if (values.triggerConditionEnable) {
+          updatedData.triggerCondition = {
+            enable: true,
+            window_size: values.triggerConditionWindowSize || 30,
+            mode: values.triggerConditionMode || 'ratio',
+            threshold: values.triggerConditionThreshold !== undefined
+              ? values.triggerConditionThreshold
+              : 0.3,
+          };
+        } else {
+          updatedData.triggerCondition = {
+            enable: false,
+          };
         }
 
-        updatedData.suppression = suppressionConfig;
+        // 保存抑制配置
+        if (values.suppressionEnable) {
+          updatedData.suppression = {
+            enable: true,
+            seconds: values.suppressionSeconds || 60,
+          };
+        } else {
+          updatedData.suppression = {
+            enable: false,
+          };
+        }
 
         // 清理临时字段
-        delete updatedData.suppressionMode;
-        delete updatedData.suppressionSimpleSeconds;
-        delete updatedData.suppressionWindowSize;
-        delete updatedData.suppressionWindowMode;
-        delete updatedData.suppressionWindowThreshold;
+        delete updatedData.triggerConditionEnable;
+        delete updatedData.triggerConditionWindowSize;
+        delete updatedData.triggerConditionMode;
+        delete updatedData.triggerConditionThreshold;
+        delete updatedData.suppressionEnable;
+        delete updatedData.suppressionSeconds;
       } else if (nodeType === 'function') {
         // 自动从连线中识别上游算法节点
         const upstreamAlgorithmNodes = edges
@@ -302,21 +326,15 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         }
 
         updatedData.config = config;
-        updatedData.functionName = values.functionName;
-        updatedData.threshold = values.threshold;
-        if (values.functionName === 'size_absolute') {
-          updatedData.dimension = values.dimension || 'height';
-        }
 
-        // 保存所有上游节点ID列表
+        // 保存所有上游节点ID列表到 data 中
         updatedData.input_nodes = upstreamAlgorithmNodes.map(n => n.id);
 
+        // 清理临时字段
         delete updatedData.inputNodeA;
         delete updatedData.inputNodeB;
         delete updatedData.classFilterA;
         delete updatedData.classFilterB;
-        delete updatedData.operator;
-        delete updatedData.dimension;
       }
 
       console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
@@ -870,101 +888,138 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
             <div className="form-divider" />
 
+            {/* 触发条件配置（窗口检测） */}
             <div className="config-section">
               <div className="config-section-header">
-                <span className="config-section-title">告警抑制配置</span>
+                <span className="config-section-title">触发条件配置（窗口检测）</span>
               </div>
 
               <Form.Item
-                label="抑制模式"
-                name="suppressionMode"
-                extra="选择告警抑制方式"
+                label="启用窗口检测"
+                name="triggerConditionEnable"
+                extra="是否启用窗口检测验证，禁用时所有检测都会触发告警"
+                valuePropName="checked"
               >
-                <Select>
-                  <Option value="simple">简单时间抑制</Option>
-                  <Option value="window">时间窗口检测</Option>
-                </Select>
+                <Switch />
               </Form.Item>
 
-              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.suppressionMode !== currentValues.suppressionMode}>
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.triggerConditionEnable !== currentValues.triggerConditionEnable}>
                 {({ getFieldValue }) => {
-                  const suppressionMode = getFieldValue('suppressionMode') || 'simple';
+                  const enableTrigger = getFieldValue('triggerConditionEnable');
 
-                  if (suppressionMode === 'simple') {
+                  if (!enableTrigger) {
                     return (
-                      <Form.Item
-                        label="抑制时间（秒）"
-                        name="suppressionSimpleSeconds"
-                        extra="在此时间窗口内只触发一次告警"
-                      >
-                        <InputNumber min={1} max={3600} step={1} style={{ width: '100%' }} />
-                      </Form.Item>
-                    );
-                  } else if (suppressionMode === 'window') {
-                    return (
-                      <>
-                        <Form.Item
-                          label="时间窗口（秒）"
-                          name="suppressionWindowSize"
-                          extra="统计检测情况的时间窗口"
-                        >
-                          <InputNumber min={1} max={300} style={{ width: '100%' }} />
-                        </Form.Item>
-
-                        <Form.Item
-                          label="检测模式"
-                          name="suppressionWindowMode"
-                        >
-                          <Select>
-                            <Option value="count">检测次数 (count)</Option>
-                            <Option value="ratio">检测比例 (ratio)</Option>
-                            <Option value="consecutive">连续检测 (consecutive)</Option>
-                          </Select>
-                        </Form.Item>
-
-                        <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.suppressionWindowMode !== currentValues.suppressionWindowMode}>
-                          {({ getFieldValue }) => {
-                            const windowMode = getFieldValue('suppressionWindowMode') || 'ratio';
-
-                            // 根据不同模式设置不同的标签和提示
-                            let label = '检测阈值';
-                            let extra = '';
-                            let inputType = 'number';
-
-                            if (windowMode === 'ratio') {
-                              label = '检测阈值（比例）';
-                              extra = '0-1之间的小数，如0.3表示30%';
-                              inputType = 'ratio';
-                            } else if (windowMode === 'count') {
-                              label = '检测阈值（次数）';
-                              extra = '正整数，时间窗口内最少检测次数';
-                              inputType = 'count';
-                            } else if (windowMode === 'consecutive') {
-                              label = '检测阈值（次数）';
-                              extra = '正整数，最少连续检测次数';
-                              inputType = 'count';
-                            }
-
-                            return (
-                              <Form.Item
-                                label={label}
-                                name="suppressionWindowThreshold"
-                                extra={extra}
-                              >
-                                {inputType === 'ratio' ? (
-                                  <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-                                ) : (
-                                  <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
-                                )}
-                              </Form.Item>
-                            );
-                          }}
-                        </Form.Item>
-                      </>
+                      <div className="info-box" style={{ marginTop: 12, background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a' }}>
+                        <InfoCircleOutlined />
+                        <span>窗口检测已禁用，所有检测都将触发告警</span>
+                      </div>
                     );
                   }
 
-                  return null;
+                  return (
+                    <>
+                      <Form.Item
+                        label="时间窗口（秒）"
+                        name="triggerConditionWindowSize"
+                        extra="统计检测情况的时间窗口"
+                      >
+                        <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                      </Form.Item>
+
+                      <Form.Item
+                        label="检测模式"
+                        name="triggerConditionMode"
+                      >
+                        <Select>
+                          <Option value="count">检测次数 (count)</Option>
+                          <Option value="ratio">检测比例 (ratio)</Option>
+                          <Option value="consecutive">连续检测 (consecutive)</Option>
+                        </Select>
+                      </Form.Item>
+
+                      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.triggerConditionMode !== currentValues.triggerConditionMode}>
+                        {({ getFieldValue }) => {
+                          const mode = getFieldValue('triggerConditionMode') || 'ratio';
+
+                          // 根据不同模式设置不同的标签和提示
+                          let label = '检测阈值';
+                          let extra = '';
+                          let inputType = 'number';
+
+                          if (mode === 'ratio') {
+                            label = '检测阈值（比例）';
+                            extra = '0-1之间的小数，如0.3表示30%的帧检测到目标';
+                            inputType = 'ratio';
+                          } else if (mode === 'count') {
+                            label = '检测阈值（次数）';
+                            extra = '正整数，时间窗口内最少检测次数';
+                            inputType = 'count';
+                          } else if (mode === 'consecutive') {
+                            label = '检测阈值（次数）';
+                            extra = '正整数，最少连续检测次数';
+                            inputType = 'count';
+                          }
+
+                          return (
+                            <Form.Item
+                              label={label}
+                              name="triggerConditionThreshold"
+                              extra={extra}
+                            >
+                              {inputType === 'ratio' ? (
+                                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                              ) : (
+                                <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
+                              )}
+                            </Form.Item>
+                          );
+                        }}
+                      </Form.Item>
+                    </>
+                  );
+                }}
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+
+            {/* 告警抑制配置（触发后冷却期） */}
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">告警抑制配置（触发后冷却期）</span>
+              </div>
+
+              <Form.Item
+                label="启用告警抑制"
+                name="suppressionEnable"
+                extra="是否启用告警抑制，启用后触发告警的 N 秒内不会再触发"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.suppressionEnable !== currentValues.suppressionEnable}>
+                {({ getFieldValue }) => {
+                  const enableSuppression = getFieldValue('suppressionEnable');
+
+                  if (!enableSuppression) {
+                    return (
+                      <div className="info-box" style={{ marginTop: 12, background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a' }}>
+                        <InfoCircleOutlined />
+                        <span>告警抑制已禁用，满足触发条件时每次都会告警</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Form.Item
+                      label="抑制时长（秒）"
+                      name="suppressionSeconds"
+                      extra="触发告警后，N秒内不会再触发告警"
+                    >
+                      <InputNumber min={1} max={3600} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                  );
                 }}
               </Form.Item>
             </div>

@@ -871,22 +871,39 @@ class WorkflowExecutor:
         alert_level = alert_node.alert_level or "info"
         alert_message = alert_node.alert_message or ""
 
-        # 获取抑制配置
-        suppression_config = alert_node.suppression
-        # 如果未配置 suppression，使用默认策略（simple模式，使用全局配置的抑制时间）
-        if not suppression_config:
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置抑制策略，使用默认策略 (simple模式, {ALERT_SUPPRESSION_DURATION}秒抑制)")
-            suppression_config = {
-                'mode': 'simple',
-                'simple_seconds': ALERT_SUPPRESSION_DURATION
-            }
+        # 加载触发条件配置（窗口检测）
+        trigger_condition = alert_node.trigger_condition
+        if trigger_condition:
+            self.window_detector.load_trigger_condition(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                trigger_config=trigger_condition
+            )
+        else:
+            # 未配置触发条件，使用默认配置（不进行窗口检测，直接通过）
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置触发条件，所有检测都将触发")
+            self.window_detector.load_trigger_condition(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                trigger_config={'enable': False}
+            )
 
-        # 加载该 Alert 节点的抑制配置
-        self.window_detector.load_config_with_override(
-            source_id=self.video_source.id,
-            node_id=node_id,
-            suppression_config=suppression_config
-        )
+        # 加载告警抑制配置（触发后冷却期）
+        suppression = alert_node.suppression
+        if suppression:
+            self.window_detector.load_suppression(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                suppression_config=suppression
+            )
+        else:
+            # 未配置抑制，不启用抑制
+            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置抑制，告警不会被抑制")
+            self.window_detector.load_suppression(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                suppression_config={'enable': False}
+            )
 
 
 
@@ -907,30 +924,53 @@ class WorkflowExecutor:
             image_path=image_path
         )
 
-        # 检查是否满足抑制条件
-        window_passed, window_stats = self.window_detector.check_condition(
+        # 步骤1：检查触发条件（窗口检测）
+        trigger_passed, trigger_stats = self.window_detector.check_condition(
             source_id=self.video_source.id,
             node_id=node_id,
             current_time=trigger_time
         )
 
-        if not window_passed:
-            if window_stats:
+        if not trigger_passed:
+            if trigger_stats:
                 logger.info(
-                    f"[WorkflowWorker] 输出节点 {node_id} 抑制条件满足，跳过告警 "
-                    f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
-                    f"比例: {window_stats['detection_ratio']:.2%}, "
-                    f"连续: {window_stats['max_consecutive']} 次)"
+                    f"[WorkflowWorker] 输出节点 {node_id} 不满足触发条件，跳过告警 "
+                    f"(检测: {trigger_stats['detection_count']}/{trigger_stats['total_count']} 帧, "
+                    f"比例: {trigger_stats['detection_ratio']:.2%}, "
+                    f"连续: {trigger_stats['max_consecutive']} 次)"
                 )
             return
 
-        if window_stats:
+        if trigger_stats:
             logger.info(
-                f"[WorkflowWorker] 输出节点 {node_id} 满足告警条件 "
-                f"(检测: {window_stats['detection_count']}/{window_stats['total_count']} 帧, "
-                f"比例: {window_stats['detection_ratio']:.2%}, "
-                f"连续: {window_stats['max_consecutive']} 次)"
+                f"[WorkflowWorker] 输出节点 {node_id} 满足触发条件 "
+                f"(检测: {trigger_stats['detection_count']}/{trigger_stats['total_count']} 帧, "
+                f"比例: {trigger_stats['detection_ratio']:.2%}, "
+                f"连续: {trigger_stats['max_consecutive']} 次)"
             )
+
+        # 步骤2：检查抑制期（触发后冷却期）
+        not_suppressed, suppression_stats = self.window_detector.check_suppression(
+            source_id=self.video_source.id,
+            node_id=node_id,
+            current_time=trigger_time
+        )
+
+        if not not_suppressed:
+            # 在抑制期内，跳过告警
+            if suppression_stats:
+                logger.info(
+                    f"[WorkflowWorker] 输出节点 {node_id} 在抑制期内，跳过告警 "
+                    f"(剩余冷却时间: {suppression_stats['cooldown_remaining']:.2f}秒)"
+                )
+            return
+
+        # 步骤3：记录触发时间（用于后续抑制计算）
+        self.window_detector.record_trigger(
+            source_id=self.video_source.id,
+            node_id=node_id,
+            trigger_time=trigger_time
+        )
 
         # 获取窗口内的检测记录（用于保存检测图片）
         detection_records = self.window_detector.get_detection_records(
@@ -1001,7 +1041,7 @@ class WorkflowExecutor:
             alert_image_ori=main_image_ori,
             alert_video="",
             detection_count=len(detection_images),
-            window_stats=json.dumps(window_stats) if window_stats else None,
+            window_stats=json.dumps(trigger_stats) if trigger_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None
         )
         logger.info(f"[WorkflowWorker] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")

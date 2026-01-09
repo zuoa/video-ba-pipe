@@ -428,28 +428,22 @@ export default function WorkflowEditorPage() {
           });
           saveData.dataId = node.data?.dataId;
         } else if (nodeType === 'function') {
-          // 函数节点：保存 functionName, threshold, operator, dimension, input_nodes 到 data 字段
+          // 函数节点：所有配置都在 config 中，input_nodes 也在 data 中
           saveData.data = {
-            functionName: node.data?.functionName,
-            threshold: node.data?.threshold,
-            operator: node.data?.operator,
-            dimension: node.data?.dimension,
             input_nodes: node.data?.input_nodes,
           };
           console.log('🔢 [EDITOR] Function 节点保存数据:', {
             id: node.id,
-            functionName: saveData.data.functionName,
-            threshold: saveData.data.threshold,
-            operator: saveData.data.operator,
-            dimension: saveData.data.dimension,
+            config: saveData.config,
             input_nodes: saveData.data.input_nodes,
           });
         } else if (nodeType === 'alert') {
-          // Alert 节点：保存 alertLevel, alertType, alertMessage, suppression 到 data 字段
+          // Alert 节点：保存 alertLevel, alertType, alertMessage, triggerCondition, suppression 到 data 字段
           saveData.data = {
             alertLevel: node.data?.alertLevel,
             alertType: node.data?.alertType,
             alertMessage: node.data?.alertMessage,
+            triggerCondition: node.data?.triggerCondition,
             suppression: node.data?.suppression,
           };
           console.log('🚨 [EDITOR] Alert 节点保存数据:', {
@@ -457,6 +451,7 @@ export default function WorkflowEditorPage() {
             alertLevel: saveData.data.alertLevel,
             alertType: saveData.data.alertType,
             alertMessage: saveData.data.alertMessage,
+            triggerCondition: saveData.data.triggerCondition,
             suppression: saveData.data.suppression,
           });
         } else {

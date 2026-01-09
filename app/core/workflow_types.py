@@ -96,24 +96,23 @@ class AlertNodeData(NodeContext):
     alert_type: Optional[str] = None
     """告警类型（用于区分不同类型的告警，如 'person', 'vehicle' 等）"""
 
-    suppression_seconds: Optional[int] = None
+    trigger_condition: Optional[Dict[str, Any]] = None
     """
-    @deprecated 请使用 suppression 配置
-    告警抑制时长（秒）
-    - 如果为 None，使用全局配置 ALERT_SUPPRESSION_DURATION
-    - 如果设置了值，则使用该值作为此告警节点的抑制时长
-    - 在抑制期内，相同的告警不会重复触发
+    触发条件配置（窗口检测）
+    {
+        "enable": bool,                # 是否启用窗口检测
+        "window_size": int,            # 时间窗口（秒）
+        "mode": "ratio" | "consecutive" | "count",  # 检测模式
+        "threshold": float             # 阈值（比例0-1 或 次数）
+    }
     """
 
     suppression: Optional[Dict[str, Any]] = None
     """
-    统一的告警抑制配置
+    告警抑制配置（触发后的冷却期）
     {
-        "mode": "simple" | "window",  # 抑制模式
-        "simple_seconds": int,         # simple模式：X秒内只触发1次
-        "window_size": int,            # window模式：时间窗口（秒）
-        "window_mode": "ratio" | "consecutive",  # window模式：检测模式
-        "window_threshold": float      # window模式：比例(0-1)或次数
+        "enable": bool,                # 是否启用抑制
+        "seconds": int                 # 抑制时长（秒）
     }
     """
 
@@ -188,6 +187,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         alert_level = data.get('alertLevel') or data.get('alert_level')
         alert_message = data.get('alertMessage') or data.get('alert_message')
         alert_type = data.get('alertType') or data.get('alert_type')
+        trigger_condition = data.get('triggerCondition') or data.get('trigger_condition')
         suppression = data.get('suppression')
 
         return node_class(
@@ -196,6 +196,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             alert_level=alert_level,
             alert_message=alert_message,
             alert_type=alert_type,
+            trigger_condition=trigger_condition,
             suppression=suppression
         )
     else:
