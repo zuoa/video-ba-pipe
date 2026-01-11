@@ -243,6 +243,30 @@ class Orchestrator:
         if source.id in self.last_health_log_times:
             del self.last_health_log_times[source.id]
 
+        # 停止所有使用该视频源的 workflow 进程
+        workflows_to_stop = []
+        for workflow_id, process_info in list(self.workflow_processes.items()):
+            if process_info.get('source_id') == source.id:
+                workflows_to_stop.append(workflow_id)
+
+        for workflow_id in workflows_to_stop:
+            logger.info(f"  -> 停止使用视频源 {source.id} 的工作流 ID {workflow_id}")
+            try:
+                # 停止输出读取线程
+                if 'stdout_reader' in self.workflow_processes[workflow_id]:
+                    self.workflow_processes[workflow_id]['stdout_reader'].stop()
+                if 'stderr_reader' in self.workflow_processes[workflow_id]:
+                    self.workflow_processes[workflow_id]['stderr_reader'].stop()
+
+                # 终止进程
+                self.workflow_processes[workflow_id]['process'].terminate()
+
+                # 清理进程记录，让 manage_workflows 在下一轮自动重启
+                del self.workflow_processes[workflow_id]
+                logger.info(f"  ✅ 工作流 ID {workflow_id} 已停止，将在视频源重启后自动恢复")
+            except Exception as e:
+                logger.error(f"  ❌ 停止工作流 ID {workflow_id} 失败: {e}")
+
         source.status = 'STOPPED'
         source.decoder_pid = None
         source.save()

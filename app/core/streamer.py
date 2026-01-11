@@ -205,6 +205,8 @@ class RTSPStreamer(BaseStreamer):
         return [
             'ffmpeg',
             '-rtsp_transport', self.transport,
+            '-fflags', '+genpts+igndts',
+            '-avoid_negative_ts', 'make_zero',
             '-i', self.source,
             '-an',  # 禁用音频
             '-dn',  # 禁用数据流
@@ -372,18 +374,16 @@ class StreamerFactory:
 
 # 使用示例
 if __name__ == "__main__":
-
-
     # 示例1: RTSP流
     def on_packet_received(packet: bytes):
         print(f"收到数据包，大小: {len(packet)} 字节")
+
 
     # 示例1: 使用工厂自动识别
     streamer = StreamerFactory.create_streamer("rtsp://example.com/stream")
 
     streamer.add_packet_handler(on_packet_received)
     streamer.start()
-
 
     # 示例2: 显式指定类型
     streamer = StreamerFactory.create_streamer(
