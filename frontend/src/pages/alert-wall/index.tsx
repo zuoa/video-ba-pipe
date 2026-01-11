@@ -20,8 +20,228 @@ import {
   FireOutlined,
   BranchesOutlined,
   LineChartOutlined,
+  CloseOutlined,
+  PlayCircleOutlined,
+  FileImageOutlined,
+  TagOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import './index.css';
+
+// 告警详情弹窗组件
+interface AlertDetailModalProps {
+  alert: Alert;
+  task?: Task;
+  visible: boolean;
+  onClose: () => void;
+}
+
+const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visible, onClose }) => {
+  if (!visible) return null;
+
+  // 解析检测图片
+  const detectionImages: string[] = [];
+  if (alert.detection_images) {
+    if (typeof alert.detection_images === 'string') {
+      try {
+        const parsed = JSON.parse(alert.detection_images);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (typeof item === 'string') {
+              detectionImages.push(item);
+            } else if (item?.image_path) {
+              detectionImages.push(item.image_path);
+            }
+          });
+        }
+      } catch {
+        // 解析失败，忽略
+      }
+    } else if (Array.isArray(alert.detection_images)) {
+      alert.detection_images.forEach((item: any) => {
+        if (typeof item === 'string') {
+          detectionImages.push(item);
+        } else if (item?.image_path) {
+          detectionImages.push(item.image_path);
+        }
+      });
+    }
+  }
+
+  // 解析窗口统计
+  let windowStats: { [key: string]: any } | null = null;
+  if (alert.window_stats) {
+    try {
+      if (typeof alert.window_stats === 'string') {
+        windowStats = JSON.parse(alert.window_stats);
+      } else {
+        windowStats = alert.window_stats;
+      }
+    } catch {
+      // 解析失败，忽略
+    }
+  }
+
+  return (
+    <div className="alert-detail-modal-overlay" onClick={onClose}>
+      <div className="alert-detail-modal" onClick={(e) => e.stopPropagation()}>
+        {/* 弹窗头部 */}
+        <div className="modal-header">
+          <div className="modal-title">
+            <ExclamationCircleOutlined />
+            <span>告警详情</span>
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            <CloseOutlined />
+          </button>
+        </div>
+
+        {/* 弹窗内容 */}
+        <div className="modal-content">
+          {/* 基本信息 */}
+          <div className="detail-section">
+            <h3 className="section-title">
+              <TagOutlined />
+              基本信息
+            </h3>
+            <div className="info-grid">
+              <div className="info-row">
+                <span className="info-label">视频源</span>
+                <span className="info-value">{task?.name || `任务 #${alert.task_id}`}</span>
+              </div>
+              {alert.workflow_name && (
+                <div className="info-row">
+                  <span className="info-label">算法编排</span>
+                  <span className="info-value workflow-value">{alert.workflow_name}</span>
+                </div>
+              )}
+              <div className="info-row">
+                <span className="info-label">告警时间</span>
+                <span className="info-value">
+                  {new Date(alert.alert_time).toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
+                </span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">告警类型</span>
+                <span className="info-value">
+                  <AlertTypeBadge type={alert.alert_type} showIcon />
+                </span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">检测次数</span>
+                <span className="info-value">{alert.detection_count} 次</span>
+              </div>
+              {alert.alert_message && (
+                <div className="info-row full-width">
+                  <span className="info-label">告警消息</span>
+                  <span className="info-value">{alert.alert_message}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 告警图片 */}
+          {alert.alert_image && (
+            <div className="detail-section">
+              <h3 className="section-title">
+                <FileImageOutlined />
+                告警图片
+              </h3>
+              <div className="detail-image-container">
+                <img
+                  src={`/api/image/frames/${alert.alert_image}`}
+                  alt="告警图片"
+                  className="detail-image"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 检测图片 */}
+          {detectionImages.length > 0 && (
+            <div className="detail-section">
+              <h3 className="section-title">
+                <FileImageOutlined />
+                检测图片 ({detectionImages.length})
+              </h3>
+              <div className="detection-images-grid">
+                {detectionImages.map((imgPath, idx) => (
+                  <div key={idx} className="detection-image-item">
+                    <img
+                      src={`/api/image/frames/${imgPath}`}
+                      alt={`检测图片 ${idx + 1}`}
+                      className="detection-image"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 窗口统计 */}
+          {windowStats && (
+            <div className="detail-section">
+              <h3 className="section-title">
+                <LineChartOutlined />
+                窗口统计
+              </h3>
+              <div className="window-stats">
+                <div className="stat-box">
+                  <div className="stat-box-label">检测次数</div>
+                  <div className="stat-box-value">{windowStats.detection_count || 0}</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-box-label">总帧数</div>
+                  <div className="stat-box-value">{windowStats.total_count || 0}</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-box-label">检测比例</div>
+                  <div className="stat-box-value">
+                    {windowStats.detection_ratio
+                      ? `${(windowStats.detection_ratio * 100).toFixed(1)}%`
+                      : '0%'}
+                  </div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-box-label">最大连续</div>
+                  <div className="stat-box-value">{windowStats.max_consecutive || 0}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 视频链接 */}
+          {alert.alert_video && (
+            <div className="detail-section">
+              <h3 className="section-title">
+                <PlayCircleOutlined />
+                告警视频
+              </h3>
+              <div className="video-link">
+                <a
+                  href={`/api/video/videos/${alert.alert_video}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="video-link-button"
+                >
+                  <PlayCircleOutlined />
+                  <span>播放视频</span>
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const AlertWallPage: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -29,6 +249,8 @@ const AlertWallPage: React.FC = () => {
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [mainAlert, setMainAlert] = useState<Alert | null>(null);
   const [todayCount, setTodayCount] = useState(0);
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [videoSourceCount, setVideoSourceCount] = useState(0);
@@ -152,6 +374,19 @@ const AlertWallPage: React.FC = () => {
       setMainAlert(alerts[index]);
       setImageError(false);
     }
+  };
+
+  // 查看告警详情
+  const viewAlertDetail = (alert: Alert, e: React.MouseEvent) => {
+    e.stopPropagation(); // 防止触发选择事件
+    setSelectedAlert(alert);
+    setShowDetailModal(true);
+  };
+
+  // 关闭详情弹窗
+  const closeDetailModal = () => {
+    setShowDetailModal(false);
+    setTimeout(() => setSelectedAlert(null), 300); // 等待动画完成
   };
 
   // 处理图片加载错误
@@ -283,6 +518,12 @@ const AlertWallPage: React.FC = () => {
                   <VideoCameraOutlined />
                   <span>{mainTask?.name || '--'}</span>
                 </div>
+                {mainAlert?.workflow_name && (
+                  <div className="info-item workflow-item">
+                    <ApartmentOutlined />
+                    <span>{mainAlert.workflow_name}</span>
+                  </div>
+                )}
                 <div className="info-item">
                   <ClockCircleOutlined />
                   <span>
@@ -394,8 +635,21 @@ const AlertWallPage: React.FC = () => {
                         <div className="alert-item-info">
                           <div className="alert-item-header">
                             <span className="alert-task-name">{task?.name || `任务 #${alert.task_id}`}</span>
-                            {index === 0 && <span className="latest-badge">最新</span>}
+                            <button
+                              className="detail-button"
+                              onClick={(e) => viewAlertDetail(alert, e)}
+                              title="查看详情"
+                            >
+                              <TagOutlined />
+                              <span>详情</span>
+                            </button>
                           </div>
+                          {alert.workflow_name && (
+                            <div className="alert-workflow">
+                              <ApartmentOutlined />
+                              <span>{alert.workflow_name}</span>
+                            </div>
+                          )}
                           <div className="alert-item-meta">
                             <span className="alert-time">
                               <RelativeTime time={alert.alert_time} />
@@ -430,6 +684,16 @@ const AlertWallPage: React.FC = () => {
 
       {/* 粒子效果 */}
       <ParticlesEffect />
+
+      {/* 告警详情弹窗 */}
+      {selectedAlert && (
+        <AlertDetailModal
+          alert={selectedAlert}
+          task={tasks.find(t => t.id === selectedAlert.task_id)}
+          visible={showDetailModal}
+          onClose={closeDetailModal}
+        />
+      )}
     </div>
   );
 };

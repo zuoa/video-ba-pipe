@@ -516,7 +516,7 @@ class WorkflowExecutor:
                 self.node_results_cache[node_id] = result
 
                 # 记录检测日志
-                detection_count = len(result.get('detections', []))
+                detection_count = len(result.get('result', {}).get('detections', []))
                 if log_collector:
                     log_collector.add_info(
                         node_id,
