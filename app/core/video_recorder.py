@@ -120,40 +120,52 @@ class VideoRecorder:
             
             # 第一步：从RingBuffer获取历史帧（过去N秒）
             logger.info(f"[录制 {alert_id}] 正在提取过去 {pre_seconds} 秒的帧...")
+            # 放宽结束时间，确保包含触发时刻的帧（考虑AI处理延迟）
             start_time = trigger_time - pre_seconds
-            
-            # 获取历史帧
+            end_time_historical = trigger_time + 1.0  # 多留1秒余量
+
+            # 获取历史帧（放宽结束时间边界）
             historical_frames = self.buffer.get_frames_in_time_range(
                 start_time=start_time,
-                end_time=trigger_time
+                end_time=end_time_historical
             )
-            
-            logger.info(f"[录制 {alert_id}] 提取到 {len(historical_frames)} 个历史帧 (范围: {start_time:.2f} - {trigger_time:.2f})")
-            
+
+            logger.info(f"[录制 {alert_id}] 提取到 {len(historical_frames)} 个历史帧 (范围: {start_time:.2f} - {end_time_historical:.2f})")
+
             # 如果没有历史帧，尝试获取最近的所有帧
             if not historical_frames and buffer_stats['count'] > 0:
                 logger.warning(f"[录制 {alert_id}] 时间范围内无历史帧，尝试获取最近 {pre_seconds} 秒的所有帧")
                 historical_frames = self.buffer.get_recent_frames(pre_seconds)
                 logger.info(f"[录制 {alert_id}] 重新提取到 {len(historical_frames)} 个历史帧")
-            
+
             # 第二步：等待并收集未来M秒的帧
             logger.info(f"[录制 {alert_id}] 正在等待并收集未来 {post_seconds} 秒的帧...")
-            
+
             with self.lock:
                 self.recording_tasks[alert_id]['status'] = 'collecting'
-            
+
             future_frames = []
             end_time = trigger_time + post_seconds
             real_end_time = time.time() + post_seconds
-            last_collected_timestamp = trigger_time
-            
+
+            # 关键修复：从历史帧的最新时间戳继续收集，避免重复收集
+            # 如果历史帧为空，从 trigger_time 开始
+            if historical_frames:
+                # 从历史帧的最新时间戳继续（加0.001避免重复收集最后一帧）
+                last_collected_timestamp = historical_frames[-1][1] + 0.001
+                logger.info(f"[录制 {alert_id}] 从历史帧最新时间戳继续: {last_collected_timestamp - 0.001:.3f}")
+            else:
+                # 没有历史帧，从当前开始
+                last_collected_timestamp = trigger_time
+                logger.info(f"[录制 {alert_id}] 无历史帧，从trigger_time开始收集")
+
             logger.info(f"[录制 {alert_id}] 等待时间范围: {trigger_time:.2f} - {end_time:.2f} (实际等到 {real_end_time:.2f})")
-            
+
             # 等待并收集未来的帧
             check_count = 0
             while time.time() < real_end_time:
                 check_count += 1
-                
+
                 # 获取buffer中所有在时间范围内的新帧
                 current_time = time.time()
                 buffer_frames = self.buffer.get_frames_in_time_range(

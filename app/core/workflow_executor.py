@@ -92,6 +92,8 @@ class WorkflowExecutor:
         self.execution_results = {}
         # executed_nodes: 记录实际执行过的节点（按顺序）
         self.executed_nodes = []
+        # last_frame_timestamp: 记录最后处理的帧时间戳（用于多 workflow 共享 buffer 时避免重复处理）
+        self.last_frame_timestamp = None
 
         self.node_handlers = {
             'source': self._handle_source_node,
@@ -1651,9 +1653,9 @@ class WorkflowExecutor:
 
         while True:
             try:
-                # 从 buffer 读取帧
-                # peek_with_timestamp(0) 获取最旧的帧和时间戳
-                peek_result = self.buffer.peek_with_timestamp(0)
+                # 从 buffer 读取最新帧
+                # peek_with_timestamp(-1) 获取最新的帧和时间戳（不消费帧，支持多 workflow 共享）
+                peek_result = self.buffer.peek_with_timestamp(-1)
 
                 if peek_result is None:
                     # 缓冲区为空，短暂休眠后继续
@@ -1662,8 +1664,14 @@ class WorkflowExecutor:
 
                 frame_bgr, frame_timestamp = peek_result
 
-                # 现在消费这一帧（从缓冲区移除）
-                self.buffer.read()
+                # 检查是否为新的帧（避免重复处理同一帧）
+                if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
+                    # 帧未更新，短暂休眠后继续
+                    time.sleep(0.001)  # 短暂休眠避免 CPU 占用过高
+                    continue
+
+                # 更新最后处理的帧时间戳
+                self.last_frame_timestamp = frame_timestamp
 
                 frame_count += 1
                 error_count = 0  # 重置错误计数
