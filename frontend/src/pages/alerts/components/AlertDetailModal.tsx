@@ -141,25 +141,26 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                     <FileImageOutlined />
                     检测图片序列
                   </Title>
-                  <Image.PreviewGroup
-                    preview={{
-                      current: imagePreview,
-                      onChange: setImagePreview,
-                    }}
-                  >
-                    <div className="detectionImageGrid">
-                      {detectionImages.map((img: DetectionImage | any, index: number) => (
-                        <div key={index} className="detectionImageItem">
-                          <Image
-                            src={`/api/image/frames/${img.image_path}`}
-                            alt={`检测 ${index + 1}`}
-                            preview={{ title: `第 ${index + 1} 次检测` }}
-                          />
-                          <div className="detectionImageIndex">第 {index + 1} 次</div>
+                  <div className="detectionImageGrid">
+                    {detectionImages.map((img: DetectionImage | any, index: number) => (
+                      <div key={index} className="detectionImageItem">
+                        <Image
+                          src={`/api/image/frames/${img.image_path}`}
+                          alt={`检测 ${index + 1}`}
+                          preview={{
+                            title: `第 ${index + 1} 次检测 - ${img.detection_time}`,
+                          }}
+                          style={{ width: '100%' }}
+                        />
+                        <div className="detectionImageIndex">
+                          第 {index + 1} 次
+                          <span style={{ marginLeft: '4px', opacity: 0.8 }}>
+                            {new Date(img.detection_time).toLocaleTimeString('zh-CN', { hour12: false })}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </Image.PreviewGroup>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
             </>

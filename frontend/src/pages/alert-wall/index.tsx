@@ -40,7 +40,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
   if (!visible) return null;
 
   // 解析检测图片
-  const detectionImages: string[] = [];
+  const detectionImages: Array<{ image_path: string; detection_time?: string }> = [];
   if (alert.detection_images) {
     if (typeof alert.detection_images === 'string') {
       try {
@@ -48,9 +48,12 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
         if (Array.isArray(parsed)) {
           parsed.forEach((item: any) => {
             if (typeof item === 'string') {
-              detectionImages.push(item);
+              detectionImages.push({ image_path: item });
             } else if (item?.image_path) {
-              detectionImages.push(item.image_path);
+              detectionImages.push({
+                image_path: item.image_path,
+                detection_time: item.detection_time
+              });
             }
           });
         }
@@ -60,9 +63,12 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
     } else if (Array.isArray(alert.detection_images)) {
       alert.detection_images.forEach((item: any) => {
         if (typeof item === 'string') {
-          detectionImages.push(item);
+          detectionImages.push({ image_path: item });
         } else if (item?.image_path) {
-          detectionImages.push(item.image_path);
+          detectionImages.push({
+            image_path: item.image_path,
+            detection_time: item.detection_time
+          });
         }
       });
     }
@@ -189,13 +195,18 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                 检测图片 ({detectionImages.length})
               </h3>
               <div className="detection-images-grid">
-                {detectionImages.map((imgPath, idx) => (
+                {detectionImages.map((img, idx) => (
                   <div key={idx} className="detection-image-item">
                     <img
-                      src={`/api/image/frames/${imgPath}`}
+                      src={`/api/image/frames/${img.image_path}`}
                       alt={`检测图片 ${idx + 1}`}
                       className="detection-image"
                     />
+                    {img.detection_time && (
+                      <div className="detection-image-time">
+                        #{idx + 1} {new Date(img.detection_time).toLocaleTimeString('zh-CN', { hour12: false })}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
