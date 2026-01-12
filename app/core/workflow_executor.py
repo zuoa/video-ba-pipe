@@ -1507,9 +1507,22 @@ class WorkflowExecutor:
             # 获取上游节点 ID（用于可视化）
             upstream_node_id = context.get('upstream_node_id')
 
+            # 准备ROI配置：优先从上游ROI节点获取，其次使用算法节点配置
+            effective_roi_regions = []
+            if upstream_node_id:
+                # 先查找上游的ROI节点配置
+                upstream_roi = self._find_upstream_roi(upstream_node_id)
+                if upstream_roi is not None:
+                    effective_roi_regions = upstream_roi
+                    logger.info(f"[WorkflowWorker] Alert可视化：使用上游ROI节点配置，包含 {len(effective_roi_regions)} 个区域")
+                else:
+                    # 回退到算法节点自身的ROI配置
+                    effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
+                    if effective_roi_regions:
+                        logger.info(f"[WorkflowWorker] Alert可视化：使用算法节点配置，包含 {len(effective_roi_regions)} 个区域")
+
             # 如果有上游算法节点，使用其 visualize 方法
             if upstream_node_id and upstream_node_id in self.algorithms:
-                effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
                 self.algorithms[upstream_node_id].visualize(
                     frame, result.get("detections"),
                     save_path=filepath_absolute,
@@ -1662,7 +1675,8 @@ class WorkflowExecutor:
                     time.sleep(0.01)
                     continue
 
-                frame_bgr, frame_timestamp = peek_result
+                # Decoder 输出 rgb24 格式，实际是 RGB
+                frame_rgb, frame_timestamp = peek_result
 
                 # 检查是否为新的帧（避免重复处理同一帧）
                 if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
@@ -1676,16 +1690,13 @@ class WorkflowExecutor:
                 frame_count += 1
                 error_count = 0  # 重置错误计数
 
-                # 转换颜色空间：BGR -> RGB
-                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-
                 # 创建日志收集器
                 log_collector = ExecutionLogCollector()
 
                 # 创建 context
                 context = {
                     'frame': frame_rgb,
-                    'frame_bgr': frame_bgr,
+                    'frame_bgr': cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR),
                     'frame_timestamp': frame_timestamp,
                     'log_collector': log_collector,
                     'roi_regions': [],

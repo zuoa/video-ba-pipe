@@ -173,7 +173,9 @@ class BaseAlgorithm(ABC):
         :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域（已弃用，建议使用roi_regions）
         :param roi_regions: ROI热区配置列表，格式为 [{"polygon": [[x1,y1], [x2,y2], ...], ...}]
         """
-        img_vis = img.copy()
+        import cv2
+        # RGB -> BGR 转换（OpenCV 绘图函数期望 BGR 格式）
+        img_vis = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         # 如果有roi_regions配置，优先使用roi_regions绘制热区（支持多边形）
         if roi_regions and len(roi_regions) > 0:
@@ -275,6 +277,7 @@ class BaseAlgorithm(ABC):
 
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            # img_vis 已经是 BGR 格式，直接保存
             cv2.imwrite(save_path, img_vis)
             logger.debug(f"已保存可视化结果到 {save_path}")
 
