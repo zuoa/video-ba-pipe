@@ -199,7 +199,7 @@ class Orchestrator:
         )
         self.buffers[source.id] = buffer
 
-        logger.info(f"创建RingBuffer: fps={source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
+        logger.debug(f"创建RingBuffer: fps={source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
 
         # 启动解码器进程
         decoder_args = [
@@ -211,7 +211,7 @@ class Orchestrator:
             '--width', str(source.source_decode_width),
             '--height', str(source.source_decode_height)
         ]
-        logger.info(' '.join(decoder_args))
+        logger.debug(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)
 
         source.status = 'RUNNING'
@@ -222,7 +222,7 @@ class Orchestrator:
 
         # 记录启动时间（用于健康检查宽限期）
         self.source_start_times[source.id] = time.time()
-        logger.info(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
+        logger.debug(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
 
     def _stop_source(self, source: VideoSource):
         print(f"  -> 正在停止视频源 ID {source.id}: {source.name}")
@@ -251,7 +251,7 @@ class Orchestrator:
                 workflows_to_stop.append(workflow_id)
 
         for workflow_id in workflows_to_stop:
-            logger.info(f"  -> 停止使用视频源 {source.id} 的工作流 ID {workflow_id}")
+            logger.debug(f"  -> 停止使用视频源 {source.id} 的工作流 ID {workflow_id}")
             try:
                 # 停止输出读取线程
                 if 'stdout_reader' in self.workflow_processes[workflow_id]:
@@ -264,7 +264,7 @@ class Orchestrator:
 
                 # 清理进程记录，让 manage_workflows 在下一轮自动重启
                 del self.workflow_processes[workflow_id]
-                logger.info(f"  ✅ 工作流 ID {workflow_id} 已停止，将在视频源重启后自动恢复")
+                logger.debug(f"  ✅ 工作流 ID {workflow_id} 已停止，将在视频源重启后自动恢复")
             except Exception as e:
                 logger.error(f"  ❌ 停止工作流 ID {workflow_id} 失败: {e}")
 
@@ -335,7 +335,7 @@ class Orchestrator:
                     source.status = 'STOPPED'
                     source.decoder_pid = None
                     source.save()
-                    logger.info(f"✅ 视频源 ID {source.id} 已标记为STOPPED，将在下一轮管理循环中自动重启")
+                    logger.debug(f"✅ 视频源 ID {source.id} 已标记为STOPPED，将在下一轮管理循环中自动重启")
     
     def _start_workflow(self, workflow: Workflow):
         logger.info(f"  -> 正在启动工作流 ID {workflow.id}: {workflow.name}")
@@ -373,7 +373,7 @@ class Orchestrator:
             sys.executable, '-u', 'workflow_worker.py',
             '--workflow-id', str(workflow.id)
         ]
-        logger.info(f"启动命令: {' '.join(workflow_args)}")
+        logger.debug(f"启动命令: {' '.join(workflow_args)}")
 
         try:
             workflow_p = subprocess.Popen(
@@ -400,7 +400,7 @@ class Orchestrator:
             # 记录启动时的配置版本号
             self.workflow_config_versions[workflow.id] = workflow.config_version
 
-            logger.info(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}, 配置版本: v{workflow.config_version}")
+            logger.debug(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}, 配置版本: v{workflow.config_version}")
 
             time.sleep(0.5)
             exit_code = workflow_p.poll()

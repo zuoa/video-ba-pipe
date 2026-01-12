@@ -12,7 +12,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import resource_tracker
 from typing import Dict, List, Any, Optional
 
-from app import logger
+from app import logger as main_logger
+from app import logging
+logger = logging.getLogger("workflow_executor")
 from app.config import (
     FRAME_SAVE_PATH,
     VIDEO_SAVE_PATH,
@@ -59,18 +61,18 @@ class WorkflowExecutor:
 
         # 创建节点数据字典
         workflow_nodes = self.workflow_data.get('nodes', [])
-        logger.info(f"[WorkflowExecutor:{os.getpid()}] 工作流包含 {len(workflow_nodes)} 个节点")
+        logger.info(f"[Workflow-{self.workflow_id}] 工作流包含 {len(workflow_nodes)} 个节点")
 
         self.nodes = {}
         for n in workflow_nodes:
             try:
                 node = create_node_data(n)
                 self.nodes[n['id']] = node
-                logger.debug(f"[WorkflowExecutor:{os.getpid()}] 成功创建节点: {n['id']} (类型: {n.get('type')})")
+                logger.debug(f"[Workflow-{self.workflow_id}] 成功创建节点: {n['id']} (类型: {n.get('type')})")
             except Exception as e:
-                logger.error(f"[WorkflowExecutor:{os.getpid()}] 创建节点失败: {n['id']}, 错误: {e}")
+                logger.error(f"[Workflow-{self.workflow_id}] 创建节点失败: {n['id']}, 错误: {e}")
 
-        logger.info(f"[WorkflowExecutor:{os.getpid()}] 成功加载 {len(self.nodes)} 个节点")
+        logger.info(f"[Workflow-{self.workflow_id}] 成功加载 {len(self.nodes)} 个节点")
 
         self.connections = self.workflow_data.get('connections', [])
 
@@ -111,9 +113,9 @@ class WorkflowExecutor:
         # 只在非测试模式下初始化视频源和buffer
         if not test_mode:
             self._init_resources()
-            logger.info(f"[WorkflowExecutor] 实时模式：已初始化视频源和buffer")
+            logger.info(f"[Workflow-{self.workflow_id}] 实时模式：已初始化视频源和buffer")
         else:
-            logger.info(f"[WorkflowExecutor] 测试模式：跳过视频源和buffer初始化")
+            logger.info(f"[Workflow-{self.workflow_id}] 测试模式：跳过视频源和buffer初始化")
             # 测试模式下仍需要加载算法
             self._load_algorithms()
 
@@ -127,7 +129,7 @@ class WorkflowExecutor:
             # 只加载算法节点，函数节点有独立的处理逻辑
             if node.node_type == 'algorithm':
                 algo_id = node.data_id
-                logger.info(f"[WorkflowExecutor] 检查算法节点 {node_id}, data_id: {algo_id}")
+                logger.info(f"[Workflow-{self.workflow_id}] 检查算法节点 {node_id}, data_id: {algo_id}")
 
                 if algo_id:
                     try:
@@ -137,7 +139,7 @@ class WorkflowExecutor:
                         node_data_dict = next((n for n in self.workflow_data.get('nodes', []) if n['id'] == node_id), {})
 
                         if not node_data_dict:
-                            logger.warning(f"[WorkflowExecutor] 节点 {node_id} 在工作流数据中未找到配置")
+                            logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 在工作流数据中未找到配置")
 
                         # 获取节点配置（用户在工作流编辑器中配置的）
                         # 注意：当 config=None 时，get() 不会使用默认值，需要额外判断
@@ -158,9 +160,9 @@ class WorkflowExecutor:
                         # 存储ROI配置
                         self.algorithm_roi_configs[node_id] = roi_regions
                         if roi_regions:
-                            logger.info(f"[WorkflowExecutor] 算法节点 {node_id} 配置了 {len(roi_regions)} 个ROI热区")
+                            logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 配置了 {len(roi_regions)} 个ROI热区")
                         else:
-                            logger.info(f"[WorkflowExecutor] 算法节点 {node_id} 未配置ROI热区，将使用全画面检测")
+                            logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 未配置ROI热区，将使用全画面检测")
 
                         # 构建完整配置（算法固有配置 + 节点配置 + 运行时配置）
                         full_config = {
@@ -184,7 +186,7 @@ class WorkflowExecutor:
                         # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
                         full_config.update(node_config)
 
-                        logger.info(f"[WorkflowExecutor] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
+                        logger.info(f"[Workflow-{self.workflow_id}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
                         self.algorithms[node_id] = ScriptAlgorithm(full_config)
 
@@ -203,13 +205,13 @@ class WorkflowExecutor:
                             'runtime_config': runtime_config
                         }
 
-                        logger.info(f"[WorkflowExecutor] 成功加载算法: {algo.name}, 脚本路径: {algo.script_path}, 节点ID: {node_id}")
+                        logger.info(f"[Workflow-{self.workflow_id}] 成功加载算法: {algo.name}, 脚本路径: {algo.script_path}, 节点ID: {node_id}")
                     except Exception as e:
-                        logger.error(f"[WorkflowExecutor] 加载算法节点 {node_id} 失败: {e}")
+                        logger.error(f"[Workflow-{self.workflow_id}] 加载算法节点 {node_id} 失败: {e}")
                         import traceback
                         traceback.print_exc()
                 else:
-                    logger.warning(f"[WorkflowExecutor] 算法节点 {node_id} 没有 data_id，跳过加载")
+                    logger.warning(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 没有 data_id，跳过加载")
 
     def _get_node_runtime_config(self, node_data_dict):
         """
@@ -290,7 +292,7 @@ class WorkflowExecutor:
         self.video_source = VideoSource.get_by_id(source_id)
         buffer_name = self.video_source.buffer_name
 
-        logger.info(f"[WorkflowExecutor:{os.getpid()}] 启动 Workflow {self.workflow.name} (ID: {self.workflow_id})，处理视频源 {self.video_source.name} (ID: {self.video_source.source_code})")
+        logger.info(f"[Workflow-{self.workflow_id}] 启动 Workflow {self.workflow.name} (ID: {self.workflow_id})，处理视频源 {self.video_source.name} (ID: {self.video_source.source_code})")
 
         # 尝试连接到共享内存缓冲区，带重试机制
         max_retries = 10
@@ -311,18 +313,18 @@ class WorkflowExecutor:
             except FileNotFoundError:
                 if attempt < max_retries:
                     logger.warning(
-                        f"[WorkflowExecutor] 尝试 {attempt}/{max_retries}: "
+                        f"[Workflow-{self.workflow_id}] 尝试 {attempt}/{max_retries}: "
                         f"缓冲区 /{buffer_name} 尚未就绪，等待 {retry_interval} 秒后重试..."
                     )
                     time.sleep(retry_interval)
                 else:
                     # 最后一次尝试仍然失败
-                    logger.error(f"[WorkflowExecutor] 无法连接到共享内存缓冲区: /{buffer_name}")
-                    logger.error(f"[WorkflowExecutor] 这通常意味着视频源 {self.video_source.name} (ID={self.video_source.id}) 的 Decoder Worker 未运行或尚未创建缓冲区")
-                    logger.error(f"[WorkflowExecutor] 请检查：")
-                    logger.error(f"[WorkflowExecutor]   1. 视频源状态是否为 RUNNING（当前状态: {self.video_source.status}）")
-                    logger.error(f"[WorkflowExecutor]   2. Decoder Worker 进程是否在运行（PID: {self.video_source.decoder_pid}）")
-                    logger.error(f"[WorkflowExecutor]   3. Orchestrator 是否已正确启动该视频源")
+                    logger.error(f"[Workflow-{self.workflow_id}] 无法连接到共享内存缓冲区: /{buffer_name}")
+                    logger.error(f"[Workflow-{self.workflow_id}] 这通常意味着视频源 {self.video_source.name} (ID={self.video_source.id}) 的 Decoder Worker 未运行或尚未创建缓冲区")
+                    logger.error(f"[Workflow-{self.workflow_id}] 请检查：")
+                    logger.error(f"[Workflow-{self.workflow_id}]   1. 视频源状态是否为 RUNNING（当前状态: {self.video_source.status}）")
+                    logger.error(f"[Workflow-{self.workflow_id}]   2. Decoder Worker 进程是否在运行（PID: {self.video_source.decoder_pid}）")
+                    logger.error(f"[Workflow-{self.workflow_id}]   3. Orchestrator 是否已正确启动该视频源")
                     raise
 
         shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
@@ -404,7 +406,7 @@ class WorkflowExecutor:
 
             if not current_level:
                 # 如果没有入度为0的节点，说明存在循环依赖
-                logger.warning(f"[WorkflowWorker] 检测到循环依赖，剩余节点: {remaining_nodes}")
+                logger.warning(f"[Workflow-{self.workflow_id}] 检测到循环依赖，剩余节点: {remaining_nodes}")
                 # 强制添加剩余节点到当前层级
                 current_level = list(remaining_nodes)
 
@@ -412,7 +414,7 @@ class WorkflowExecutor:
             current_level.sort(key=lambda nid: self._get_node_type_priority(nid))
 
             levels.append(current_level)
-            logger.info(f"[WorkflowWorker] 拓扑层级 {len(levels)-1}: {[f'{nid}({self.nodes[nid].node_type})' for nid in current_level]}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 拓扑层级 {len(levels)-1}: {[f'{nid}({self.nodes[nid].node_type})' for nid in current_level]}")
 
             # 更新入度：移除当前层级的节点
             for node_id in current_level:
@@ -514,26 +516,26 @@ class WorkflowExecutor:
     def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None, upstream_results=None):
         algo = self.algorithms.get(node_id)
         if not algo:
-            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不在 self.algorithms 中，已加载的算法节点: {list(self.algorithms.keys())}")
+            logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不在 self.algorithms 中，已加载的算法节点: {list(self.algorithms.keys())}")
             return None
 
         try:
             effective_roi_regions = roi_regions if roi_regions is not None else self.algorithm_roi_configs.get(node_id, [])
 
             if roi_regions is not None:
-                logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用context中的ROI配置，包含 {len(roi_regions)} 个区域")
+                logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 使用context中的ROI配置，包含 {len(roi_regions)} 个区域")
                 # 打印详细的ROI配置
                 for idx, roi in enumerate(roi_regions):
                     polygon = roi.get('polygon', [])
                     if polygon and len(polygon) > 0:
-                        logger.info(f"[WorkflowWorker] 算法节点 {node_id} ROI区域{idx + 1}: 顶点数={len(polygon)}, 数据={polygon[:2]}...")
+                        logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} ROI区域{idx + 1}: 顶点数={len(polygon)}, 数据={polygon[:2]}...")
             elif effective_roi_regions:
-                logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用算法自带的ROI配置，包含 {len(effective_roi_regions)} 个区域")
+                logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 使用算法自带的ROI配置，包含 {len(effective_roi_regions)} 个区域")
 
-            logger.info(f"[WorkflowWorker] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
-            logger.info(f"[WorkflowWorker] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
             result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
-            logger.info(f"[WorkflowWorker] 节点 {node_id} algo.process 返回: {result}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
             has_detection = bool(result and result.get("detections"))
             roi_mask = result.get('roi_mask')
 
@@ -541,7 +543,7 @@ class WorkflowExecutor:
             algorithm_name = self.algorithm_datamap[node_id].get('name')
             label_color = self.algorithm_datamap[node_id].get('label_color', '#FF0000')
 
-            logger.info(f"[WorkflowWorker] 算法节点 {node_id} 处理完成，检测到目标: {has_detection}")
+            logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 处理完成，检测到目标: {has_detection}")
 
             # 返回结果，包含节点 ID 和 label_color（用于下游 Alert 节点）
             return {
@@ -556,7 +558,7 @@ class WorkflowExecutor:
             }
 
         except Exception as exc:
-            logger.error(f"[WorkflowWorker] 错误：算法节点 {node_id} 在处理过程中发生异常: {exc}")
+            logger.error(f"[Workflow-{self.workflow_id}] 错误：算法节点 {node_id} 在处理过程中发生异常: {exc}")
             logger.exception(exc, exc_info=True)
             return None
     
@@ -580,34 +582,34 @@ class WorkflowExecutor:
             bool: 条件是否满足
         """
         if not condition:
-            logger.debug(f"[WorkflowWorker] 条件判断: 无条件，通过")
+            logger.debug(f"[Workflow-{self.workflow_id}] 条件判断: 无条件，通过")
             return True
 
         # 向后兼容：处理旧的字符串类型条件
         if isinstance(condition, str):
             has_detection = context.get('has_detection', False)
-            logger.debug(f"[WorkflowWorker] 条件判断(字符串): condition={condition}, has_detection={has_detection}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(字符串): condition={condition}, has_detection={has_detection}")
 
             # 条件节点的分支
             if condition == 'true' or condition == 'yes':
                 result = has_detection
-                logger.info(f"[WorkflowWorker] 条件判断(条件节点true): has_detection={has_detection}, result={result}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(条件节点true): has_detection={has_detection}, result={result}")
                 return result
             if condition == 'false' or condition == 'no':
                 result = not has_detection
-                logger.info(f"[WorkflowWorker] 条件判断(条件节点false): has_detection={has_detection}, result={result}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(条件节点false): has_detection={has_detection}, result={result}")
                 return result
             # 旧的条件格式（向后兼容）
             if condition == 'detected':
                 result = has_detection
-                logger.info(f"[WorkflowWorker] 条件判断(旧格式detected): has_detection={has_detection}, result={result}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(旧格式detected): has_detection={has_detection}, result={result}")
                 return result
             if condition == 'not_detected':
                 result = not has_detection
-                logger.info(f"[WorkflowWorker] 条件判断(旧格式not_detected): has_detection={has_detection}, result={result}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(旧格式not_detected): has_detection={has_detection}, result={result}")
                 return result
             # 未知条件，默认通过
-            logger.warning(f"[WorkflowWorker] 条件判断: 未知条件 '{condition}'，默认通过")
+            logger.warning(f"[Workflow-{self.workflow_id}] 条件判断: 未知条件 '{condition}'，默认通过")
             return True
 
         # 新逻辑：条件节点判断
@@ -624,8 +626,8 @@ class WorkflowExecutor:
                 target_count = node.target_count
                 comparison_type = node.comparison_type
 
-                logger.info(
-                    f"[WorkflowWorker] 条件判断(节点): node_id={node_id}, "
+                logger.debug(
+                    f"[Workflow-{self.workflow_id}] 条件判断(节点): node_id={node_id}, "
                     f"detection_count={detection_count}, target_count={target_count}, "
                     f"comparison_type={comparison_type}"
                 )
@@ -633,17 +635,17 @@ class WorkflowExecutor:
                 if comparison_type == "==":
                     # 精确匹配：数量必须等于阈值
                     passed = detection_count == target_count
-                    logger.info(f"[WorkflowWorker] 条件判断结果: {detection_count} == {target_count} = {passed}")
+                    logger.debug(f"[Workflow-{self.workflow_id}] 条件判断结果: {detection_count} == {target_count} = {passed}")
                     return passed
                 elif comparison_type == ">=":
                     # 大于等于：数量至少达到阈值
                     passed = detection_count >= target_count
-                    logger.info(f"[WorkflowWorker] 条件判断结果: {detection_count} >= {target_count} = {passed}")
+                    logger.debug(f"[Workflow-{self.workflow_id}] 条件判断结果: {detection_count} >= {target_count} = {passed}")
                     return passed
 
         # 默认：根据是否有检测结果判断
         passed = detection_count > 0
-        logger.info(f"[WorkflowWorker] 条件判断(默认): detection_count={detection_count}, passed={passed}")
+        logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(默认): detection_count={detection_count}, passed={passed}")
         return passed
     
     def _handle_source_node(self, node_id, context):
@@ -676,7 +678,7 @@ class WorkflowExecutor:
 
             # 如果上游节点是ROI节点，直接返回其配置
             if isinstance(upstream_node, RoiDrawNodeData) and upstream_node.roi_regions:
-                logger.info(f"[WorkflowWorker] 节点 {node_id} 找到上游ROI节点 {upstream_id}，包含 {len(upstream_node.roi_regions)} 个区域")
+                logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 找到上游ROI节点 {upstream_id}，包含 {len(upstream_node.roi_regions)} 个区域")
                 return upstream_node.roi_regions
 
             # 递归检查上游的上游（深度优先，找到第一个ROI就停止）
@@ -701,12 +703,12 @@ class WorkflowExecutor:
         upstream_roi = self._find_upstream_roi(node_id)
         if upstream_roi is not None:
             roi_regions = upstream_roi
-            logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用上游ROI配置，包含 {len(roi_regions)} 个区域")
+            logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 使用上游ROI配置，包含 {len(roi_regions)} 个区域")
         else:
             # 向后兼容：使用全局context中的ROI配置
             roi_regions = context.get('roi_regions')
             if roi_regions:
-                logger.info(f"[WorkflowWorker] 算法节点 {node_id} 使用全局context中的ROI配置，包含 {len(roi_regions)} 个区域")
+                logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 使用全局context中的ROI配置，包含 {len(roi_regions)} 个区域")
 
         upstream_results = self._get_upstream_results(node_id)
 
@@ -723,13 +725,13 @@ class WorkflowExecutor:
                         f"检测到 {detection_count} 个目标",
                         metadata={'detection_count': detection_count}
                     )
-                    logger.info(f"[WorkflowWorker] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
+                    logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
             return result
         except Exception as e:
             if log_collector:
                 log_collector.add_error(node_id, f"算法执行失败: {str(e)}")
-                logger.info(f"[WorkflowWorker] 算法节点 {node_id} 已记录错误日志")
-            logger.error(f"[WorkflowWorker] 算法节点 {node_id} 执行异常: {e}")
+                logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录错误日志")
+            logger.error(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 执行异常: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -786,8 +788,8 @@ class WorkflowExecutor:
                 }
             )
 
-        logger.info(
-            f"[WorkflowWorker] 条件节点 {node_id}: "
+        logger.debug(
+            f"[Workflow-{self.workflow_id}] 条件节点 {node_id}: "
             f"{detection_count} {comparison_type} {target_count} = {condition_passed}"
         )
 
@@ -806,7 +808,7 @@ class WorkflowExecutor:
         if frame is None:
             if log_collector:
                 log_collector.add_warning(node_id, "输入帧为空")
-            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 输入帧为空")
+            logger.warning(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 输入帧为空")
             return None
 
         # 获取节点配置（从 workflow_data 中读取完整配置）
@@ -814,24 +816,24 @@ class WorkflowExecutor:
         if not node_data_dict:
             if log_collector:
                 log_collector.add_warning(node_id, "在工作流数据中未找到")
-            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 在工作流数据中未找到")
+            logger.warning(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 在工作流数据中未找到")
             return None
 
         node_config = node_data_dict.get('config', {})
         function_name = node_config.get('function_name', 'area_ratio')
 
-        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 原始配置: {node_config}")
-        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 开始处理，函数类型: {function_name}")
+        logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 原始配置: {node_config}")
+        logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 开始处理，函数类型: {function_name}")
 
         # 获取上游结果
         upstream_results = self._get_upstream_results(node_id)
         if not upstream_results:
             if log_collector:
                 log_collector.add_warning(node_id, "没有上游结果")
-            logger.warning(f"[WorkflowWorker] 函数节点 {node_id} 没有上游结果")
+            logger.warning(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 没有上游结果")
             return None
 
-        logger.info(f"[WorkflowWorker] 函数节点 {node_id} 上游节点: {list(upstream_results.keys())}")
+        logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 上游节点: {list(upstream_results.keys())}")
 
         # 导入内置函数模块
         try:
@@ -840,7 +842,7 @@ class WorkflowExecutor:
             if function_name not in BUILTIN_FUNCTIONS:
                 if log_collector:
                     log_collector.add_error(node_id, f"未知函数: {function_name}")
-                logger.error(f"[WorkflowWorker] 未知函数: {function_name}")
+                logger.error(f"[Workflow-{self.workflow_id}] 未知函数: {function_name}")
                 return None
 
             # 准备输入数据
@@ -849,7 +851,7 @@ class WorkflowExecutor:
             result_a = upstream_results.get(node_a_id, {})
             detections_a = result_a.get('detections', [])
 
-            logger.info(f"[WorkflowWorker] 函数节点 {node_id} 从节点 {node_a_id} 获取 {len(detections_a)} 个检测结果")
+            logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 从节点 {node_a_id} 获取 {len(detections_a)} 个检测结果")
 
             # 判断是单输入还是双输入函数
             single_input_functions = ['height_ratio_frame', 'width_ratio_frame', 'area_ratio_frame', 'size_absolute']
@@ -870,7 +872,7 @@ class WorkflowExecutor:
 
             if is_single_input:
                 # 单输入函数
-                logger.info(f"[WorkflowWorker] 调用单输入函数 {function_name}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 调用单输入函数 {function_name}")
                 results = func(detections_a, [], function_config)
 
                 # 收集匹配的检测框
@@ -882,14 +884,14 @@ class WorkflowExecutor:
                 if len(upstream_node_ids) < 2:
                     if log_collector:
                         log_collector.add_warning(node_id, f"双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
-                    logger.warning(f"[WorkflowWorker] 双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
+                    logger.warning(f"[Workflow-{self.workflow_id}] 双输入函数 {function_name} 需要两个上游节点，但只有 {len(upstream_node_ids)} 个")
                     return None
 
                 node_b_id = upstream_node_ids[1]
                 result_b = upstream_results.get(node_b_id, {})
                 detections_b = result_b.get('detections', [])
 
-                logger.info(f"[WorkflowWorker] 调用双输入函数 {function_name}，节点A: {node_a_id}({len(detections_a)}个), 节点B: {node_b_id}({len(detections_b)}个)")
+                logger.debug(f"[Workflow-{self.workflow_id}] 调用双输入函数 {function_name}，节点A: {node_a_id}({len(detections_a)}个), 节点B: {node_b_id}({len(detections_b)}个)")
 
                 results = func(detections_a, detections_b, function_config)
 
@@ -899,7 +901,7 @@ class WorkflowExecutor:
                     all_detections.append(r['object_a'])
                     all_detections.append(r['object_b'])
 
-            logger.info(f"[WorkflowWorker] 函数节点 {node_id} 处理完成，匹配数: {len(results)}, 返回检测数: {len(all_detections)}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 处理完成，匹配数: {len(results)}, 返回检测数: {len(all_detections)}")
 
             # 记录函数执行日志
             if log_collector:
@@ -908,7 +910,7 @@ class WorkflowExecutor:
                     f"函数 {function_name} 处理完成，匹配数: {len(results)}",
                     metadata={'function_name': function_name, 'matched_count': len(results)}
                 )
-                logger.info(f"[WorkflowWorker] 函数节点 {node_id} 已记录日志: 函数 {function_name} 处理完成，匹配数: {len(results)}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 已记录日志: 函数 {function_name} 处理完成，匹配数: {len(results)}")
 
             # 返回标准格式的结果
             result = {
@@ -935,7 +937,7 @@ class WorkflowExecutor:
         except Exception as exc:
             if log_collector:
                 log_collector.add_error(node_id, f"处理异常: {str(exc)}")
-            logger.error(f"[WorkflowWorker] 函数节点 {node_id} 处理异常: {exc}")
+            logger.error(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 处理异常: {exc}")
             import traceback
             traceback.print_exc()
             return None
@@ -976,17 +978,17 @@ class WorkflowExecutor:
     def _handle_roi_draw_node(self, node_id, context):
         frame = context.get('frame')
         if frame is None:
-            logger.warning(f"[WorkflowWorker] 热区绘制节点 {node_id} 输入帧为空")
+            logger.warning(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 输入帧为空")
             return None
 
         node = self.nodes.get(node_id)
         if not isinstance(node, RoiDrawNodeData):
-            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不是RoiDrawNodeData类型")
+            logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是RoiDrawNodeData类型")
             return context
 
         roi_regions = node.roi_regions
         if not roi_regions or len(roi_regions) == 0:
-            logger.warning(f"[WorkflowWorker] 热区绘制节点 {node_id} 未配置ROI区域")
+            logger.warning(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 未配置ROI区域")
             return context
 
         # 不再写入全局context，避免污染同一层级的其他节点
@@ -1006,8 +1008,8 @@ class WorkflowExecutor:
                 if isinstance(vertex_data[0], dict):
                     # 相对坐标格式 [{"x": 0.1, "y": 0.2}, ...]
                     vertex_str = ", ".join([f"({p.get('x', 0):.3f}, {p.get('y', 0):.3f})" for p in vertex_data])
-                    logger.info(
-                        f"[WorkflowWorker] 热区绘制节点 {node_id} 区域{idx + 1}: "
+                    logger.debug(
+                        f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 区域{idx + 1}: "
                         f"名称={roi.get('name', '未命名')}, "
                         f"模式={roi.get('mode', 'N/A')}, "
                         f"顶点数={len(vertex_data)}, "
@@ -1016,18 +1018,18 @@ class WorkflowExecutor:
                 else:
                     # 绝对坐标格式 [[x1, y1], [x2, y2], ...]
                     vertex_str = ", ".join([f"({p[0]}, {p[1]})" for p in vertex_data])
-                    logger.info(
-                        f"[WorkflowWorker] 热区绘制节点 {node_id} 区域{idx + 1}: "
+                    logger.debug(
+                        f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 区域{idx + 1}: "
                         f"名称={roi.get('name', '未命名')}, "
                         f"模式={roi.get('mode', 'N/A')}, "
                         f"顶点数={len(vertex_data)}, "
                         f"顶点坐标(绝对): [{vertex_str}]"
                     )
             else:
-                logger.warning(f"[WorkflowWorker] 热区绘制节点 {node_id} 区域{idx + 1}: 没有顶点数据")
+                logger.warning(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 区域{idx + 1}: 没有顶点数据")
 
-        logger.info(f"[WorkflowWorker] 热区绘制节点 {node_id} 共配置了 {len(roi_regions)} 个ROI区域")
-        logger.info(f"[WorkflowWorker] 热区绘制节点 {node_id} 完整ROI数据: {roi_regions}")
+        logger.debug(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 共配置了 {len(roi_regions)} 个ROI区域")
+        logger.debug(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 完整ROI数据: {roi_regions}")
 
         return context
     
@@ -1039,12 +1041,12 @@ class WorkflowExecutor:
         """
         node = self.nodes.get(node_id)
         if not node:
-            logger.warning(f"[WorkflowExecutor] 节点 {node_id} 不在 self.nodes 中，可用节点: {list(self.nodes.keys())}")
+            logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不在 self.nodes 中，可用节点: {list(self.nodes.keys())}")
             return None
 
         if not self._should_execute_node(node_id):
             interval = self._get_node_interval(node_id)
-            logger.debug(f"[WorkflowExecutor] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
             return None
 
         # ========== 追踪执行状态 ==========
@@ -1060,7 +1062,7 @@ class WorkflowExecutor:
             log_collector = context.get('log_collector')
             if log_collector:
                 log_collector.add_warning(node_id, f"未知节点类型: {node_type}")
-            logger.warning(f"[WorkflowExecutor] 未知节点类型: {node_type} (节点 {node_id})")
+            logger.warning(f"[Workflow-{self.workflow_id}] 未知节点类型: {node_type} (节点 {node_id})")
 
             # 记录失败状态
             execution_success = False
@@ -1074,7 +1076,7 @@ class WorkflowExecutor:
             }
             return context
 
-        logger.info(f"[WorkflowExecutor] 执行节点 {node_id} (类型: {node_type})")
+        logger.info(f"[Workflow-{self.workflow_id}] 执行节点 {node_id} (类型: {node_type})")
 
         try:
             result = handler(node_id, context)
@@ -1093,7 +1095,7 @@ class WorkflowExecutor:
         except Exception as e:
             execution_success = False
             execution_error = str(e)
-            logger.error(f"[WorkflowExecutor] 节点 {node_id} 执行异常: {e}")
+            logger.error(f"[Workflow-{self.workflow_id}] 节点 {node_id} 执行异常: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1149,10 +1151,10 @@ class WorkflowExecutor:
 
             # 传递更新后的 context 进行条件判断
             if not self._evaluate_condition(condition, context):
-                logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件不满足: {condition}")
+                logger.debug(f"[Workflow-{self.workflow_id}] {node_id} -> {next_id} 条件不满足: {condition}")
                 continue
 
-            logger.info(f"[WorkflowWorker] {node_id} -> {next_id} 条件满足，继续执行")
+            logger.debug(f"[Workflow-{self.workflow_id}] {node_id} -> {next_id} 条件满足，继续执行")
             # 继续执行下游节点
             self._execute_branch(next_id, context)
 
@@ -1170,7 +1172,7 @@ class WorkflowExecutor:
 
         if can_parallel:
             # 并行执行当前层级的节点
-            logger.info(f"[WorkflowWorker] 并行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 并行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             future_to_node = {
                 executor.submit(self._execute_level_node, nid, context): nid
                 for nid in level_nodes
@@ -1181,10 +1183,10 @@ class WorkflowExecutor:
                 try:
                     future.result()
                 except Exception as exc:
-                    logger.error(f"[WorkflowWorker] 节点 {node_id} 执行异常: {exc}", exc_info=True)
+                    logger.error(f"[Workflow-{self.workflow_id}] 节点 {node_id} 执行异常: {exc}", exc_info=True)
         else:
             # 串行执行当前层级的节点
-            logger.info(f"[WorkflowWorker] 串行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 串行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             for node_id in level_nodes:
                 self._execute_level_node(node_id, context)
 
@@ -1208,7 +1210,7 @@ class WorkflowExecutor:
             # 执行函数节点
             result = self._execute_single_node(node_id, context)
             if result is None:
-                logger.debug(f"[WorkflowWorker] 函数节点 {node_id} 返回None")
+                logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 返回None")
                 return
 
             # 函数节点执行完后，继续执行下游节点（通常是 alert）
@@ -1233,7 +1235,7 @@ class WorkflowExecutor:
                 next_id = next_info['target']
                 condition = next_info.get('condition')
                 if self._evaluate_condition(condition, context):
-                    logger.info(f"[WorkflowWorker] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
+                    logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
                     # 传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
                     self._execute_branch(next_id, context)
         elif isinstance(node, AlgorithmNodeData):
@@ -1248,10 +1250,10 @@ class WorkflowExecutor:
         按拓扑层级执行所有节点
         """
         levels = self._build_topology_levels()
-        logger.info(f"[WorkflowWorker] 共有 {len(levels)} 个拓扑层级，开始按层级执行...")
+        logger.debug(f"[Workflow-{self.workflow_id}] 共有 {len(levels)} 个拓扑层级，开始按层级执行...")
 
         for level_idx, level_nodes in enumerate(levels):
-            logger.info(f"[WorkflowWorker] 执行层级 {level_idx + 1}/{len(levels)}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 执行层级 {level_idx + 1}/{len(levels)}")
 
             # 特殊处理第一层（source节点）
             if level_idx == 0:
@@ -1306,13 +1308,13 @@ class WorkflowExecutor:
                     'label_color': cached_data.get('label_color', '#FF0000'),
                     'upstream_node_id': cached_data.get('upstream_node_id', upstream_node_id)
                 })
-                logger.info(f"[WorkflowWorker] Alert 节点 {node_id} 从缓存获取上游节点 {upstream_node_id} 的结果")
+                logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 从缓存获取上游节点 {upstream_node_id} 的结果")
 
         # 再次检查必需数据
         if 'frame' not in context or 'result' not in context:
             if log_collector:
                 log_collector.add_warning(node_id, "缺少必需数据：上游节点未产生结果")
-            logger.warning(f"[WorkflowWorker] 输出节点 {node_id} 缺少必需数据：上游节点未执行或未产生结果")
+            logger.warning(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 缺少必需数据：上游节点未执行或未产生结果")
             return
 
         # 获取 Alert 节点配置
@@ -1320,7 +1322,7 @@ class WorkflowExecutor:
         if not isinstance(alert_node, AlertNodeData):
             if log_collector:
                 log_collector.add_warning(node_id, "不是 Alert 节点")
-            logger.warning(f"[WorkflowWorker] 节点 {node_id} 不是 Alert 节点")
+            logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是 Alert 节点")
             return
 
         # 从 context 获取检测数据
@@ -1332,9 +1334,9 @@ class WorkflowExecutor:
         label_color = context.get('label_color', '#FF0000')  # 默认红色
 
         logger.debug(
-            f"[WorkflowWorker] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={len(result.get('detections', []))}")
+            f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={len(result.get('detections', []))}")
         if not has_detection:
-            logger.debug(f"[WorkflowWorker] Alert 节点 {node_id} 未检测到目标，跳过告警处理")
+            logger.debug(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 未检测到目标，跳过告警处理")
             return
 
         # 从 Alert 节点配置获取告警信息
@@ -1346,13 +1348,13 @@ class WorkflowExecutor:
             # 获取消息格式类型（默认 'detailed'）
             message_format = alert_node.message_format or 'detailed'
 
-            logger.info(f"[WorkflowWorker] Alert节点 {node_id} 开始构建告警消息，格式: {message_format}")
-            logger.info(f"[WorkflowWorker] 日志收集器 ID: {id(log_collector)}")
-            logger.info(f"[WorkflowWorker] 日志收集器包含 {len(log_collector.logs)} 条日志")
+            logger.debug(f"[Workflow-{self.workflow_id}] Alert节点 {node_id} 开始构建告警消息，格式: {message_format}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 日志收集器 ID: {id(log_collector)}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 日志收集器包含 {len(log_collector.logs)} 条日志")
 
             # 打印所有日志
             for idx, log in enumerate(log_collector.logs):
-                logger.info(f"[WorkflowWorker] 日志 {idx + 1}: [{log['node_id']}] {log['content']}")
+                logger.debug(f"[Workflow-{self.workflow_id}] 日志 {idx + 1}: [{log['node_id']}] {log['content']}")
 
             # 构建执行详情消息
             execution_details = log_collector.build_alert_message(
@@ -1360,7 +1362,7 @@ class WorkflowExecutor:
                 include_metadata=False
             )
 
-            logger.info(f"[WorkflowWorker] 执行详情: {execution_details}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 执行详情: {execution_details}")
 
             # 组合用户自定义消息和执行详情
             custom_message = alert_node.alert_message or ""
@@ -1371,11 +1373,11 @@ class WorkflowExecutor:
             else:
                 alert_message = custom_message
 
-            logger.info(f"[WorkflowWorker] 最终告警消息: {alert_message}")
+            logger.debug(f"[Workflow-{self.workflow_id}] 最终告警消息: {alert_message}")
         else:
             # 如果没有日志收集器，使用原始消息
             alert_message = alert_node.alert_message or ""
-            logger.warning(f"[WorkflowWorker] Alert节点 {node_id} 没有日志收集器")
+            logger.warning(f"[Workflow-{self.workflow_id}] Alert节点 {node_id} 没有日志收集器")
 
         # 加载触发条件配置（窗口检测）
         trigger_condition = alert_node.trigger_condition
@@ -1387,7 +1389,7 @@ class WorkflowExecutor:
             )
         else:
             # 未配置触发条件，使用默认配置（不进行窗口检测，直接通过）
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置触发条件，所有检测都将触发")
+            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置触发条件，所有检测都将触发")
             self.window_detector.load_trigger_condition(
                 source_id=self.video_source.id,
                 node_id=node_id,
@@ -1404,7 +1406,7 @@ class WorkflowExecutor:
             )
         else:
             # 未配置抑制，不启用抑制
-            logger.info(f"[WorkflowWorker] 告警节点 {node_id} 未配置抑制，告警不会被抑制")
+            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置抑制，告警不会被抑制")
             self.window_detector.load_suppression(
                 source_id=self.video_source.id,
                 node_id=node_id,
@@ -1439,8 +1441,8 @@ class WorkflowExecutor:
 
         if not trigger_passed:
             if trigger_stats:
-                logger.info(
-                    f"[WorkflowWorker] 输出节点 {node_id} 不满足触发条件，跳过告警 "
+                logger.debug(
+                    f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 不满足触发条件，跳过告警 "
                     f"(检测: {trigger_stats['detection_count']}/{trigger_stats['total_count']} 帧, "
                     f"比例: {trigger_stats['detection_ratio']:.2%}, "
                     f"连续: {trigger_stats['max_consecutive']} 次)"
@@ -1449,7 +1451,7 @@ class WorkflowExecutor:
 
         if trigger_stats:
             logger.info(
-                f"[WorkflowWorker] 输出节点 {node_id} 满足触发条件 "
+                f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 满足触发条件 "
                 f"(检测: {trigger_stats['detection_count']}/{trigger_stats['total_count']} 帧, "
                 f"比例: {trigger_stats['detection_ratio']:.2%}, "
                 f"连续: {trigger_stats['max_consecutive']} 次)"
@@ -1465,8 +1467,8 @@ class WorkflowExecutor:
         if not not_suppressed:
             # 在抑制期内，跳过告警
             if suppression_stats:
-                logger.info(
-                    f"[WorkflowWorker] 输出节点 {node_id} 在抑制期内，跳过告警 "
+                logger.debug(
+                    f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 在抑制期内，跳过告警 "
                     f"(剩余冷却时间: {suppression_stats['cooldown_remaining']:.2f}秒)"
                 )
             return
@@ -1485,7 +1487,7 @@ class WorkflowExecutor:
             current_time=trigger_time
         )
 
-        logger.info(f"[WorkflowWorker] 窗口内检测到 {len(detection_records)} 次目标")
+        logger.debug(f"[Workflow-{self.workflow_id}] 窗口内检测到 {len(detection_records)} 次目标")
 
         # 处理检测图片
         detection_images = []
@@ -1514,12 +1516,12 @@ class WorkflowExecutor:
                 upstream_roi = self._find_upstream_roi(upstream_node_id)
                 if upstream_roi is not None:
                     effective_roi_regions = upstream_roi
-                    logger.info(f"[WorkflowWorker] Alert可视化：使用上游ROI节点配置，包含 {len(effective_roi_regions)} 个区域")
+                    logger.info(f"[Workflow-{self.workflow_id}] Alert可视化：使用上游ROI节点配置，包含 {len(effective_roi_regions)} 个区域")
                 else:
                     # 回退到算法节点自身的ROI配置
                     effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
                     if effective_roi_regions:
-                        logger.info(f"[WorkflowWorker] Alert可视化：使用算法节点配置，包含 {len(effective_roi_regions)} 个区域")
+                        logger.info(f"[Workflow-{self.workflow_id}] Alert可视化：使用算法节点配置，包含 {len(effective_roi_regions)} 个区域")
 
             # 如果有上游算法节点，使用其 visualize 方法
             if upstream_node_id and upstream_node_id in self.algorithms:
@@ -1549,7 +1551,7 @@ class WorkflowExecutor:
         main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
 
         # 创建告警记录
-        logger.info(f"[WorkflowWorker] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
+        logger.info(f"[Workflow-{self.workflow_id}] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
         alert = Alert.create(
             video_source=self.video_source,
             workflow=self.workflow,
@@ -1564,9 +1566,9 @@ class WorkflowExecutor:
             window_stats=json.dumps(trigger_stats) if trigger_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None
         )
-        logger.info(f"[WorkflowWorker] Alert 创建成功，ID: {alert.id}")
-        logger.info(f"[WorkflowWorker] 数据库中的 alert_message: {alert.alert_message[:200] if alert.alert_message else 'None'}...")
-        logger.info(f"[WorkflowWorker] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
+        logger.info(f"[Workflow-{self.workflow_id}] Alert 创建成功，ID: {alert.id}")
+        logger.info(f"[Workflow-{self.workflow_id}] 数据库中的 alert_message: {alert.alert_message[:200] if alert.alert_message else 'None'}...")
+        logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
 
         # 启动视频录制
         if self.video_recorder:
@@ -1580,19 +1582,19 @@ class WorkflowExecutor:
                 )
                 alert.alert_video = video_path
                 alert.save()
-                logger.info(f"[WorkflowWorker] 已启动视频录制任务: {video_path}")
+                logger.info(f"[Workflow-{self.workflow_id}] 已启动视频录制任务: {video_path}")
             except Exception as rec_err:
-                logger.error(f"[WorkflowWorker] 启动视频录制失败: {rec_err}", exc_info=True)
+                logger.error(f"[Workflow-{self.workflow_id}] 启动视频录制失败: {rec_err}", exc_info=True)
 
         # 发布到 RabbitMQ
         try:
             alert_message = format_alert_message(alert)
             if publish_alert_to_rabbitmq(alert_message):
-                logger.info(f"[WorkflowWorker] 预警消息已发布到RabbitMQ: {alert.id}")
+                logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到RabbitMQ: {alert.id}")
             else:
-                logger.warning(f"[WorkflowWorker] 预警消息发布到RabbitMQ失败: {alert.id}")
+                logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到RabbitMQ失败: {alert.id}")
         except Exception as e:
-            logger.error(f"[WorkflowWorker] 发布预警消息到RabbitMQ时发生错误: {e}")
+            logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到RabbitMQ时发生错误: {e}")
 
     def test_execute(self, test_frame: np.ndarray, test_image_bgr: np.ndarray = None):
         """
@@ -1612,7 +1614,7 @@ class WorkflowExecutor:
         Returns:
             测试结果字典，包含每个节点的执行结果
         """
-        logger.info(f"[WorkflowTest] 开始测试工作流 {self.workflow_id}")
+        logger.info(f"[Workflow-{self.workflow_id}] 开始测试工作流 {self.workflow_id}")
 
         # 使用BGR格式，如果没有提供则转换
         if test_image_bgr is None:
@@ -1642,7 +1644,7 @@ class WorkflowExecutor:
         # ========== 收集测试结果 ==========
         final_result = self._collect_execution_results(context)
 
-        logger.info(f"[WorkflowTest] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
+        logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
     def run(self):
@@ -1652,10 +1654,10 @@ class WorkflowExecutor:
         从 ring buffer 持续读取帧并执行工作流
         """
         if not self.buffer:
-            logger.error(f"[WorkflowExecutor] 未初始化 buffer，无法运行")
+            logger.error(f"[Workflow-{self.workflow_id}] 未初始化 buffer，无法运行")
             return
 
-        logger.info(f"[WorkflowExecutor:{os.getpid()}] 开始实时运行工作流 {self.workflow_id}")
+        logger.info(f"[Workflow-{self.workflow_id}] 开始实时运行工作流 {self.workflow_id}")
 
         # 创建日志收集器（每帧重新创建）
         import cv2
@@ -1712,25 +1714,25 @@ class WorkflowExecutor:
 
                 # 定期输出日志
                 if frame_count % 100 == 0:
-                    logger.info(f"[WorkflowExecutor] 已处理 {frame_count} 帧")
+                    logger.info(f"[Workflow-{self.workflow_id}] 已处理 {frame_count} 帧")
 
             except KeyboardInterrupt:
-                logger.info(f"[WorkflowExecutor] 收到中断信号，停止运行")
+                logger.info(f"[Workflow-{self.workflow_id}] 收到中断信号，停止运行")
                 break
             except Exception as e:
                 error_count += 1
-                logger.error(f"[WorkflowExecutor] 处理帧时发生异常 (连续错误: {error_count}/{max_consecutive_errors}): {e}")
+                logger.error(f"[Workflow-{self.workflow_id}] 处理帧时发生异常 (连续错误: {error_count}/{max_consecutive_errors}): {e}")
                 import traceback
                 traceback.print_exc()
 
                 if error_count >= max_consecutive_errors:
-                    logger.error(f"[WorkflowExecutor] 连续错误过多，停止运行")
+                    logger.error(f"[Workflow-{self.workflow_id}] 连续错误过多，停止运行")
                     break
 
                 # 短暂休眠后继续
                 time.sleep(0.1)
 
-        logger.info(f"[WorkflowExecutor] 工作流 {self.workflow_id} 运行结束，共处理 {frame_count} 帧")
+        logger.info(f"[Workflow-{self.workflow_id}] 工作流 {self.workflow_id} 运行结束，共处理 {frame_count} 帧")
 
     def _collect_execution_results(self, context: dict) -> dict:
         """
@@ -1964,7 +1966,7 @@ class WorkflowExecutor:
         if 'frame' not in context or 'result' not in context:
             if log_collector:
                 log_collector.add_warning(node_id, "缺少必需数据：上游节点未产生结果")
-            logger.warning(f"[WorkflowTest] 输出节点 {node_id} 缺少必需数据")
+            logger.warning(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 缺少必需数据")
             return
 
         # 获取 Alert 节点配置
@@ -1979,7 +1981,7 @@ class WorkflowExecutor:
         result = context['result']
         detection_count = len(result.get('detections', []))
 
-        logger.info(f"[WorkflowTest] Alert 节点 {node_id} 测试结果: has_detection={has_detection}, 检测数={detection_count}")
+        logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 测试结果: has_detection={has_detection}, 检测数={detection_count}")
 
         # 记录测试日志
         if log_collector:
@@ -2016,4 +2018,4 @@ class WorkflowExecutor:
                 }
             )
 
-            logger.info(f"[WorkflowTest] Alert 节点 {node_id} 测试消息: {alert_message[:200] if alert_message else 'None'}...")
+            logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 测试消息: {alert_message[:200] if alert_message else 'None'}...")

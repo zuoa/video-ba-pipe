@@ -38,6 +38,24 @@ LOG_CONF = {
             'backupCount': 1,
             'filename': '/data/logs/debug.log' if os.path.exists('/.dockerenv') else 'data/logs/debug.log',
             'formatter': 'verbose'
+        },
+        'workflow_file': {
+            'level': logging.INFO,
+            'class': 'app.core.ajlog.SafeRotatingFileHandler',
+            'when': 'W0',
+            'interval': 1,
+            'backupCount': 1,
+            'filename': '/data/logs/workflow.log' if os.path.exists('/.dockerenv') else 'data/logs/workflow.log',
+            'formatter': 'verbose'
+        },
+        'workflow_debug': {
+            'level': logging.DEBUG,
+            'class': 'app.core.ajlog.SafeRotatingFileHandler',
+            'when': 'W0',
+            'interval': 1,
+            'backupCount': 1,
+            'filename': '/data/logs/workflow_debug.log' if os.path.exists('/.dockerenv') else 'data/logs/workflow_debug.log',
+            'formatter': 'verbose'
         }
     },
     'root': {
@@ -49,6 +67,11 @@ LOG_CONF = {
             'handlers': ['file', 'debug'],
             'level': logging.DEBUG,
         },
+        'workflow_executor': {
+            'handlers': ['workflow_file', 'workflow_debug', 'console'],
+            'level': logging.DEBUG,
+            'propagate': False,  # 不传播到父logger，避免重复记录
+        }
     }
 }
 
