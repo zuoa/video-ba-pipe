@@ -57,6 +57,7 @@ class Orchestrator:
         self.buffers = {}
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
+        self.workflow_config_versions = {}  # 记录运行中工作流的配置版本号
         db.connect()
 
         VideoSource.update(status='STOPPED', decoder_pid=None).execute()
@@ -338,26 +339,26 @@ class Orchestrator:
     
     def _start_workflow(self, workflow: Workflow):
         logger.info(f"  -> 正在启动工作流 ID {workflow.id}: {workflow.name}")
-        
+
         workflow_data = workflow.data_dict
         logger.debug(f"工作流数据: {workflow_data}")
         nodes = workflow_data.get('nodes', [])
-        
+
         source_node = None
         for node in nodes:
             if node.get('type') == 'source':
                 source_node = node
                 break
-        
+
         if not source_node:
             logger.error(f"工作流 {workflow.id} 没有视频源节点，跳过启动")
             return
-        
+
         source_id = source_node.get('dataId')
         if not source_id:
             logger.error(f"工作流 {workflow.id} 的视频源节点未配置dataId，跳过启动")
             return
-        
+
         try:
             source = VideoSource.get_by_id(source_id)
             if source.status != 'RUNNING':
@@ -366,14 +367,14 @@ class Orchestrator:
         except VideoSource.DoesNotExist:
             logger.error(f"工作流 {workflow.id} 的视频源 ID {source_id} 不存在")
             return
-        
+
         import sys
         workflow_args = [
             sys.executable, '-u', 'workflow_worker.py',
             '--workflow-id', str(workflow.id)
         ]
         logger.info(f"启动命令: {' '.join(workflow_args)}")
-        
+
         try:
             workflow_p = subprocess.Popen(
                 workflow_args,
@@ -395,7 +396,11 @@ class Orchestrator:
                 'stdout_reader': stdout_reader,
                 'stderr_reader': stderr_reader
             }
-            logger.info(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}")
+
+            # 记录启动时的配置版本号
+            self.workflow_config_versions[workflow.id] = workflow.config_version
+
+            logger.info(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}, 配置版本: v{workflow.config_version}")
 
             time.sleep(0.5)
             exit_code = workflow_p.poll()
@@ -408,6 +413,8 @@ class Orchestrator:
                 logger.error(f"STDERR: {stderr}")
                 if workflow.id in self.workflow_processes:
                     del self.workflow_processes[workflow.id]
+                if workflow.id in self.workflow_config_versions:
+                    del self.workflow_config_versions[workflow.id]
         except Exception as e:
             logger.error(f"启动工作流 {workflow.id} 时发生异常: {e}", exc_info=True)
     
@@ -424,22 +431,45 @@ class Orchestrator:
             # 终止进程
             self.workflow_processes[workflow.id]['process'].terminate()
             del self.workflow_processes[workflow.id]
+
+        # 清理版本记录
+        if workflow.id in self.workflow_config_versions:
+            del self.workflow_config_versions[workflow.id]
     
     def manage_workflows(self):
         active_workflows = Workflow.select().where(Workflow.is_active == True)
         logger.debug(f"检测到 {active_workflows.count()} 个激活的工作流")
-        
+
         for workflow in active_workflows:
             if workflow.id not in self.workflow_processes:
                 logger.info(f"发现新的激活工作流: {workflow.name} (ID: {workflow.id})")
                 self._start_workflow(workflow)
-        
+            else:
+                # 检查配置版本是否变化
+                # 强制从数据库重新读取，避免 ORM 缓存问题
+                try:
+                    fresh_workflow = Workflow.get_by_id(workflow.id)
+                    current_version = fresh_workflow.config_version
+                except Workflow.DoesNotExist:
+                    logger.warning(f"工作流 {workflow.id} 已被删除，跳过检查")
+                    continue
+
+                running_version = self.workflow_config_versions.get(workflow.id, 0)
+
+                if running_version != current_version:
+                    logger.info(
+                        f"🔄 工作流 {workflow.id} ({workflow.name}) 配置已变更 "
+                        f"(v{running_version} -> v{current_version})，自动重启中..."
+                    )
+                    self._stop_workflow(workflow)
+                    # 清理后会在下一轮自动重启（因为 is_active=True）
+
         inactive_workflows = Workflow.select().where(Workflow.is_active == False)
         for workflow in inactive_workflows:
             if workflow.id in self.workflow_processes:
                 logger.info(f"工作流 ID {workflow.id} 已停用，正在停止...")
                 self._stop_workflow(workflow)
-        
+
         for workflow_id in list(self.workflow_processes.keys()):
             process_info = self.workflow_processes[workflow_id]
             exit_code = process_info['process'].poll()
@@ -461,6 +491,8 @@ class Orchestrator:
 
                 # 清理进程记录，让manage_workflows在下一轮自动重启
                 del self.workflow_processes[workflow_id]
+                if workflow_id in self.workflow_config_versions:
+                    del self.workflow_config_versions[workflow_id]
                 logger.info(f"✅ 工作流 ID {workflow_id} 已清理进程记录，将在下一轮管理循环中自动重启")
 
     def run(self):

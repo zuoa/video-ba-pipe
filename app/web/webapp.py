@@ -1448,29 +1448,6 @@ try:
     register_workflows_api(app)
     app.logger.info("工作流管理API已注册")
 
-    # 自动初始化系统模板（如果不存在）
-    try:
-        from app.core.database_models import DetectorTemplate
-
-        # 检查是否已有系统模板
-        existing_templates = DetectorTemplate.select().where(DetectorTemplate.is_system == True).count()
-
-        if existing_templates == 0:
-            app.logger.info("检测到没有系统模板，开始自动初始化...")
-
-            # 调用初始化逻辑（为了避免循环导入，这里使用 with app.test_client()）
-            with app.test_client() as client:
-                response = client.post('/api/detector-templates/init-system-templates')
-                if response.status_code == 200:
-                    data = response.get_json()
-                    app.logger.info(f"系统模板初始化成功: 创建 {data.get('created', 0)} 个, 更新 {data.get('updated', 0)} 个")
-                else:
-                    app.logger.warning(f"系统模板初始化失败: {response.status_code}")
-        else:
-            app.logger.info(f"已存在 {existing_templates} 个系统模板，跳过初始化")
-    except Exception as e:
-        app.logger.warning(f"系统模板自动初始化失败: {e}")
-
 except ImportError as e:
     app.logger.warning(f"检测器模板API注册失败: {e}")
 

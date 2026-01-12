@@ -86,6 +86,7 @@ class Workflow(BaseModel):
     description = pw.TextField(null=True)    # 描述
     workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
     is_active = pw.BooleanField(default=False)  # 是否激活
+    config_version = pw.IntegerField(default=1)  # 配置版本号（每次修改递增，用于检测变更）
     created_at = pw.DateTimeField()
     updated_at = pw.DateTimeField()
     created_by = pw.CharField(default='admin')

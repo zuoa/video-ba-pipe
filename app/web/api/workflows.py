@@ -96,7 +96,9 @@ def register_workflows_api(app):
         try:
             workflow = Workflow.get_by_id(id)
             data = request.json
-            
+
+            need_version_bump = False
+
             if 'name' in data:
                 workflow.name = data['name']
             if 'description' in data:
@@ -105,14 +107,29 @@ def register_workflows_api(app):
                 workflow_data_str = json.dumps(data['workflow_data'])
                 app.logger.info(f"保存工作流 {id} 数据: nodes={len(data['workflow_data'].get('nodes', []))}, connections={len(data['workflow_data'].get('connections', []))}")
                 app.logger.debug(f"工作流数据内容: {workflow_data_str[:500]}")
-                workflow.workflow_data = workflow_data_str
+
+                # 检查工作流数据是否真的变化了
+                if workflow.workflow_data != workflow_data_str:
+                    workflow.workflow_data = workflow_data_str
+                    need_version_bump = True
+                    app.logger.info(f"工作流 {id} 配置已变更，将递增版本号")
+
             if 'is_active' in data:
                 workflow.is_active = data['is_active']
-            
+
+            # 如果工作流配置变更，递增版本号
+            if need_version_bump:
+                old_version = workflow.config_version
+                workflow.config_version = old_version + 1
+                app.logger.info(f"工作流 {id} 配置版本号: {old_version} -> {workflow.config_version}")
+
             workflow.updated_at = datetime.now()
             workflow.save()
-            
-            return jsonify({'message': '工作流更新成功'})
+
+            return jsonify({
+                'message': '工作流更新成功',
+                'config_version': workflow.config_version
+            })
         except Workflow.DoesNotExist:
             return jsonify({'error': '工作流不存在'}), 404
         except Exception as e:
