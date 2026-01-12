@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation, history } from '@umijs/max';
 import { Dropdown, Button, message } from 'antd';
+import './Header.css';
 import {
   VideoCameraOutlined,
   HomeOutlined,
@@ -87,102 +88,34 @@ const Header: React.FC = () => {
       borderBottom: '1px solid #e5e7eb'
     }}>
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          background: '#000',
-          borderRadius: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-        }}>
+      <div className="logo-container">
+        <div className="logo-icon">
           <VideoCameraOutlined style={{ fontSize: '18px' }} />
         </div>
-        <div>
-          <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', margin: 0, lineHeight: 1.2 }}>
-            视频行为分析系统
-          </h1>
-          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, lineHeight: 1.2 }}>
-            Video Behavior Analysis
-          </p>
+        <div className="logo-text">
+          <h1>视频行为分析系统</h1>
+          <p>Video Behavior Analysis</p>
         </div>
       </div>
 
       {/* 导航菜单 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div className="nav-menu">
         {/* 仪表盘 */}
         <Link
           to="/dashboard"
-          style={{
-            padding: '8px 16px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: isActive('/dashboard') ? '#000' : '#374151',
-            textDecoration: 'none',
-            position: 'relative',
-            transition: 'all 0.2s ease',
-            borderRadius: '4px',
-          }}
-          onMouseEnter={(e) => {
-            if (!isActive('/dashboard')) {
-              e.currentTarget.style.background = '#f3f4f6';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-          }}
+          className={`nav-link ${isActive('/dashboard') ? 'active' : ''}`}
         >
           <HomeOutlined style={{ marginRight: '8px' }} />
           仪表盘
-          {isActive('/dashboard') && (
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              left: '0',
-              right: '0',
-              height: '3px',
-              background: '#000',
-            }}></div>
-          )}
         </Link>
 
         {/* 视频源 */}
         <Link
           to="/video-sources"
-          style={{
-            padding: '8px 16px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: isActive('/video-sources') ? '#000' : '#374151',
-            textDecoration: 'none',
-            position: 'relative',
-            transition: 'all 0.2s ease',
-            borderRadius: '4px',
-          }}
-          onMouseEnter={(e) => {
-            if (!isActive('/video-sources')) {
-              e.currentTarget.style.background = '#f3f4f6';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-          }}
+          className={`nav-link ${isActive('/video-sources') ? 'active' : ''}`}
         >
           <VideoCameraOutlined style={{ marginRight: '8px' }} />
           视频源
-          {isActive('/video-sources') && (
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              left: '0',
-              right: '0',
-              height: '3px',
-              background: '#000',
-            }}></div>
-          )}
         </Link>
 
         {/* 算法管理下拉菜单 */}
@@ -190,130 +123,41 @@ const Header: React.FC = () => {
           <Link
             to="#"
             onClick={(e) => e.preventDefault()}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: isAlgorithmActive ? '#000' : '#374151',
-              textDecoration: 'none',
-              position: 'relative',
-              transition: 'all 0.2s ease',
-              borderRadius: '4px',
-            }}
-            onMouseEnter={(e) => {
-              if (!isAlgorithmActive) {
-                e.currentTarget.style.background = '#f3f4f6';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-            }}
+            className={`nav-link ${isAlgorithmActive ? 'active' : ''}`}
           >
             <ExperimentOutlined style={{ marginRight: '8px' }} />
             算法管理
             <DownOutlined style={{ marginLeft: '4px', fontSize: '12px' }} />
-            {isAlgorithmActive && (
-              <div style={{
-                position: 'absolute',
-                bottom: '0',
-                left: '0',
-                right: '0',
-                height: '3px',
-                background: '#000',
-              }}></div>
-            )}
           </Link>
         </Dropdown>
 
         {/* 算法编排 */}
         <Link
           to="/workflows"
-          style={{
-            padding: '8px 16px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: isActive('/workflows') ? '#000' : '#374151',
-            textDecoration: 'none',
-            position: 'relative',
-            transition: 'all 0.2s ease',
-            borderRadius: '4px',
-          }}
-          onMouseEnter={(e) => {
-            if (!isActive('/workflows')) {
-              e.currentTarget.style.background = '#f3f4f6';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-          }}
+          className={`nav-link ${isActive('/workflows') ? 'active' : ''}`}
         >
           <ApartmentOutlined style={{ marginRight: '8px' }} />
           算法编排
-          {isActive('/workflows') && (
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              left: '0',
-              right: '0',
-              height: '3px',
-              background: '#000',
-            }}></div>
-          )}
         </Link>
 
         {/* 告警记录 */}
         <Link
           to="/alerts"
-          style={{
-            padding: '8px 16px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: isActive('/alerts') ? '#000' : '#374151',
-            textDecoration: 'none',
-            position: 'relative',
-            transition: 'all 0.2s ease',
-            borderRadius: '4px',
-          }}
-          onMouseEnter={(e) => {
-            if (!isActive('/alerts')) {
-              e.currentTarget.style.background = '#f3f4f6';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-          }}
+          className={`nav-link ${isActive('/alerts') ? 'active' : ''}`}
         >
           <BellOutlined style={{ marginRight: '8px' }} />
           告警记录
-          {isActive('/alerts') && (
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              left: '0',
-              right: '0',
-              height: '3px',
-              background: '#000',
-            }}></div>
-          )}
         </Link>
       </div>
 
       {/* 右侧操作 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="header-actions">
         <Button
           type="text"
           icon={<BellOutlined />}
           style={{ position: 'relative' }}
         >
-          <span style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            width: '8px',
-            height: '8px',
-            background: '#ef4444',
-            borderRadius: '50%',
-          }}></span>
+          <span className="notification-badge"></span>
         </Button>
 
         <Button
@@ -333,34 +177,11 @@ const Header: React.FC = () => {
         />
 
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            paddingLeft: '12px',
-            borderLeft: '1px solid #e5e7eb',
-            cursor: 'pointer',
-          }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              background: '#000',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontSize: '12px',
-              fontWeight: '600',
-            }}>
+          <div className="user-avatar-container">
+            <div className="user-avatar">
               <UserOutlined style={{ fontSize: '12px' }} />
             </div>
-            <span style={{
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#374151',
-              display: 'block',
-            }}>
+            <span className="user-username">
               {user?.username || '未登录'}
             </span>
           </div>

@@ -384,7 +384,10 @@ def register_workflows_api(app):
                     # 替换 source 节点的 dataId
                     for node in new_data.get('nodes', []):
                         if node.get('type') == 'source':
+                            # 同时更新两个可能的位置，确保兼容性
                             node['dataId'] = source_id
+                            if 'data' in node and isinstance(node['data'], dict):
+                                node['data']['dataId'] = source_id
 
                     # 生成名称
                     name = generate_workflow_name(source, new_data, template.name)

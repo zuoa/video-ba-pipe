@@ -205,11 +205,23 @@ class BaseAlgorithm(ABC):
                 # 使用很淡的绿色：(144, 238, 144) - BGR格式
                 cv2.fillPoly(roi_overlay, [pts], (144, 238, 144))
 
-                # 绘制热区边界线（稍深一点的绿色）
-                cv2.polylines(roi_overlay, [pts], True, (100, 200, 100), 2)
-
             # 将overlay以很淡的透明度叠加到原图上（0.15表示15%不透明度，非常淡）
             cv2.addWeighted(img_vis, 0.85, roi_overlay, 0.15, 0, img_vis)
+
+            # 叠加后再绘制边界线（完全不透明，更清晰）
+            for region in roi_regions:
+                polygon = region.get('polygon', region.get('points', []))
+                if len(polygon) < 3:
+                    continue
+
+                if isinstance(polygon[0], dict):
+                    pts_list = [[int(p['x'] * width), int(p['y'] * height)] for p in polygon]
+                else:
+                    pts_list = polygon
+
+                pts = np.array(pts_list, dtype=np.int32).reshape((-1, 1, 2))
+                # 绘制热区边界线（完全不透明，使用深绿色）
+                cv2.polylines(img_vis, [pts], True, (50, 180, 50), 2)
 
         # 如果有ROI掩码（兼容旧代码），在图像上绘制ROI区域轮廓
         elif roi_mask is not None:
