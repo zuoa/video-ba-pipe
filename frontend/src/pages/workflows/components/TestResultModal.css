@@ -72,6 +72,9 @@
 }
 
 .detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid #f0f0f0;
   background: #fafafa;
@@ -82,6 +85,16 @@
   font-size: 15px;
   font-weight: 600;
   color: #262626;
+}
+
+.detail-close-btn {
+  color: #8c8c8c;
+  transition: all 0.2s;
+}
+
+.detail-close-btn:hover {
+  color: #262626;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .detail-content {

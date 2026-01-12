@@ -8,6 +8,7 @@ import {
   VideoCameraOutlined,
   PlayCircleOutlined,
   FileImageOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { Alert, Task, DetectionImage } from '../types';
 import './AlertDetailModal.css';
@@ -94,6 +95,13 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
               <Descriptions.Item label="告警类型">
                 <Tag color="blue" style={{ margin: 0 }}>{alert.alert_type}</Tag>
               </Descriptions.Item>
+              {alert.workflow_id && (
+                <Descriptions.Item label={<span><ApartmentOutlined /> 流程编排</span>}>
+                  <Tag color="purple" icon={<ApartmentOutlined />} style={{ margin: 0 }}>
+                    {alert.workflow_name || `流程编排 #${alert.workflow_id}`}
+                  </Tag>
+                </Descriptions.Item>
+              )}
               <Descriptions.Item label="告警时间">
                 {new Date(alert.alert_time).toLocaleString('zh-CN')}
               </Descriptions.Item>

@@ -415,3 +415,11 @@ export interface Script {
   category?: string;
 }
 
+// 工作流测试
+export async function testWorkflow(workflowId: number, imageBase64: string) {
+  return request(`/api/workflows/${workflowId}/test`, {
+    method: 'POST',
+    data: { image: imageBase64 },
+  });
+}
+

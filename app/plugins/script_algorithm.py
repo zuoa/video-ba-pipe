@@ -56,7 +56,7 @@ class ScriptAlgorithm(BaseAlgorithm):
             if hasattr(self.script_module, 'init'):
                 logger.info(f"[{self.name}] 调用脚本的 init() 函数...")
                 self.script_state = self.script_module.init(resolved_config)
-                logger.info(f"[{self.name}] init() 返回的 state: {self.script_state}")
+                # logger.info(f"[{self.name}] init() 返回的 state: {self.script_state}")
                 logger.info(f"[{self.name}] 脚本init函数已调用")
             else:
                 self.script_state = None

@@ -62,30 +62,44 @@ class BaseAlgorithm(ABC):
     def create_roi_mask(frame_shape: tuple, roi_regions: list) -> np.ndarray:
         """
         根据ROI热区配置创建掩码
-        
+
         Args:
             frame_shape: 图像形状 (height, width, channels)
             roi_regions: ROI热区配置列表
-            
+
         Returns:
             mask: 二值掩码，热区内为255，热区外为0
         """
         if not roi_regions:
             # 如果没有ROI配置，返回全白掩码（全画面检测）
             return np.ones((frame_shape[0], frame_shape[1]), dtype=np.uint8) * 255
-        
+
         # 创建黑色掩码
         mask = np.zeros((frame_shape[0], frame_shape[1]), dtype=np.uint8)
-        
+        height, width = frame_shape[0], frame_shape[1]
+
         # 在每个ROI区域绘制白色多边形
         for region in roi_regions:
-            points = region.get('points', [])
-            if len(points) >= 3:
-                # 转换为numpy数组
-                pts = np.array(points, dtype=np.int32)
-                # 填充多边形
-                cv2.fillPoly(mask, [pts], 255)
-        
+            # 支持两种字段名：'polygon'（新格式）和 'points'（旧格式）
+            points = region.get('polygon', region.get('points', []))
+
+            if not points or len(points) < 3:
+                continue
+
+            # 检查坐标格式
+            # 如果是相对坐标格式 [{"x": 0.1, "y": 0.2}, ...]，转换为绝对坐标
+            if isinstance(points[0], dict):
+                # 相对坐标格式，需要转换为绝对坐标
+                pts = [[int(p['x'] * width), int(p['y'] * height)] for p in points]
+            else:
+                # 已经是绝对坐标格式 [[x1, y1], [x2, y2], ...]
+                pts = points
+
+            # 转换为numpy数组
+            pts_array = np.array(pts, dtype=np.int32)
+            # 填充多边形
+            cv2.fillPoly(mask, [pts_array], 255)
+
         return mask
     
     @staticmethod
@@ -152,7 +166,7 @@ class BaseAlgorithm(ABC):
     def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
-        :param img: 原始图像
+        :param img: 原始图像（RGB格式）
         :param results: 检测结果列表
         :param save_path: 保存路径
         :param label_color: 标签颜色（十六进制格式）
@@ -160,25 +174,37 @@ class BaseAlgorithm(ABC):
         :param roi_regions: ROI热区配置列表，格式为 [{"polygon": [[x1,y1], [x2,y2], ...], ...}]
         """
         img_vis = img.copy()
-        img_vis = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
 
         # 如果有roi_regions配置，优先使用roi_regions绘制热区（支持多边形）
         if roi_regions and len(roi_regions) > 0:
             # 创建半透明层用于绘制ROI热区
             roi_overlay = img_vis.copy()
+            height, width = img_vis.shape[:2]
 
             for region in roi_regions:
-                polygon = region.get('polygon', [])
-                if len(polygon) >= 3:
-                    # 转换为numpy数组
-                    pts = np.array(polygon, dtype=np.int32).reshape((-1, 1, 2))
+                # 支持两种字段名：'polygon'（新格式）和 'points'（旧格式）
+                polygon = region.get('polygon', region.get('points', []))
+                if len(polygon) < 3:
+                    continue
 
-                    # 在overlay上填充淡绿色半透明区域
-                    # 使用很淡的绿色：(144, 238, 144) - BGR格式
-                    cv2.fillPoly(roi_overlay, [pts], (144, 238, 144))
+                # 检查坐标格式
+                # 如果是相对坐标格式 [{"x": 0.1, "y": 0.2}, ...]，转换为绝对坐标
+                if isinstance(polygon[0], dict):
+                    # 相对坐标格式，需要转换为绝对坐标
+                    pts_list = [[int(p['x'] * width), int(p['y'] * height)] for p in polygon]
+                else:
+                    # 已经是绝对坐标格式 [[x1, y1], [x2, y2], ...]
+                    pts_list = polygon
 
-                    # 绘制热区边界线（稍深一点的绿色）
-                    cv2.polylines(roi_overlay, [pts], True, (100, 200, 100), 2)
+                # 转换为numpy数组并reshape为 (N, 1, 2)
+                pts = np.array(pts_list, dtype=np.int32).reshape((-1, 1, 2))
+
+                # 在overlay上填充淡绿色半透明区域
+                # 使用很淡的绿色：(144, 238, 144) - BGR格式
+                cv2.fillPoly(roi_overlay, [pts], (144, 238, 144))
+
+                # 绘制热区边界线（稍深一点的绿色）
+                cv2.polylines(roi_overlay, [pts], True, (100, 200, 100), 2)
 
             # 将overlay以很淡的透明度叠加到原图上（0.15表示15%不透明度，非常淡）
             cv2.addWeighted(img_vis, 0.85, roi_overlay, 0.15, 0, img_vis)

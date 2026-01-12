@@ -11,6 +11,7 @@ import {
   VideoCameraOutlined,
   ClockCircleOutlined,
   PlayCircleOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { Alert, Task } from '../types';
 import RelativeTime from './RelativeTime';
@@ -106,9 +107,12 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
         </div>
 
         {alert.workflow_id && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            工作流: {alert.workflow_name || '未关联'}
-          </Text>
+          <Space size="small">
+            <ApartmentOutlined style={{ fontSize: 12 }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {alert.workflow_name || `流程编排 #${alert.workflow_id}`}
+            </Text>
+          </Space>
         )}
 
         <Text

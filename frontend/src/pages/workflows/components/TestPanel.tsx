@@ -12,7 +12,7 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
-import { captureFrame, testAlgorithmWithBase64 } from '@/services/api';
+import { captureFrame, testWorkflow } from '@/services/api';
 import TestResultModal from './TestResultModal';
 import './TestPanel.css';
 
@@ -114,15 +114,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
       return;
     }
 
-    // 验证工作流配置
-    const validation = validateWorkflow();
-    if (!validation.valid) {
-      message.error('工作流配置错误: ' + validation.error);
-      setTestResult({
-        success: false,
-        error: validation.error,
-        details: '请检查工作流配置',
-      });
+    if (!workflow?.id) {
+      message.error('工作流ID不存在');
       return;
     }
 
@@ -130,14 +123,21 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
     setTestResult(null);
 
     try {
-      // 执行测试
-      const result = await executeWorkflowTest();
-      setTestResult(result);
+      // 调用新的工作流测试API
+      const response = await testWorkflow(workflow.id, testImage);
 
-      // 显示结果弹窗
-      setShowResultModal(true);
-
-      message.success(result.success ? '测试完成，点击查看详细结果' : '测试失败');
+      if (response.success || response.nodes) {
+        setTestResult(response);
+        setShowResultModal(true);
+        message.success('测试完成，点击查看详细结果');
+      } else {
+        setTestResult({
+          success: false,
+          error: response.error || '测试失败',
+          details: response.traceback,
+        });
+        message.error('测试失败: ' + (response.error || '未知错误'));
+      }
     } catch (error: any) {
       console.error('测试失败:', error);
       setTestResult({
@@ -145,212 +145,10 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         error: error.message || '测试过程中出现错误',
         details: error.stack,
       });
-      message.error('测试失败');
+      message.error('测试失败: ' + error.message);
     } finally {
       setTesting(false);
     }
-  };
-
-  // 验证工作流配置
-  const validateWorkflow = () => {
-    if (!nodes || nodes.length === 0) {
-      return { valid: false, error: '工作流没有节点，请先添加节点' };
-    }
-
-    // 检查是否有视频源节点
-    const sourceNodes = nodes.filter(n =>
-      n.type === 'videoSource' || n.data?.type === 'videoSource' || n.data?.type === 'source'
-    );
-    if (sourceNodes.length === 0) {
-      return { valid: false, error: '缺少视频源节点' };
-    }
-
-    // 检查是否有算法节点
-    const algorithmNodes = nodes.filter(n =>
-      n.type === 'algorithm' || n.data?.type === 'algorithm'
-    );
-    if (algorithmNodes.length === 0) {
-      return { valid: false, error: '缺少算法节点' };
-    }
-
-    return { valid: true };
-  };
-
-  // 执行工作流测试
-  const executeWorkflowTest = async () => {
-    const startTime = Date.now();
-    const results = {
-      success: true,
-      nodes: [] as any[],
-      totalTime: 0,
-      message: '',
-    };
-
-    // 按节点类型分组执行
-    const executionOrder = getExecutionOrder();
-
-    console.log('测试执行顺序:', executionOrder);
-
-    // 维护已执行节点的结果映射
-    const executedResults = new Map();
-
-    for (const nodeId of executionOrder) {
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node) continue;
-
-      try {
-        const nodeResult = await executeNode(node, executedResults);
-        results.nodes.push(nodeResult);
-        executedResults.set(nodeId, nodeResult);
-
-        if (!nodeResult.success) {
-          results.success = false;
-          break;
-        }
-      } catch (error: any) {
-        results.nodes.push({
-          nodeId: nodeId,
-          nodeName: node.data?.label || node.id,
-          nodeType: node.type,
-          success: false,
-          error: error.message,
-        });
-        results.success = false;
-        break;
-      }
-    }
-
-    results.totalTime = Date.now() - startTime;
-    results.message = results.success
-      ? `所有节点执行成功，共执行 ${results.nodes.length} 个节点`
-      : `测试失败，执行了 ${results.nodes.length} 个节点`;
-
-    return results;
-  };
-
-  // 获取执行顺序（简化版：按节点类型排序）
-  const getExecutionOrder = () => {
-    const order: string[] = [];
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-
-    // 先添加视频源节点
-    nodes.filter(n =>
-      n.type === 'videoSource' || n.data?.type === 'videoSource' || n.data?.type === 'source'
-    ).forEach(n => order.push(n.id));
-
-    // 再添加算法节点
-    nodes.filter(n =>
-      n.type === 'algorithm' || n.data?.type === 'algorithm'
-    ).forEach(n => order.push(n.id));
-
-    // 最后添加其他节点
-    nodes.filter(n => {
-      const type = n.type || n.data?.type;
-      return type !== 'videoSource' && type !== 'source' && type !== 'algorithm';
-    }).forEach(n => order.push(n.id));
-
-    return order;
-  };
-
-  // 执行单个节点
-  const executeNode = async (node: any, executedResults: Map<string, any>) => {
-    const startTime = Date.now();
-    const nodeType = node.type || node.data?.type;
-
-    const result = {
-      nodeId: node.id,
-      nodeName: node.data?.label || node.id,
-      nodeType: nodeType,
-      success: true,
-      executionTime: 0,
-      data: {} as any,
-    };
-
-    try {
-      switch (nodeType) {
-        case 'videoSource':
-        case 'source':
-          result.data = {
-            message: '视频源加载成功',
-            sourceName: videoSourceInfo?.name || '未知视频源',
-          };
-          break;
-
-        case 'algorithm':
-          // 调用算法测试API
-          const algorithmId = node.data?.algorithmId || node.data?.dataId;
-          if (algorithmId) {
-            const apiResult = await testAlgorithmWithBase64(algorithmId, testImage);
-            result.data = {
-              message: '算法检测完成',
-              detections: apiResult.detections || [],
-              detection_count: apiResult.detection_count || 0,
-              result_image: apiResult.result_image,
-              confidence: apiResult.confidence || 0,
-            };
-          } else {
-            result.success = false;
-            result.error = '算法节点未配置算法ID';
-          }
-          break;
-
-        case 'condition':
-          // 根据前置节点的检测结果判断
-          const prevNode = getPreviousNodeResult(node.id, executedResults);
-          const detected = prevNode && prevNode.data && prevNode.data.detection_count > 0;
-          result.data = {
-            message: detected ? '检测到目标' : '未检测到目标',
-            condition: detected ? 'detected' : 'not_detected',
-            branch: detected ? '是' : '否',
-          };
-          break;
-
-        case 'roi':
-          result.data = {
-            message: '热区绘制成功',
-            roi_regions: node.data?.roi_regions || [],
-          };
-          break;
-
-        case 'alert':
-          result.data = {
-            message: '告警已触发',
-            alertType: node.data?.alertType || '未知',
-          };
-          break;
-
-        case 'record':
-          result.data = {
-            message: '录像已保存',
-            duration: node.data?.duration || 0,
-          };
-          break;
-
-        default:
-          result.data = {
-            message: '节点执行成功',
-          };
-      }
-    } catch (error: any) {
-      result.success = false;
-      result.error = error.message;
-      result.data = {
-        message: '节点执行失败',
-      };
-    }
-
-    result.executionTime = Date.now() - startTime;
-    return result;
-  };
-
-  // 获取前置节点的结果
-  const getPreviousNodeResult = (nodeId: string, executedResults: Map<string, any>) => {
-    const incomingEdge = edges.find(e => e.target === nodeId);
-    if (!incomingEdge) {
-      return null;
-    }
-    const prevNodeId = incomingEdge.source;
-    return executedResults.get(prevNodeId) || null;
   };
 
   const handleClearImage = () => {
@@ -513,7 +311,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                   <div className="summary-item">
                     <ClockCircleOutlined style={{ color: '#1890ff' }} />
                     <span className="summary-label">总耗时:</span>
-                    <span className="summary-value">{testResult.totalTime}ms</span>
+                    <span className="summary-value">{testResult.execution_time || testResult.totalTime}ms</span>
                   </div>
                   <div className="summary-item">
                     <CheckCircleOutlined style={{ color: '#52c41a' }} />

@@ -4,13 +4,15 @@ import {
   BellOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { getAlerts, getAlertTypes, getVideoSources } from '@/services/api';
-import { Alert, Task, AlertFilter } from './types';
+import { getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
+import { PageHeader } from '@/components/common';
+import { Alert, Task, Workflow, AlertFilter } from './types';
 import AlertCard from './components/AlertCard';
 import AlertDetailModal from './components/AlertDetailModal';
 import PaginationBar from './components/PaginationBar';
 import FilterBar from './components/FilterBar';
 import EmptyState from './components/EmptyState';
+import './index.css';
 
 const { Title, Text } = Typography;
 
@@ -18,6 +20,7 @@ const AlertsPage: React.FC = () => {
   // 数据状态
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [alertTypes, setAlertTypes] = useState<string[]>([]);
 
   // 加载状态
@@ -32,6 +35,7 @@ const AlertsPage: React.FC = () => {
 
   // 筛选状态
   const [filter, setFilter] = useState<AlertFilter>({});
+  const [customTimeRange, setCustomTimeRange] = useState<{ start: string; end: string } | undefined>();
 
   // 详情模态框状态
   const [detailVisible, setDetailVisible] = useState(false);
@@ -44,6 +48,16 @@ const AlertsPage: React.FC = () => {
       setTasks(data || []);
     } catch (error: any) {
       message.error('加载任务列表失败: ' + error.message);
+    }
+  }, []);
+
+  // 加载工作流列表
+  const loadWorkflows = useCallback(async () => {
+    try {
+      const data = await getWorkflows();
+      setWorkflows(data || []);
+    } catch (error: any) {
+      message.error('加载工作流列表失败: ' + error.message);
     }
   }, []);
 
@@ -67,6 +81,43 @@ const AlertsPage: React.FC = () => {
         ...filter,
       };
 
+      // 处理时间范围筛选，转换为 start_time 和 end_time
+      if (params.time_range && params.time_range !== 'custom') {
+        const now = new Date();
+        let startTime: Date;
+
+        switch (params.time_range) {
+          case '1h':
+            startTime = new Date(now.getTime() - 60 * 60 * 1000);
+            break;
+          case '24h':
+            startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case '7d':
+            startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case '30d':
+            startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        params.start_time = startTime.toISOString();
+        params.end_time = now.toISOString();
+
+        // 删除 time_range 参数，后端使用 start_time/end_time
+        delete params.time_range;
+      } else if (params.time_range === 'custom' && customTimeRange) {
+        // 使用自定义时间范围
+        params.start_time = customTimeRange.start;
+        params.end_time = customTimeRange.end;
+        delete params.time_range;
+      } else {
+        // 清除 time_range 参数
+        delete params.time_range;
+      }
+
       // 清理空值
       Object.keys(params).forEach(key => {
         if (params[key as keyof AlertFilter] === '' || params[key as keyof AlertFilter] === undefined) {
@@ -88,13 +139,14 @@ const AlertsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.per_page, filter]);
+  }, [pagination.page, pagination.per_page, filter, customTimeRange]);
 
   // 初始化
   useEffect(() => {
     loadTasks();
+    loadWorkflows();
     loadAlertTypes();
-  }, [loadTasks, loadAlertTypes]);
+  }, [loadTasks, loadWorkflows, loadAlertTypes]);
 
   // 当筛选或分页变化时重新加载
   useEffect(() => {
@@ -116,9 +168,22 @@ const AlertsPage: React.FC = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
+  // 处理工作流筛选
+  const handleWorkflowChange = (value: string) => {
+    setFilter(prev => ({ ...prev, workflow_id: value || undefined }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   // 处理告警类型筛选
   const handleAlertTypeChange = (value: string) => {
     setFilter(prev => ({ ...prev, alert_type: value || undefined }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  // 处理时间范围筛选
+  const handleTimeRangeChange = (value: string, customRange?: { start: string; end: string }) => {
+    setFilter(prev => ({ ...prev, time_range: value || undefined }));
+    setCustomTimeRange(customRange);
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
@@ -152,44 +217,29 @@ const AlertsPage: React.FC = () => {
   const selectedAlert = alerts[selectedAlertIndex];
 
   return (
-    <div style={{ padding: 24 }}>
-      {/* 页面头部 */}
-      <Card style={{ marginBottom: 16 }}>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, #000000 0%, #333333 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontSize: 20,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-              }}
-            >
-              <BellOutlined />
-            </div>
-            <div>
-              <Title level={4} style={{ margin: 0 }}>告警记录</Title>
-              <Text type="secondary">实时监控和管理告警信息</Text>
-            </div>
-          </Space>
-          <Statistic title="告警总数" value={pagination.total} />
-        </Space>
-      </Card>
+    <div className="alerts-page">
+      <PageHeader
+        icon={<BellOutlined />}
+        title="告警记录"
+        subtitle="实时监控和管理告警信息"
+        count={pagination.total}
+        countLabel="条告警"
+      />
 
       {/* 筛选栏 */}
       <FilterBar
         tasks={tasks}
+        workflows={workflows}
         alertTypes={alertTypes}
         selectedTask={filter.task_id}
+        selectedWorkflow={filter.workflow_id}
         selectedAlertType={filter.alert_type}
+        selectedTimeRange={filter.time_range}
+        customTimeRange={customTimeRange}
         onTaskChange={handleTaskChange}
+        onWorkflowChange={handleWorkflowChange}
         onAlertTypeChange={handleAlertTypeChange}
+        onTimeRangeChange={handleTimeRangeChange}
         onRefresh={loadAlerts}
         loading={loading}
       />

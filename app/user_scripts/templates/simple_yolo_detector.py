@@ -387,10 +387,13 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
             })
 
     # 8. ROI后过滤（post_filter 模式）
+    detections_before_roi = len(detections)
+    roi_filtered_count = 0
     if roi_mode == 'post_filter' and roi_mask is not None and len(detections) > 0:
         original_count = len(detections)
         detections = filter_detections_by_roi(detections, roi_mask)
         filtered_count = original_count - len(detections)
+        roi_filtered_count = filtered_count
         if filtered_count > 0:
             logger.debug(f"[简单YOLO检测] ROI后过滤移除 {filtered_count} 个检测")
 
@@ -416,6 +419,8 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
         metadata['roi_enabled'] = True
         metadata['roi_mode'] = roi_mode
         metadata['roi_regions_count'] = len(roi_regions)
+        metadata['detections_before_roi'] = detections_before_roi  # ROI过滤前的数量
+        metadata['roi_filtered_count'] = roi_filtered_count  # ROI过滤掉的数量
 
     return {
         'detections': detections,

@@ -143,28 +143,42 @@ SCRIPT_METADATA = {
 def create_roi_mask(frame_shape: tuple, roi_regions: list) -> np.ndarray:
     """
     创建ROI掩码
-    
+
     Args:
         frame_shape: 图像尺寸 (height, width, channels)
         roi_regions: ROI区域列表
-        
+
     Returns:
         np.ndarray: 掩码图像，ROI内为255，外部为0
     """
     if not roi_regions:
         # 没有ROI配置，返回全白掩码（全部区域有效）
         return np.ones((frame_shape[0], frame_shape[1]), dtype=np.uint8) * 255
-    
+
     # 创建黑色掩码
     mask = np.zeros((frame_shape[0], frame_shape[1]), dtype=np.uint8)
-    
+    height, width = frame_shape[0], frame_shape[1]
+
     # 在ROI区域填充白色
     for region in roi_regions:
-        points = region.get('points', [])
-        if len(points) >= 3:
-            pts = np.array(points, dtype=np.int32)
-            cv2.fillPoly(mask, [pts], 255)
-    
+        # 支持两种字段名：'polygon'（新格式）和 'points'（旧格式）
+        points = region.get('polygon', region.get('points', []))
+
+        if not points or len(points) < 3:
+            continue
+
+        # 检查坐标格式
+        # 如果是相对坐标格式 [{"x": 0.1, "y": 0.2}, ...]，转换为绝对坐标
+        if isinstance(points[0], dict):
+            # 相对坐标格式，需要转换为绝对坐标
+            pts = [[int(p['x'] * width), int(p['y'] * height)] for p in points]
+        else:
+            # 已经是绝对坐标格式 [[x1, y1], [x2, y2], ...]
+            pts = points
+
+        pts_array = np.array(pts, dtype=np.int32)
+        cv2.fillPoly(mask, [pts_array], 255)
+
     return mask
 
 
@@ -604,13 +618,16 @@ def process(frame: np.ndarray,
             })
     
     # 6. ROI后过滤
+    detections_before_roi = len(detections)
+    roi_filtered_count = 0
     if roi_mode == 'post_filter' and roi_mask is not None and len(detections) > 0:
         original_count = len(detections)
         detections = filter_detections_by_roi(detections, roi_mask)
         filtered_count = original_count - len(detections)
+        roi_filtered_count = filtered_count
         if filtered_count > 0:
             logger.debug(f"[YOLO多模型] ROI过滤移除 {filtered_count} 个检测")
-    
+
     # 7. 计算处理时间
     processing_time = (time.time() - start_time) * 1000
 
@@ -620,6 +637,8 @@ def process(frame: np.ndarray,
         'inference_time_ms': processing_time,
         'total_detections': len(detections),
         'roi_mode': roi_mode,
+        'detections_before_roi': detections_before_roi,  # ROI过滤前的数量
+        'roi_filtered_count': roi_filtered_count,  # ROI过滤掉的数量
         'model_debug_info': model_debug_info,  # 每个模型的详细检测情况
     }
 

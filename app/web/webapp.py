@@ -745,16 +745,35 @@ def delete_video_file(filename):
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
     source_id = request.args.get('source_id') or request.args.get('task_id')  # 兼容旧参数
+    workflow_id = request.args.get('workflow_id')  # 流程编排筛选
     alert_type = request.args.get('alert_type')
+    start_time = request.args.get('start_time')  # 开始时间筛选
+    end_time = request.args.get('end_time')  # 结束时间筛选
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 30))
-    
+
     # 构建查询
     query = Alert.select()
     if source_id:
         query = query.where(Alert.video_source == source_id)
+    if workflow_id:
+        query = query.where(Alert.workflow == workflow_id)
     if alert_type:
         query = query.where(Alert.alert_type == alert_type)
+    if start_time:
+        try:
+            from datetime import datetime
+            start_dt = datetime.fromisoformat(start_time)
+            query = query.where(Alert.alert_time >= start_dt)
+        except ValueError:
+            app.logger.warning(f"无效的 start_time 格式: {start_time}")
+    if end_time:
+        try:
+            from datetime import datetime
+            end_dt = datetime.fromisoformat(end_time)
+            query = query.where(Alert.alert_time <= end_dt)
+        except ValueError:
+            app.logger.warning(f"无效的 end_time 格式: {end_time}")
     
     # 获取总数
     total = query.count()
@@ -1428,17 +1447,17 @@ try:
     from app.web.api.workflows import register_workflows_api
     register_workflows_api(app)
     app.logger.info("工作流管理API已注册")
-    
+
     # 自动初始化系统模板（如果不存在）
     try:
         from app.core.database_models import DetectorTemplate
-        
+
         # 检查是否已有系统模板
         existing_templates = DetectorTemplate.select().where(DetectorTemplate.is_system == True).count()
-        
+
         if existing_templates == 0:
             app.logger.info("检测到没有系统模板，开始自动初始化...")
-            
+
             # 调用初始化逻辑（为了避免循环导入，这里使用 with app.test_client()）
             with app.test_client() as client:
                 response = client.post('/api/detector-templates/init-system-templates')
@@ -1451,9 +1470,17 @@ try:
             app.logger.info(f"已存在 {existing_templates} 个系统模板，跳过初始化")
     except Exception as e:
         app.logger.warning(f"系统模板自动初始化失败: {e}")
-        
+
 except ImportError as e:
     app.logger.warning(f"检测器模板API注册失败: {e}")
+
+# ========== 注册工作流测试API ==========
+try:
+    from app.web.api.workflow_test import register_workflow_test_api
+    register_workflow_test_api(app)
+    app.logger.info("工作流测试API已注册")
+except ImportError as e:
+    app.logger.warning(f"工作流测试API注册失败: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)

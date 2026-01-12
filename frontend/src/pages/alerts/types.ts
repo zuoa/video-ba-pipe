@@ -16,6 +16,13 @@ export interface Alert {
   window_stats?: string | WindowStats;
 }
 
+export interface Workflow {
+  id: number;
+  name: string;
+  description?: string;
+  enabled: boolean;
+}
+
 export interface DetectionImage {
   image_path: string;
   detection_time?: string;
@@ -48,7 +55,11 @@ export interface AlertsResponse {
 
 export interface AlertFilter {
   task_id?: string;
+  workflow_id?: string;
   alert_type?: string;
+  time_range?: string;
+  start_time?: string;
+  end_time?: string;
   page?: number;
   per_page?: number;
 }

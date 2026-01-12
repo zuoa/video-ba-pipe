@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Modal, Badge, Tag, Space, Descriptions, Image } from 'antd';
+import { Modal, Badge, Tag, Space, Descriptions, Image, Button } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -134,16 +134,37 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
         <div className="node-body">
           <div className="node-status">{getStatusBadge()}</div>
 
-          {testResult.executionTime !== undefined && (
+          {testResult.execution_time !== undefined && (
             <div className="node-metric">
               <ClockCircleOutlined />
-              <span>{testResult.executionTime}ms</span>
+              <span>{testResult.execution_time}ms</span>
             </div>
           )}
 
           {testResult.data?.detection_count !== undefined && (
             <div className="node-metric">
               <span>检测: {testResult.data.detection_count} 个</span>
+            </div>
+          )}
+
+          {/* ROI 过滤提示 */}
+          {testResult.data?.debug_info?.roi_filter_enabled && (
+            <div className="node-metric" style={{ color: '#faad14', fontSize: '11px' }}>
+              <span>ROI: {testResult.data.debug_info.detections_before_roi} → {testResult.data.detection_count}</span>
+            </div>
+          )}
+
+          {/* 条件节点结果提示 */}
+          {nodeType === 'condition' && testResult.data?.debug_info && (
+            <div className="node-metric" style={{ color: testResult.data.debug_info.condition_result === '通过' ? '#52c41a' : '#ff4d4f', fontSize: '11px' }}>
+              <span>{testResult.data.debug_info.condition_result}</span>
+            </div>
+          )}
+
+          {/* 告警节点触发提示 */}
+          {(nodeType === 'alert' || nodeType === 'output') && testResult.data?.debug_info && (
+            <div className="node-metric" style={{ color: testResult.data.debug_info.alert_triggered ? '#52c41a' : '#8c8c8c', fontSize: '11px' }}>
+              <span>{testResult.data.debug_info.alert_triggered ? '✓ 触发告警' : '✗ 未触发'}</span>
             </div>
           )}
 
@@ -187,11 +208,11 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
   // 构建带测试结果的节点数据
   const testNodes = useMemo(() => {
     const resultMap = new Map(
-      testResult?.nodes?.map((n: any) => [n.nodeId, n]) || []
+      testResult?.nodes?.map((n: any) => [n.node_id, n]) || []
     );
 
     // 获取已执行的节点 ID
-    const executedNodeIds = new Set(testResult?.nodes?.map((n: any) => n.nodeId) || []);
+    const executedNodeIds = new Set(testResult?.nodes?.map((n: any) => n.node_id) || []);
 
     console.log('📊 TestResultModal nodes 原始数据:', nodes);
     console.log('📊 测试结果映射:', resultMap);
@@ -298,7 +319,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
           {testResult && (
             <Space size="large" style={{ marginLeft: 24 }}>
               <span className="title-metric">
-                总耗时: <strong>{testResult.totalTime}ms</strong>
+                总耗时: <strong>{testResult.execution_time || testResult.totalTime}ms</strong>
               </span>
               <span className="title-metric">
                 执行节点: <strong>{testResult.nodes?.length || 0}</strong> 个
@@ -343,6 +364,13 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
           <div className="node-detail-panel">
             <div className="detail-header">
               <h3>节点详情</h3>
+              <Button
+                type="text"
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={() => setSelectedNode(null)}
+                className="detail-close-btn"
+              />
             </div>
             <div className="detail-content">
               <Descriptions column={1} bordered size="small">
@@ -363,7 +391,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                       )}
                     </Descriptions.Item>
                     <Descriptions.Item label="执行耗时">
-                      {selectedNode.data.testResult.executionTime} ms
+                      {selectedNode.data.testResult.execution_time} ms
                     </Descriptions.Item>
 
                     {selectedNode.data.testResult.error ? (
@@ -377,6 +405,83 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         {selectedNode.data.testResult.data?.message && (
                           <Descriptions.Item label="执行消息">
                             {selectedNode.data.testResult.data.message}
+                          </Descriptions.Item>
+                        )}
+
+                        {/* ROI 过滤调试信息 */}
+                        {selectedNode.data.testResult.data?.debug_info?.roi_filter_enabled && (
+                          <Descriptions.Item label={<span style={{ color: '#faad14', fontWeight: 500 }}>🔍 ROI 过滤详情</span>}>
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>过滤前:</span>
+                                <Tag color="orange" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.detections_before_roi} 个
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>过滤后:</span>
+                                <Tag color="green" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.detection_count} 个
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>过滤掉:</span>
+                                <Tag color="red" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.roi_filtered_count} 个
+                                </Tag>
+                              </div>
+                            </Space>
+                          </Descriptions.Item>
+                        )}
+
+                        {/* 条件节点调试信息 */}
+                        {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info && (
+                          <Descriptions.Item label={<span style={{ color: '#1890ff', fontWeight: 500 }}>⚖️ 条件判断详情</span>}>
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>检测数量:</span>
+                                <Tag color="blue" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.detection_count} 个
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>判断条件:</span>
+                                <Tag color="purple" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.comparison_type} {selectedNode.data.testResult.data.debug_info.target_count}
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>判断结果:</span>
+                                <Tag color={selectedNode.data.testResult.data.debug_info.condition_result === '通过' ? 'success' : 'error'} style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.condition_result}
+                                </Tag>
+                              </div>
+                            </Space>
+                          </Descriptions.Item>
+                        )}
+
+                        {/* 告警节点调试信息 */}
+                        {(selectedNode.data?.nodeType === 'alert' || selectedNode.data?.nodeType === 'output') && selectedNode.data.testResult.data?.debug_info && (
+                          <Descriptions.Item label={<span style={{ color: '#52c41a', fontWeight: 500 }}>🚨 告警触发详情</span>}>
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>检测数量:</span>
+                                <Tag color="blue" style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.detection_count} 个
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: '#8c8c8c' }}>触发状态:</span>
+                                <Tag color={selectedNode.data.testResult.data.debug_info.alert_triggered ? 'success' : 'default'} style={{ margin: 0 }}>
+                                  {selectedNode.data.testResult.data.debug_info.trigger_reason}
+                                </Tag>
+                              </div>
+                              {selectedNode.data.testResult.data.debug_info.upstream_node_id && (
+                                <div style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                                  上游节点: {selectedNode.data.testResult.data.debug_info.upstream_node_id}
+                                </div>
+                              )}
+                            </Space>
                           </Descriptions.Item>
                         )}
 
