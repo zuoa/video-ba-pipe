@@ -440,7 +440,32 @@ class WindowDetector:
         ]
 
         return detection_records
-    
+
+    def update_last_image_path(self, source_id: int, node_id: str, image_path: str):
+        """
+        更新最后一条记录的图片路径
+
+        用于在检测到目标后，更新该帧的图片路径
+
+        Args:
+            source_id: 视频源ID
+            node_id: 节点ID
+            image_path: 检测图片路径
+        """
+        key = (source_id, node_id)
+
+        if key not in self.buffers or len(self.buffers[key]) == 0:
+            return
+
+        # 更新最后一条记录的图片路径
+        buffer = self.buffers[key]
+        timestamp, has_detection, _ = buffer[-1]
+        buffer[-1] = (timestamp, has_detection, image_path)
+
+        # 清除该节点的缓存
+        if key in self.stats_cache:
+            del self.stats_cache[key]
+
     def _empty_stats(self) -> dict:
         """返回空统计"""
         return {

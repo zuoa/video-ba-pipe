@@ -1335,6 +1335,97 @@ class WorkflowExecutor:
 
         logger.debug(
             f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={len(result.get('detections', []))}")
+
+        # 加载触发条件配置（窗口检测）- 必须在记录之前加载
+        trigger_condition = alert_node.trigger_condition
+        if trigger_condition:
+            self.window_detector.load_trigger_condition(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                trigger_config=trigger_condition
+            )
+        else:
+            # 未配置触发条件，使用默认配置（不进行窗口检测，直接通过）
+            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置触发条件，所有检测都将触发")
+            self.window_detector.load_trigger_condition(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                trigger_config={'enable': False}
+            )
+
+        # 加载告警抑制配置（触发后冷却期）
+        suppression = alert_node.suppression
+        if suppression:
+            self.window_detector.load_suppression(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                suppression_config=suppression
+            )
+        else:
+            # 未配置抑制，不启用抑制
+            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置抑制，告警不会被抑制")
+            self.window_detector.load_suppression(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                suppression_config={'enable': False}
+            )
+
+        trigger_time = time.time()
+
+        # 检查是否启用了窗口检测
+        window_detection_enabled = trigger_condition and trigger_condition.get('enable', False)
+
+        # 如果启用了窗口检测，保存检测图片（用于窗口检测图片序列）
+        # 注意：每帧的记录已在 _record_to_window_detector_for_all_alerts 中完成
+        # 这里只负责保存检测到目标时的图片
+        if window_detection_enabled and has_detection:
+            # 保存检测图片到临时路径（用于窗口检测图片序列）
+            filepath = f"{self.video_source.source_code}/.window_detection/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}.jpg"
+            filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
+
+            # 获取上游节点 ID（用于可视化）
+            upstream_node_id = context.get('upstream_node_id')
+
+            # 准备ROI配置
+            effective_roi_regions = []
+            if upstream_node_id:
+                # 先查找上游的ROI节点配置
+                upstream_roi = self._find_upstream_roi(upstream_node_id)
+                if upstream_roi is not None:
+                    effective_roi_regions = upstream_roi
+                else:
+                    # 回退到算法节点自身的ROI配置
+                    effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
+
+            # 如果有上游算法节点，使用其 visualize 方法
+            if upstream_node_id and upstream_node_id in self.algorithms:
+                self.algorithms[upstream_node_id].visualize(
+                    frame, result.get("detections"),
+                    save_path=filepath_absolute,
+                    label_color=label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=effective_roi_regions
+                )
+            else:
+                # 没有上游算法节点，保存原始帧
+                save_frame(frame, filepath_absolute)
+
+            # 同时保存原始图片（.ori.jpg）
+            filepath_ori = f"{filepath}.ori.jpg"
+            filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)
+            save_frame(frame, filepath_ori_absolute)
+
+            logger.debug(f"[Workflow-{self.workflow_id}] 保存窗口检测图片: {filepath}, 原始图片: {filepath_ori}")
+
+            # 更新窗口检测器中的图片路径
+            self.window_detector.update_last_image_path(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                image_path=filepath
+            )
+
+        # 如果没有检测，直接返回（不进行后续的告警处理）
+        # 注意：已经记录到窗口检测器，用于窗口统计
         if not has_detection:
             logger.debug(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 未检测到目标，跳过告警处理")
             return
@@ -1378,59 +1469,6 @@ class WorkflowExecutor:
             # 如果没有日志收集器，使用原始消息
             alert_message = alert_node.alert_message or ""
             logger.warning(f"[Workflow-{self.workflow_id}] Alert节点 {node_id} 没有日志收集器")
-
-        # 加载触发条件配置（窗口检测）
-        trigger_condition = alert_node.trigger_condition
-        if trigger_condition:
-            self.window_detector.load_trigger_condition(
-                source_id=self.video_source.id,
-                node_id=node_id,
-                trigger_config=trigger_condition
-            )
-        else:
-            # 未配置触发条件，使用默认配置（不进行窗口检测，直接通过）
-            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置触发条件，所有检测都将触发")
-            self.window_detector.load_trigger_condition(
-                source_id=self.video_source.id,
-                node_id=node_id,
-                trigger_config={'enable': False}
-            )
-
-        # 加载告警抑制配置（触发后冷却期）
-        suppression = alert_node.suppression
-        if suppression:
-            self.window_detector.load_suppression(
-                source_id=self.video_source.id,
-                node_id=node_id,
-                suppression_config=suppression
-            )
-        else:
-            # 未配置抑制，不启用抑制
-            logger.debug(f"[Workflow-{self.workflow_id}] 告警节点 {node_id} 未配置抑制，告警不会被抑制")
-            self.window_detector.load_suppression(
-                source_id=self.video_source.id,
-                node_id=node_id,
-                suppression_config={'enable': False}
-            )
-
-
-
-        trigger_time = time.time()
-
-        # 记录本次检测结果到窗口检测器
-        image_path = None
-        if has_detection:
-            # 如果检测到目标，可以保存检测图片（可选）
-            pass  # 图片保存在后面
-
-        # 记录到窗口检测器
-        self.window_detector.add_record(
-            source_id=self.video_source.id,
-            node_id=node_id,
-            timestamp=frame_timestamp,
-            has_detection=has_detection,
-            image_path=image_path
-        )
 
         # 步骤1：检查触发条件（窗口检测）
         trigger_passed, trigger_stats = self.window_detector.check_condition(
@@ -1481,13 +1519,20 @@ class WorkflowExecutor:
         )
 
         # 获取窗口内的检测记录（用于保存检测图片）
-        detection_records = self.window_detector.get_detection_records(
-            source_id=self.video_source.id,
-            node_id=node_id,
-            current_time=trigger_time
-        )
-
-        logger.debug(f"[Workflow-{self.workflow_id}] 窗口内检测到 {len(detection_records)} 次目标")
+        # 注意：只有启用窗口检测时（trigger_stats不为None）才获取历史检测记录
+        # 如果未启用窗口检测，detection_records为空，后续会保存当前触发帧
+        if trigger_stats:
+            # 启用了窗口检测，获取窗口内的所有历史检测记录
+            detection_records = self.window_detector.get_detection_records(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                current_time=trigger_time
+            )
+            logger.debug(f"[Workflow-{self.workflow_id}] 窗口检测已启用，窗口内检测到 {len(detection_records)} 次目标")
+        else:
+            # 未启用窗口检测，不获取历史记录，只保存当前触发帧
+            detection_records = []
+            logger.debug(f"[Workflow-{self.workflow_id}] 窗口检测未启用，将保存当前触发帧")
 
         # 处理检测图片
         detection_images = []
@@ -1712,6 +1757,9 @@ class WorkflowExecutor:
                 # 执行工作流
                 self._execute_by_topology_levels(executor=None, context=context)
 
+                # 每帧执行后，为启用了窗口检测的 Alert 节点记录到窗口检测器
+                self._record_to_window_detector_for_all_alerts(context)
+
                 # 定期输出日志
                 if frame_count % 100 == 0:
                     logger.info(f"[Workflow-{self.workflow_id}] 已处理 {frame_count} 帧")
@@ -1733,6 +1781,61 @@ class WorkflowExecutor:
                 time.sleep(0.1)
 
         logger.info(f"[Workflow-{self.workflow_id}] 工作流 {self.workflow_id} 运行结束，共处理 {frame_count} 帧")
+
+    def _record_to_window_detector_for_all_alerts(self, context: dict):
+        """
+        每帧执行后，为所有启用了窗口检测的 Alert 节点记录到窗口检测器
+
+        这样窗口检测器可以准确统计实际处理的帧数，而不仅仅是检测到目标的帧数
+
+        Args:
+            context: 帧上下文，包含 frame, frame_timestamp, has_detection, result 等
+        """
+        frame_timestamp = context.get('frame_timestamp')
+        frame = context.get('frame')
+
+        # 遍历所有 Alert 节点
+        for node_id, node in self.nodes.items():
+            if not isinstance(node, AlertNodeData):
+                continue
+
+            # 检查是否启用了窗口检测
+            trigger_condition = node.trigger_condition
+            window_detection_enabled = trigger_condition and trigger_condition.get('enable', False)
+
+            if not window_detection_enabled:
+                # 未启用窗口检测，跳过记录
+                continue
+
+            # 获取该 Alert 节点的检测结果
+            # 查找该 Alert 节点的上游节点
+            has_detection = False
+            result = None
+
+            # 从 executed_nodes 或 node_results_cache 获取上游结果
+            for conn in self.connections:
+                if conn['to'] == node_id:
+                    upstream_node_id = conn['from']
+                    if upstream_node_id in self.node_results_cache:
+                        upstream_result = self.node_results_cache[upstream_node_id]
+                        # 检查是否有检测
+                        if 'result' in upstream_result:
+                            detections = upstream_result['result'].get('detections', [])
+                            if detections:
+                                has_detection = True
+                                result = upstream_result['result']
+                        break
+
+            # 只在启用窗口检测时才记录
+            # 不保存图片（图片在 Alert 节点触发时保存）
+            # 只记录帧级别的统计信息
+            self.window_detector.add_record(
+                source_id=self.video_source.id,
+                node_id=node_id,
+                timestamp=frame_timestamp,
+                has_detection=has_detection,
+                image_path=None  # 不在这里保存图片
+            )
 
     def _collect_execution_results(self, context: dict) -> dict:
         """

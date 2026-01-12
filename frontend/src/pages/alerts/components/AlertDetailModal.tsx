@@ -105,17 +105,19 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
               <Descriptions.Item label="告警时间">
                 {new Date(alert.alert_time).toLocaleString('zh-CN')}
               </Descriptions.Item>
-              <Descriptions.Item label="检测数量">
-                <Tag color="green" style={{ margin: 0 }}>{alert.detection_count}</Tag>
+              <Descriptions.Item label="检测帧数">
+                <Tag color="green" style={{ margin: 0 }}>{alert.detection_count} 帧</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="告警消息" span={2}>
-                {alert.alert_message}
+                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {alert.alert_message}
+                </div>
               </Descriptions.Item>
             </Descriptions>
           </div>
 
           {/* 窗口统计 */}
-          {alert.detection_count > 1 && Object.keys(windowStats).length > 0 && (
+          {Object.keys(windowStats).length > 0 && (
             <>
               <Title level={5} className="sectionTitle">
                 <VideoCameraOutlined />

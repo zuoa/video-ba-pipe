@@ -11,8 +11,7 @@ import {
     ClockCircleOutlined,
     PlayCircleOutlined,
     ApartmentOutlined,
-    FireOutlined,
-    ShieldCheckOutlined,
+    FireOutlined
 } from '@ant-design/icons';
 import {Alert, Task} from '../types';
 import RelativeTime from './RelativeTime';
@@ -215,29 +214,31 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                         )}
                     </div>
 
-                    {/* 检测数量徽章 */}
+                    {/* 检测帧数徽章 */}
                     {alert.detection_count > 1 && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                bottom: 12,
-                                right: 12,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 32,
-                                height: 32,
-                                borderRadius: '50%',
-                                background: colorScheme.gradient,
-                                color: '#fff',
-                                fontSize: 13,
-                                fontWeight: 'bold',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-                                border: '2px solid #fff',
-                            }}
-                        >
-                            {alert.detection_count}
-                        </div>
+                        <Tooltip title={`检测 ${alert.detection_count} 帧`}>
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 12,
+                                    right: 12,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: '50%',
+                                    background: colorScheme.gradient,
+                                    color: '#fff',
+                                    fontSize: 13,
+                                    fontWeight: 'bold',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+                                    border: '2px solid #fff',
+                                }}
+                            >
+                                {alert.detection_count}
+                            </div>
+                        </Tooltip>
                     )}
 
                     {/* 视频录制标识 */}
@@ -300,7 +301,7 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                 </div>
 
                 {/* 告警消息 */}
-                <Tooltip title={alert.alert_message}>
+                <Tooltip title={<div style={{ whiteSpace: 'pre-wrap' }}>{alert.alert_message}</div>}>
                     <div
                         style={{
                             fontSize: 13,

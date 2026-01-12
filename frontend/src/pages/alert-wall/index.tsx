@@ -135,13 +135,13 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                 </span>
               </div>
               <div className="info-row">
-                <span className="info-label">检测次数</span>
-                <span className="info-value">{alert.detection_count} 次</span>
+                <span className="info-label">检测帧数</span>
+                <span className="info-value">{alert.detection_count} 帧</span>
               </div>
               {alert.alert_message && (
                 <div className="info-row full-width">
                   <span className="info-label">告警消息</span>
-                  <span className="info-value">{alert.alert_message}</span>
+                  <span className="info-value" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' as const }}>{alert.alert_message}</span>
                 </div>
               )}
             </div>
@@ -158,6 +158,23 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                 <img
                   src={`/api/image/frames/${alert.alert_image}`}
                   alt="告警图片"
+                  className="detail-image"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 原始图片 */}
+          {alert.alert_image_ori && (
+            <div className="detail-section">
+              <h3 className="section-title">
+                <FileImageOutlined />
+                原始图片
+              </h3>
+              <div className="detail-image-container">
+                <img
+                  src={`/api/image/frames/${alert.alert_image_ori}`}
+                  alt="原始图片"
                   className="detail-image"
                 />
               </div>
@@ -194,7 +211,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </h3>
               <div className="window-stats">
                 <div className="stat-box">
-                  <div className="stat-box-label">检测次数</div>
+                  <div className="stat-box-label">检测帧数</div>
                   <div className="stat-box-value">{windowStats.detection_count || 0}</div>
                 </div>
                 <div className="stat-box">
@@ -567,20 +584,7 @@ const AlertWallPage: React.FC = () => {
               )}
             </div>
 
-            {/* 底部信息 */}
-            <div className="main-display-footer">
-              <div className="footer-left">
-                {mainAlert && <AlertTypeBadge type={mainAlert.alert_type} showIcon />}
-                {mainAlert && mainAlert.detection_count > 1 && (
-                  <span className="detection-count">
-                    检测 {mainAlert.detection_count} 次
-                  </span>
-                )}
-              </div>
-              <div className="footer-message">
-                {mainAlert ? (mainAlert.alert_message || '无详细信息') : '等待告警数据...'}
-              </div>
-            </div>
+
           </div>
 
           {/* 右侧滚动列表 */}
@@ -659,11 +663,8 @@ const AlertWallPage: React.FC = () => {
                           {alert.detection_count > 1 && (
                             <div className="alert-detection-count">
                               <AppstoreOutlined />
-                              检测{alert.detection_count}次
+                              检测{alert.detection_count}帧
                             </div>
-                          )}
-                          {alert.alert_message && (
-                            <p className="alert-message">{alert.alert_message}</p>
                           )}
                         </div>
                       </div>

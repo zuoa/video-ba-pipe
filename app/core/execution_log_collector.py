@@ -91,8 +91,8 @@ class ExecutionLogCollector:
 
         Args:
             format_type: 消息格式类型
-                - 'detailed': 详细格式（包含节点ID和级别）
-                - 'simple': 简单格式（仅消息内容）
+                - 'detailed': 详细格式（智能分组，突出触发的分支）
+                - 'simple': 简单格式（仅消息内容，不分组）
                 - 'summary': 汇总格式（按级别分组）
             include_metadata: 是否包含元数据
 
@@ -103,16 +103,12 @@ class ExecutionLogCollector:
             return "无执行日志"
 
         if format_type == 'detailed':
-            lines = []
-            for log in self.logs:
-                line = f"[{log['node_id']}] {log['content']}"
-                if include_metadata and log['metadata']:
-                    line += f" ({log['metadata']})"
-                lines.append(line)
-            return "\n".join(lines)
+            # 自动使用智能分组格式（带节点ID）
+            return self._build_grouped_message(include_node_id=True)
 
         elif format_type == 'simple':
-            return "\n".join([log['content'] for log in self.logs])
+            # 自动使用智能分组格式（不带节点ID）
+            return self._build_grouped_message(include_node_id=False)
 
         elif format_type == 'summary':
             summary = []
@@ -141,6 +137,116 @@ class ExecutionLogCollector:
 
         else:
             return f"不支持的格式类型: {format_type}"
+
+    def _build_grouped_message(self, include_node_id: bool = True) -> str:
+        """
+        构建分组格式的告警消息
+
+        展示完整的分支判断链路：
+        1. 将条件日志和检测日志按分支分组
+        2. 每个分支显示：算法检测 -> 条件判断 -> 是否触发
+        3. 突出显示最终触发的分支
+
+        Args:
+            include_node_id: 是否包含节点ID
+        """
+        # 分类日志
+        condition_logs = []  # 条件判断日志
+        detection_logs = []  # 算法检测日志
+        other_logs = []      # 其他日志
+
+        for log in self.logs:
+            content = log['content']
+            if content.startswith('条件判断:'):
+                condition_logs.append(log)
+            elif content.startswith('检测到 ') and ' 个目标' in content:
+                detection_logs.append(log)
+            else:
+                other_logs.append(log)
+
+        if not condition_logs and not detection_logs:
+            # 如果没有检测或条件日志，返回简单格式
+            lines = []
+            for log in self.logs:
+                if include_node_id:
+                    lines.append(f"[{log['node_id']}] {log['content']}")
+                else:
+                    lines.append(log['content'])
+            return "\n".join(lines) if lines else "无执行日志"
+
+        lines = []
+
+        # 按条件日志分组，每个条件日志前可能有对应的检测日志
+        # 按时间顺序分组（假设日志按时间顺序记录）
+        all_logs = sorted(self.logs, key=lambda x: x.get('timestamp', 0))
+
+        # 分组：每个分支包含检测日志+条件日志
+        branches = []
+        current_branch = {'detection': None, 'condition': None, 'logs': []}
+
+        for log in all_logs:
+            content = log['content']
+
+            if content.startswith('检测到 ') and ' 个目标' in content:
+                # 新的检测日志，可能开始新分支
+                if current_branch['detection'] or current_branch['condition']:
+                    branches.append(current_branch)
+                    current_branch = {'detection': None, 'condition': None, 'logs': []}
+                current_branch['detection'] = log
+            elif content.startswith('条件判断:'):
+                current_branch['condition'] = log
+            else:
+                current_branch['logs'].append(log)
+
+        if current_branch['detection'] or current_branch['condition']:
+            branches.append(current_branch)
+
+        # 构建分支消息
+        has_passed_branch = False
+        for idx, branch in enumerate(branches):
+            cond_log = branch['condition']
+            det_log = branch['detection']
+
+            if not cond_log:
+                continue
+
+            metadata = cond_log.get('metadata', {})
+            condition_passed = metadata.get('condition_passed', False)
+
+            if condition_passed:
+                has_passed_branch = True
+                lines.append(f"分支 {idx + 1}: ✓ 触发预警")
+            else:
+                lines.append(f"分支 {idx + 1}: 未触发")
+
+            # 检测日志
+            if det_log:
+                if include_node_id:
+                    lines.append(f"  └─ [{det_log['node_id']}] {det_log['content']}")
+                else:
+                    lines.append(f"  └─ {det_log['content']}")
+
+            # 条件日志
+            content = cond_log['content']
+            condition_text = content.replace('条件判断: ', '')
+
+            if include_node_id:
+                lines.append(f"  └─ [{cond_log['node_id']}] {condition_text}")
+            else:
+                lines.append(f"  └─ {condition_text}")
+
+            lines.append("")  # 分支间空行
+
+        # 添加其他日志（如果有）
+        if other_logs:
+            lines.append("其他信息:")
+            for log in other_logs:
+                if include_node_id:
+                    lines.append(f"  [{log['node_id']}] {log['content']}")
+                else:
+                    lines.append(f"  {log['content']}")
+
+        return "\n".join(lines).strip() if lines else "无执行日志"
 
     def clear(self):
         """清空所有日志（用于复用实例）"""
