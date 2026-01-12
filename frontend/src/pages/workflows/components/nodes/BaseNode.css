@@ -59,6 +59,17 @@
   line-height: 1.4;
 }
 
+.node-condition {
+  font-size: 13px;
+  color: #faad14;
+  font-weight: 500;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  background: #fffbe6;
+  border-radius: 4px;
+  text-align: center;
+}
+
 .node-meta {
   display: flex;
   align-items: center;

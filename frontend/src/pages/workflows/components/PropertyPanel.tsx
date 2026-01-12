@@ -132,8 +132,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.classFilterB = config.input_b.class_filter.join(',');
         }
       } else if (nodeType === 'condition') {
-        formValues.conditionType = node.data.conditionType || 'detection';
-        formValues.targetCount = node.data.targetCount || 1;
+        formValues.targetCount = node.data.targetCount || node.data.target_count || 1;
+        formValues.comparisonType = node.data.comparisonType || node.data.comparison_type || '>=';
       } else if (nodeType === 'roi') {
         formValues.roiMode = node.data.roiMode || 'postFilter';
       } else if (nodeType === 'alert') {
@@ -359,6 +359,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.inputNodeB;
         delete updatedData.classFilterA;
         delete updatedData.classFilterB;
+      } else if (nodeType === 'condition') {
+        // Condition 节点：保存条件配置
+        updatedData.targetCount = values.targetCount || 1;
+        updatedData.comparisonType = values.comparisonType || '>=';
       }
 
       console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
@@ -538,28 +542,46 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       case 'condition':
         return (
           <>
+            <div className="info-box" style={{ marginBottom: 16 }}>
+              <InfoCircleOutlined />
+              <span>条件节点判断检测数量是否满足条件，通过 yes/no 端口控制后续节点执行</span>
+            </div>
+
             <Form.Item
-              label="条件类型"
-              name="conditionType"
+              label="比较类型"
+              name="comparisonType"
+              extra="选择如何比较检测数量与阈值"
             >
               <Select>
-                <Option value="detection">检测到目标</Option>
-                <Option value="noDetection">未检测到目标</Option>
-                <Option value="count">数量达到</Option>
+                <Option value=">=">至少N个 (≥)</Option>
+                <Option value="==">正好N个 (=)</Option>
               </Select>
             </Form.Item>
+
             <Form.Item
-              label="目标数量"
+              label="数量阈值"
               name="targetCount"
+              extra="检测数量的比较阈值"
+              rules={[
+                { required: true, message: '请输入数量阈值' },
+                { type: 'number', min: 1, max: 1000, message: '请输入1-1000之间的数字' }
+              ]}
             >
-              <Select>
-                <Option value={1}>1 个</Option>
-                <Option value={2}>2 个</Option>
-                <Option value={3}>3 个</Option>
-                <Option value={5}>5 个</Option>
-                <Option value={10}>10 个</Option>
-              </Select>
+              <InputNumber
+                min={1}
+                max={1000}
+                step={1}
+                style={{ width: '100%' }}
+                placeholder="输入数量阈值"
+              />
             </Form.Item>
+
+            <div className="info-box" style={{ background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a' }}>
+              <InfoCircleOutlined />
+              <span>
+                示例：至少3人 → 连接 Alert 到 yes 端口；少于3人 → 连接 Alert 到 no 端口
+              </span>
+            </div>
           </>
         );
 

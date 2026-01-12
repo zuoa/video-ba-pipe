@@ -144,6 +144,16 @@ export default function WorkflowEditorPage() {
                   suppression: nodeData.suppression,
                 });
               }
+              // Condition 节点：读取 targetCount 和 comparisonType
+              if (nodeType === 'condition') {
+                nodeData.targetCount = node.data.targetCount || node.data.target_count || 1;
+                nodeData.comparisonType = node.data.comparisonType || node.data.comparison_type || '>=';
+                console.log('🔀 [EDITOR] Condition 节点加载配置:', {
+                  id: node.id,
+                  targetCount: nodeData.targetCount,
+                  comparisonType: nodeData.comparisonType,
+                });
+              }
               // Function 节点：读取 functionName, threshold, operator, dimension, input_nodes
               if (nodeType === 'function') {
                 nodeData.functionName = node.data.functionName;
@@ -471,6 +481,17 @@ export default function WorkflowEditorPage() {
             messageFormat: saveData.data.messageFormat,  // 添加日志
             triggerCondition: saveData.data.triggerCondition,
             suppression: saveData.data.suppression,
+          });
+        } else if (nodeType === 'condition') {
+          // Condition 节点：保存 targetCount 和 comparisonType 到 data 字段
+          saveData.data = {
+            targetCount: node.data?.targetCount || node.data?.target_count || 1,
+            comparisonType: node.data?.comparisonType || node.data?.comparison_type || '>=',
+          };
+          console.log('🔀 [EDITOR] Condition 节点保存数据:', {
+            id: node.id,
+            targetCount: saveData.data.targetCount,
+            comparisonType: saveData.data.comparisonType,
           });
         } else {
           saveData.dataId = node.data?.dataId;

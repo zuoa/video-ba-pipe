@@ -486,13 +486,56 @@ class WorkflowExecutor:
             return None
     
     def _evaluate_condition(self, condition, context):
+        """
+        评估条件是否满足
+
+        Args:
+            condition: 连线中的条件配置，可能包含:
+                - None: 无条件，直接通过
+                - 'detected'/'true': 检测到目标（向后兼容）
+                - 'not_detected'/'false': 未检测到目标（向后兼容）
+                - {'node_id': xxx, 'port': 'yes'/'no'}: 条件节点判断
+            context: 上下文数据，包含:
+                - has_detection: 是否检测到目标
+                - result: 检测结果字典，包含 detections 列表
+
+        Returns:
+            bool: 条件是否满足
+        """
         if not condition:
             return True
-        if condition == 'detected' or condition == 'true':
-            return context.get('has_detection', False)
-        if condition == 'not_detected' or condition == 'false':
-            return not context.get('has_detection', False)
-        return True
+
+        # 向后兼容：处理旧的字符串类型条件
+        if isinstance(condition, str):
+            if condition == 'detected' or condition == 'true':
+                return context.get('has_detection', False)
+            if condition == 'not_detected' or condition == 'false':
+                return not context.get('has_detection', False)
+            return True
+
+        # 新逻辑：条件节点判断
+        # 从 result 中获取检测数量
+        result = context.get('result', {})
+        detections = result.get('detections', [])
+        detection_count = len(detections)
+
+        # 获取条件节点配置
+        node_id = condition.get('node_id')
+        if node_id and node_id in self.nodes:
+            node = self.nodes[node_id]
+            if isinstance(node, ConditionNodeData):
+                target_count = node.target_count
+                comparison_type = node.comparison_type
+
+                if comparison_type == "==":
+                    # 精确匹配：数量必须等于阈值
+                    return detection_count == target_count
+                elif comparison_type == ">=":
+                    # 大于等于：数量至少达到阈值
+                    return detection_count >= target_count
+
+        # 默认：根据是否有检测结果判断
+        return detection_count > 0
     
     def _handle_source_node(self, node_id, context):
         return context

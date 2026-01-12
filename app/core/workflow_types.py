@@ -45,6 +45,11 @@ class AlgorithmNodeData(NodeContext):
 @dataclass
 class ConditionNodeData(NodeContext):
     node_type: str = "condition"
+    target_count: int = 1
+    """数量阈值，默认为1"""
+
+    comparison_type: str = ">="
+    """比较类型: '>=' (至少N个) 或 '==' (正好N个)"""
 
 
 
@@ -180,6 +185,17 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             node_type=node_type,
             node_id=node_id,
             data_id=data_id
+        )
+    elif node_type == 'condition':
+        # Condition 节点读取配置（支持驼峰和蛇形两种命名）
+        target_count = data.get('targetCount') or data.get('target_count', 1)
+        comparison_type = data.get('comparisonType') or data.get('comparison_type', '>=')
+
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            target_count=target_count,
+            comparison_type=comparison_type
         )
     elif node_type in ('roi_draw', 'roi'):  # 支持前后端两种类型名称
         # 从 data 读取新的数据格式（支持驼峰和蛇形两种命名）
