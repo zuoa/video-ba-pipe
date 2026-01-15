@@ -157,6 +157,10 @@ class WorkflowExecutor:
                         label_config = runtime_config['label']
                         roi_regions = runtime_config['roi_regions']
 
+                        # 调试日志：显示 interval 配置
+                        logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} interval_seconds={interval_seconds}（从 runtime_config 获取）")
+                        logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} node.interval_seconds={node.interval_seconds}（从 node 对象获取）")
+
                         # 存储ROI配置
                         self.algorithm_roi_configs[node_id] = roi_regions
                         if roi_regions:
@@ -489,28 +493,38 @@ class WorkflowExecutor:
     def _get_node_interval(self, node_id):
         node = self.nodes.get(node_id)
         if not node:
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不存在，返回 interval=0")
             return 0
 
-        if isinstance(node, AlgorithmNodeData) and node.interval_seconds is not None:
-            return node.interval_seconds
+        if isinstance(node, AlgorithmNodeData):
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 是算法节点，interval_seconds={node.interval_seconds}（类型: {type(node.interval_seconds)}）")
+            if node.interval_seconds is not None:
+                return node.interval_seconds
 
         if node_id in self.algorithms:
-            return self.algorithm_datamap[node_id].get('interval_seconds', 1)
+            interval_from_map = self.algorithm_datamap[node_id].get('interval_seconds', 1)
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 从 algorithm_datamap 获取 interval={interval_from_map}")
+            return interval_from_map
 
+        # logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是算法节点且不在 algorithms 中，返回 interval=0")
         return 0
     
     def _should_execute_node(self, node_id):
         current_time = time.time()
         interval = self._get_node_interval(node_id)
-        
+
         if interval <= 0:
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} interval={interval}<=0，总是执行")
             return True
-        
+
         last_exec = self.node_last_exec_time.get(node_id, 0)
-        if current_time - last_exec >= interval:
+        time_since_last = current_time - last_exec
+        if time_since_last >= interval:
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 距离上次执行{time_since_last:.2f}秒>=interval({interval}秒)，执行")
             self.node_last_exec_time[node_id] = current_time
             return True
-        
+
+        logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
         return False
     
     def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None, upstream_results=None):
@@ -1045,8 +1059,11 @@ class WorkflowExecutor:
             return None
 
         if not self._should_execute_node(node_id):
-            interval = self._get_node_interval(node_id)
-            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
+            # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
+            if (isinstance(node, (AlgorithmNodeData, FunctionNodeData))
+                and node_id in self.node_results_cache):
+                logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
+                del self.node_results_cache[node_id]
             return None
 
         # ========== 追踪执行状态 ==========
@@ -1812,11 +1829,14 @@ class WorkflowExecutor:
             has_detection = False
             result = None
 
-            # 从 executed_nodes 或 node_results_cache 获取上游结果
+            # 只使用当前帧真正执行的上游节点结果（不包括缓存的旧结果）
+            # 这样窗口检测器统计的才是真正的算法执行次数
             for conn in self.connections:
                 if conn['to'] == node_id:
                     upstream_node_id = conn['from']
-                    if upstream_node_id in self.node_results_cache:
+                    # 关键：检查上游节点是否在当前帧被执行过
+                    # 只有在 executed_nodes 中，才说明是当前帧产生的检测结果
+                    if upstream_node_id in self.executed_nodes and upstream_node_id in self.node_results_cache:
                         upstream_result = self.node_results_cache[upstream_node_id]
                         # 检查是否有检测
                         if 'result' in upstream_result:
@@ -1824,7 +1844,7 @@ class WorkflowExecutor:
                             if detections:
                                 has_detection = True
                                 result = upstream_result['result']
-                        break
+                    break
 
             # 只在启用窗口检测时才记录
             # 不保存图片（图片在 Alert 节点触发时保存）

@@ -164,20 +164,22 @@ def create_node_data(node_dict: Dict) -> NodeContext:
     data_id = int(data_id_raw) if data_id_raw is not None else None
 
     if node_type == 'algorithm':
+        config = node_dict.get('config', {})
         return node_class(
             node_type=node_type,
             node_id=node_id,
             data_id=data_id,
-            interval_seconds=data.get('interval_seconds'),
-            config=data.get('config')
+            interval_seconds=config.get('interval_seconds'),
+            config=config
         )
     elif node_type == 'function':
+        config = node_dict.get('config', {})
         return node_class(
             node_type=node_type,
             node_id=node_id,
             data_id=data_id,
-            interval_seconds=data.get('interval_seconds'),
-            config=data.get('config'),
+            interval_seconds=config.get('interval_seconds'),
+            config=config,
             input_nodes=data.get('input_nodes', [])
         )
     elif node_type == 'source':
