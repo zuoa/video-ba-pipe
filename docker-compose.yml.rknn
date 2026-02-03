@@ -6,6 +6,7 @@ services:
     container_name: video-ba-pipe-rknn
     restart: unless-stopped
     shm_size: '8gb'
+    entrypoint: ["gunicorn", "-w", "4", "--bind", "0.0.0.0:5002", "web.webapp:app"]
     
     # 环境变量
     environment:
@@ -43,6 +44,42 @@ services:
       - "5002:5002"
     
     # 网络配置
+    networks:
+      - video-ba-network
+
+  worker:
+    image: ghcr.io/zuoa/video-ba-pipe:rk
+    container_name: video-ba-pipe-worker
+    restart: unless-stopped
+    shm_size: '8gb'
+    entrypoint: ["python", "main.py"]
+    environment:
+      - DB_PATH=/data/db/ba.db
+      - FRAME_SAVE_PATH=/data/frames
+      - VIDEO_SAVE_PATH=/data/videos
+      - VIDEO_SOURCE_PATH=/data/video_sources
+      - MODEL_SAVE_PATH=/data/models
+      - SNAPSHOT_PATH=/data/snapshots
+      - SNAPSHOT_ENABLED=true
+      - SNAPSHOT_INTERVAL=60
+      - IS_EXTREME_DECODE_MODE=false
+      - RECORDING_ENABLED=true
+      - PRE_ALERT_DURATION=30
+      - POST_ALERT_DURATION=30
+      - RECORDING_FPS=10
+      - RINGBUFFER_DURATION=60
+      - ALERT_SUPPRESSION_DURATION=60
+      - RABBITMQ_ENABLED=true
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=admin123
+      - RABBITMQ_VHOST=/
+      - RABBITMQ_ALERT_QUEUE=video_alerts
+      - RABBITMQ_ALERT_EXCHANGE=video_alerts
+      - RABBITMQ_ALERT_ROUTING_KEY=alert
+    volumes:
+      - ./data:/data
     networks:
       - video-ba-network
     
