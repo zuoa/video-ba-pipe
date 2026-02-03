@@ -19,6 +19,9 @@ import cv2
 import numpy as np
 from typing import Any, Dict, List, Optional
 
+from app.user_scripts.common.result import build_result
+from app.user_scripts.common.roi import apply_roi
+
 # ==================== 脚本元数据（必需） ====================
 
 SCRIPT_METADATA = {
@@ -271,17 +274,15 @@ def process(frame: np.ndarray,
     #                 'class': int(cls)
     #             })
     
-    # 4. ROI过滤（如果需要）
+    # 4. ROI过滤（如果需要，推荐使用公共工具）
     # if roi_regions and detections:
-    #     detections = filter_by_roi(detections, roi_regions)
+    #     _, detections = apply_roi(frame, detections, roi_regions)
     
     # 5. 返回结果
-    return {
-        'detections': detections,
-        'metadata': {
-            'total_detections': len(detections)
-        }
-    }
+    return build_result(
+        detections,
+        metadata={'total_detections': len(detections)}
+    )
 
 
 def cleanup(state: Optional[dict]) -> None:

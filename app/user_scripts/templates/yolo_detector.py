@@ -19,6 +19,9 @@ import numpy as np
 from ultralytics import YOLO
 from typing import Any, Dict, List
 
+from app.user_scripts.common.result import build_result
+from app.user_scripts.common.roi import apply_roi
+
 # ==================== 脚本元数据（必需） ====================
 
 SCRIPT_METADATA = {
@@ -476,21 +479,20 @@ def process(frame: np.ndarray,
     # 1. 检查状态
     if state is None or not state.get('models'):
         logger.warning("[YOLO多模型] 模型未初始化")
-        return {'detections': [], 'metadata': {'error': 'Models not initialized'}}
+        return build_result([], metadata={'error': 'Models not initialized'})
     
-    # 2. 转换颜色空间
-    frame_bgr = cv2.cvtColor(frame.copy(), cv2.COLOR_RGB2BGR)
-    
-    # 3. 创建ROI掩码
-    roi_mask = create_roi_mask(frame_bgr.shape, roi_regions) if roi_regions else None
+    # 2. ROI模式
     roi_mode = config.get('roi_mode', 'post_filter')
-    
-    # 前掩码模式：检测前应用掩码
-    if roi_mode == 'pre_mask' and roi_mask is not None:
-        frame_to_detect = apply_roi_mask(frame_bgr, roi_mask)
-        logger.debug("[YOLO多模型] 使用pre_mask模式")
-    else:
-        frame_to_detect = frame_bgr
+    roi_regions_effective = roi_regions
+    if roi_regions and roi_mode:
+        roi_regions_effective = [{**r, 'mode': roi_mode} for r in roi_regions]
+
+    # 3. 前掩码（若配置了 pre_mask）
+    frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
+    logger.debug(f"[YOLO多模型] ROI模式: {roi_mode}")
+
+    # 4. 转换颜色空间
+    frame_bgr = cv2.cvtColor(frame_to_detect.copy(), cv2.COLOR_RGB2BGR)
     
     # 4. 执行多模型检测
     stages_results = {}
@@ -620,13 +622,11 @@ def process(frame: np.ndarray,
     # 6. ROI后过滤
     detections_before_roi = len(detections)
     roi_filtered_count = 0
-    if roi_mode == 'post_filter' and roi_mask is not None and len(detections) > 0:
-        original_count = len(detections)
-        detections = filter_detections_by_roi(detections, roi_mask)
-        filtered_count = original_count - len(detections)
-        roi_filtered_count = filtered_count
-        if filtered_count > 0:
-            logger.debug(f"[YOLO多模型] ROI过滤移除 {filtered_count} 个检测")
+    if roi_regions_effective and detections:
+        _, detections = apply_roi(frame, detections, roi_regions_effective)
+        roi_filtered_count = detections_before_roi - len(detections)
+        if roi_filtered_count > 0:
+            logger.debug(f"[YOLO多模型] ROI过滤移除 {roi_filtered_count} 个检测")
 
     # 7. 计算处理时间
     processing_time = (time.time() - start_time) * 1000
@@ -646,10 +646,7 @@ def process(frame: np.ndarray,
     if len(stages_results) >= 2:
         debug_metadata['merge_debug_info'] = merge_debug_info
 
-    return {
-        'detections': detections,
-        'metadata': debug_metadata
-    }
+    return build_result(detections, metadata=debug_metadata)
 
 
 def cleanup(state: dict) -> None:

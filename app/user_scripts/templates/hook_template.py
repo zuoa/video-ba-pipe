@@ -20,6 +20,8 @@ import cv2
 import numpy as np
 from typing import Any, Dict, List, Optional
 
+from app.user_scripts.common.result import validate_detections
+
 # ==================== 脚本元数据（必需） ====================
 
 SCRIPT_METADATA = {
@@ -234,6 +236,7 @@ def handle_post_detect(context: dict) -> dict:
     from app import logger
     
     detections = context.get('detections', [])
+    detections = validate_detections(detections)
     frame = context.get('frame')
     
     # ===== 在这里实现你的后处理逻辑 =====

@@ -24,6 +24,9 @@ import numpy as np
 from ultralytics import YOLO
 from typing import Any, Dict
 
+from app.user_scripts.common.result import build_result
+from app.user_scripts.common.roi import apply_roi
+
 # ==================== 脚本元数据（必需） ====================
 
 SCRIPT_METADATA = {
@@ -300,7 +303,7 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
     # 1. 检查状态
     if not state or 'model' not in state:
         logger.warning("[简单YOLO检测] 模型未初始化")
-        return {'detections': [], 'metadata': {'error': 'Model not initialized'}}
+        return build_result([], metadata={'error': 'Model not initialized'})
 
     # 2. 获取配置参数
     model = state['model']
@@ -325,24 +328,16 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
 
     logger.debug(f"[简单YOLO检测] ROI模式: {roi_mode}")
 
-    # 3. 转换颜色空间
-    # YOLO需要BGR格式，但系统传入的是RGB格式
-    frame_bgr = cv2.cvtColor(frame.copy(), cv2.COLOR_RGB2BGR)
+    # 3. 根据ROI模式准备区域配置（以算法节点配置为准）
+    roi_regions_effective = roi_regions
+    if roi_regions and roi_mode:
+        roi_regions_effective = [{**r, 'mode': roi_mode} for r in roi_regions]
 
-    # 4. 创建ROI掩码（如果配置了ROI）
-    roi_mask = None
-    if roi_regions:
-        roi_mask = create_roi_mask(frame_bgr.shape, roi_regions)
-        logger.debug(f"[简单YOLO检测] 已创建ROI掩码，模式: {roi_mode}")
+    # 4. 前掩码（若配置了 pre_mask）
+    frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
 
-    # 5. 根据ROI模式处理图像
-    if roi_mode == 'pre_mask' and roi_mask is not None:
-        # 前掩码模式：检测前应用掩码
-        frame_to_detect = apply_roi_mask(frame_bgr, roi_mask)
-        logger.debug("[简单YOLO检测] 使用pre_mask模式，已应用掩码")
-    else:
-        # 后过滤模式：使用原始图像
-        frame_to_detect = frame_bgr
+    # 5. 转换颜色空间（YOLO需要BGR格式）
+    frame_bgr = cv2.cvtColor(frame_to_detect.copy(), cv2.COLOR_RGB2BGR)
 
     # 6. 执行YOLO检测
     kwargs = {
@@ -389,13 +384,11 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
     # 8. ROI后过滤（post_filter 模式）
     detections_before_roi = len(detections)
     roi_filtered_count = 0
-    if roi_mode == 'post_filter' and roi_mask is not None and len(detections) > 0:
-        original_count = len(detections)
-        detections = filter_detections_by_roi(detections, roi_mask)
-        filtered_count = original_count - len(detections)
-        roi_filtered_count = filtered_count
-        if filtered_count > 0:
-            logger.debug(f"[简单YOLO检测] ROI后过滤移除 {filtered_count} 个检测")
+    if roi_regions_effective and detections:
+        _, detections = apply_roi(frame, detections, roi_regions_effective)
+        roi_filtered_count = detections_before_roi - len(detections)
+        if roi_filtered_count > 0:
+            logger.debug(f"[简单YOLO检测] ROI后过滤移除 {roi_filtered_count} 个检测")
 
     # 9. 计算处理时间
     processing_time = (time.time() - start_time) * 1000
@@ -422,10 +415,7 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
         metadata['detections_before_roi'] = detections_before_roi  # ROI过滤前的数量
         metadata['roi_filtered_count'] = roi_filtered_count  # ROI过滤掉的数量
 
-    return {
-        'detections': detections,
-        'metadata': metadata
-    }
+    return build_result(detections, metadata=metadata)
 
 
 def cleanup(state: dict) -> None:

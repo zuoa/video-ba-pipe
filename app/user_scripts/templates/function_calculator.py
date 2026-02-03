@@ -1,6 +1,8 @@
 import numpy as np
 from typing import Any, Dict, List
 
+from app.user_scripts.common.result import build_result
+
 # 单输入函数列表（只需一个输入节点，依赖 frame 尺寸）
 SINGLE_INPUT_FUNCTIONS = [
     'height_ratio_frame',
@@ -116,18 +118,23 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
             state: dict = None, upstream_results: dict = None) -> dict:
     from app import logger
 
+    def _empty_result():
+        res = build_result([], metadata={})
+        res['function_results'] = []
+        return res
+
     if not state or 'function' not in state:
-        return {'detections': [], 'function_results': []}
+        return _empty_result()
 
     if not upstream_results:
         logger.debug(f"[函数计算器] 没有上游结果")
-        return {'detections': [], 'function_results': []}
+        return _empty_result()
 
     # 获取第一个上游节点的检测结果（自动识别）
     upstream_node_ids = list(upstream_results.keys())
     if not upstream_node_ids:
         logger.warning(f"[函数计算器] upstream_results 为空字典")
-        return {'detections': [], 'function_results': []}
+        return _empty_result()
 
     node_a_id = upstream_node_ids[0]
     result_a = upstream_results.get(node_a_id, {})
@@ -144,7 +151,7 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
         logger.debug(f"[函数计算器] 应用类别过滤后：{filtered_count} -> {len(detections_a)}")
 
     if not detections_a:
-        return {'detections': [], 'function_results': []}
+        return _empty_result()
 
     # 判断是单输入还是双输入函数
     is_single_input = state.get('is_single_input', False)
@@ -176,7 +183,7 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
 
         if not node_b_id:
             logger.warning(f"[函数计算器] 双输入函数缺少输入节点B配置")
-            return {'detections': [], 'function_results': []}
+            return _empty_result()
 
         result_b = upstream_results.get(node_b_id, {})
         detections_b = result_b.get('detections', [])
@@ -186,7 +193,7 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
             detections_b = [d for d in detections_b if d.get('class') in class_filter_b]
 
         if not detections_b:
-            return {'detections': [], 'function_results': []}
+            return _empty_result()
 
         function_config = {
             'threshold': config.get('threshold', 0.7),
@@ -202,17 +209,17 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
             all_detections.append(r['object_a'])
             all_detections.append(r['object_b'])
 
-    return {
-        'detections': all_detections,
-        'function_results': results,
-        'metadata': {
+    result = build_result(
+        all_detections,
+        metadata={
             'function_name': state['function_name'],
             'matched_count': len(results),
             'is_single_input': is_single_input
         }
-    }
+    )
+    result['function_results'] = results
+    return result
 
 
 def cleanup(state: dict) -> None:
     pass
-

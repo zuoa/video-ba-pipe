@@ -10,7 +10,8 @@ app/user_scripts/
 ├── hooks/               # Hook脚本
 │   ├── pre_detect_hooks/
 │   └── post_detect_hooks/
-├── utils/               # 工具函数库
+├── utils/               # 工具函数库（历史）
+├── common/              # 统一脚本公共工具（建议使用）
 ├── templates/           # 脚本模板
 └── tests/               # 脚本测试
 ```
@@ -19,7 +20,7 @@ app/user_scripts/
 
 ### 检测脚本 (detectors/)
 
-检测脚本必须实现 `process(frame, config, state=None)` 函数：
+检测脚本必须实现 `process(frame, config, roi_regions=None, state=None, upstream_results=None)` 函数：
 
 ```python
 import cv2
@@ -51,27 +52,30 @@ def init(config):
     model = load_your_model(config['model_path'])
     return {'model': model}
 
-def process(frame, config, state=None):
+def process(frame, config, roi_regions=None, state=None, upstream_results=None):
     """
     处理函数（必须）
 
     Args:
         frame: numpy.ndarray, RGB格式图像 (height, width, 3)
         config: dict, 算法配置
-        state: init函数的返回值
+        roi_regions: list, ROI配置（可选）
+        state: init函数的返回值（可选）
+        upstream_results: dict, 上游节点结果（可选）
 
     Returns:
         dict: {
             'detections': [
                 {
-                    'box': [x1, y1, x2, y2],  # 边界框坐标
+                    'box': [x1, y1, x2, y2],   # 边界框坐标（像素）
                     'label': 'person',         # 标签名称
                     'confidence': 0.95,        # 置信度
-                    'class': 0,                # 类别ID
+                    'class': 0,                # 类别ID（可选）
                     'metadata': {}             # 可选的额外信息
                 }
             ],
-            'metadata': {},      # 调试信息
+            'frame': frame,       # 可选：修改后的frame
+            'metadata': {},       # 可选：调试信息
             'skip_next': False   # 是否跳过后续处理
         }
     """
@@ -198,6 +202,22 @@ VALUES (1, 1);
 - 禁止文件系统访问（除指定目录）
 - 禁止网络请求
 - 禁止子进程创建
+
+## 公共工具模块（建议）
+
+统一使用 `app/user_scripts/common/` 下的工具，避免各脚本对结果结构、ROI、阈值、坐标系的理解不一致。
+
+结果字段规范：
+- 必须提供 `box` 和 `confidence`。
+- `bbox` / `score` 会被公共工具自动归一化，但不建议新脚本继续使用。
+
+模块拆分建议：
+- `app/user_scripts/common/result.py`: 结果结构构造与验证
+- `app/user_scripts/common/roi.py`: ROI裁剪/过滤统一逻辑
+- `app/user_scripts/common/filter.py`: 阈值、类别过滤、NMS
+- `app/user_scripts/common/bbox.py`: 坐标系转换、bbox工具
+- `app/user_scripts/common/safe.py`: 异常保护与日志封装
+- `app/user_scripts/common/types.py`: Detection/Result 结构约定
 - CPU时间限制
 - 内存使用限制
 
