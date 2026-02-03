@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Checkbox, Space, message, Tabs, Upload, Dragger } from 'antd';
+import { Modal, Form, Input, Select, Checkbox, Space, message, Tabs, Upload } from 'antd';
 import { UploadOutlined, CodeOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
 import type { UploadChangeParam } from 'antd/es/upload';
 import { createScript } from '@/services/api';
@@ -180,7 +180,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
               ),
               children: (
                 <Form.Item label="上传 .py 文件" required>
-                  <Dragger
+                  <Upload.Dragger
                     fileList={fileList}
                     onChange={handleFileChange}
                     beforeUpload={beforeUpload}
@@ -194,7 +194,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
                     <p className="ant-upload-hint">
                       支持 .py 文件，文件将自动读取并填充到编辑器
                     </p>
-                  </Dragger>
+                  </Upload.Dragger>
                   {codeContent && (
                     <div style={{ marginTop: 16 }}>
                       <p>文件内容预览：</p>

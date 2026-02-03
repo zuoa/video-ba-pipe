@@ -5,7 +5,7 @@ services:
   # CUDA/GPU版本服务
   # 需要宿主机安装 NVIDIA Docker Runtime
   # ============================================
-  video-ba-pipe-cuda:
+  app:
     image: ghcr.io/zuoa/video-ba-pipe:cuda
     container_name: video-ba-pipe-cuda
     restart: unless-stopped
@@ -59,11 +59,13 @@ services:
     
     # 端口映射
     ports:
-      - "5000:5000"
+      - "5002:5002"
     
     # 网络配置
     networks:
-      - video-ba-network
+      video-ba-network:
+        aliases:
+          - app
     
     # GPU资源限制（可选）
     deploy:
@@ -93,6 +95,20 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+  # ============================================
+  # 前端 (Nginx)
+  # ============================================
+  frontend:
+    image: ghcr.io/zuoa/video-ba-pipe-frontend:latest
+    container_name: video-ba-pipe-frontend
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "8080:80"
+    networks:
+      - video-ba-network
 
   # ============================================
   # RabbitMQ消息队列服务（可选）
@@ -143,5 +159,3 @@ networks:
 volumes:
   rabbitmq-data:
     driver: local
-
-

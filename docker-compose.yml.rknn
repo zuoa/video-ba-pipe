@@ -38,9 +38,9 @@ services:
     volumes:
       - ./data:/data
     
-    # 端口映射 (使用不同端口避免冲突)
+    # 端口映射
     ports:
-      - "5001:5000"
+      - "5002:5002"
     
     # 网络配置
     networks:
@@ -61,7 +61,20 @@ services:
     #       cpus: '4'
     #       memory: 8G
 
+  # ============================================
+  # 前端 (Nginx)
+  # ============================================
+  frontend:
+    image: ghcr.io/zuoa/video-ba-pipe-frontend:latest
+    container_name: video-ba-pipe-frontend
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "8080:80"
+    networks:
+      - video-ba-network
+
 networks:
   video-ba-network:
     driver: bridge
-

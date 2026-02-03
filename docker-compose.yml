@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-   # ============================================
+  # ============================================
   # CPU版本服务
   # ============================================
-  video-ba-pipe-cpu:
+  app:
     image: ghcr.io/zuoa/video-ba-pipe:cpu
     container_name: video-ba-pipe-cpu
     restart: unless-stopped
@@ -41,13 +41,15 @@ services:
     volumes:
       - ./data:/data
     
-    # 端口映射 (使用不同端口避免冲突)
+    # 端口映射
     ports:
-      - "5001:5000"
+      - "5002:5002"
     
     # 网络配置
     networks:
-      - video-ba-network
+      video-ba-network:
+        aliases:
+          - app
     
     # 日志配置
     logging:
@@ -64,7 +66,20 @@ services:
     #       cpus: '4'
     #       memory: 8G
 
+  # ============================================
+  # 前端 (Nginx)
+  # ============================================
+  frontend:
+    image: ghcr.io/zuoa/video-ba-pipe-frontend:latest
+    container_name: video-ba-pipe-frontend
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "8080:80"
+    networks:
+      - video-ba-network
+
 networks:
   video-ba-network:
     driver: bridge
-
