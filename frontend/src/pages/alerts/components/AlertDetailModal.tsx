@@ -11,6 +11,7 @@ import {
   ApartmentOutlined,
 } from '@ant-design/icons';
 import { Alert, Task, DetectionImage } from '../types';
+import { buildAlertVideoUrl } from '@/utils/media';
 import './AlertDetailModal.css';
 
 const { Title, Text } = Typography;
@@ -205,7 +206,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                       <video
                         controls
                         preload="metadata"
-                        src={`/api/video/videos/${alert.alert_video}`}
+                        src={buildAlertVideoUrl(alert.alert_video)}
                       />
                     </div>
                   </div>

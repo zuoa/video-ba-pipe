@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  video-ba-pipe-cpu:
+  app:
     image: ghcr.io/zuoa/video-ba-pipe:rk
     container_name: video-ba-pipe-rknn
     restart: unless-stopped

@@ -3,6 +3,7 @@ import { getAlerts, getTodayAlertsCount, getVideoSources, getWorkflows, getAlert
 import { Alert, Task } from '../alerts/types';
 import AlertTypeBadge from '../alerts/components/AlertTypeBadge';
 import RelativeTime from '../alerts/components/RelativeTime';
+import { buildAlertVideoUrl } from '@/utils/media';
 import {
   SafetyOutlined,
   ExclamationCircleOutlined,
@@ -254,7 +255,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </h3>
               <div className="video-link">
                 <a
-                  href={`/api/video/videos/${alert.alert_video}`}
+                  href={buildAlertVideoUrl(alert.alert_video)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="video-link-button"

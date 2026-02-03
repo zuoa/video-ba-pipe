@@ -95,10 +95,19 @@ export default defineConfig({
   npmClient: 'npm',
   proxy: {
     '/api': {
-      target: 'http://localhost:5002',
+      target: 'http://10.0.4.147:5002',
       changeOrigin: true,
+      // Avoid HPM HPE_UNEXPECTED_CONTENT_LENGTH for range video responses
+      onProxyReq: (proxyReq) => {
+        proxyReq.removeHeader('accept-encoding');
+      },
+      onProxyRes: (proxyRes) => {
+        const hasTE = !!proxyRes.headers['transfer-encoding'];
+        if (hasTE && proxyRes.headers['content-length']) {
+          delete proxyRes.headers['content-length'];
+        }
+      },
     },
   },
   esbuildMinifyIIFE: true,
 });
-
