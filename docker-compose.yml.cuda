@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # CUDA/GPU版本服务
+  # 需要宿主机安装 NVIDIA Docker Runtime
+  # ============================================
+  video-ba-pipe-cuda:
+    image: ghcr.io/zuoa/video-ba-pipe:cuda
+    container_name: video-ba-pipe-cuda
+    restart: unless-stopped
+    shm_size: '8gb'
+    
+    # GPU配置 - 使用所有可用GPU
+    runtime: nvidia
+    environment:
+      # GPU相关环境变量
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      
+      # 应用数据路径
+      - DB_PATH=/data/db/ba.db
+      - FRAME_SAVE_PATH=/data/frames
+      - VIDEO_SAVE_PATH=/data/videos
+      - VIDEO_SOURCE_PATH=/data/video_sources
+      - MODEL_SAVE_PATH=/data/models
+      - SNAPSHOT_PATH=/data/snapshots
+      
+      # 功能开关
+      - SNAPSHOT_ENABLED=true
+      - SNAPSHOT_INTERVAL=60
+      - RECORDING_ENABLED=true
+      - IS_EXTREME_DECODE_MODE=false
+      
+      # 录制配置
+      - PRE_ALERT_DURATION=30
+      - POST_ALERT_DURATION=30
+      - RECORDING_FPS=25
+      - RINGBUFFER_DURATION=120
+      - ALERT_SUPPRESSION_DURATION=60
+      
+      # RabbitMQ消息队列配置
+      - RABBITMQ_ENABLED=true
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=admin123
+      - RABBITMQ_VHOST=/
+      - RABBITMQ_ALERT_QUEUE=video_alerts
+      - RABBITMQ_ALERT_EXCHANGE=video_alerts
+      - RABBITMQ_ALERT_ROUTING_KEY=alert
+      
+      # 时区设置
+      - TZ=Asia/Shanghai
+    
+    # 数据卷挂载
+    volumes:
+      - ./app/data:/app/app/data
+    
+    # 端口映射
+    ports:
+      - "5000:5000"
+    
+    # 网络配置
+    networks:
+      - video-ba-network
+    
+    # GPU资源限制（可选）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # 使用所有GPU，或指定数量如 count: 1
+              capabilities: [gpu]
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # 依赖服务（如果启用RabbitMQ）
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # ============================================
+  # RabbitMQ消息队列服务（可选）
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: video-ba-rabbitmq
+    restart: unless-stopped
+    
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+      - RABBITMQ_DEFAULT_VHOST=/
+    
+    ports:
+      - "5672:5672"   # AMQP协议端口
+      - "15672:15672" # 管理界面端口
+    
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    
+    networks:
+      - video-ba-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+# ============================================
+# 网络配置
+# ============================================
+networks:
+  video-ba-network:
+    driver: bridge
+
+# ============================================
+# 数据卷
+# ============================================
+volumes:
+  rabbitmq-data:
+    driver: local
+
+
