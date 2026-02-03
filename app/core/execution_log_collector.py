@@ -6,6 +6,7 @@
 
 from typing import List, Dict, Optional
 import time
+import threading
 
 
 class ExecutionLogCollector:
@@ -27,6 +28,7 @@ class ExecutionLogCollector:
         """初始化日志收集器"""
         self.logs: List[Dict] = []  # 日志记录列表
         self.frame_timestamp: Optional[float] = None  # 当前帧时间戳
+        self._lock = threading.Lock()
 
     def add_log(
         self,
@@ -51,7 +53,8 @@ class ExecutionLogCollector:
             'timestamp': time.time(),
             'metadata': metadata or {}
         }
-        self.logs.append(log_entry)
+        with self._lock:
+            self.logs.append(log_entry)
 
     def add_info(self, node_id: str, content: str, metadata: Optional[Dict] = None):
         """添加 info 级别日志（便捷方法）"""

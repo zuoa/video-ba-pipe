@@ -7,6 +7,8 @@ import logging
 import os
 import time
 import numpy as np
+import cv2
+import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import resource_tracker
@@ -122,6 +124,7 @@ class WorkflowExecutor:
         self.node_last_exec_time = {}
         for node_id in self.nodes.keys():
             self.node_last_exec_time[node_id] = 0
+        self._state_lock = threading.Lock()
 
     def _load_algorithms(self):
         """加载算法节点所需的算法（供测试模式和实时模式使用）"""
@@ -550,6 +553,8 @@ class WorkflowExecutor:
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
             result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
+            if result is None:
+                raise RuntimeError(f"algo.process returned None for node {node_id}")
             has_detection = bool(result and result.get("detections"))
             roi_mask = result.get('roi_mask')
 
@@ -574,7 +579,7 @@ class WorkflowExecutor:
         except Exception as exc:
             logger.error(f"[Workflow-{self.workflow_id}] 错误：算法节点 {node_id} 在处理过程中发生异常: {exc}")
             logger.exception(exc, exc_info=True)
-            return None
+            raise
     
     def _evaluate_condition(self, condition, context):
         """
@@ -729,7 +734,8 @@ class WorkflowExecutor:
         try:
             result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
             if result:
-                self.node_results_cache[node_id] = result
+                with self._state_lock:
+                    self.node_results_cache[node_id] = result
 
                 # 记录检测日志
                 detection_count = len(result.get('result', {}).get('detections', []))
@@ -748,7 +754,7 @@ class WorkflowExecutor:
             logger.error(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 执行异常: {e}")
             import traceback
             traceback.print_exc()
-            return None
+            raise
     
     def _handle_condition_node(self, node_id, context):
         """
@@ -945,7 +951,8 @@ class WorkflowExecutor:
                 'upstream_node_id': node_a_id
             }
 
-            self.node_results_cache[node_id] = result
+            with self._state_lock:
+                self.node_results_cache[node_id] = result
             return result
 
         except Exception as exc:
@@ -966,13 +973,15 @@ class WorkflowExecutor:
             dict: 上游节点结果字典，始终返回字典（可能为空）
         """
         upstream_results = {}
+        with self._state_lock:
+            cache_snapshot = dict(self.node_results_cache)
 
         # 优先从连线中获取上游节点（更可靠）
         for conn in self.connections:
             if conn['to'] == node_id:
                 from_node_id = conn['from']
-                if from_node_id in self.node_results_cache:
-                    cached = self.node_results_cache[from_node_id]
+                if from_node_id in cache_snapshot:
+                    cached = cache_snapshot[from_node_id]
                     # 只处理有 result 的缓存（source 节点没有 result）
                     if 'result' in cached:
                         upstream_results[from_node_id] = cached['result']
@@ -982,8 +991,8 @@ class WorkflowExecutor:
             node = self.nodes.get(node_id)
             if isinstance(node, FunctionNodeData) and node.input_nodes:
                 for input_node_id in node.input_nodes:
-                    if input_node_id in self.node_results_cache:
-                        cached = self.node_results_cache[input_node_id]
+                    if input_node_id in cache_snapshot:
+                        cached = cache_snapshot[input_node_id]
                         if 'result' in cached:
                             upstream_results[input_node_id] = cached['result']
 
@@ -1063,7 +1072,9 @@ class WorkflowExecutor:
             if (isinstance(node, (AlgorithmNodeData, FunctionNodeData))
                 and node_id in self.node_results_cache):
                 logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
-                del self.node_results_cache[node_id]
+                with self._state_lock:
+                    if node_id in self.node_results_cache:
+                        del self.node_results_cache[node_id]
             return None
 
         # ========== 追踪执行状态 ==========
@@ -1086,11 +1097,12 @@ class WorkflowExecutor:
             execution_error = f"未知节点类型: {node_type}"
 
             # 更新追踪状态
-            self.execution_results[node_id] = {
-                'success': False,
-                'error': execution_error,
-                'execution_time': int((time.time() - start_time) * 1000)
-            }
+            with self._state_lock:
+                self.execution_results[node_id] = {
+                    'success': False,
+                    'error': execution_error,
+                    'execution_time': int((time.time() - start_time) * 1000)
+                }
             return context
 
         logger.info(f"[Workflow-{self.workflow_id}] 执行节点 {node_id} (类型: {node_type})")
@@ -1100,12 +1112,15 @@ class WorkflowExecutor:
 
             # 记录成功执行
             if node_id not in self.executed_nodes:
-                self.executed_nodes.append(node_id)
+                with self._state_lock:
+                    if node_id not in self.executed_nodes:
+                        self.executed_nodes.append(node_id)
 
-            self.execution_results[node_id] = {
-                'success': True,
-                'execution_time': int((time.time() - start_time) * 1000)
-            }
+            with self._state_lock:
+                self.execution_results[node_id] = {
+                    'success': True,
+                    'execution_time': int((time.time() - start_time) * 1000)
+                }
 
             return result
 
@@ -1117,11 +1132,12 @@ class WorkflowExecutor:
             traceback.print_exc()
 
             # 记录失败状态
-            self.execution_results[node_id] = {
-                'success': False,
-                'error': execution_error,
-                'execution_time': int((time.time() - start_time) * 1000)
-            }
+            with self._state_lock:
+                self.execution_results[node_id] = {
+                    'success': False,
+                    'error': execution_error,
+                    'execution_time': int((time.time() - start_time) * 1000)
+                }
 
             # 从 context 获取 log_collector 并记录错误
             log_collector = context.get('log_collector')
@@ -1172,8 +1188,9 @@ class WorkflowExecutor:
                 continue
 
             logger.debug(f"[Workflow-{self.workflow_id}] {node_id} -> {next_id} 条件满足，继续执行")
-            # 继续执行下游节点
-            self._execute_branch(next_id, context)
+            # 继续执行下游节点（分支隔离 context，避免污染）
+            branch_context = context.copy()
+            self._execute_branch(next_id, branch_context)
 
     def _execute_level_nodes(self, level_nodes, context, executor=None):
         """
@@ -1191,7 +1208,7 @@ class WorkflowExecutor:
             # 并行执行当前层级的节点
             logger.debug(f"[Workflow-{self.workflow_id}] 并行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             future_to_node = {
-                executor.submit(self._execute_level_node, nid, context): nid
+                executor.submit(self._execute_level_node, nid, context.copy()): nid
                 for nid in level_nodes
             }
 
@@ -1205,7 +1222,7 @@ class WorkflowExecutor:
             # 串行执行当前层级的节点
             logger.debug(f"[Workflow-{self.workflow_id}] 串行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             for node_id in level_nodes:
-                self._execute_level_node(node_id, context)
+                self._execute_level_node(node_id, context.copy())
 
     def _execute_level_node(self, node_id, context):
         """
@@ -1254,7 +1271,7 @@ class WorkflowExecutor:
                 if self._evaluate_condition(condition, context):
                     logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
                     # 传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
-                    self._execute_branch(next_id, context)
+                    self._execute_branch(next_id, context.copy())
         elif isinstance(node, AlgorithmNodeData):
             # 算法节点：执行并继续执行下游（形成完整分支）
             self._execute_branch(node_id, context)
@@ -1315,8 +1332,12 @@ class WorkflowExecutor:
                     upstream_node_id = conn['from']
                     break
 
-            if upstream_node_id and upstream_node_id in self.node_results_cache:
-                cached_data = self.node_results_cache[upstream_node_id]
+            cached_data = None
+            if upstream_node_id:
+                with self._state_lock:
+                    if upstream_node_id in self.node_results_cache:
+                        cached_data = self.node_results_cache[upstream_node_id]
+            if cached_data:
                 # 将缓存的数据合并到 context
                 context.update({
                     'result': cached_data.get('result'),
@@ -1695,9 +1716,10 @@ class WorkflowExecutor:
         }
 
         # ========== 清空执行状态 ==========
-        self.execution_results.clear()
-        self.executed_nodes.clear()
-        self.node_results_cache.clear()
+        with self._state_lock:
+            self.execution_results.clear()
+            self.executed_nodes.clear()
+            self.node_results_cache.clear()
 
         # ========== 使用统一的执行逻辑（与运行模式完全相同） ==========
         # 注意：直接调用运行模式的执行方法，不需要任何特殊处理
@@ -1767,8 +1789,9 @@ class WorkflowExecutor:
                 }
 
                 # 清空执行状态
-                self.execution_results.clear()
-                self.executed_nodes.clear()
+                with self._state_lock:
+                    self.execution_results.clear()
+                    self.executed_nodes.clear()
                 # 注意：不清空 node_results_cache，因为可能需要跨帧的数据
 
                 # 执行工作流
@@ -1811,6 +1834,11 @@ class WorkflowExecutor:
         frame_timestamp = context.get('frame_timestamp')
         frame = context.get('frame')
 
+        # 读取当前帧执行快照（避免并发修改）
+        with self._state_lock:
+            executed_nodes_snapshot = set(self.executed_nodes)
+            node_results_snapshot = dict(self.node_results_cache)
+
         # 遍历所有 Alert 节点
         for node_id, node in self.nodes.items():
             if not isinstance(node, AlertNodeData):
@@ -1836,8 +1864,8 @@ class WorkflowExecutor:
                     upstream_node_id = conn['from']
                     # 关键：检查上游节点是否在当前帧被执行过
                     # 只有在 executed_nodes 中，才说明是当前帧产生的检测结果
-                    if upstream_node_id in self.executed_nodes and upstream_node_id in self.node_results_cache:
-                        upstream_result = self.node_results_cache[upstream_node_id]
+                    if upstream_node_id in executed_nodes_snapshot and upstream_node_id in node_results_snapshot:
+                        upstream_result = node_results_snapshot[upstream_node_id]
                         # 检查是否有检测
                         if 'result' in upstream_result:
                             detections = upstream_result['result'].get('detections', [])
@@ -1869,15 +1897,19 @@ class WorkflowExecutor:
         """
         log_collector = context.get('log_collector')
 
+        with self._state_lock:
+            executed_nodes_snapshot = list(self.executed_nodes)
+            execution_results_snapshot = dict(self.execution_results)
+
         # 构建节点结果列表
         results = []
-        for node_id in self.executed_nodes:
+        for node_id in executed_nodes_snapshot:
             node = self.nodes.get(node_id)
             if not node:
                 continue
 
             # 获取执行状态
-            exec_status = self.execution_results.get(node_id, {})
+            exec_status = execution_results_snapshot.get(node_id, {})
 
             # 构建测试结果格式
             node_result = {
@@ -1934,16 +1966,21 @@ class WorkflowExecutor:
 
         # 算法节点
         elif node_type == 'algorithm':
-            if node_id in self.node_results_cache:
-                cached = self.node_results_cache[node_id]
+            with self._state_lock:
+                cached = self.node_results_cache.get(node_id)
+            if cached:
                 detections = cached.get('result', {}).get('detections', [])
+
+                upstream_roi = self._find_upstream_roi(node_id)
+                effective_roi = upstream_roi if upstream_roi is not None else self.algorithm_roi_configs.get(node_id, [])
+                roi_applied = len(effective_roi) > 0
 
                 result_data = {
                     'message': f'检测完成，检测到 {len(detections)} 个目标',
                     'detections': detections,
                     'detection_count': len(detections),
-                    'roi_regions': context.get('roi_regions', []),
-                    'roi_applied': len(context.get('roi_regions', [])) > 0,
+                    'roi_regions': effective_roi,
+                    'roi_applied': roi_applied,
                     'detections_detail': detections[:10],
                 }
 
@@ -1951,12 +1988,12 @@ class WorkflowExecutor:
                 algo_metadata = cached.get('result', {}).get('metadata', {})
                 if algo_metadata.get('detections_before_roi') is not None:
                     result_data['debug_info'] = {
-                        'roi_configured': len(context.get('roi_regions', [])) > 0,
-                        'roi_regions_count': len(context.get('roi_regions', [])),
+                        'roi_configured': roi_applied,
+                        'roi_regions_count': len(effective_roi),
                         'detections_before_roi': algo_metadata.get('detections_before_roi', len(detections)),
                         'roi_filtered_count': algo_metadata.get('roi_filtered_count', 0),
                         'detection_count': len(detections),
-                        'roi_filter_enabled': len(context.get('roi_regions', [])) > 0
+                        'roi_filter_enabled': roi_applied
                     }
 
                 return result_data
@@ -1965,8 +2002,9 @@ class WorkflowExecutor:
 
         # 函数节点
         elif node_type == 'function':
-            if node_id in self.node_results_cache:
-                cached = self.node_results_cache[node_id]
+            with self._state_lock:
+                cached = self.node_results_cache.get(node_id)
+            if cached:
                 detections = cached.get('result', {}).get('detections', [])
                 function_metadata = cached.get('result', {}).get('metadata', {})
 
@@ -2029,8 +2067,9 @@ class WorkflowExecutor:
             for conn in self.connections:
                 if conn['to'] == node_id:
                     upstream_id = conn['from']
-                    if upstream_id in self.node_results_cache:
-                        cached = self.node_results_cache[upstream_id]
+                    with self._state_lock:
+                        cached = self.node_results_cache.get(upstream_id)
+                    if cached:
                         detection_count = len(cached.get('result', {}).get('detections', []))
                         break
 
@@ -2075,8 +2114,12 @@ class WorkflowExecutor:
                     upstream_node_id = conn['from']
                     break
 
-            if upstream_node_id and upstream_node_id in self.node_results_cache:
-                cached_data = self.node_results_cache[upstream_node_id]
+            cached_data = None
+            if upstream_node_id:
+                with self._state_lock:
+                    if upstream_node_id in self.node_results_cache:
+                        cached_data = self.node_results_cache[upstream_node_id]
+            if cached_data:
                 context.update({
                     'result': cached_data.get('result'),
                     'has_detection': cached_data.get('has_detection'),
