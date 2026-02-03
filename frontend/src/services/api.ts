@@ -245,7 +245,7 @@ export async function getAlertTrend(days: number = 7) {
 
 // 模型
 export async function getModels(params?: any) {
-  return request('/api/models', { params });
+  return request('/api/models/', { params });
 }
 
 export async function getModel(id: number) {
@@ -261,7 +261,7 @@ export async function getModelFrameworks() {
 }
 
 export async function createModel(data: any) {
-  return request('/api/models', {
+  return request('/api/models/', {
     method: 'POST',
     data,
   });
@@ -346,7 +346,7 @@ export async function uploadModel(file: File, metadata?: {
 
 // 脚本
 export async function getScripts() {
-  return request('/api/scripts');
+  return request('/api/scripts/');
 }
 
 export async function getScript(scriptPath: string) {
@@ -354,7 +354,7 @@ export async function getScript(scriptPath: string) {
 }
 
 export async function createScript(data: any) {
-  return request('/api/scripts', {
+  return request('/api/scripts/upload', {
     method: 'POST',
     data,
   });
@@ -422,4 +422,3 @@ export async function testWorkflow(workflowId: number, imageBase64: string) {
     data: { image: imageBase64 },
   });
 }
-
