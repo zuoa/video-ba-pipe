@@ -102,7 +102,7 @@ services:
   # 前端 (Nginx)
   # ============================================
   frontend:
-    image: ghcr.io/zuoa/video-ba-pipe-frontend:latest
+    image: ghcr.io/zuoa/video-ba-pipe-frontend:main
     container_name: video-ba-pipe-frontend
     restart: unless-stopped
     depends_on:
