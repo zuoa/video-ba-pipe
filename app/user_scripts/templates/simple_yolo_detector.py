@@ -336,9 +336,6 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
     # 4. 前掩码（若配置了 pre_mask）
     frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
 
-    # 5. 转换颜色空间（YOLO需要BGR格式）
-    frame_bgr = cv2.cvtColor(frame_to_detect.copy(), cv2.COLOR_RGB2BGR)
-
     # 6. 执行YOLO检测
     kwargs = {
         'save': False,           # 不保存结果图片

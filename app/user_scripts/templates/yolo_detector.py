@@ -491,9 +491,6 @@ def process(frame: np.ndarray,
     frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
     logger.debug(f"[YOLO多模型] ROI模式: {roi_mode}")
 
-    # 4. 转换颜色空间
-    frame_bgr = cv2.cvtColor(frame_to_detect.copy(), cv2.COLOR_RGB2BGR)
-    
     # 4. 执行多模型检测
     stages_results = {}
     model_debug_info = []  # 用于调试：记录每个模型的检测情况
