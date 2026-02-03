@@ -211,3 +211,6 @@ marimo/_lsp/
 __marimo__/
 .idea
 /app/data/
+/app.db
+debug.log.*
+run.log.*
