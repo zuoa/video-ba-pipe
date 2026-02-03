@@ -1,0 +1,86 @@
+# ============================================
+# Video BA Pipe - RK3588 (Debian + NPU)
+# 适用于RK3588 arm64 Debian + NPU运行时
+# ============================================
+
+# 明确 arm64 架构
+FROM --platform=linux/arm64 arm64v8/python:3.10-slim-bullseye
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TZ=Asia/Shanghai
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖（仅运行时所需）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    # OpenCV 运行时依赖
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgomp1 \
+    libgl1 \
+    # FFmpeg 与编解码
+    ffmpeg \
+    # 常用工具
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 升级 pip
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# 可选：预装 PyTorch（如需使用 ultralytics）
+# 通过 --build-arg TORCH_WHL=URL_OR_PATH 指定
+ARG TORCH_WHL=""
+RUN if [ -n "$TORCH_WHL" ]; then pip install "$TORCH_WHL"; fi
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY app/ /app/app/
+COPY env.example /app/.env.example
+
+# 创建必要的数据目录
+RUN mkdir -p /app/app/data/db \
+    /app/app/data/frames \
+    /app/app/data/videos \
+    /app/app/data/models \
+    /app/app/data/snapshots \
+    /app/app/data/logs
+
+RUN chmod +x /app/app/entrypoint.sh
+
+# NPU 运行时库路径（请在运行时挂载 /opt/rknn）
+ENV LD_LIBRARY_PATH="/opt/rknn/lib:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
+VOLUME ["/opt/rknn", "/app/app/data"]
+
+# 暴露端口
+EXPOSE 5000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+WORKDIR /app/app
+ENV PYTHONPATH="/app:$PYTHONPATH"
+
+# 设置入口点
+ENTRYPOINT ["./entrypoint.sh"]
+
+# 标签信息
+LABEL maintainer="Codvision" \
+      version="1.0" \
+      description="Video Behavior Analysis Pipeline - RK3588 NPU Version" \
+      npu.enabled="true"
