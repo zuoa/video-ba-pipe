@@ -4,9 +4,9 @@ services:
   # ============================================
   # CPU版本服务
   # ============================================
-  app:
+  api:
     image: ghcr.io/zuoa/video-ba-pipe:cpu
-    container_name: video-ba-pipe-cpu
+    container_name: video-ba-pipe-api
     restart: unless-stopped
     shm_size: '8gb'
     entrypoint: ["gunicorn", "-w", "4", "--bind", "0.0.0.0:5002", "web.webapp:app"]
@@ -50,7 +50,7 @@ services:
     networks:
       video-ba-network:
         aliases:
-          - app
+          - api
 
   worker:
     image: ghcr.io/zuoa/video-ba-pipe:cpu
@@ -111,7 +111,7 @@ services:
     container_name: video-ba-pipe-frontend
     restart: unless-stopped
     depends_on:
-      - app
+      - api
     ports:
       - "8080:80"
     networks:
