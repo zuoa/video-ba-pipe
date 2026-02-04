@@ -226,7 +226,10 @@ class ScriptLoader:
 
         # 动态加载模块
         try:
-            module_name = f"user_scripts.{script_path.replace('/', '.').replace('\\', '.').rstrip('.py')}"
+            normalized_path = script_path.replace("/", ".").replace("\\", ".")
+            if normalized_path.endswith(".py"):
+                normalized_path = normalized_path[:-3]
+            module_name = f"user_scripts.{normalized_path}"
 
             spec = importlib.util.spec_from_file_location(module_name, abs_path)
             if spec is None or spec.loader is None:
@@ -323,7 +326,10 @@ class ScriptLoader:
             del self._cache[script_path]
 
             # 从 sys.modules 移除
-            module_name = f"user_scripts.{script_path.replace('/', '.').replace('\\', '.').rstrip('.py')}"
+            normalized_path = script_path.replace("/", ".").replace("\\", ".")
+            if normalized_path.endswith(".py"):
+                normalized_path = normalized_path[:-3]
+            module_name = f"user_scripts.{normalized_path}"
             if module_name in sys.modules:
                 del sys.modules[module_name]
 

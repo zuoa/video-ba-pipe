@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  app:
+  api:
     image: ghcr.io/zuoa/video-ba-pipe:rk
     container_name: video-ba-pipe-rknn
     restart: unless-stopped
@@ -45,7 +45,10 @@ services:
     
     # 网络配置
     networks:
-      - video-ba-network
+      video-ba-network:
+        aliases:
+          - api
+          - app
 
   worker:
     image: ghcr.io/zuoa/video-ba-pipe:rk
@@ -106,7 +109,7 @@ services:
     container_name: video-ba-pipe-frontend
     restart: unless-stopped
     depends_on:
-      - app
+      - api
     ports:
       - "8080:80"
     networks:

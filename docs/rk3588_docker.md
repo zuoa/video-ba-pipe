@@ -2,6 +2,8 @@
 
 本项目提供 `Dockerfile.rk` 用于 RK3588（arm64）+ Debian + NPU 的镜像构建。
 
+板端部署与网络问题处理请参考：`docs/rk_usage_manual.md`
+
 ## GitHub Actions 手动构建
 
 工作流：`Build and publish RK3588 image`
