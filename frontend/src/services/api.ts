@@ -344,6 +344,26 @@ export async function uploadModel(file: File, metadata?: {
   return data;
 }
 
+export async function importModelFromSource(data: {
+  source_type: 'url' | 'huggingface';
+  name?: string;
+  model_type: string;
+  framework: string;
+  version?: string;
+  input_shape?: string;
+  description?: string;
+  source_url?: string;
+  repo_id?: string;
+  filename?: string;
+  revision?: string;
+  hf_token?: string;
+}) {
+  return request('/api/models/import', {
+    method: 'POST',
+    data,
+  });
+}
+
 // 脚本
 export async function getScripts() {
   return request('/api/scripts/');

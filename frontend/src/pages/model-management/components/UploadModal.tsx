@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Row, Col, message, Upload } from 'antd';
+import { Modal, Form, Input, Select, Row, Col, message, Upload, Radio } from 'antd';
 import { UploadOutlined, InboxOutlined } from '@ant-design/icons';
-import { uploadModel } from '@/services/api';
+import { uploadModel, importModelFromSource } from '@/services/api';
 import type { UploadFile } from 'antd/es/upload/interface';
 
 const { TextArea } = Input;
@@ -20,36 +20,65 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const sourceType = Form.useWatch('source_type', form) || 'local';
 
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
 
-      if (fileList.length === 0) {
-        message.error('请选择模型文件');
-        return;
-      }
-
-      // 获取真实的 File 对象
-      const file = fileList[0].originFileObj || fileList[0];
-      if (!file || !(file instanceof File)) {
-        message.error('文件对象无效，请重新选择文件');
-        return;
-      }
-
       setUploading(true);
 
-      // 一次性上传文件并创建模型记录
-      await uploadModel(file as File, {
-        name: values.name,
-        model_type: values.model_type,
-        framework: values.framework,
-        version: values.version,
-        input_shape: values.input_shape,
-        description: values.description,
-      });
+      if (values.source_type === 'local') {
+        if (fileList.length === 0) {
+          message.error('请选择模型文件');
+          return;
+        }
 
-      message.success('模型上传成功');
+        // 获取真实的 File 对象
+        const file = fileList[0].originFileObj || fileList[0];
+        if (!file || !(file instanceof File)) {
+          message.error('文件对象无效，请重新选择文件');
+          return;
+        }
+
+        await uploadModel(file as File, {
+          name: values.name,
+          model_type: values.model_type,
+          framework: values.framework,
+          version: values.version,
+          input_shape: values.input_shape,
+          description: values.description,
+        });
+
+        message.success('模型上传成功');
+      } else if (values.source_type === 'url') {
+        await importModelFromSource({
+          source_type: 'url',
+          name: values.name,
+          model_type: values.model_type,
+          framework: values.framework,
+          version: values.version,
+          input_shape: values.input_shape,
+          description: values.description,
+          source_url: values.source_url,
+        });
+        message.success('模型拉取成功');
+      } else {
+        await importModelFromSource({
+          source_type: 'huggingface',
+          name: values.name,
+          model_type: values.model_type,
+          framework: values.framework,
+          version: values.version,
+          input_shape: values.input_shape,
+          description: values.description,
+          repo_id: values.repo_id,
+          filename: values.repo_filename,
+          revision: values.revision,
+          hf_token: values.hf_token,
+        });
+        message.success('Hugging Face 模型拉取成功');
+      }
 
       form.resetFields();
       setFileList([]);
@@ -72,11 +101,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
     multiple: false,
     fileList,
     beforeUpload: (file: File) => {
-      const validExtensions = ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json'];
-      const isValid = validExtensions.some(ext => file.name.endsWith(ext));
+      const validExtensions = ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
+      const lowerFileName = file.name.toLowerCase();
+      const isValid = validExtensions.some(ext => lowerFileName.endsWith(ext));
 
       if (!isValid) {
-        message.error('只支持 .pt, .onnx, .engine 等模型文件格式');
+        message.error('只支持 .pt, .onnx, .engine, .rknn 等模型文件格式');
         return Upload.LIST_IGNORE;
       }
 
@@ -114,22 +144,44 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
       onOk={handleOk}
       confirmLoading={uploading}
       width={640}
-      okText="上传"
+      okText={sourceType === 'local' ? '上传' : '拉取'}
       cancelText="取消"
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+      <Form
+        form={form}
+        layout="vertical"
+        style={{ marginTop: 16 }}
+        initialValues={{
+          source_type: 'local',
+          version: 'v1.0',
+          revision: 'main',
+        }}
+        onValuesChange={(changedValues) => {
+          if (changedValues.source_type && changedValues.source_type !== 'local') {
+            setFileList([]);
+          }
+        }}
+      >
+        <Form.Item label="导入方式" name="source_type">
+          <Radio.Group optionType="button" buttonStyle="solid">
+            <Radio.Button value="local">本地上传</Radio.Button>
+            <Radio.Button value="url">URL 拉取</Radio.Button>
+            <Radio.Button value="huggingface">Hugging Face</Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
               label="模型名称"
               name="name"
-              rules={[{ required: true, message: '请输入模型名称' }]}
+              rules={[{ required: sourceType === 'local', message: '请输入模型名称' }]}
             >
-              <Input placeholder="例如: YOLOv8n Person" />
+              <Input placeholder="例如: YOLOv8n Person（URL/HF可留空自动取文件名）" />
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item label="版本" name="version" initialValue="v1.0">
+            <Form.Item label="版本" name="version">
               <Input />
             </Form.Item>
           </Col>
@@ -176,15 +228,58 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           <TextArea rows={3} placeholder="模型功能描述、适用场景等..." />
         </Form.Item>
 
-        <Form.Item label="模型文件" required>
-          <Dragger {...uploadProps} style={{ padding: '20px 0' }}>
-            <p className="ant-upload-drag-icon">
-              <InboxOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
-            </p>
-            <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-            <p className="ant-upload-hint">支持 .pt, .onnx, .engine 等格式</p>
-          </Dragger>
-        </Form.Item>
+        {sourceType === 'local' && (
+          <Form.Item label="模型文件" required>
+            <Dragger {...uploadProps} style={{ padding: '20px 0' }}>
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
+              </p>
+              <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+              <p className="ant-upload-hint">支持 .pt, .onnx, .engine, .rknn 等格式</p>
+            </Dragger>
+          </Form.Item>
+        )}
+
+        {sourceType === 'url' && (
+          <Form.Item
+            label="模型直链 URL"
+            name="source_url"
+            rules={[{ required: true, message: '请输入可下载的模型 URL' }]}
+          >
+            <Input placeholder="https://example.com/models/model.rknn" />
+          </Form.Item>
+        )}
+
+        {sourceType === 'huggingface' && (
+          <>
+            <Form.Item
+              label="仓库 ID"
+              name="repo_id"
+              rules={[{ required: true, message: '请输入仓库ID，例如 user/repo' }]}
+            >
+              <Input placeholder="例如: PaddlePaddle/PP-YOLOE" />
+            </Form.Item>
+            <Form.Item
+              label="模型文件路径"
+              name="repo_filename"
+              rules={[{ required: true, message: '请输入仓库内模型文件路径' }]}
+            >
+              <Input placeholder="例如: model.onnx 或 weights/model.rknn" />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="Revision" name="revision">
+                  <Input placeholder="main" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="HF Token（私有仓库可选）" name="hf_token">
+                  <Input.Password placeholder="hf_xxx" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        )}
 
         <Form.Item name="enabled" valuePropName="checked" initialValue={true} hidden>
           <Input />

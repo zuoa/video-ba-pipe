@@ -4,9 +4,14 @@
 import os
 import sys
 import json
+import re
+import shutil
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
+from urllib.parse import urlparse, unquote, quote
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -21,12 +26,116 @@ models_bp = Blueprint('models', __name__, url_prefix='/api/models')
 MODELS_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'models')
 
 # 允许的模型文件扩展名
-ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json'}
+ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
 
 
 def allowed_file(filename):
     """检查文件扩展名是否允许"""
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _extract_filename_from_content_disposition(content_disposition):
+    """从 Content-Disposition 中提取文件名"""
+    if not content_disposition:
+        return None
+
+    filename_star_match = re.search(r"filename\*=UTF-8''([^;]+)", content_disposition, flags=re.IGNORECASE)
+    if filename_star_match:
+        return unquote(filename_star_match.group(1))
+
+    filename_match = re.search(r'filename="?([^";]+)"?', content_disposition, flags=re.IGNORECASE)
+    if filename_match:
+        return filename_match.group(1)
+
+    return None
+
+
+def _get_unique_file_path(model_type, filename):
+    """获取唯一可写入的模型文件路径"""
+    type_dir = model_type.lower()
+    save_dir = os.path.join(MODELS_ROOT, type_dir)
+
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+    except Exception as e:
+        raise RuntimeError(f'创建存储目录失败: {e}')
+
+    base_name, ext = os.path.splitext(filename)
+    counter = 0
+    final_filename = filename
+    while os.path.exists(os.path.join(save_dir, final_filename)):
+        counter += 1
+        final_filename = f"{base_name}_{counter}{ext}"
+
+    return os.path.join(save_dir, final_filename), final_filename
+
+
+def _upsert_model_record(
+    name,
+    version,
+    filename,
+    file_path,
+    file_size,
+    model_type,
+    framework,
+    input_shape,
+    classes,
+    description,
+    tags
+):
+    """创建或更新模型记录"""
+    existing = MLModel.select().where((MLModel.name == name) & (MLModel.version == version)).first()
+    if existing:
+        # 删除旧文件
+        if os.path.exists(existing.file_path):
+            os.remove(existing.file_path)
+        # 更新记录
+        existing.filename = filename
+        existing.file_path = file_path
+        existing.file_size = file_size
+        existing.model_type = model_type
+        existing.framework = framework
+        existing.input_shape = input_shape or None
+        existing.classes = classes or None
+        existing.description = description or None
+        existing.tags = tags or None
+        existing.updated_at = datetime.now()
+        existing.save()
+        return existing
+
+    now = datetime.now()
+    return MLModel.create(
+        name=name,
+        filename=filename,
+        file_path=file_path,
+        file_size=file_size,
+        model_type=model_type,
+        framework=framework,
+        input_shape=input_shape or None,
+        classes=classes or None,
+        description=description or None,
+        version=version,
+        tags=tags or None,
+        created_at=now,
+        updated_at=now
+    )
+
+
+def _parse_json_field(value, field_name, default_value):
+    """兼容字符串或原生对象的 JSON 字段"""
+    if value is None or value == '':
+        return default_value
+
+    if isinstance(value, (dict, list)):
+        return value
+
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'{field_name} JSON格式错误: {e}')
+
+    raise ValueError(f'{field_name} 字段类型错误')
 
 
 def serialize_model(model):
@@ -153,27 +262,14 @@ def upload_model():
         # 安全文件名
         filename = secure_filename(file.filename)
 
-        # 确定存储目录
-        type_dir = model_type.lower()
-        save_dir = os.path.join(MODELS_ROOT, type_dir)
-
-        # 确保目录存在
+        # 处理目录和重名
         try:
-            os.makedirs(save_dir, exist_ok=True)
-        except Exception as e:
-            logger.error(f"创建目录失败: {save_dir}, 错误: {e}")
-            return jsonify({'success': False, 'error': f'创建存储目录失败: {e}'}), 500
-
-        # 处理文件重名
-        base_name, ext = os.path.splitext(filename)
-        counter = 0
-        final_filename = filename
-        while os.path.exists(os.path.join(save_dir, final_filename)):
-            counter += 1
-            final_filename = f"{base_name}_{counter}{ext}"
+            file_path, final_filename = _get_unique_file_path(model_type, filename)
+        except RuntimeError as e:
+            logger.error(f"创建目录失败，错误: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
 
         # 保存文件
-        file_path = os.path.join(save_dir, final_filename)
         try:
             file.save(file_path)
         except Exception as e:
@@ -183,43 +279,19 @@ def upload_model():
         # 获取文件大小
         file_size = os.path.getsize(file_path)
 
-        # 检查是否已存在同名同版本的模型
-        existing = MLModel.select().where((MLModel.name == name) & (MLModel.version == version)).first()
-        if existing:
-            # 删除旧文件
-            if os.path.exists(existing.file_path):
-                os.remove(existing.file_path)
-            # 更新记录
-            existing.filename = filename
-            existing.file_path = file_path
-            existing.file_size = file_size
-            existing.model_type = model_type
-            existing.framework = framework
-            existing.input_shape = input_shape or None
-            existing.classes = classes or None
-            existing.description = description or None
-            existing.tags = tags or None
-            existing.updated_at = datetime.now()
-            existing.save()
-            model = existing
-        else:
-            # 创建新记录
-            now = datetime.now()
-            model = MLModel.create(
-                name=name,
-                filename=filename,
-                file_path=file_path,
-                file_size=file_size,
-                model_type=model_type,
-                framework=framework,
-                input_shape=input_shape or None,
-                classes=classes or None,
-                description=description or None,
-                version=version,
-                tags=tags or None,
-                created_at=now,
-                updated_at=now
-            )
+        model = _upsert_model_record(
+            name=name,
+            version=version,
+            filename=final_filename,
+            file_path=file_path,
+            file_size=file_size,
+            model_type=model_type,
+            framework=framework,
+            input_shape=input_shape,
+            classes=classes,
+            description=description,
+            tags=tags
+        )
 
         logger.info(f"模型上传成功: {name} ({version}), 路径: {file_path}")
 
@@ -231,6 +303,160 @@ def upload_model():
 
     except Exception as e:
         logger.error(f"模型上传失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@models_bp.route('/import', methods=['POST'])
+def import_model_from_url():
+    """
+    通过 URL 或 Hugging Face 仓库拉取模型
+
+    JSON Body:
+        - source_type: url | huggingface
+        - name: 模型名称（可选，默认使用文件名）
+        - description: 描述
+        - model_type: 模型类型
+        - framework: 框架
+        - input_shape: 输入尺寸
+        - classes: 类别（JSON对象或JSON字符串）
+        - tags: 标签（JSON数组或JSON字符串）
+        - version: 版本号
+        - source_url: 直链URL（source_type=url时必填）
+        - repo_id: 仓库ID（source_type=huggingface时必填）
+        - filename: 仓库内模型文件路径（source_type=huggingface时必填）
+        - revision: 分支/Tag/Commit（默认main）
+        - hf_token: 私有仓库访问Token（可选）
+    """
+    file_path = None
+    try:
+        data = request.get_json(silent=True) or {}
+        source_type = (data.get('source_type') or 'url').strip().lower()
+
+        model_type = (data.get('model_type') or 'YOLO').strip()
+        framework = (data.get('framework') or 'ultralytics').strip()
+        input_shape = (data.get('input_shape') or '').strip()
+        description = (data.get('description') or '').strip()
+        version = (data.get('version') or 'v1.0').strip()
+
+        try:
+            classes_data = _parse_json_field(data.get('classes'), 'classes', {})
+            tags_data = _parse_json_field(data.get('tags'), 'tags', [])
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+
+        classes = json.dumps(classes_data, ensure_ascii=False) if classes_data is not None else None
+        tags = json.dumps(tags_data, ensure_ascii=False) if tags_data is not None else None
+
+        headers = {
+            'User-Agent': 'video-ba-pipe-model-import/1.0'
+        }
+
+        if source_type == 'huggingface':
+            repo_id = (data.get('repo_id') or '').strip()
+            repo_filename = (data.get('filename') or '').strip()
+            revision = (data.get('revision') or 'main').strip()
+            hf_token = (data.get('hf_token') or os.getenv('HF_TOKEN') or '').strip()
+
+            if not repo_id or not repo_filename:
+                return jsonify({'success': False, 'error': 'huggingface 模式下 repo_id 和 filename 必填'}), 400
+
+            source_url = (
+                f"https://huggingface.co/{quote(repo_id, safe='/-')}"
+                f"/resolve/{quote(revision, safe='')}/{quote(repo_filename, safe='/-_.')}?download=1"
+            )
+            source_filename = secure_filename(os.path.basename(repo_filename))
+            if hf_token:
+                headers['Authorization'] = f'Bearer {hf_token}'
+        elif source_type == 'url':
+            source_url = (data.get('source_url') or '').strip()
+            if not source_url:
+                return jsonify({'success': False, 'error': 'source_url 不能为空'}), 400
+
+            parsed_url = urlparse(source_url)
+            if parsed_url.scheme not in ('http', 'https'):
+                return jsonify({'success': False, 'error': '仅支持 http/https URL'}), 400
+
+            source_filename = secure_filename(unquote(os.path.basename(parsed_url.path)))
+            if not source_filename:
+                source_filename = secure_filename((data.get('filename') or '').strip())
+        else:
+            return jsonify({'success': False, 'error': 'source_type 仅支持 url 或 huggingface'}), 400
+
+        source_filename_valid = bool(source_filename and allowed_file(source_filename))
+
+        if source_type == 'huggingface' and not source_filename_valid:
+            return jsonify({'success': False, 'error': f'不支持的文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
+
+        model_name = (data.get('name') or '').strip() or (os.path.splitext(source_filename)[0] if source_filename else '')
+        if not model_name:
+            return jsonify({'success': False, 'error': '模型名称不能为空'}), 400
+
+        request_obj = Request(source_url, headers=headers)
+        try:
+            with urlopen(request_obj, timeout=120) as response:
+                response_filename = _extract_filename_from_content_disposition(response.headers.get('Content-Disposition'))
+                download_filename = source_filename if source_filename_valid else ''
+                if response_filename:
+                    response_filename = secure_filename(response_filename)
+                    if response_filename and allowed_file(response_filename):
+                        download_filename = response_filename
+
+                if not download_filename:
+                    return jsonify({
+                        'success': False,
+                        'error': f'无法识别模型文件名或文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'
+                    }), 400
+
+                try:
+                    file_path, final_filename = _get_unique_file_path(model_type, download_filename)
+                except RuntimeError as e:
+                    return jsonify({'success': False, 'error': str(e)}), 500
+
+                with open(file_path, 'wb') as output_file:
+                    shutil.copyfileobj(response, output_file, length=1024 * 1024)
+        except HTTPError as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'success': False, 'error': f'下载失败，HTTP状态码: {e.code}'}), 400
+        except URLError as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'success': False, 'error': f'下载失败: {e.reason}'}), 400
+        except Exception as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'success': False, 'error': f'下载模型失败: {e}'}), 500
+
+        if not os.path.exists(file_path):
+            return jsonify({'success': False, 'error': '模型下载失败，文件未生成'}), 500
+
+        file_size = os.path.getsize(file_path)
+
+        model = _upsert_model_record(
+            name=model_name,
+            version=version,
+            filename=final_filename,
+            file_path=file_path,
+            file_size=file_size,
+            model_type=model_type,
+            framework=framework,
+            input_shape=input_shape,
+            classes=classes,
+            description=description,
+            tags=tags
+        )
+
+        logger.info(f"模型导入成功: {model_name} ({version}), 来源: {source_url}, 路径: {file_path}")
+        return jsonify({
+            'success': True,
+            'model': serialize_model(model),
+            'message': '模型拉取成功'
+        })
+
+    except Exception as e:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+        logger.error(f"模型导入失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

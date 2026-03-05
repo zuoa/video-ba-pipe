@@ -1407,7 +1407,7 @@ def upload_model_file():
             return jsonify({'success': False, 'error': '无效的文件名'}), 400
 
         # 允许的扩展名
-        allowed_exts = {'.pt', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json'}
+        allowed_exts = {'.pt', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
         ext = os.path.splitext(filename)[1].lower()
         if ext not in allowed_exts:
             return jsonify({'success': False, 'error': '不支持的文件类型'}), 400
