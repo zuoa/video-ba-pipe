@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Descriptions, Button, Space, message } from 'antd';
+import { Modal, Descriptions, Button, Space, Tag, message } from 'antd';
 import { DownloadOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
 
 interface Model {
