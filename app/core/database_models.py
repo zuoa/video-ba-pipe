@@ -333,8 +333,8 @@ class SourceHealthLog(BaseModel):
         table_name = 'source_health_logs'
         indexes = (
             (('source', 'created_at'), False),  # 用于查询某个源的历史
-            ('event_type', False),               # 用于按类型查询
-            ('created_at', False),               # 用于时间范围查询
+            (('event_type',), False),            # 用于按类型查询
+            (('created_at',), False),            # 用于时间范围查询
         )
 
     @property
@@ -344,5 +344,4 @@ class SourceHealthLog(BaseModel):
             return json.loads(self.details) if self.details else {}
         except:
             return {}
-
 

@@ -3,7 +3,7 @@ import json
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
-    Workflow, WorkflowNode, WorkflowConnection, User
+    Workflow, WorkflowNode, WorkflowConnection, User, SourceHealthLog
 )
 
 
@@ -29,7 +29,9 @@ def setup_database():
         WorkflowNode,
         WorkflowConnection,
         # 用户表
-        User
+        User,
+        # 健康监控表
+        SourceHealthLog
     ], safe=True)
 
     from datetime import datetime

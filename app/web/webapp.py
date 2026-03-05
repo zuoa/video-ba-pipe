@@ -10,11 +10,13 @@ import subprocess
 import json
 import threading
 import time
+from peewee import OperationalError
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
 
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
+from app.core.database_models import db
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
@@ -404,10 +406,21 @@ def update_video_source(id):
 def delete_video_source(id):
     try:
         source = VideoSource.get_by_id(id)
-        source.delete_instance(recursive=True)
+        try:
+            source.delete_instance(recursive=True)
+        except OperationalError as e:
+            # 兼容旧库缺少 source_health_logs 表的场景，先补表再重试删除
+            if 'no such table: source_health_logs' not in str(e):
+                raise
+            app.logger.warning("检测到缺失 source_health_logs 表，自动补建后重试删除")
+            db.create_tables([SourceHealthLog], safe=True)
+            source.delete_instance(recursive=True)
         return jsonify({'message': '视频源删除成功'})
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
+    except Exception as e:
+        app.logger.error(f"删除视频源失败 (ID={id}): {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ========== 健康监控API ==========
 
