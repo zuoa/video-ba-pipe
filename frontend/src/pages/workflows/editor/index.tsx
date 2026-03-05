@@ -393,7 +393,8 @@ export default function WorkflowEditorPage() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
     try {
       console.log('💾 ============ [EDITOR] handleSave 开始 ============');
       console.log('📊 [EDITOR] 当前nodes数量:', nodes.length);
@@ -551,11 +552,17 @@ export default function WorkflowEditorPage() {
       }, null, 2));
 
       await updateWorkflow(Number(id), { workflow_data: graphData });
-      message.success('保存成功');
+      if (!silent) {
+        message.success('保存成功');
+      }
       console.log('✅ [EDITOR] 保存成功');
+      return true;
     } catch (error) {
       console.error('❌ [EDITOR] 保存失败:', error);
-      message.error('保存失败');
+      if (!silent) {
+        message.error('保存失败');
+      }
+      return false;
     }
   };
 
@@ -814,7 +821,13 @@ export default function WorkflowEditorPage() {
               </div>
             )
           ) : (
-            <TestPanel workflow={workflow} nodes={nodes} edges={edges} videoSources={videoSources} />
+            <TestPanel
+              workflow={workflow}
+              nodes={nodes}
+              edges={edges}
+              videoSources={videoSources}
+              onBeforeTest={() => handleSave({ silent: true })}
+            />
           )}
         </div>
       </div>

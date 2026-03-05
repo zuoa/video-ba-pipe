@@ -734,6 +734,20 @@ class WorkflowExecutor:
         try:
             result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
             if result:
+                if self.test_mode:
+                    detections = result.get('result', {}).get('detections', [])
+                    result_image = self._save_test_result_image(
+                        node_id=node_id,
+                        frame_rgb=frame,
+                        detections=detections,
+                        label_color=result.get('label_color', '#FF0000'),
+                        roi_mask=result.get('roi_mask'),
+                        roi_regions=roi_regions or [],
+                        upstream_node_id=node_id
+                    )
+                    if result_image:
+                        result['result_image'] = result_image
+
                 with self._state_lock:
                     self.node_results_cache[node_id] = result
 
@@ -1298,6 +1312,111 @@ class WorkflowExecutor:
                 # 其他层级按并行或串行执行
                 self._execute_level_nodes(level_nodes, context, executor)
 
+    def _cache_output_result(self, node_id: str, alert_triggered: bool, detection_count: int, trigger_reason: str,
+                             result_image: Optional[str] = None, upstream_node_id: Optional[str] = None):
+        """缓存输出节点结果，供测试结果汇总使用"""
+        cache_data = {
+            'alert_triggered': bool(alert_triggered),
+            'has_detection': bool(alert_triggered),
+            'detection_count': int(detection_count or 0),
+            'trigger_reason': trigger_reason
+        }
+        if result_image:
+            cache_data['result_image'] = result_image
+        if upstream_node_id:
+            cache_data['upstream_node_id'] = upstream_node_id
+
+        with self._state_lock:
+            self.node_results_cache[node_id] = cache_data
+
+    @staticmethod
+    def _parse_label_color_bgr(color_hex: str):
+        """将 #RRGGBB 颜色转换为 OpenCV 使用的 BGR 元组"""
+        if not color_hex:
+            return 0, 0, 255
+        try:
+            color = color_hex.lstrip('#')
+            if len(color) != 6:
+                return 0, 0, 255
+            r = int(color[0:2], 16)
+            g = int(color[2:4], 16)
+            b = int(color[4:6], 16)
+            return b, g, r
+        except Exception:
+            return 0, 0, 255
+
+    def _draw_test_detections(self, frame_rgb: np.ndarray, detections: List[dict], label_color: str) -> Optional[np.ndarray]:
+        """在测试帧上绘制检测框（兜底方案）"""
+        if frame_rgb is None:
+            return None
+
+        canvas = cv2.cvtColor(frame_rgb.copy(), cv2.COLOR_RGB2BGR)
+        box_color = self._parse_label_color_bgr(label_color)
+
+        for det in detections or []:
+            box = det.get('box') or det.get('bbox')
+            if not box or len(box) < 4:
+                continue
+
+            try:
+                x1, y1, x2, y2 = [int(round(v)) for v in box[:4]]
+            except Exception:
+                continue
+
+            x1 = max(0, min(x1, canvas.shape[1] - 1))
+            y1 = max(0, min(y1, canvas.shape[0] - 1))
+            x2 = max(0, min(x2, canvas.shape[1] - 1))
+            y2 = max(0, min(y2, canvas.shape[0] - 1))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), box_color, 2)
+
+            label_name = det.get('label_name') or det.get('label') or 'object'
+            confidence = det.get('confidence')
+            text = f"{label_name} {confidence:.2f}" if isinstance(confidence, (int, float)) else str(label_name)
+            text_y = y1 - 8 if y1 > 20 else y1 + 18
+            cv2.putText(canvas, text, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2, cv2.LINE_AA)
+
+        return canvas
+
+    def _save_test_result_image(self, node_id: str, frame_rgb: np.ndarray, detections: List[dict], label_color: str = '#FF0000',
+                                roi_mask=None, roi_regions=None, upstream_node_id: Optional[str] = None) -> Optional[str]:
+        """保存测试可视化图片并返回可访问 URL"""
+        if frame_rgb is None:
+            return None
+
+        date_dir = time.strftime('%Y%m%d')
+        rel_dir = os.path.join('workflow_test', f'workflow_{self.workflow_id}', date_dir, 'result_images')
+        os.makedirs(os.path.join(FRAME_SAVE_PATH, rel_dir), exist_ok=True)
+
+        ts = int(time.time() * 1000)
+        rel_path = os.path.join(rel_dir, f'{node_id}_{ts}.jpg')
+        abs_path = os.path.join(FRAME_SAVE_PATH, rel_path)
+
+        try:
+            # 优先复用算法的可视化逻辑，保持和运行模式一致
+            if upstream_node_id and upstream_node_id in self.algorithms:
+                self.algorithms[upstream_node_id].visualize(
+                    frame_rgb,
+                    detections or [],
+                    save_path=abs_path,
+                    label_color=label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=roi_regions or []
+                )
+            else:
+                canvas = self._draw_test_detections(frame_rgb, detections or [], label_color)
+                if canvas is None or not cv2.imwrite(abs_path, canvas):
+                    return None
+
+            if os.path.exists(abs_path):
+                return f"/api/image/frames/{rel_path}"
+        except Exception as e:
+            logger.warning(f"[Workflow-{self.workflow_id}] 生成测试可视化图片失败: {e}")
+
+        return None
+
     def _execute_output(self, node_id, context):
         """
         执行输出/告警节点
@@ -1368,11 +1487,12 @@ class WorkflowExecutor:
         frame = context['frame']
         frame_timestamp = context['frame_timestamp']
         result = context['result']
+        detection_count = len(result.get('detections', []))
         roi_mask = context.get('roi_mask')
         label_color = context.get('label_color', '#FF0000')  # 默认红色
 
         logger.debug(
-            f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={len(result.get('detections', []))}")
+            f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={detection_count}")
 
         # 加载触发条件配置（窗口检测）- 必须在记录之前加载
         trigger_condition = alert_node.trigger_condition
@@ -1465,6 +1585,12 @@ class WorkflowExecutor:
         # 如果没有检测，直接返回（不进行后续的告警处理）
         # 注意：已经记录到窗口检测器，用于窗口统计
         if not has_detection:
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=False,
+                detection_count=detection_count,
+                trigger_reason='上游条件未通过（has_detection=False）'
+            )
             logger.debug(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 未检测到目标，跳过告警处理")
             return
 
@@ -1516,6 +1642,12 @@ class WorkflowExecutor:
         )
 
         if not trigger_passed:
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=False,
+                detection_count=detection_count,
+                trigger_reason='不满足窗口触发条件'
+            )
             if trigger_stats:
                 logger.debug(
                     f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 不满足触发条件，跳过告警 "
@@ -1541,6 +1673,12 @@ class WorkflowExecutor:
         )
 
         if not not_suppressed:
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=False,
+                detection_count=detection_count,
+                trigger_reason='命中抑制期，告警被跳过'
+            )
             # 在抑制期内，跳过告警
             if suppression_stats:
                 logger.debug(
@@ -1648,6 +1786,12 @@ class WorkflowExecutor:
             detection_count=len(detection_images),
             window_stats=json.dumps(trigger_stats) if trigger_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None
+        )
+        self._cache_output_result(
+            node_id=node_id,
+            alert_triggered=True,
+            detection_count=detection_count,
+            trigger_reason='满足触发条件并创建告警'
         )
         logger.info(f"[Workflow-{self.workflow_id}] Alert 创建成功，ID: {alert.id}")
         logger.info(f"[Workflow-{self.workflow_id}] 数据库中的 alert_message: {alert.alert_message[:200] if alert.alert_message else 'None'}...")
@@ -1985,6 +2129,7 @@ class WorkflowExecutor:
                     'roi_regions': effective_roi,
                     'roi_applied': roi_applied,
                     'detections_detail': detections[:10],
+                    'result_image': cached.get('result_image'),
                 }
 
                 # 添加 ROI 调试信息
@@ -2063,29 +2208,42 @@ class WorkflowExecutor:
         # Alert 节点
         elif node_type in ('alert', 'output'):
             log_collector = context.get('log_collector')
-            has_detection = context.get('has_detection', False)
+            with self._state_lock:
+                cached_output_result = self.node_results_cache.get(node_id, {})
 
             # 从缓存获取检测数量
-            detection_count = 0
-            for conn in self.connections:
-                if conn['to'] == node_id:
-                    upstream_id = conn['from']
-                    with self._state_lock:
-                        cached = self.node_results_cache.get(upstream_id)
-                    if cached:
-                        detection_count = len(cached.get('result', {}).get('detections', []))
-                        break
+            detection_count = cached_output_result.get('detection_count')
+            if detection_count is None:
+                detection_count = 0
+                for conn in self.connections:
+                    if conn['to'] == node_id:
+                        upstream_id = conn['from']
+                        with self._state_lock:
+                            cached = self.node_results_cache.get(upstream_id)
+                        if cached:
+                            detection_count = len(cached.get('result', {}).get('detections', []))
+                            break
+
+            has_detection = cached_output_result.get('alert_triggered')
+            if has_detection is None:
+                has_detection = context.get('has_detection', False)
+
+            trigger_reason = cached_output_result.get('trigger_reason')
+            if not trigger_reason:
+                trigger_reason = '满足触发条件' if has_detection else '不满足触发条件'
 
             return {
                 'message': f"告警输出: {detection_count} 个目标 → {'✓ 触发告警' if has_detection else '✗ 未触发'}",
                 'detection_count': detection_count,
                 'alert_triggered': has_detection,
+                'result_image': cached_output_result.get('result_image'),
                 'debug_info': {
                     'has_detection': has_detection,
                     'detection_count': detection_count,
                     'alert_triggered': has_detection,
-                    'trigger_reason': '满足触发条件' if has_detection else '不满足触发条件',
-                    'log_count': len(log_collector.logs) if log_collector else 0
+                    'trigger_reason': trigger_reason,
+                    'log_count': len(log_collector.logs) if log_collector else 0,
+                    'upstream_node_id': cached_output_result.get('upstream_node_id')
                 }
             }
 
@@ -2133,6 +2291,12 @@ class WorkflowExecutor:
 
         # 检查必需数据
         if 'frame' not in context or 'result' not in context:
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=False,
+                detection_count=0,
+                trigger_reason='缺少必需数据：上游节点未产生结果'
+            )
             if log_collector:
                 log_collector.add_warning(node_id, "缺少必需数据：上游节点未产生结果")
             logger.warning(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 缺少必需数据")
@@ -2141,6 +2305,12 @@ class WorkflowExecutor:
         # 获取 Alert 节点配置
         alert_node = self.nodes.get(node_id)
         if not isinstance(alert_node, AlertNodeData):
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=False,
+                detection_count=0,
+                trigger_reason='节点类型错误：不是 Alert 节点'
+            )
             if log_collector:
                 log_collector.add_warning(node_id, "不是 Alert 节点")
             return
@@ -2149,6 +2319,34 @@ class WorkflowExecutor:
         has_detection = context.get('has_detection', False)
         result = context['result']
         detection_count = len(result.get('detections', []))
+
+        upstream_node_id = context.get('upstream_node_id')
+        roi_regions = []
+        if upstream_node_id:
+            upstream_roi = self._find_upstream_roi(upstream_node_id)
+            if upstream_roi is not None:
+                roi_regions = upstream_roi
+            else:
+                roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
+
+        result_image = self._save_test_result_image(
+            node_id=node_id,
+            frame_rgb=context.get('frame'),
+            detections=result.get('detections', []),
+            label_color=context.get('label_color', '#FF0000'),
+            roi_mask=context.get('roi_mask'),
+            roi_regions=roi_regions,
+            upstream_node_id=upstream_node_id
+        )
+
+        self._cache_output_result(
+            node_id=node_id,
+            alert_triggered=has_detection,
+            detection_count=detection_count,
+            trigger_reason='测试模式：按上游条件判断触发',
+            result_image=result_image,
+            upstream_node_id=upstream_node_id
+        )
 
         logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 测试结果: has_detection={has_detection}, 检测数={detection_count}")
 

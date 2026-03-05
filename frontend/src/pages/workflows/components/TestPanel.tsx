@@ -24,11 +24,12 @@ export interface TestPanelProps {
   nodes?: any[];
   edges?: any[];
   videoSources?: any[];
+  onBeforeTest?: () => Promise<boolean | void>;
 }
 
 type InputMode = 'upload-image' | 'upload-video' | 'video-source';
 
-const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [], videoSources = [] }) => {
+const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [], videoSources = [], onBeforeTest }) => {
   const navigate = useNavigate();
   const [inputMode, setInputMode] = useState<InputMode>('video-source');
   const [testImage, setTestImage] = useState<string | null>(null);
@@ -134,10 +135,18 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
       return;
     }
 
-    setTesting(true);
-    setTestResult(null);
-
     try {
+      if (onBeforeTest) {
+        const saveOk = await onBeforeTest();
+        if (saveOk === false) {
+          message.error('保存失败，无法开始测试');
+          return;
+        }
+      }
+
+      setTesting(true);
+      setTestResult(null);
+
       let response: any;
 
       if (testVideoFile) {

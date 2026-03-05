@@ -27,7 +27,11 @@ def _safe_fromisoformat(value: str) -> Optional[datetime]:
         return None
     try:
         normalized = value.replace('Z', '+00:00')
-        return datetime.fromisoformat(normalized)
+        dt = datetime.fromisoformat(normalized)
+        # 数据库存储为本地时区的 naive datetime，查询条件也统一转换为本地 naive。
+        if dt.tzinfo is not None:
+            dt = dt.astimezone().replace(tzinfo=None)
+        return dt
     except Exception:
         return None
 

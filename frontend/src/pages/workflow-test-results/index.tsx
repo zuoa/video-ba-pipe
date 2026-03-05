@@ -27,6 +27,11 @@ const WorkflowTestResultsPage: React.FC = () => {
     total: 0,
   });
 
+  const formatLocalDateTime = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
   const buildTimeRangeParams = () => {
     if (!timeRange || timeRange === 'all') {
       return {};
@@ -42,8 +47,8 @@ const WorkflowTestResultsPage: React.FC = () => {
     }
 
     return {
-      start_time: startTime.toISOString(),
-      end_time: now.toISOString(),
+      start_time: formatLocalDateTime(startTime),
+      end_time: formatLocalDateTime(now),
     };
   };
 

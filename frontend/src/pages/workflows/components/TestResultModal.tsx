@@ -240,7 +240,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
 
   // 构建高亮路径的边数据
   const testEdges = useMemo(() => {
-    const executedNodeIds = new Set(testResult?.nodes?.map((n: any) => n.nodeId) || []);
+    const executedNodeIds = new Set(testResult?.nodes?.map((n: any) => n.node_id) || []);
 
     console.log('📊 TestResultModal edges 原始数据:', edges);
     console.log('📊 执行的节点 ID:', executedNodeIds);
