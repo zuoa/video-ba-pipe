@@ -38,6 +38,12 @@ export default defineConfig({
       icon: 'ApartmentOutlined',
     },
     {
+      name: '编排测试结果',
+      path: '/workflow-test-results',
+      component: './workflow-test-results',
+      icon: 'ExperimentOutlined',
+    },
+    {
       name: '工作流编辑器',
       path: '/workflows/editor/:id',
       component: './workflows/editor',

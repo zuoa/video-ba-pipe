@@ -168,6 +168,39 @@ class Alert(BaseModel):
     detection_images = pw.TextField(null=True)
 
 
+class WorkflowTestResult(BaseModel):
+    """工作流测试结果（独立于 Alert，不参与告警统计）"""
+    id = pw.AutoField()
+    workflow = pw.ForeignKeyField(Workflow, backref='test_results', on_delete='SET NULL', null=True)
+    video_source = pw.ForeignKeyField(VideoSource, backref='workflow_test_results', on_delete='SET NULL', null=True)
+    test_time = pw.DateTimeField()
+    media_type = pw.CharField(default='image')  # image | video
+    success = pw.BooleanField(default=True)
+    execution_time_ms = pw.IntegerField(default=0)
+
+    # 复用 Alert 兼容字段，便于前端统一展示
+    alert_type = pw.CharField(default='workflow_test')
+    alert_level = pw.CharField(default='info')
+    alert_message = pw.TextField(null=True)
+    alert_image = pw.TextField(null=True)
+    alert_image_ori = pw.TextField(null=True)
+    alert_video = pw.TextField(null=True)
+    detection_count = pw.IntegerField(default=0)
+    window_stats = pw.TextField(null=True)
+    detection_images = pw.TextField(null=True)
+
+    # 保留完整测试结果（JSON字符串）
+    result_json = pw.TextField(null=True)
+
+    class Meta:
+        table_name = 'workflow_test_results'
+        indexes = (
+            (('test_time',), False),
+            (('workflow', 'test_time'), False),
+            (('media_type', 'test_time'), False),
+        )
+
+
 # ==================== 脚本支持相关表 ====================
 
 class ScriptVersion(BaseModel):
@@ -344,4 +377,3 @@ class SourceHealthLog(BaseModel):
             return json.loads(self.details) if self.details else {}
         except:
             return {}
-

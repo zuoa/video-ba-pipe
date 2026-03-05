@@ -1720,6 +1720,9 @@ class WorkflowExecutor:
             self.execution_results.clear()
             self.executed_nodes.clear()
             self.node_results_cache.clear()
+            # 测试模式每次都应完整执行，避免 interval 导致后续帧被跳过
+            for node_id in self.nodes.keys():
+                self.node_last_exec_time[node_id] = 0
 
         # ========== 使用统一的执行逻辑（与运行模式完全相同） ==========
         # 注意：直接调用运行模式的执行方法，不需要任何特殊处理

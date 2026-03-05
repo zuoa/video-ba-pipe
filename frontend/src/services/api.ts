@@ -442,3 +442,19 @@ export async function testWorkflow(workflowId: number, imageBase64: string) {
     data: { image: imageBase64 },
   });
 }
+
+export async function testWorkflowWithFile(workflowId: number, file: File) {
+  const formData = new FormData();
+  formData.append('media', file);
+
+  return request(`/api/workflows/${workflowId}/test`, {
+    method: 'POST',
+    data: formData,
+  });
+}
+
+export async function getWorkflowTestResults(params?: any) {
+  return request('/api/workflow-test-results', {
+    params,
+  });
+}

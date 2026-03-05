@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Upload, Select, Button, Empty, Alert, Space, Spin, Image, Tabs, message, Tag } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Upload, Button, Empty, Alert, Space, Image, message, Tag } from 'antd';
 import {
   UploadOutlined,
   PlayCircleOutlined,
@@ -10,14 +10,14 @@ import {
   InfoCircleOutlined,
   LoadingOutlined,
   ClockCircleOutlined,
+  FileImageOutlined,
 } from '@ant-design/icons';
-import type { UploadFile } from 'antd/es/upload/interface';
-import { captureFrame, testWorkflow } from '@/services/api';
+import { useNavigate } from 'umi';
+import { captureFrame, testWorkflow, testWorkflowWithFile } from '@/services/api';
 import TestResultModal from './TestResultModal';
 import './TestPanel.css';
 
 const { Dragger } = Upload;
-const { Option } = Select;
 
 export interface TestPanelProps {
   workflow: any;
@@ -26,56 +26,67 @@ export interface TestPanelProps {
   videoSources?: any[];
 }
 
+type InputMode = 'upload-image' | 'upload-video' | 'video-source';
+
 const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [], videoSources = [] }) => {
-  const [imageSource, setImageSource] = useState<'upload' | 'video'>('video');
+  const navigate = useNavigate();
+  const [inputMode, setInputMode] = useState<InputMode>('video-source');
   const [testImage, setTestImage] = useState<string | null>(null);
+  const [testVideoFile, setTestVideoFile] = useState<File | null>(null);
+  const [testVideoUrl, setTestVideoUrl] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [showResultModal, setShowResultModal] = useState(false);
 
-  // 查找工作流中的视频源节点
   const workflowVideoSourceNode = useMemo(() => {
     return nodes.find(node =>
       node.type === 'videoSource' || node.data?.type === 'videoSource' || node.data?.type === 'source'
     );
   }, [nodes]);
 
-  // 获取工作流的视频源ID
   const workflowVideoSourceId = useMemo(() => {
     return workflowVideoSourceNode?.data?.videoSourceId;
   }, [workflowVideoSourceNode]);
 
-  // 获取视频源信息
   const videoSourceInfo = useMemo(() => {
     if (!workflowVideoSourceId) return null;
-    return videoSources.find(s => s.id == workflowVideoSourceId); // 使用 == 而不是 ===，避免类型不匹配
+    return videoSources.find(s => s.id == workflowVideoSourceId);
   }, [workflowVideoSourceId, videoSources]);
 
-  // 判断是否可以使用视频源模式
   const canUseVideoSource = Boolean(workflowVideoSourceId && videoSourceInfo);
 
-  // 调试日志
   useEffect(() => {
-    console.log('📹 TestPanel 调试信息:', {
-      nodesCount: nodes.length,
-      videoSourcesCount: videoSources.length,
-      workflowVideoSourceNode: workflowVideoSourceNode?.id,
-      workflowVideoSourceId,
-      workflowVideoSourceIdType: typeof workflowVideoSourceId,
-      videoSourceInfo: videoSourceInfo?.name,
-      canUseVideoSource,
-      所有节点: nodes.map(n => ({ id: n.id, type: n.type, videoSourceId: n.data?.videoSourceId })),
-      所有视频源: videoSources.map(s => ({ id: s.id, name: s.name })),
-    });
-  }, [nodes, videoSources, workflowVideoSourceNode, workflowVideoSourceId, videoSourceInfo, canUseVideoSource]);
+    return () => {
+      if (testVideoUrl) {
+        URL.revokeObjectURL(testVideoUrl);
+      }
+    };
+  }, [testVideoUrl]);
 
   const handleImageUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       setTestImage(e.target?.result as string);
+      setTestVideoFile(null);
+      if (testVideoUrl) {
+        URL.revokeObjectURL(testVideoUrl);
+      }
+      setTestVideoUrl(null);
+      setTestResult(null);
     };
     reader.readAsDataURL(file);
+    return false;
+  };
+
+  const handleVideoUpload = (file: File) => {
+    setTestVideoFile(file);
+    setTestImage(null);
+    if (testVideoUrl) {
+      URL.revokeObjectURL(testVideoUrl);
+    }
+    setTestVideoUrl(URL.createObjectURL(file));
+    setTestResult(null);
     return false;
   };
 
@@ -94,14 +105,18 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
       }
 
       if (response.success && response.image) {
-        // 直接使用返回的 base64 图片数据
         setTestImage(response.image);
+        setTestVideoFile(null);
+        if (testVideoUrl) {
+          URL.revokeObjectURL(testVideoUrl);
+        }
+        setTestVideoUrl(null);
+        setTestResult(null);
         message.success(`抓帧成功 (${response.resolution || ''})`);
       } else {
         throw new Error('无效的响应数据');
       }
     } catch (error: any) {
-      console.error('抓帧失败:', error);
       message.error(error.message || '抓帧失败，请检查视频源连接');
     } finally {
       setCapturing(false);
@@ -109,13 +124,13 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
   };
 
   const handleRunTest = async () => {
-    if (!testImage) {
-      message.warning('请先上传测试图片或从视频源抓帧');
+    if (!workflow?.id) {
+      message.error('工作流ID不存在');
       return;
     }
 
-    if (!workflow?.id) {
-      message.error('工作流ID不存在');
+    if (!testImage && !testVideoFile) {
+      message.warning('请先上传测试图片/视频，或从视频源抓帧');
       return;
     }
 
@@ -123,13 +138,24 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
     setTestResult(null);
 
     try {
-      // 调用新的工作流测试API
-      const response = await testWorkflow(workflow.id, testImage);
+      let response: any;
 
-      if (response.success || response.nodes) {
+      if (testVideoFile) {
+        response = await testWorkflowWithFile(workflow.id, testVideoFile);
+      } else {
+        response = await testWorkflow(workflow.id, testImage as string);
+      }
+
+      const isSuccess = response.success !== false && (response.success || response.nodes);
+      if (isSuccess) {
         setTestResult(response);
-        setShowResultModal(true);
-        message.success('测试完成，点击查看详细结果');
+        if (response.nodes?.length) {
+          setShowResultModal(true);
+        }
+
+        const recordId = response.test_record_id;
+        const suffix = recordId ? `（记录 #${recordId}）` : '';
+        message.success(`测试完成${suffix}`);
       } else {
         setTestResult({
           success: false,
@@ -139,7 +165,6 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         message.error('测试失败: ' + (response.error || '未知错误'));
       }
     } catch (error: any) {
-      console.error('测试失败:', error);
       setTestResult({
         success: false,
         error: error.message || '测试过程中出现错误',
@@ -151,10 +176,17 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
     }
   };
 
-  const handleClearImage = () => {
+  const handleClearMedia = () => {
     setTestImage(null);
+    setTestVideoFile(null);
+    if (testVideoUrl) {
+      URL.revokeObjectURL(testVideoUrl);
+    }
+    setTestVideoUrl(null);
     setTestResult(null);
   };
+
+  const canRunTest = Boolean(testImage || testVideoFile);
 
   return (
     <div className="test-panel">
@@ -164,7 +196,6 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
       </div>
 
       <div className="test-content">
-        {/* 工作流信息提示 */}
         {workflowVideoSourceNode && videoSourceInfo && (
           <div className="test-section workflow-info-section">
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -187,31 +218,46 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           </div>
         )}
 
-        {/* 图片来源选择 */}
         <div className="test-section">
-          <div className="section-label">图片来源</div>
+          <div className="section-label">测试输入</div>
           <div className="source-tabs">
             <Button
               size="small"
-              type={imageSource === 'upload' ? 'primary' : 'default'}
-              icon={<UploadOutlined />}
-              onClick={() => setImageSource('upload')}
+              type={inputMode === 'upload-image' ? 'primary' : 'default'}
+              icon={<FileImageOutlined />}
+              onClick={() => {
+                setInputMode('upload-image');
+                setTestResult(null);
+              }}
             >
               上传图片
             </Button>
             <Button
               size="small"
-              type={imageSource === 'video' ? 'primary' : 'default'}
-              icon={<VideoCameraOutlined />}
-              onClick={() => setImageSource('video')}
+              type={inputMode === 'upload-video' ? 'primary' : 'default'}
+              icon={<UploadOutlined />}
+              onClick={() => {
+                setInputMode('upload-video');
+                setTestResult(null);
+              }}
             >
-              视频源
+              上传视频
+            </Button>
+            <Button
+              size="small"
+              type={inputMode === 'video-source' ? 'primary' : 'default'}
+              icon={<VideoCameraOutlined />}
+              onClick={() => {
+                setInputMode('video-source');
+                setTestResult(null);
+              }}
+            >
+              视频源抓帧
             </Button>
           </div>
         </div>
 
-        {/* 上传图片区域 */}
-        {imageSource === 'upload' && !testImage && (
+        {inputMode === 'upload-image' && !testImage && !testVideoFile && (
           <div className="test-section">
             <Dragger
               accept="image/*"
@@ -228,8 +274,24 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           </div>
         )}
 
-        {/* 从视频源抓帧 */}
-        {imageSource === 'video' && !testImage && (
+        {inputMode === 'upload-video' && !testImage && !testVideoFile && (
+          <div className="test-section">
+            <Dragger
+              accept="video/*"
+              showUploadList={false}
+              beforeUpload={handleVideoUpload}
+              className="upload-dragger"
+            >
+              <p className="ant-upload-drag-icon">
+                <VideoCameraOutlined />
+              </p>
+              <p className="ant-upload-text">点击或拖拽上传测试视频</p>
+              <p className="ant-upload-hint">系统将抽样多帧执行编排测试</p>
+            </Dragger>
+          </div>
+        )}
+
+        {inputMode === 'video-source' && !testImage && !testVideoFile && (
           <div className="test-section">
             {!canUseVideoSource ? (
               <Alert
@@ -254,7 +316,6 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           </div>
         )}
 
-        {/* 图片预览 */}
         {testImage && (
           <div className="test-section">
             <div className="image-preview">
@@ -263,14 +324,39 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 size="small"
                 danger
                 icon={<DeleteOutlined />}
-                onClick={handleClearImage}
+                onClick={handleClearMedia}
                 className="clear-btn"
               >
-                清除图片
+                清除
               </Button>
             </div>
+          </div>
+        )}
 
-            {/* 测试按钮 */}
+        {testVideoUrl && testVideoFile && (
+          <div className="test-section">
+            <div className="image-preview">
+              <video
+                src={testVideoUrl}
+                controls
+                preload="metadata"
+                style={{ width: '100%', display: 'block' }}
+              />
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleClearMedia}
+                className="clear-btn"
+              >
+                清除
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {canRunTest && (
+          <div className="test-section">
             <Button
               type="primary"
               block
@@ -285,25 +371,26 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           </div>
         )}
 
-        {/* 测试结果 */}
         {testResult && !testing && (
           <div className="test-section">
             {testResult.success ? (
               <>
                 <Alert
                   type="success"
-                  message="测试通过"
-                  description={testResult.message}
+                  message="测试完成"
+                  description={testResult.message || '执行成功'}
                   icon={<CheckCircleOutlined />}
                   className="result-alert"
                   action={
-                    <Button
-                      type="link"
-                      onClick={() => setShowResultModal(true)}
-                      style={{ color: '#52c41a' }}
-                    >
-                      查看流程图
-                    </Button>
+                    testResult.nodes?.length ? (
+                      <Button
+                        type="link"
+                        onClick={() => setShowResultModal(true)}
+                        style={{ color: '#52c41a' }}
+                      >
+                        查看流程图
+                      </Button>
+                    ) : undefined
                   }
                 />
 
@@ -311,7 +398,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                   <div className="summary-item">
                     <ClockCircleOutlined style={{ color: '#1890ff' }} />
                     <span className="summary-label">总耗时:</span>
-                    <span className="summary-value">{testResult.execution_time || testResult.totalTime}ms</span>
+                    <span className="summary-value">{testResult.execution_time || testResult.totalTime || 0}ms</span>
                   </div>
                   <div className="summary-item">
                     <CheckCircleOutlined style={{ color: '#52c41a' }} />
@@ -319,12 +406,12 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                     <span className="summary-value">{testResult.nodes?.length || 0} 个</span>
                   </div>
                   <Button
-                    type="primary"
+                    type="default"
                     size="small"
-                    onClick={() => setShowResultModal(true)}
+                    onClick={() => navigate('/workflow-test-results')}
                     style={{ marginLeft: 'auto' }}
                   >
-                    查看详细流程
+                    查看测试结果中心
                   </Button>
                 </div>
               </>
@@ -339,10 +426,10 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                   action={
                     <Button
                       type="link"
-                      onClick={() => setShowResultModal(true)}
+                      onClick={() => navigate('/workflow-test-results')}
                       style={{ color: '#ff4d4f' }}
                     >
-                      查看详情
+                      查看测试结果中心
                     </Button>
                   }
                 />
@@ -357,17 +444,16 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           </div>
         )}
 
-        {/* 空状态 */}
-        {!testImage && !testResult && (
+        {!canRunTest && !testResult && (
           <div className="test-empty">
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <Space direction="vertical" size="small">
-                  <span>上传图片或从视频源抓帧后开始测试</span>
+                  <span>上传图片/视频或从视频源抓帧后开始测试</span>
                   {canUseVideoSource && (
                     <span style={{ fontSize: 12, color: '#1890ff' }}>
-                      点击"抓取当前帧"从工作流视频源获取图片
+                      点击“抓取当前帧”从工作流视频源获取测试图像
                     </span>
                   )}
                 </Space>
@@ -377,7 +463,6 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         )}
       </div>
 
-      {/* 测试结果弹窗 */}
       <TestResultModal
         visible={showResultModal}
         onClose={() => setShowResultModal(false)}
