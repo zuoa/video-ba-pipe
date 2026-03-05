@@ -120,15 +120,17 @@ const Header: React.FC = () => {
 
         {/* 算法管理下拉菜单 */}
         <Dropdown menu={{ items: menuItems }} placement="bottomLeft">
-          <Link
-            to="#"
-            onClick={(e) => e.preventDefault()}
-            className={`nav-link ${isAlgorithmActive ? 'active' : ''}`}
-          >
-            <ExperimentOutlined style={{ marginRight: '8px' }} />
-            算法管理
-            <DownOutlined style={{ marginLeft: '4px', fontSize: '12px' }} />
-          </Link>
+          <span>
+            <Link
+              to="#"
+              onClick={(e) => e.preventDefault()}
+              className={`nav-link ${isAlgorithmActive ? 'active' : ''}`}
+            >
+              <ExperimentOutlined style={{ marginRight: '8px' }} />
+              算法管理
+              <DownOutlined style={{ marginLeft: '4px', fontSize: '12px' }} />
+            </Link>
+          </span>
         </Dropdown>
 
         {/* 算法编排 */}
