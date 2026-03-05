@@ -133,6 +133,42 @@ def _extract_alert_triggered(result: Dict[str, Any]) -> bool:
     return False
 
 
+def _normalize_frame_rel_path(image_path: Optional[str]) -> Optional[str]:
+    """将 /api/image/frames/xxx 归一化为相对路径 xxx，便于数据库存储"""
+    if not image_path:
+        return None
+    marker = '/api/image/frames/'
+    idx = image_path.find(marker)
+    if idx >= 0:
+        return image_path[idx + len(marker):]
+    return image_path.lstrip('/')
+
+
+def _extract_best_result_image(result: Dict[str, Any]) -> Optional[str]:
+    """
+    从测试结果中提取最合适的可视化图片（优先 alert/output 节点）
+    返回相对路径（用于数据库字段）
+    """
+    nodes = result.get('nodes', []) or []
+
+    for node in nodes:
+        node_type = (node.get('node_type') or '').lower()
+        if node_type not in ('alert', 'output'):
+            continue
+        data = node.get('data') or {}
+        rel_path = _normalize_frame_rel_path(data.get('result_image'))
+        if rel_path:
+            return rel_path
+
+    for node in nodes:
+        data = node.get('data') or {}
+        rel_path = _normalize_frame_rel_path(data.get('result_image'))
+        if rel_path:
+            return rel_path
+
+    return None
+
+
 def _build_result_message(result: Dict[str, Any], media_type: str) -> str:
     if not result.get('success', False):
         return result.get('error') or '测试失败'
@@ -260,8 +296,10 @@ def _run_video_test(workflow: Workflow, video_rel_path: str, video_abs_path: str
         det_count = _extract_detection_count(frame_result)
         triggered = _extract_alert_triggered(frame_result)
 
-        # 保存抽样帧图片，用于“测试结果中心”回看
-        frame_rel_path = _save_bgr_image(workflow.id, frame_bgr, prefix=f'video_frame_{index:02d}')
+        # 优先使用测试执行生成的带框图，若没有则回退到原始抽样帧
+        frame_rel_path = _extract_best_result_image(frame_result)
+        if not frame_rel_path:
+            frame_rel_path = _save_bgr_image(workflow.id, frame_bgr, prefix=f'video_frame_{index:02d}')
         detection_images.append({
             'image_path': frame_rel_path,
             'timestamp': second,
@@ -377,8 +415,12 @@ def register_workflow_test_api(app):
                     video_path = video_rel_path
                     result_payload, detection_images = _run_video_test(workflow, video_rel_path, video_abs_path)
 
-                    # 代表图取首帧
-                    if detection_images:
+                    # 代表图优先使用带框图
+                    best_result_image = _extract_best_result_image(result_payload)
+                    if best_result_image:
+                        image_path = best_result_image
+                        image_ori_path = detection_images[0].get('image_path') if detection_images else best_result_image
+                    elif detection_images:
                         image_path = detection_images[0].get('image_path')
                         image_ori_path = image_path
 
@@ -398,11 +440,13 @@ def register_workflow_test_api(app):
 
                     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-                    # 保存输入图片用于结果中心回看
-                    image_path = _save_bgr_image(workflow_id, image_bgr, prefix='upload_image')
-                    image_ori_path = image_path
+                    # 保存输入图片用于结果中心回看（原图）
+                    input_image_path = _save_bgr_image(workflow_id, image_bgr, prefix='upload_image')
+                    image_path = input_image_path
+                    image_ori_path = input_image_path
                     detection_images = [{
-                        'image_path': image_path,
+                        'image_path': input_image_path,
+                        'image_ori_path': input_image_path,
                         'detection_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         'timestamp': time.time(),
                     }]
@@ -413,6 +457,12 @@ def register_workflow_test_api(app):
                     result_payload['execution_time'] = int((time.time() - start_time) * 1000)
                     result_payload['workflow_id'] = workflow_id
                     result_payload['workflow_name'] = workflow.name
+
+                    best_result_image = _extract_best_result_image(result_payload)
+                    if best_result_image:
+                        image_path = best_result_image
+                        if detection_images:
+                            detection_images[0]['image_path'] = best_result_image
 
                 else:
                     return jsonify({'error': f'不支持的文件类型: {content_type or suffix or "unknown"}'}), 400
@@ -430,10 +480,12 @@ def register_workflow_test_api(app):
                 media_type = 'image'
                 image_rgb, image_bgr = _decode_base64_image(image_base64)
 
-                image_path = _save_bgr_image(workflow_id, image_bgr, prefix='base64_image')
-                image_ori_path = image_path
+                input_image_path = _save_bgr_image(workflow_id, image_bgr, prefix='base64_image')
+                image_path = input_image_path
+                image_ori_path = input_image_path
                 detection_images = [{
-                    'image_path': image_path,
+                    'image_path': input_image_path,
+                    'image_ori_path': input_image_path,
                     'detection_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'timestamp': time.time(),
                 }]
@@ -444,6 +496,12 @@ def register_workflow_test_api(app):
                 result_payload['execution_time'] = int((time.time() - start_time) * 1000)
                 result_payload['workflow_id'] = workflow_id
                 result_payload['workflow_name'] = workflow.name
+
+                best_result_image = _extract_best_result_image(result_payload)
+                if best_result_image:
+                    image_path = best_result_image
+                    if detection_images:
+                        detection_images[0]['image_path'] = best_result_image
 
             # ========== 落库（独立测试表） ==========
             execution_time_ms = int(result_payload.get('execution_time') or 0)
@@ -462,6 +520,7 @@ def register_workflow_test_api(app):
             result_payload['test_record_id'] = test_record.id
             result_payload['media_type'] = media_type
             result_payload['alert_image'] = image_path
+            result_payload['alert_image_ori'] = image_ori_path
             result_payload['alert_video'] = video_path
             result_payload['detection_images'] = detection_images
 
