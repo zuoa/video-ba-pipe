@@ -136,6 +136,16 @@
 
 /* 上传区域 */
 .upload-dragger {
+  display: block;
+}
+
+.upload-dragger.ant-upload-wrapper {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.upload-dragger.ant-upload-wrapper .ant-upload.ant-upload-drag {
   background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
   border: 2px dashed #d9d9d9;
   border-radius: 8px;
@@ -143,7 +153,7 @@
   transition: all 0.3s ease;
 }
 
-.upload-dragger:hover {
+.upload-dragger.ant-upload-wrapper .ant-upload.ant-upload-drag:hover {
   border-color: #000000;
   background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
 }
