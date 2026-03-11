@@ -21,6 +21,7 @@ from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MOD
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
+from app.version import get_app_version
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -49,6 +50,14 @@ def list_plugin_modules():
     由于系统已迁移到统一脚本接口，始终返回 script_algorithm
     """
     return jsonify({'modules': ['script_algorithm']})
+
+
+@app.route('/api/system/info', methods=['GET'])
+def get_system_info():
+    return jsonify({
+        'success': True,
+        'version': get_app_version(),
+    })
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])

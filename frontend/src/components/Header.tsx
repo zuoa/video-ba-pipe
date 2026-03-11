@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, history } from '@umijs/max';
 import { Dropdown, Button, message } from 'antd';
+import { getSystemInfo } from '@/services/api';
 import './Header.css';
 import {
   VideoCameraOutlined,
@@ -22,6 +23,28 @@ const Header: React.FC = () => {
   const location = useLocation();
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadVersion = async () => {
+      try {
+        const response = await getSystemInfo();
+        if (mounted && response?.version) {
+          setAppVersion(response.version);
+        }
+      } catch (error) {
+        // Silently keep the version tag hidden when the endpoint is unavailable.
+      }
+    };
+
+    loadVersion();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -94,7 +117,12 @@ const Header: React.FC = () => {
         </div>
         <div className="logo-text">
           <h1>视频行为分析系统</h1>
-          <p>Video Behavior Analysis</p>
+          <div className="logo-meta">
+            <p>Video Behavior Analysis</p>
+            {appVersion ? (
+              <span className="version-tag">v{appVersion}</span>
+            ) : null}
+          </div>
         </div>
       </div>
 

@@ -12,6 +12,10 @@ export async function getCurrentUser() {
   return request('/api/auth/current');
 }
 
+export async function getSystemInfo() {
+  return request('/api/system/info');
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }
