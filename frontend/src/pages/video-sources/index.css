@@ -25,13 +25,34 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+.import-btn {
+  border-radius: 8px;
+  border: 1px solid #d8c6af;
+  color: #8f4817;
+  background: linear-gradient(180deg, #fff9f1 0%, #f5ebdb 100%);
+  box-shadow: 0 4px 12px rgba(143, 72, 23, 0.12);
+  font-weight: 600;
+  height: 40px;
+  padding: 0 24px;
+  transition: all 0.3s;
+}
+
+.import-btn:hover {
+  color: #a5541b !important;
+  border-color: #c98d5c !important;
+  background: linear-gradient(180deg, #fffaf4 0%, #f0dfc8 100%) !important;
+  box-shadow: 0 6px 16px rgba(143, 72, 23, 0.18);
+  transform: translateY(-2px);
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .video-sources-page {
     padding: 16px;
   }
 
-  .create-btn {
+  .create-btn,
+  .import-btn {
     width: 100%;
     height: 44px;
   }

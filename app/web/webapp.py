@@ -1472,5 +1472,13 @@ try:
 except ImportError as e:
     app.logger.warning(f"工作流测试API注册失败: {e}")
 
+# ========== 注册视频源导入API ==========
+try:
+    from app.web.api.source_import import register_source_import_api
+    register_source_import_api(app)
+    app.logger.info("视频源导入API已注册")
+except ImportError as e:
+    app.logger.warning(f"视频源导入API注册失败: {e}")
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)

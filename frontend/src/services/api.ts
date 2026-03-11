@@ -189,6 +189,24 @@ export async function deleteVideoSource(id: number) {
   });
 }
 
+export async function getSourceImportProviders() {
+  return request('/api/source-import/providers');
+}
+
+export async function discoverImportChannels(data: any) {
+  return request('/api/source-import/discover', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function commitImportChannels(data: any) {
+  return request('/api/source-import/commit', {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function detectStreamInfo(url: string) {
   return request('/api/stream/detect', {
     method: 'POST',
