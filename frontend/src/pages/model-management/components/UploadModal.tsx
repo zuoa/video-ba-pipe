@@ -13,8 +13,17 @@ interface UploadModalProps {
   onSuccess: () => void;
 }
 
-const modelTypes = ['YOLO', 'ONNX', 'TensorRT', 'PyTorch', 'TFLite', 'Custom'];
-const frameworks = ['ultralytics', 'onnx', 'tensorrt', 'pytorch', 'tflite', 'custom'];
+const modelTypes = ['YOLO', 'RKNN', 'ONNX', 'TensorRT', 'PyTorch', 'TFLite', 'Custom'];
+const frameworks = ['ultralytics', 'rknn', 'onnx', 'tensorrt', 'pytorch', 'tflite', 'custom'];
+
+const extensionModelHints: Record<string, { model_type: string; framework: string }> = {
+  '.pt': { model_type: 'YOLO', framework: 'ultralytics' },
+  '.pth': { model_type: 'PyTorch', framework: 'pytorch' },
+  '.onnx': { model_type: 'ONNX', framework: 'onnx' },
+  '.engine': { model_type: 'TensorRT', framework: 'tensorrt' },
+  '.tflite': { model_type: 'TFLite', framework: 'tflite' },
+  '.rknn': { model_type: 'RKNN', framework: 'rknn' },
+};
 
 const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
@@ -111,6 +120,10 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
       }
 
       setFileList([file]);
+      const matchedExt = Object.keys(extensionModelHints).find(ext => lowerFileName.endsWith(ext));
+      if (matchedExt) {
+        form.setFieldsValue(extensionModelHints[matchedExt]);
+      }
       return false;
     },
     onRemove: () => {
@@ -155,6 +168,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           source_type: 'local',
           version: 'v1.0',
           revision: 'main',
+          model_type: 'YOLO',
+          framework: 'ultralytics',
         }}
         onValuesChange={(changedValues) => {
           if (changedValues.source_type && changedValues.source_type !== 'local') {

@@ -12,6 +12,7 @@
 1. `dockerfile`：默认 `Dockerfile.rk`
 2. `tag`：镜像标签，默认 `rk`
 3. `torch_whl`：可选。用于指定 aarch64 版 PyTorch wheel 的 URL 或路径。留空则跳过安装。
+4. `onnxruntime_whl`：可选。用于指定 aarch64 版 ONNX Runtime wheel 的 URL 或路径。留空则跳过安装。
 
 说明：
 - 该 workflow 只构建 `linux/arm64` 镜像。
@@ -33,6 +34,16 @@ docker buildx build --platform=linux/arm64 \
   -f Dockerfile.rk \
   -t ghcr.io/<org>/<repo>:rk \
   --build-arg TORCH_WHL=<torch_wheel_url_or_path> \
+  .
+```
+
+如需预装 ONNX Runtime（aarch64 wheel）：
+
+```bash
+docker buildx build --platform=linux/arm64 \
+  -f Dockerfile.rk \
+  -t ghcr.io/<org>/<repo>:rk \
+  --build-arg ONNXRUNTIME_WHL=<onnxruntime_wheel_url_or_path> \
   .
 ```
 

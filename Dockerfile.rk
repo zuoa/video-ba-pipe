@@ -41,6 +41,11 @@ RUN python -m pip install --upgrade pip setuptools wheel
 ARG TORCH_WHL=""
 RUN if [ -n "$TORCH_WHL" ]; then pip install "$TORCH_WHL"; fi
 
+# 可选：预装 aarch64 版 onnxruntime wheel
+# 通过 --build-arg ONNXRUNTIME_WHL=URL_OR_PATH 指定
+ARG ONNXRUNTIME_WHL=""
+RUN if [ -n "$ONNXRUNTIME_WHL" ]; then pip install "$ONNXRUNTIME_WHL"; fi
+
 # 复制依赖文件
 COPY requirements.txt .
 

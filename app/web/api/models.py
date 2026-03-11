@@ -29,9 +29,36 @@ MODELS_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.pa
 ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
 
 
+EXTENSION_MODEL_HINTS = {
+    '.pt': ('YOLO', 'ultralytics'),
+    '.pth': ('PyTorch', 'pytorch'),
+    '.onnx': ('ONNX', 'onnx'),
+    '.engine': ('TensorRT', 'tensorrt'),
+    '.tflite': ('TFLite', 'tflite'),
+    '.rknn': ('RKNN', 'rknn'),
+}
+
+
 def allowed_file(filename):
     """检查文件扩展名是否允许"""
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _infer_model_meta(filename, model_type=None, framework=None):
+    """根据扩展名推断模型类型与框架，补齐默认值。"""
+    ext = os.path.splitext(filename or '')[1].lower()
+    inferred_type, inferred_framework = EXTENSION_MODEL_HINTS.get(ext, ('Custom', 'custom'))
+
+    normalized_type = (model_type or '').strip()
+    normalized_framework = (framework or '').strip()
+
+    if not normalized_type or normalized_type in ('YOLO', 'Custom'):
+        normalized_type = inferred_type
+
+    if not normalized_framework or normalized_framework in ('ultralytics', 'custom'):
+        normalized_framework = inferred_framework
+
+    return normalized_type, normalized_framework
 
 
 def _extract_filename_from_content_disposition(content_disposition):
@@ -243,8 +270,8 @@ def upload_model():
             return jsonify({'success': False, 'error': '模型名称不能为空'}), 400
 
         description = request.form.get('description', '').strip()
-        model_type = request.form.get('model_type', 'YOLO').strip()
-        framework = request.form.get('framework', 'ultralytics').strip()
+        model_type = request.form.get('model_type', '').strip()
+        framework = request.form.get('framework', '').strip()
         input_shape = request.form.get('input_shape', '').strip()
         classes = request.form.get('classes', '{}').strip()
         tags = request.form.get('tags', '[]').strip()
@@ -261,6 +288,7 @@ def upload_model():
 
         # 安全文件名
         filename = secure_filename(file.filename)
+        model_type, framework = _infer_model_meta(filename, model_type, framework)
 
         # 处理目录和重名
         try:
@@ -332,8 +360,8 @@ def import_model_from_url():
         data = request.get_json(silent=True) or {}
         source_type = (data.get('source_type') or 'url').strip().lower()
 
-        model_type = (data.get('model_type') or 'YOLO').strip()
-        framework = (data.get('framework') or 'ultralytics').strip()
+        model_type = (data.get('model_type') or '').strip()
+        framework = (data.get('framework') or '').strip()
         input_shape = (data.get('input_shape') or '').strip()
         description = (data.get('description') or '').strip()
         version = (data.get('version') or 'v1.0').strip()
@@ -406,6 +434,8 @@ def import_model_from_url():
                         'success': False,
                         'error': f'无法识别模型文件名或文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'
                     }), 400
+
+                model_type, framework = _infer_model_meta(download_filename, model_type, framework)
 
                 try:
                     file_path, final_filename = _get_unique_file_path(model_type, download_filename)

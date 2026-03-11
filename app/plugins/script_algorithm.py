@@ -2,6 +2,8 @@
 脚本算法插件 - 执行用户自定义Python脚本
 """
 import inspect
+import traceback
+import time
 import numpy as np
 
 from app import logger
@@ -22,6 +24,68 @@ class ScriptAlgorithm(BaseAlgorithm):
     # 类属性，避免实例化时就需要配置
     name = "script_executor"
 
+    @staticmethod
+    def _summarize_models(config) -> str:
+        """压缩输出模型配置，避免日志过长。"""
+        models = config.get('models')
+        if isinstance(models, list):
+            summary = []
+            for idx, item in enumerate(models):
+                if not isinstance(item, dict):
+                    summary.append(f"#{idx}:type={type(item).__name__}")
+                    continue
+                summary.append(
+                    f"#{idx}:id={item.get('model_id')},"
+                    f"type={item.get('_model_type') or item.get('model_type')},"
+                    f"framework={item.get('_model_framework') or item.get('framework')},"
+                    f"path={item.get('_model_path') or item.get('path')}"
+                )
+            return "; ".join(summary) if summary else "[]"
+
+        if isinstance(models, dict):
+            summary = []
+            for role, item in models.items():
+                if isinstance(item, dict):
+                    summary.append(
+                        f"{role}:name={item.get('name')},"
+                        f"type={item.get('model_type')},"
+                        f"path={item.get('path')}"
+                    )
+                else:
+                    summary.append(f"{role}:{item}")
+            return "; ".join(summary) if summary else "{}"
+
+        model_id = config.get('model_id')
+        if model_id is not None:
+            return f"model_id={model_id}"
+        return "none"
+
+    @staticmethod
+    def _metadata_summary(metadata) -> str:
+        """压缩 metadata，优先输出与推理诊断相关的信息。"""
+        if not isinstance(metadata, dict):
+            return str(metadata)
+
+        keys = [
+            'error',
+            'model_path',
+            'model_type',
+            'framework',
+            'total_detections',
+            'detections_before_roi',
+            'roi_filtered_count',
+            'inference_time_ms',
+            'confidence_threshold'
+        ]
+        parts = []
+        for key in keys:
+            if key in metadata:
+                parts.append(f"{key}={metadata.get(key)}")
+
+        if not parts:
+            parts.append(f"keys={sorted(metadata.keys())}")
+        return ", ".join(parts)
+
     def load_model(self):
         """
         加载脚本（不是模型）
@@ -30,13 +94,20 @@ class ScriptAlgorithm(BaseAlgorithm):
         self.entry_function = self.config.get('entry_function', 'process')
         self.timeout = self.config.get('runtime_timeout', 30)
         self.memory_limit = self.config.get('memory_limit_mb', 512)
+        self._empty_detection_count = 0
+        self._last_empty_detection_log_at = 0.0
 
         # 如果没有 script_path，跳过加载（插件管理器扫描时可能没有完整配置）
         if not self.script_path:
             logger.debug(f"[{self.name}] 未指定 script_path，跳过脚本加载")
             return
 
-        logger.info(f"[{self.name}] 加载脚本: {self.script_path}")
+        logger.info(
+            f"[{self.name}] 加载脚本: path={self.script_path}, "
+            f"source_id={self.config.get('source_id')}, "
+            f"timeout={self.timeout}s, memory_limit={self.memory_limit}MB, "
+            f"models={self._summarize_models(self.config)}"
+        )
 
         # 加载脚本模块
         try:
@@ -48,22 +119,35 @@ class ScriptAlgorithm(BaseAlgorithm):
 
             # 解析模型引用（将 name 转换为 path）
             resolver = get_model_resolver()
-            logger.info(f"[{self.name}] 原始 config: {self.config}")
             resolved_config = resolver.resolve_models(self.config)
-            logger.info(f"[{self.name}] 解析后 config['models']: {resolved_config.get('models', 'NOT_FOUND')}")
+            self.resolved_config = resolved_config
+            logger.info(
+                f"[{self.name}] 模型解析完成: source_id={resolved_config.get('source_id')}, "
+                f"models={self._summarize_models(resolved_config)}"
+            )
 
             # 如果脚本有init函数，调用它（传递解析后的config）
             if hasattr(self.script_module, 'init'):
                 logger.info(f"[{self.name}] 调用脚本的 init() 函数...")
                 self.script_state = self.script_module.init(resolved_config)
-                # logger.info(f"[{self.name}] init() 返回的 state: {self.script_state}")
-                logger.info(f"[{self.name}] 脚本init函数已调用")
+                logger.info(
+                    f"[{self.name}] 脚本 init() 完成: "
+                    f"state_keys={sorted(self.script_state.keys()) if isinstance(self.script_state, dict) else type(self.script_state).__name__}"
+                )
             else:
                 self.script_state = None
 
         except ScriptLoadError as e:
             logger.error(f"[{self.name}] 脚本加载失败: {e}")
             raise
+        except Exception as e:
+            logger.error(
+                f"[{self.name}] 脚本初始化异常: script_path={self.script_path}, "
+                f"source_id={self.config.get('source_id')}, "
+                f"models={self._summarize_models(self.config)}, error={e}"
+            )
+            logger.error(traceback.format_exc())
+            raise ScriptLoadError(f"脚本初始化异常: {e}") from e
 
         # 获取处理函数
         if not hasattr(self.script_module, self.entry_function):
@@ -134,18 +218,31 @@ class ScriptAlgorithm(BaseAlgorithm):
             )
 
             if not success:
-                logger.error(f"[{self.name}] 脚本执行失败: {error}")
+                logger.error(
+                    f"[{self.name}] 脚本执行失败: script_path={self.script_path}, "
+                    f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame, 'shape', None)}, "
+                    f"roi_count={len(roi_regions or [])}, upstream={list((upstream_results or {}).keys())}, "
+                    f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, error={error}"
+                )
                 return {'detections': []}
 
             logger.debug(f"[{self.name}] 脚本执行成功，耗时 {exec_time_ms:.2f}ms")
 
             # 3. 验证返回结果格式
             if not isinstance(result, dict):
-                logger.warning(f"[{self.name}] 脚本返回格式错误，应为dict")
+                logger.warning(
+                    f"[{self.name}] 脚本返回格式错误，应为dict: "
+                    f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
+                    f"result_type={type(result).__name__}, result={repr(result)[:400]}"
+                )
                 return {'detections': []}
 
             if 'detections' not in result:
-                logger.warning(f"[{self.name}] 脚本返回结果缺少 'detections' 字段")
+                logger.warning(
+                    f"[{self.name}] 脚本返回结果缺少 'detections' 字段: "
+                    f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
+                    f"keys={sorted(result.keys())}"
+                )
                 return {'detections': []}
 
             detections = result.get('detections', [])
@@ -163,6 +260,29 @@ class ScriptAlgorithm(BaseAlgorithm):
 
                 detections = filtered_detections
 
+            if detections:
+                logger.info(
+                    f"[{self.name}] 推理完成: detections={len(detections)}, exec_time_ms={exec_time_ms:.2f}, "
+                    f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
+                    f"metadata={self._metadata_summary(metadata)}"
+                )
+            else:
+                self._empty_detection_count += 1
+                now = time.time()
+                should_log_empty = (
+                    self._empty_detection_count <= 3 or
+                    now - self._last_empty_detection_log_at >= 30
+                )
+                if should_log_empty:
+                    self._last_empty_detection_log_at = now
+                    logger.warning(
+                        f"[{self.name}] 推理完成但未检测到目标: empty_count={self._empty_detection_count}, "
+                        f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
+                        f"frame_shape={getattr(frame, 'shape', None)}, roi_count={len(roi_regions or [])}, "
+                        f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, "
+                        f"metadata={self._metadata_summary(metadata)}"
+                    )
+
             # 5. 返回结果
             return {
                 'detections': detections,
@@ -171,9 +291,13 @@ class ScriptAlgorithm(BaseAlgorithm):
             }
 
         except Exception as e:
-            logger.error(f"[{self.name}] 处理过程异常: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(
+                f"[{self.name}] 处理过程异常: script_path={self.script_path}, "
+                f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame, 'shape', None)}, "
+                f"roi_count={len(roi_regions or [])}, upstream={list((upstream_results or {}).keys())}, "
+                f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, error={e}"
+            )
+            logger.error(traceback.format_exc())
             return {'detections': []}
 
     def cleanup(self):

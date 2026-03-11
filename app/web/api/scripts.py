@@ -181,7 +181,7 @@ def upload_script():
 
         # 获取脚本根目录
         loader = get_script_loader()
-        abs_path = loader.resolve_path(path)
+        abs_path = loader.resolve_path(path, writable=True)
 
         # 创建目录
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -318,9 +318,10 @@ def update_script(script_path):
         create_version = data.get('create_version', True)
 
         loader = get_script_loader()
-        abs_path = loader.resolve_path(script_path)
+        current_path = loader.resolve_path(script_path)
+        abs_path = loader.resolve_path(script_path, writable=True)
 
-        if not os.path.exists(abs_path):
+        if not os.path.exists(current_path):
             return jsonify({
                 'success': False,
                 'error': '脚本不存在'
@@ -328,11 +329,11 @@ def update_script(script_path):
 
         # 验证语法
         try:
-            loader.validate_syntax(abs_path)
-        except ScriptValidationError as e:
+            ast.parse(content)
+        except SyntaxError as e:
             return jsonify({
                 'success': False,
-                'error': f'语法错误: {e}'
+                'error': f'语法错误: {e.msg} (line {e.lineno})'
             }), 400
 
         # 如果需要创建版本，先保存旧版本
@@ -341,11 +342,11 @@ def update_script(script_path):
                 algo = Algorithm.get(Algorithm.script_path == script_path)
 
                 # 读取当前内容
-                with open(abs_path, 'r', encoding='utf-8') as f:
+                with open(current_path, 'r', encoding='utf-8') as f:
                     old_content = f.read()
 
                 # 计算hash
-                old_file_hash, old_content_hash = loader.calculate_hash(abs_path)
+                old_file_hash, old_content_hash = loader.calculate_hash(current_path)
 
                 # 获取当前版本号
                 try:
@@ -381,6 +382,7 @@ def update_script(script_path):
                 pass  # 没有关联算法，不创建版本
 
         # 写入新内容
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         with open(abs_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
@@ -402,7 +404,7 @@ def delete_script(script_path):
     """删除脚本（软删除，移到回收站）"""
     try:
         loader = get_script_loader()
-        abs_path = loader.resolve_path(script_path)
+        abs_path = loader.resolve_path(script_path, writable=True)
 
         if not os.path.exists(abs_path):
             return jsonify({
@@ -486,7 +488,7 @@ def rollback_script(algorithm_id):
 
         # 获取文件路径（从版本记录或当前算法）
         loader = get_script_loader()
-        abs_path = loader.resolve_path(script_version.script_path)
+        abs_path = loader.resolve_path(script_version.script_path, writable=True)
 
         # 注意：这里只保存了hash，没有保存完整内容
         # 生产环境应该将版本内容保存在数据库或对象存储中
@@ -534,21 +536,33 @@ def get_script_config_schema(script_path):
 def get_templates():
     """获取脚本模板列表"""
     try:
-        templates_dir = os.path.join(get_script_loader().scripts_root, 'templates')
         templates = []
+        seen_paths = set()
+        loader = get_script_loader()
 
-        if os.path.exists(templates_dir):
+        for scripts_root in getattr(loader, 'search_roots', [loader.scripts_root]):
+            templates_dir = os.path.join(scripts_root, 'templates')
+            if not os.path.exists(templates_dir):
+                continue
+
             for file in os.listdir(templates_dir):
-                if file.endswith('.py') and not file.startswith('_'):
-                    file_path = os.path.join(templates_dir, file)
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
+                if not file.endswith('.py') or file.startswith('_'):
+                    continue
 
-                    templates.append({
-                        'name': file[:-3],
-                        'path': f'templates/{file}',
-                        'content': content
-                    })
+                template_path = f'templates/{file}'
+                if template_path in seen_paths:
+                    continue
+                seen_paths.add(template_path)
+
+                file_path = os.path.join(templates_dir, file)
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                templates.append({
+                    'name': file[:-3],
+                    'path': template_path,
+                    'content': content
+                })
 
         return jsonify({
             'success': True,

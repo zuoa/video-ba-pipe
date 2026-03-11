@@ -31,43 +31,52 @@ class ScriptLoader:
         Args:
             scripts_root: 脚本根目录，默认为 app/user_scripts
         """
-        if scripts_root is None:
-            # 默认脚本根目录
-            current_dir = Path(__file__).parent
-            self.scripts_root = str(current_dir.parent / "user_scripts")
-        else:
-            self.scripts_root = scripts_root
+        current_dir = Path(__file__).parent
+        self.builtin_scripts_root = str(current_dir.parent / "user_scripts")
+        self.user_scripts_root = scripts_root or os.getenv("USER_SCRIPTS_ROOT") or self.builtin_scripts_root
+        self.search_roots = [self.user_scripts_root]
+        if os.path.normpath(self.user_scripts_root) != os.path.normpath(self.builtin_scripts_root):
+            self.search_roots.append(self.builtin_scripts_root)
+        # 兼容旧代码中对 scripts_root 的读取，保留为“可写根目录”语义。
+        self.scripts_root = self.user_scripts_root
 
         # 缓存：{script_path: {'module': module, 'mtime': float, 'hash': str, 'state': Any}}
         self._cache: Dict[str, Dict] = {}
 
-        # 确保脚本根目录存在
-        os.makedirs(self.scripts_root, exist_ok=True)
+        # 确保可写脚本根目录存在
+        os.makedirs(self.user_scripts_root, exist_ok=True)
 
-        # 添加脚本根目录到 Python 路径
-        if self.scripts_root not in sys.path:
-            sys.path.insert(0, self.scripts_root)
+        # 添加脚本搜索目录到 Python 路径
+        for root in reversed(self.search_roots):
+            if root not in sys.path:
+                sys.path.insert(0, root)
 
-    def resolve_path(self, script_path: str) -> str:
+    @staticmethod
+    def _normalize_script_path(script_path: str) -> str:
+        """标准化脚本相对路径。"""
+        return os.path.normpath(script_path.lstrip('/').lstrip('.'))
+
+    def resolve_path(self, script_path: str, writable: bool = False) -> str:
         """
         解析脚本路径（相对路径 -> 绝对路径）
 
         Args:
             script_path: 相对于 scripts_root 的路径
+            writable: 是否返回可写路径
 
         Returns:
             绝对路径
         """
-        # 移除开头的 / 或 ./
-        script_path = script_path.lstrip('/').lstrip('.')
+        normalized_path = self._normalize_script_path(script_path)
+        if writable:
+            return os.path.normpath(os.path.join(self.user_scripts_root, normalized_path))
 
-        # 构建绝对路径
-        abs_path = os.path.join(self.scripts_root, script_path)
+        for root in self.search_roots:
+            abs_path = os.path.normpath(os.path.join(root, normalized_path))
+            if os.path.exists(abs_path):
+                return abs_path
 
-        # 规范化路径
-        abs_path = os.path.normpath(abs_path)
-
-        return abs_path
+        return os.path.normpath(os.path.join(self.user_scripts_root, normalized_path))
 
     def calculate_hash(self, file_path: str) -> Tuple[str, str]:
         """
@@ -365,30 +374,36 @@ class ScriptLoader:
             脚本信息列表
         """
         scripts = []
+        seen_paths = set()
 
-        if category:
-            search_dir = os.path.join(self.scripts_root, category)
-            if not os.path.exists(search_dir):
-                return scripts
-        else:
-            search_dir = self.scripts_root
+        for scripts_root in self.search_roots:
+            if category:
+                search_dir = os.path.join(scripts_root, category)
+                if not os.path.exists(search_dir):
+                    continue
+            else:
+                search_dir = scripts_root
 
-        for root, dirs, files in os.walk(search_dir):
-            # 跳过 __pycache__ 和隐藏目录
-            dirs[:] = [d for d in dirs if not d.startswith('_') and not d.startswith('.')]
+            for root, dirs, files in os.walk(search_dir):
+                # 跳过 __pycache__ 和隐藏目录
+                dirs[:] = [d for d in dirs if not d.startswith('_') and not d.startswith('.')]
 
-            for file in files:
-                if file.endswith('.py') and not file.startswith('_'):
-                    rel_path = os.path.relpath(
-                        os.path.join(root, file),
-                        self.scripts_root
-                    )
+                for file in files:
+                    if file.endswith('.py') and not file.startswith('_'):
+                        rel_path = os.path.relpath(
+                            os.path.join(root, file),
+                            scripts_root
+                        )
+                        rel_path = rel_path.replace("\\", "/")
+                        if rel_path in seen_paths:
+                            continue
+                        seen_paths.add(rel_path)
 
-                    scripts.append({
-                        'path': rel_path,
-                        'category': os.path.dirname(rel_path),
-                        'name': file[:-3]
-                    })
+                        scripts.append({
+                            'path': rel_path,
+                            'category': os.path.dirname(rel_path),
+                            'name': file[:-3]
+                        })
 
         return scripts
 
@@ -419,6 +434,8 @@ class ScriptLoader:
         return {
             'cached_count': len(self._cache),
             'scripts_root': self.scripts_root,
+            'builtin_scripts_root': self.builtin_scripts_root,
+            'search_roots': self.search_roots,
             'scripts': list(self._cache.keys())
         }
 

@@ -15,6 +15,7 @@ services:
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
       - MODEL_SAVE_PATH=/data/models
+      - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60
@@ -38,6 +39,7 @@ services:
     # 数据卷挂载
     volumes:
       - ./data:/data
+      - /opt/rknn:/opt/rknn:ro
     
     # 端口映射
     ports:
@@ -62,6 +64,7 @@ services:
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
       - MODEL_SAVE_PATH=/data/models
+      - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60
@@ -83,6 +86,7 @@ services:
       - RABBITMQ_ALERT_ROUTING_KEY=alert
     volumes:
       - ./data:/data
+      - /opt/rknn:/opt/rknn:ro
     networks:
       - video-ba-network
     

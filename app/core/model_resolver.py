@@ -2,6 +2,7 @@
 模型解析器 - 将模型名称解析为完整路径
 """
 import json
+import os
 from typing import Dict, Any, Union
 
 from app import logger
@@ -145,10 +146,12 @@ class ModelResolver:
     
     def _get_model_info(self, model_ref: Union[int, str]) -> Dict[str, Any]:
         """从数据库查询模型信息，支持按ID或名称查询"""
-        
+
         cache_key = str(model_ref)
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            model_info = self._cache[cache_key]
+            self._log_model_path_status(model_ref, model_info)
+            return model_info
         
         try:
             if isinstance(model_ref, int) or (isinstance(model_ref, str) and model_ref.isdigit()):
@@ -167,6 +170,8 @@ class ModelResolver:
                 'input_shape': model.input_shape,
                 'classes': model.classes_dict
             }
+
+            self._log_model_path_status(model_ref, model_info)
             
             self._cache[cache_key] = model_info
             model.increment_usage()
@@ -179,6 +184,24 @@ class ModelResolver:
         except Exception as e:
             logger.error(f"[ModelResolver] 查询模型失败: {e}")
             return None
+
+    def _log_model_path_status(self, model_ref: Union[int, str], model_info: Dict[str, Any]):
+        """记录模型路径状态，帮助定位容器挂载或部署问题。"""
+        model_path = model_info.get('path')
+        if not model_path:
+            logger.error(f"[ModelResolver] 模型缺少文件路径: {model_ref}, info={model_info}")
+            return
+
+        if os.path.exists(model_path):
+            logger.info(
+                f"[ModelResolver] 模型路径可用: ref={model_ref}, "
+                f"type={model_info.get('model_type')}, framework={model_info.get('framework')}, path={model_path}"
+            )
+        else:
+            logger.error(
+                f"[ModelResolver] 模型文件不存在: ref={model_ref}, "
+                f"type={model_info.get('model_type')}, framework={model_info.get('framework')}, path={model_path}"
+            )
     
     def clear_cache(self):
         """清空缓存"""
