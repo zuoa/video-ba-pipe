@@ -19,6 +19,16 @@ on:
         required: false
         default: ''
         type: string
+      onnxruntime_whl:
+        description: 'Optional onnxruntime wheel URL or path (leave empty to skip)'
+        required: false
+        default: ''
+        type: string
+      rknn_toolkit_lite2_whl:
+        description: 'Optional rknn-toolkit-lite2 wheel URL or path (leave empty to skip)'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -64,5 +74,7 @@ jobs:
           push: true
           build-args: |
             TORCH_WHL=${{ github.event.inputs.torch_whl }}
+            ONNXRUNTIME_WHL=${{ github.event.inputs.onnxruntime_whl }}
+            RKNN_TOOLKIT_LITE2_WHL=${{ github.event.inputs.rknn_toolkit_lite2_whl }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.tag }}
           labels: ${{ steps.meta.outputs.labels }}

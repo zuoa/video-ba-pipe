@@ -4,7 +4,8 @@
 # ============================================
 
 # 明确 arm64 架构
-FROM --platform=linux/arm64 arm64v8/python:3.12-slim-bookworm
+# RKNNLite wheel currently bundled in vendor/rknn_wheels targets CPython 3.11.
+FROM --platform=linux/arm64 arm64v8/python:3.11-slim-bookworm
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -48,9 +49,26 @@ RUN if [ -n "$ONNXRUNTIME_WHL" ]; then pip install "$ONNXRUNTIME_WHL"; fi
 
 # 复制依赖文件
 COPY requirements.txt .
+COPY vendor/rknn_wheels/ /tmp/rknn_wheels/
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 默认安装 RKNNLite Python 包（用于加载 .rknn 模型）
+# 优先使用 --build-arg RKNN_TOOLKIT_LITE2_WHL=URL_OR_PATH 指定的 wheel；
+# 未指定时，默认尝试安装仓库中的 vendor/rknn_wheels/rknn_toolkit_lite2-*.whl
+ARG RKNN_TOOLKIT_LITE2_WHL=""
+RUN set -eux; \
+    if [ -n "$RKNN_TOOLKIT_LITE2_WHL" ]; then \
+      pip install "$RKNN_TOOLKIT_LITE2_WHL"; \
+    else \
+      wheel="$(find /tmp/rknn_wheels -maxdepth 1 -type f -name 'rknn_toolkit_lite2-*.whl' | head -n 1)"; \
+      if [ -z "$wheel" ]; then \
+        echo "Missing RKNN toolkit wheel. Place rknn_toolkit_lite2-*.whl under vendor/rknn_wheels/ or pass --build-arg RKNN_TOOLKIT_LITE2_WHL=..." >&2; \
+        exit 1; \
+      fi; \
+      pip install "$wheel"; \
+    fi
 
 # 复制应用代码
 COPY app/ /app/app/

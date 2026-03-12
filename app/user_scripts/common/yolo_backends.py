@@ -21,8 +21,10 @@ except Exception:
 
 try:
     from rknnlite.api import RKNNLite
-except Exception:
+    RKNNLITE_IMPORT_ERROR = None
+except Exception as exc:
     RKNNLite = None
+    RKNNLITE_IMPORT_ERROR = exc
 
 try:
     import onnxruntime as ort
@@ -364,7 +366,15 @@ class RKNNBackend(BaseYoloBackend):
     def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model_path, model_info, config)
         if RKNNLite is None:
-            raise ImportError("当前环境未安装 rknnlite.api，无法加载 .rknn 模型")
+            message = (
+                "当前环境未安装 rknnlite.api，无法加载 .rknn 模型。"
+                "请使用 RK3588 镜像，并在构建镜像时安装 rknn-toolkit-lite2 wheel "
+                "（可通过 Dockerfile.rk 的 RKNN_TOOLKIT_LITE2_WHL build-arg 传入），"
+                "同时在运行时挂载 /opt/rknn。"
+            )
+            if RKNNLITE_IMPORT_ERROR is not None:
+                raise ImportError(f"{message} 原始错误: {RKNNLITE_IMPORT_ERROR}") from RKNNLITE_IMPORT_ERROR
+            raise ImportError(message)
 
         self.rknn_input_format = (config.get("rknn_input_format") or "rgb").lower()
         self.model = RKNNLite()
