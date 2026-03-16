@@ -5,30 +5,48 @@ from dotenv import load_dotenv
 # Load environment variables from .env file if it exists
 load_dotenv()
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(APP_DIR)
+IN_DOCKER = os.path.exists('/.dockerenv')
+LOCAL_DATA_ROOT = os.path.join(APP_DIR, 'data')
+DOCKER_DATA_ROOT = '/data'
+
+
+def _resolve_data_path(env_name: str, relative_path: str) -> str:
+    env_value = os.getenv(env_name)
+    if env_value:
+        if os.path.isabs(env_value):
+            return env_value
+        return os.path.abspath(os.path.join(PROJECT_ROOT, env_value))
+
+    data_root = DOCKER_DATA_ROOT if IN_DOCKER else LOCAL_DATA_ROOT
+    return os.path.join(data_root, relative_path)
+
+
 # Database configuration
-DB_PATH = os.getenv('DB_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/db/ba.db'))
+DB_PATH = _resolve_data_path('DB_PATH', 'db/ba.db')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-FRAME_SAVE_PATH = os.getenv('FRAME_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/frames'))
+FRAME_SAVE_PATH = _resolve_data_path('FRAME_SAVE_PATH', 'frames')
 os.makedirs(FRAME_SAVE_PATH, exist_ok=True)
 
-VIDEO_SAVE_PATH = os.getenv('VIDEO_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/videos'))
+VIDEO_SAVE_PATH = _resolve_data_path('VIDEO_SAVE_PATH', 'videos')
 os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 
 # Video source files storage path (uploaded video files for analysis)
-VIDEO_SOURCE_PATH = os.getenv('VIDEO_SOURCE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/video_sources'))
+VIDEO_SOURCE_PATH = _resolve_data_path('VIDEO_SOURCE_PATH', 'video_sources')
 os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
 
 
 # Models storage path for uploaded AI model files
-MODEL_SAVE_PATH = os.getenv('MODEL_SAVE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/models'))
+MODEL_SAVE_PATH = _resolve_data_path('MODEL_SAVE_PATH', 'models')
 os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
 
 
 
 SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
 SNAPSHOT_INTERVAL = int(os.getenv('SNAPSHOT_INTERVAL', '60'))  # in seconds
-SNAPSHOT_SAVE_PATH = os.getenv('SNAPSHOT_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/snapshots'))
+SNAPSHOT_SAVE_PATH = _resolve_data_path('SNAPSHOT_PATH', 'snapshots')
 os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 
 
