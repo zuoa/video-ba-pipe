@@ -1,0 +1,59 @@
+2026-02-06 10:49:04,416 workflow_executor.py[line:66](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 工作流包含 5 个节点
+2026-02-06 10:49:04,418 workflow_executor.py[line:73](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 成功创建节点: node_1_1767697453589 (类型: source)
+2026-02-06 10:49:04,418 workflow_executor.py[line:73](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 成功创建节点: node_3_1767697457864 (类型: condition)
+2026-02-06 10:49:04,418 workflow_executor.py[line:73](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 成功创建节点: node_5_1767766429469 (类型: roi)
+2026-02-06 10:49:04,418 workflow_executor.py[line:73](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 成功创建节点: algorithm-1767856445547 (类型: algorithm)
+2026-02-06 10:49:04,418 workflow_executor.py[line:73](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 成功创建节点: alert-1768204112059 (类型: alert)
+2026-02-06 10:49:04,418 workflow_executor.py[line:77](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 成功加载 5 个节点
+2026-02-06 10:49:04,418 workflow_executor.py[line:120](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 测试模式：跳过视频源和buffer初始化
+2026-02-06 10:49:04,418 workflow_executor.py[line:135](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 检查算法节点 algorithm-1767856445547, data_id: 1
+2026-02-06 10:49:04,419 workflow_executor.py[line:164](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 算法节点 algorithm-1767856445547 interval_seconds=5（从 runtime_config 获取）
+2026-02-06 10:49:04,419 workflow_executor.py[line:165](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 算法节点 algorithm-1767856445547 node.interval_seconds=5（从 node 对象获取）
+2026-02-06 10:49:04,419 workflow_executor.py[line:172](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 算法节点 algorithm-1767856445547 未配置ROI热区，将使用全画面检测
+2026-02-06 10:49:04,419 workflow_executor.py[line:196](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 节点 algorithm-1767856445547 合并后的完整配置 models: NOT_FOUND
+2026-02-06 10:49:04,463 workflow_executor.py[line:215](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 成功加载算法: 人员检测, 脚本路径: templates/simple_yolo_detector.py, 节点ID: algorithm-1767856445547
+2026-02-06 10:49:04,463 workflow_executor.py[line:1700](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 开始测试工作流 2
+2026-02-06 10:49:04,463 workflow_executor.py[line:424](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 拓扑层级 0: ['node_1_1767697453589(source)']
+2026-02-06 10:49:04,463 workflow_executor.py[line:424](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 拓扑层级 1: ['node_5_1767766429469(roi)']
+2026-02-06 10:49:04,463 workflow_executor.py[line:424](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 拓扑层级 2: ['algorithm-1767856445547(algorithm)']
+2026-02-06 10:49:04,463 workflow_executor.py[line:424](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 拓扑层级 3: ['node_3_1767697457864(condition)']
+2026-02-06 10:49:04,463 workflow_executor.py[line:1287](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 共有 4 个拓扑层级，开始按层级执行...
+2026-02-06 10:49:04,463 workflow_executor.py[line:1290](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 执行层级 1/4
+2026-02-06 10:49:04,463 workflow_executor.py[line:520](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 node_1_1767697453589 interval=0<=0，总是执行
+2026-02-06 10:49:04,463 workflow_executor.py[line:1108](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 执行节点 node_1_1767697453589 (类型: source)
+2026-02-06 10:49:04,463 workflow_executor.py[line:1290](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 执行层级 2/4
+2026-02-06 10:49:04,463 workflow_executor.py[line:1223](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 串行执行层级节点: ['node_5_1767766429469(roi)']
+2026-02-06 10:49:04,463 workflow_executor.py[line:520](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 node_5_1767766429469 interval=0<=0，总是执行
+2026-02-06 10:49:04,463 workflow_executor.py[line:1108](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 执行节点 node_5_1767766429469 (类型: roi)
+2026-02-06 10:49:04,463 workflow_executor.py[line:1034](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 热区绘制节点 node_5_1767766429469 区域1: 名称=1, 模式=post_filter, 顶点数=6, 顶点坐标(相对): [(0.397, 0.004), (0.408, 0.321), (0.562, 0.315), (0.543, 0.005), (0.478, 0.005), (0.478, 0.005)]
+2026-02-06 10:49:04,463 workflow_executor.py[line:1054](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 热区绘制节点 node_5_1767766429469 共配置了 1 个ROI区域
+2026-02-06 10:49:04,463 workflow_executor.py[line:1055](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 热区绘制节点 node_5_1767766429469 完整ROI数据: [{'mode': 'post_filter', 'name': '1', 'polygon': [{'x': 0.39701329650994455, 'y': 0.004078319573954188}, {'x': 0.407703957771888, 'y': 0.32084100492961926}, {'x': 0.561649479943874, 'y': 0.31450575122250596}, {'x': 0.543119000423172, 'y': 0.005345370315376848}, {'x': 0.4775496113499187, 'y': 0.005345370315376848}, {'x': 0.4775496113499187, 'y': 0.005345370315376848}]}]
+2026-02-06 10:49:04,463 workflow_executor.py[line:1290](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 执行层级 3/4
+2026-02-06 10:49:04,464 workflow_executor.py[line:1223](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 串行执行层级节点: ['algorithm-1767856445547(algorithm)']
+2026-02-06 10:49:04,464 workflow_executor.py[line:503](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 是算法节点，interval_seconds=5（类型: <class 'int'>）
+2026-02-06 10:49:04,464 workflow_executor.py[line:526](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 距离上次执行1770346144.46秒>=interval(5秒)，执行
+2026-02-06 10:49:04,464 workflow_executor.py[line:1108](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 执行节点 algorithm-1767856445547 (类型: algorithm)
+2026-02-06 10:49:04,464 workflow_executor.py[line:700](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 找到上游ROI节点 node_5_1767766429469，包含 1 个区域
+2026-02-06 10:49:04,464 workflow_executor.py[line:725](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 算法节点 algorithm-1767856445547 使用上游ROI配置，包含 1 个区域
+2026-02-06 10:49:04,464 workflow_executor.py[line:543](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 算法节点 algorithm-1767856445547 使用context中的ROI配置，包含 1 个区域
+2026-02-06 10:49:04,464 workflow_executor.py[line:548](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 算法节点 algorithm-1767856445547 ROI区域1: 顶点数=6, 数据=[{'x': 0.39701329650994455, 'y': 0.004078319573954188}, {'x': 0.407703957771888, 'y': 0.32084100492961926}]...
+2026-02-06 10:49:04,464 workflow_executor.py[line:552](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 调用 algo.process，upstream_results: [] (共0个上游)
+2026-02-06 10:49:04,464 workflow_executor.py[line:553](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 传递给算法的ROI配置: [{'mode': 'post_filter', 'name': '1', 'polygon': [{'x': 0.39701329650994455, 'y': 0.004078319573954188}, {'x': 0.407703957771888, 'y': 0.32084100492961926}, {'x': 0.561649479943874, 'y': 0.31450575122250596}, {'x': 0.543119000423172, 'y': 0.005345370315376848}, {'x': 0.4775496113499187, 'y': 0.005345370315376848}, {'x': 0.4775496113499187, 'y': 0.005345370315376848}]}]
+2026-02-06 10:49:04,590 workflow_executor.py[line:555](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 algo.process 返回: {'detections': [], 'metadata': {'model_path': '/Users/yujian/Code/py/video-ba-pipe/app/models/yolo/yolov8n.pt', 'total_detections': 0, 'inference_time_ms': 122.09415435791016, 'confidence_threshold': 0.6, 'class_filter': [0], 'detections_detail': [], 'image_size': {'height': 1080, 'width': 1920}, 'roi_enabled': True, 'roi_mode': 'post_filter', 'roi_regions_count': 1, 'detections_before_roi': 0, 'roi_filtered_count': 0}, 'exec_time_ms': 122.2829818725586}
+2026-02-06 10:49:04,590 workflow_executor.py[line:565](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 算法节点 algorithm-1767856445547 处理完成，检测到目标: False
+2026-02-06 10:49:04,590 workflow_executor.py[line:748](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 算法节点 algorithm-1767856445547 已记录日志: 检测到 0 个目标
+2026-02-06 10:49:04,590 workflow_executor.py[line:604](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 条件判断: 无条件，通过
+2026-02-06 10:49:04,590 workflow_executor.py[line:1190](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] algorithm-1767856445547 -> node_3_1767697457864 条件满足，继续执行
+2026-02-06 10:49:04,590 workflow_executor.py[line:520](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 node_3_1767697457864 interval=0<=0，总是执行
+2026-02-06 10:49:04,590 workflow_executor.py[line:1108](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 执行节点 node_3_1767697457864 (类型: condition)
+2026-02-06 10:49:04,591 workflow_executor.py[line:811](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 条件节点 node_3_1767697457864: 0 >= 1 = False
+2026-02-06 10:49:04,591 workflow_executor.py[line:610](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 条件判断(字符串): condition=true, has_detection=False
+2026-02-06 10:49:04,591 workflow_executor.py[line:615](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 条件判断(条件节点true): has_detection=False, result=False
+2026-02-06 10:49:04,591 workflow_executor.py[line:1187](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] node_3_1767697457864 -> alert-1768204112059 条件不满足: true
+2026-02-06 10:49:04,591 workflow_executor.py[line:1290](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 执行层级 4/4
+2026-02-06 10:49:04,591 workflow_executor.py[line:1223](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 串行执行层级节点: ['node_3_1767697457864(condition)']
+2026-02-06 10:49:04,591 workflow_executor.py[line:520](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 node_3_1767697457864 interval=0<=0，总是执行
+2026-02-06 10:49:04,591 workflow_executor.py[line:1108](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 执行节点 node_3_1767697457864 (类型: condition)
+2026-02-06 10:49:04,591 workflow_executor.py[line:811](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 条件节点 node_3_1767697457864: 0 >= 1 = False
+2026-02-06 10:49:04,591 workflow_executor.py[line:700](Pid:44388 Thread:Thread-8729 (process_request_thread)) DEBUG [Workflow-2] 节点 algorithm-1767856445547 找到上游ROI节点 node_5_1767766429469，包含 1 个区域
+2026-02-06 10:49:04,591 workflow_executor.py[line:1731](Pid:44388 Thread:Thread-8729 (process_request_thread)) INFO [Workflow-2] 测试完成，共执行 4 个节点

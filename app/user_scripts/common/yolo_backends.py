@@ -5,10 +5,12 @@ The goal is to keep script templates thin and move backend-specific logic here.
 Current backends:
 - ultralytics.YOLO
 - RKNNLite
+- ONNX Runtime
 """
 
+import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -114,6 +116,123 @@ def _clip_box(x1: float, y1: float, x2: float, y2: float, width: int, height: in
     return x1, y1, x2, y2
 
 
+def _sigmoid(value: np.ndarray) -> np.ndarray:
+    clipped = np.clip(value, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-clipped))
+
+
+def _safe_json_loads(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return json.loads(value)
+    except Exception:
+        return None
+
+
+def _parse_int_list(value: Any) -> List[int]:
+    parsed = _safe_json_loads(value)
+    if parsed is not None:
+        value = parsed
+
+    if isinstance(value, (list, tuple)):
+        result = []
+        for item in value:
+            try:
+                result.append(int(item))
+            except Exception:
+                continue
+        return result
+
+    if isinstance(value, str):
+        result = []
+        for item in value.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                result.append(int(item))
+            except Exception:
+                continue
+        return result
+
+    return []
+
+
+def _parse_anchors(value: Any) -> List[List[List[float]]]:
+    parsed = _safe_json_loads(value)
+    if parsed is not None:
+        value = parsed
+
+    if not isinstance(value, (list, tuple)):
+        return []
+
+    branches = []
+    for branch in value:
+        if not isinstance(branch, (list, tuple)) or not branch:
+            continue
+
+        normalized_branch = []
+        if isinstance(branch[0], (int, float, str)):
+            flat_values = []
+            for item in branch:
+                try:
+                    flat_values.append(float(item))
+                except Exception:
+                    continue
+            for idx in range(0, len(flat_values) - 1, 2):
+                normalized_branch.append([flat_values[idx], flat_values[idx + 1]])
+        else:
+            for anchor in branch:
+                if not isinstance(anchor, (list, tuple)) or len(anchor) < 2:
+                    continue
+                try:
+                    normalized_branch.append([float(anchor[0]), float(anchor[1])])
+                except Exception:
+                    continue
+
+        if normalized_branch:
+            branches.append(normalized_branch)
+
+    return branches
+
+
+def _describe_output_shapes(outputs: List[Any]) -> List[List[int]]:
+    return [list(np.asarray(output).shape) for output in (outputs or [])]
+
+
+def _squeeze_output_array(output: Any) -> np.ndarray:
+    arr = np.asarray(output)
+    while arr.ndim > 2 and arr.shape[0] == 1:
+        arr = arr[0]
+    return arr
+
+
+def _looks_like_spatial_head_output(output: Any) -> bool:
+    arr = _squeeze_output_array(output)
+    if arr.ndim < 3:
+        return False
+    if arr.ndim >= 4:
+        return True
+    if arr.shape[1] > 1 and arr.shape[2] > 1:
+        return True
+    return sum(dim > 4 for dim in arr.shape) >= 2
+
+
+def _guess_class_count(classes: Dict[int, str], config: Dict[str, Any]) -> int:
+    configured = config.get("postprocess_num_classes")
+    if configured not in (None, ""):
+        try:
+            return max(0, int(configured))
+        except Exception:
+            pass
+    if classes:
+        return max(classes.keys()) + 1
+    return 0
+
+
 def _decode_box(
     raw_box: np.ndarray,
     input_w: int,
@@ -122,7 +241,8 @@ def _decode_box(
     pad_x: int,
     pad_y: int,
     frame_w: int,
-    frame_h: int
+    frame_h: int,
+    bbox_format: str = "auto"
 ) -> List[float]:
     box = np.asarray(raw_box, dtype=np.float32).reshape(-1)[:4]
 
@@ -133,7 +253,11 @@ def _decode_box(
         box[2] *= input_w
         box[3] *= input_h
 
-    if box[2] > box[0] and box[3] > box[1]:
+    use_xyxy = bbox_format == "xyxy"
+    if bbox_format == "auto":
+        use_xyxy = bool(box[2] > box[0] and box[3] > box[1])
+
+    if use_xyxy:
         x1, y1, x2, y2 = box.tolist()
     else:
         cx, cy, w, h = box.tolist()
@@ -155,8 +279,7 @@ def _flatten_output(output: Any) -> np.ndarray:
     if arr.size == 0:
         return np.empty((0, 0), dtype=np.float32)
 
-    if arr.ndim >= 3 and arr.shape[0] == 1:
-        arr = arr[0]
+    arr = _squeeze_output_array(arr)
 
     if arr.ndim == 1:
         if arr.size % 6 == 0:
@@ -172,14 +295,77 @@ def _flatten_output(output: Any) -> np.ndarray:
                 return arr_t
         return np.empty((0, 0), dtype=np.float32)
 
+    if _looks_like_spatial_head_output(arr):
+        return np.empty((0, 0), dtype=np.float32)
+
     last_dim = arr.shape[-1]
     if last_dim >= 6:
         return arr.reshape(-1, last_dim)
     return np.empty((0, 0), dtype=np.float32)
 
 
-def _parse_dense_outputs(
-    outputs: List[Any],
+def _collect_row_items_from_dense_outputs(outputs: List[Any]) -> List[Dict[str, Any]]:
+    row_items = []
+    for output_idx, output in enumerate(outputs or []):
+        rows = _flatten_output(output)
+        if rows.size == 0:
+            continue
+        for row_idx, row in enumerate(rows):
+            row_items.append({
+                "row": np.asarray(row, dtype=np.float32).reshape(-1),
+                "output_index": output_idx,
+                "row_index": row_idx,
+            })
+    return row_items
+
+
+def _extract_confidence_and_class(
+    row: np.ndarray,
+    class_count: int,
+    score_mode: str
+) -> Optional[Tuple[float, int]]:
+    if row.size < 5:
+        return None
+
+    if score_mode == "flat":
+        if row.size < 6:
+            return None
+        return float(row[4]), int(round(row[5]))
+
+    if score_mode == "class_only":
+        class_scores = row[4:]
+        if class_scores.size == 0:
+            return None
+        cls = int(np.argmax(class_scores))
+        return float(class_scores[cls]), cls
+
+    if score_mode == "objectness_class":
+        objectness = float(row[4])
+        class_scores = row[5:]
+        if class_scores.size == 0:
+            return objectness, 0
+        cls = int(np.argmax(class_scores))
+        class_conf = float(class_scores[cls])
+        conf = objectness * class_conf if objectness <= 1.0 else class_conf
+        return conf, cls
+
+    if row.size == 6:
+        return float(row[4]), int(round(row[5]))
+
+    if class_count > 0:
+        if row.size == 4 + class_count:
+            return _extract_confidence_and_class(row, class_count, "class_only")
+        if row.size == 5 + class_count:
+            return _extract_confidence_and_class(row, class_count, "objectness_class")
+
+    if row.size > 6 and abs(row[5] - round(row[5])) < 1e-3 and row[4] <= 1.0:
+        return float(row[4]), int(round(row[5]))
+
+    return _extract_confidence_and_class(row, class_count, "objectness_class")
+
+
+def _build_detections_from_rows(
+    row_items: List[Dict[str, Any]],
     classes: Dict[int, str],
     config: Dict[str, Any],
     frame_shape: Tuple[int, int, int],
@@ -187,56 +373,53 @@ def _parse_dense_outputs(
     input_height: int,
     scale: float,
     pad_x: int,
-    pad_y: int
+    pad_y: int,
+    class_count: int,
+    bbox_format: str = "auto",
+    score_mode: str = "auto"
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     confidence_threshold = float(config.get("confidence", 0.6))
     class_filter = set(config.get("class_filter", []) or [])
     frame_h, frame_w = frame_shape[:2]
 
     candidates = []
-    for output_idx, output in enumerate(outputs or []):
-        rows = _flatten_output(output)
-        if rows.size == 0:
+    for item in row_items:
+        row = np.asarray(item["row"], dtype=np.float32).reshape(-1)
+        if row.size < 5:
             continue
 
-        for row in rows:
-            row = np.asarray(row, dtype=np.float32).reshape(-1)
-            if row.size < 6:
-                continue
+        score_result = _extract_confidence_and_class(row, class_count, score_mode)
+        if score_result is None:
+            continue
+        conf, cls = score_result
 
-            if row.size == 6 or (
-                row.size > 6 and abs(row[5] - round(row[5])) < 1e-3 and row[4] <= 1.0
-            ):
-                box = row[:4]
-                conf = float(row[4])
-                cls = int(round(row[5]))
-            else:
-                box = row[:4]
-                objectness = float(row[4])
-                class_scores = row[5:]
-                if class_scores.size == 0:
-                    continue
-                cls = int(np.argmax(class_scores))
-                class_conf = float(class_scores[cls])
-                conf = objectness * class_conf if objectness <= 1.0 else class_conf
+        if conf < confidence_threshold:
+            continue
+        if class_filter and cls not in class_filter:
+            continue
 
-            if conf < confidence_threshold:
-                continue
-            if class_filter and cls not in class_filter:
-                continue
-
-            decoded_box = _decode_box(
-                box, input_width, input_height, scale, pad_x, pad_y, frame_w, frame_h
-            )
-            label = classes.get(cls, f"class_{cls}")
-            candidates.append({
-                "box": decoded_box,
-                "label": label,
-                "label_name": config.get("label_name", label),
-                "class": cls,
-                "confidence": conf,
-                "_output_index": output_idx,
-            })
+        decoded_box = _decode_box(
+            row[:4],
+            input_width,
+            input_height,
+            scale,
+            pad_x,
+            pad_y,
+            frame_w,
+            frame_h,
+            bbox_format=bbox_format,
+        )
+        label = classes.get(cls, f"class_{cls}")
+        candidates.append({
+            "box": decoded_box,
+            "label": label,
+            "label_name": config.get("label_name", label),
+            "class": cls,
+            "confidence": float(conf),
+            "_output_index": int(item.get("output_index", 0)),
+            "_row_index": int(item.get("row_index", 0)),
+            "_branch_index": int(item.get("branch_index", -1)),
+        })
 
     if not candidates:
         return [], []
@@ -279,9 +462,358 @@ def _parse_dense_outputs(
             "class": int(det["class"]),
             "class_name": det["label"],
             "output_index": int(det["_output_index"]),
+            "row_index": int(det["_row_index"]),
+            "branch_index": int(det["_branch_index"]),
         })
 
     return detections, details
+
+
+class YoloOutputAdapter:
+    """根据模型输出 signature 选择合适的后处理路径。"""
+
+    def __init__(
+        self,
+        model_info: Dict[str, Any],
+        config: Dict[str, Any],
+        classes: Dict[int, str],
+        input_width: int,
+        input_height: int
+    ):
+        self.model_info = model_info
+        self.config = config
+        self.classes = classes
+        self.input_width = input_width
+        self.input_height = input_height
+        self.adapter_config = (
+            _safe_json_loads(config.get("model_postprocess"))
+            or _safe_json_loads(model_info.get("model_postprocess"))
+            or _safe_json_loads(model_info.get("postprocess"))
+            or {}
+        )
+        if not isinstance(self.adapter_config, dict):
+            self.adapter_config = {}
+
+        self.profile = str(self._get_option("postprocess_profile", "profile", default="auto")).lower()
+        self.layout = str(self._get_option("postprocess_layout", "layout", default="auto")).lower()
+        self.bbox_format = str(self._get_option("postprocess_bbox_format", "bbox_format", default="auto")).lower()
+        self.score_mode = str(self._get_option("postprocess_score_mode", "score_mode", default="auto")).lower()
+        self.apply_sigmoid = self._get_option("postprocess_apply_sigmoid", "apply_sigmoid", default="auto")
+        self.strides = _parse_int_list(self._get_option("postprocess_strides", "strides"))
+        self.anchors = _parse_anchors(self._get_option("postprocess_anchors", "anchors"))
+        try:
+            self.anchor_count = int(self._get_option("postprocess_anchor_count", "anchor_count", default=0) or 0)
+        except Exception:
+            self.anchor_count = 0
+        self.class_count = _guess_class_count(classes, config)
+        self._warnings_emitted = set()
+
+    def update_input_size(self, input_width: int, input_height: int):
+        self.input_width = input_width
+        self.input_height = input_height
+
+    def parse(
+        self,
+        outputs: List[Any],
+        frame_shape: Tuple[int, int, int],
+        input_width: int,
+        input_height: int,
+        scale: float,
+        pad_x: int,
+        pad_y: int
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+        self.update_input_size(input_width, input_height)
+
+        output_shapes = _describe_output_shapes(outputs)
+        resolved_profile, warning = self._resolve_profile(outputs)
+        metadata = {
+            "postprocess_profile": resolved_profile,
+            "postprocess_layout": self.layout,
+            "postprocess_output_shapes": output_shapes,
+        }
+        if warning:
+            metadata["postprocess_warning"] = warning
+
+        row_items: List[Dict[str, Any]] = []
+        bbox_format = self.bbox_format
+        score_mode = self.score_mode
+
+        if resolved_profile == "dense":
+            row_items = _collect_row_items_from_dense_outputs(outputs)
+        elif resolved_profile == "head_decoded":
+            row_items = self._collect_decoded_head_rows(outputs)
+        elif resolved_profile == "head_anchor_based":
+            row_items = self._collect_anchor_based_rows(outputs)
+            bbox_format = "xywh"
+            score_mode = "objectness_class"
+        else:
+            return [], [], metadata
+
+        if not row_items and warning is None:
+            metadata["postprocess_warning"] = (
+                "模型输出未能匹配当前后处理适配配置，请根据 output shape 调整 profile/layout/anchors/strides。"
+            )
+
+        detections, details = _build_detections_from_rows(
+            row_items=row_items,
+            classes=self.classes,
+            config=self.config,
+            frame_shape=frame_shape,
+            input_width=input_width,
+            input_height=input_height,
+            scale=scale,
+            pad_x=pad_x,
+            pad_y=pad_y,
+            class_count=self.class_count,
+            bbox_format=bbox_format,
+            score_mode=score_mode,
+        )
+        return detections, details, metadata
+
+    def _resolve_profile(self, outputs: List[Any]) -> Tuple[str, Optional[str]]:
+        if self.profile in ("dense", "head_decoded", "head_anchor_based"):
+            return self.profile, None
+
+        if any(_looks_like_spatial_head_output(output) for output in (outputs or [])):
+            if self.anchors:
+                return "head_anchor_based", None
+
+            for output_idx, output in enumerate(outputs or []):
+                if self._normalize_decoded_head(output, output_idx, allow_multi_anchor=False) is not None:
+                    return "head_decoded", None
+
+            warning = (
+                "检测到多分支/raw head 输出，但缺少可用的模型级后处理配置。"
+                "请为该模型设置 postprocess_profile 或 model_postprocess。"
+            )
+            self._warn_once(warning)
+            return "unsupported", warning
+
+        return "dense", None
+
+    def _collect_decoded_head_rows(self, outputs: List[Any]) -> List[Dict[str, Any]]:
+        row_items = []
+        for output_idx, output in enumerate(outputs or []):
+            rows = self._normalize_decoded_head(output, output_idx)
+            if rows is None or rows.size == 0:
+                continue
+            for row_idx, row in enumerate(rows):
+                row_items.append({
+                    "row": np.asarray(row, dtype=np.float32).reshape(-1),
+                    "output_index": output_idx,
+                    "row_index": row_idx,
+                    "branch_index": output_idx,
+                })
+        return row_items
+
+    def _collect_anchor_based_rows(self, outputs: List[Any]) -> List[Dict[str, Any]]:
+        row_items = []
+        for output_idx, output in enumerate(outputs or []):
+            normalized = self._normalize_anchor_head(output, output_idx)
+            if normalized is None:
+                continue
+
+            head, stride, branch_anchors = normalized
+            preds = head.astype(np.float32)
+            if self._should_apply_sigmoid(default=True):
+                preds = _sigmoid(preds)
+
+            anchor_count, grid_h, grid_w, attr_count = preds.shape
+            grid_y, grid_x = np.meshgrid(
+                np.arange(grid_h, dtype=np.float32),
+                np.arange(grid_w, dtype=np.float32),
+                indexing="ij",
+            )
+            grid_x = grid_x[None, :, :, None]
+            grid_y = grid_y[None, :, :, None]
+            anchors = np.asarray(branch_anchors, dtype=np.float32).reshape(anchor_count, 1, 1, 2)
+
+            decoded = np.empty_like(preds)
+            decoded[..., 0] = (preds[..., 0] * 2.0 - 0.5 + grid_x[..., 0]) * stride
+            decoded[..., 1] = (preds[..., 1] * 2.0 - 0.5 + grid_y[..., 0]) * stride
+            decoded[..., 2] = (preds[..., 2] * 2.0) ** 2 * anchors[..., 0]
+            decoded[..., 3] = (preds[..., 3] * 2.0) ** 2 * anchors[..., 1]
+            decoded[..., 4:] = preds[..., 4:]
+
+            rows = decoded.reshape(-1, attr_count)
+            for row_idx, row in enumerate(rows):
+                row_items.append({
+                    "row": np.asarray(row, dtype=np.float32).reshape(-1),
+                    "output_index": output_idx,
+                    "row_index": row_idx,
+                    "branch_index": output_idx,
+                })
+
+        if not row_items:
+            warning = (
+                "anchor-based 后处理未能匹配输出 shape，请检查 model_postprocess 中的 anchors/strides/layout。"
+            )
+            self._warn_once(warning)
+        return row_items
+
+    def _normalize_decoded_head(
+        self,
+        output: Any,
+        output_idx: int,
+        allow_multi_anchor: bool = True
+    ) -> Optional[np.ndarray]:
+        arr = _squeeze_output_array(output)
+        if arr.size == 0:
+            return None
+
+        if arr.ndim == 2 and arr.shape[1] >= 6:
+            return arr.astype(np.float32, copy=False)
+
+        if arr.ndim == 3:
+            if self.layout in ("auto", "channels_last") and arr.shape[-1] >= 6:
+                return arr.reshape(-1, arr.shape[-1]).astype(np.float32, copy=False)
+
+            if self.layout in ("auto", "channels_first"):
+                attr_count, anchor_count = self._guess_attr_count(arr.shape[0], output_idx)
+                if attr_count >= 6 and anchor_count > 0:
+                    if not allow_multi_anchor and anchor_count > 1:
+                        return None
+                    reshaped = arr.reshape(anchor_count, attr_count, arr.shape[1], arr.shape[2])
+                    reshaped = np.transpose(reshaped, (0, 2, 3, 1))
+                    return reshaped.reshape(-1, attr_count).astype(np.float32, copy=False)
+
+        if arr.ndim == 4 and arr.shape[-1] >= 6:
+            if self.layout in ("auto", "anchors_first") and arr.shape[0] in self._candidate_anchor_counts(output_idx):
+                return arr.reshape(-1, arr.shape[-1]).astype(np.float32, copy=False)
+            if self.layout in ("auto", "anchors_last") and arr.shape[2] in self._candidate_anchor_counts(output_idx):
+                return arr.reshape(-1, arr.shape[-1]).astype(np.float32, copy=False)
+            if self.layout == "auto":
+                return arr.reshape(-1, arr.shape[-1]).astype(np.float32, copy=False)
+
+        return None
+
+    def _normalize_anchor_head(
+        self,
+        output: Any,
+        output_idx: int
+    ) -> Optional[Tuple[np.ndarray, float, List[List[float]]]]:
+        arr = _squeeze_output_array(output)
+        if arr.size == 0:
+            return None
+
+        branch_anchors = self.anchors[output_idx] if output_idx < len(self.anchors) else []
+        anchor_count = len(branch_anchors) or self.anchor_count
+        if anchor_count <= 0:
+            return None
+
+        head = None
+        if arr.ndim == 3:
+            channel_dim, grid_h, grid_w = arr.shape
+            if channel_dim % anchor_count != 0:
+                return None
+            attr_count = channel_dim // anchor_count
+            if attr_count < 5:
+                return None
+            head = arr.reshape(anchor_count, attr_count, grid_h, grid_w)
+            head = np.transpose(head, (0, 2, 3, 1))
+        elif arr.ndim == 4 and arr.shape[-1] >= 5:
+            if arr.shape[0] == anchor_count:
+                head = arr
+            elif arr.shape[2] == anchor_count:
+                head = np.transpose(arr, (2, 0, 1, 3))
+
+        if head is None or not branch_anchors:
+            return None
+
+        stride = 0.0
+        if output_idx < len(self.strides):
+            stride = float(self.strides[output_idx])
+        elif len(self.strides) == 1:
+            stride = float(self.strides[0])
+        else:
+            grid_h = head.shape[1]
+            grid_w = head.shape[2]
+            stride_h = self.input_height / float(grid_h) if grid_h > 0 else 0.0
+            stride_w = self.input_width / float(grid_w) if grid_w > 0 else 0.0
+            if stride_h > 0 and stride_w > 0 and abs(stride_h - stride_w) <= 1.0:
+                stride = (stride_h + stride_w) / 2.0
+
+        if stride <= 0:
+            return None
+
+        return head.astype(np.float32, copy=False), stride, branch_anchors
+
+    def _guess_attr_count(self, channel_dim: int, output_idx: int) -> Tuple[int, int]:
+        expected_counts = []
+        if self.class_count > 0:
+            expected_counts.extend([4 + self.class_count, 5 + self.class_count])
+
+        candidate_anchor_counts = self._candidate_anchor_counts(output_idx)
+        for anchor_count in candidate_anchor_counts:
+            if anchor_count <= 0:
+                continue
+            for attr_count in expected_counts:
+                if attr_count >= 6 and channel_dim == anchor_count * attr_count:
+                    return attr_count, anchor_count
+
+        if self.class_count <= 0 and channel_dim >= 6:
+            return channel_dim, 1
+
+        for anchor_count in candidate_anchor_counts:
+            if anchor_count <= 0:
+                continue
+            if channel_dim % anchor_count != 0:
+                continue
+            attr_count = channel_dim // anchor_count
+            if attr_count >= 6:
+                return attr_count, anchor_count
+
+        return 0, 0
+
+    def _candidate_anchor_counts(self, output_idx: int) -> List[int]:
+        candidates = []
+        if output_idx < len(self.anchors):
+            candidates.append(len(self.anchors[output_idx]))
+        if self.anchor_count > 0:
+            candidates.append(self.anchor_count)
+        candidates.extend([1, 3])
+
+        deduped = []
+        for item in candidates:
+            if item > 0 and item not in deduped:
+                deduped.append(item)
+        return deduped
+
+    def _should_apply_sigmoid(self, default: bool) -> bool:
+        value = self.apply_sigmoid
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("true", "1", "yes", "on"):
+                return True
+            if normalized in ("false", "0", "no", "off"):
+                return False
+        return default
+
+    def _get_option(self, *keys: str, default: Any = None) -> Any:
+        for key in keys:
+            value = self.config.get(key)
+            if value not in (None, ""):
+                return value
+
+        for key in keys:
+            value = self.adapter_config.get(key)
+            if value not in (None, ""):
+                return value
+
+        for key in keys:
+            value = self.model_info.get(key)
+            if value not in (None, ""):
+                return value
+
+        return default
+
+    def _warn_once(self, message: str):
+        if message in self._warnings_emitted:
+            return
+        self._warnings_emitted.add(message)
+        logger.warning(f"[YoloOutputAdapter] {message}")
 
 
 class BaseYoloBackend:
@@ -297,6 +829,13 @@ class BaseYoloBackend:
             input_h = int(config.get("input_height", 640))
         self.input_width = input_w
         self.input_height = input_h
+        self.output_adapter = YoloOutputAdapter(
+            model_info=model_info,
+            config=config,
+            classes=self.classes,
+            input_width=self.input_width,
+            input_height=self.input_height,
+        )
 
     @property
     def name(self) -> str:
@@ -398,10 +937,8 @@ class RKNNBackend(BaseYoloBackend):
 
         image = np.expand_dims(np.ascontiguousarray(image), axis=0)
         outputs = self.model.inference(inputs=[image])
-        detections, details = _parse_dense_outputs(
+        detections, details, adapter_metadata = self.output_adapter.parse(
             outputs=outputs,
-            classes=self.classes,
-            config=self.config,
             frame_shape=frame.shape,
             input_width=self.input_width,
             input_height=self.input_height,
@@ -416,6 +953,7 @@ class RKNNBackend(BaseYoloBackend):
             },
             "rknn_input_format": self.rknn_input_format,
             "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            **adapter_metadata,
         }
 
     def cleanup(self):
@@ -448,6 +986,7 @@ class ONNXRuntimeBackend(BaseYoloBackend):
                 self.input_height = int(self.input_shape[-2])
             if isinstance(self.input_shape[-1], int) and self.input_shape[-1] > 0:
                 self.input_width = int(self.input_shape[-1])
+        self.output_adapter.update_input_size(self.input_width, self.input_height)
 
     def infer(self, frame: np.ndarray):
         image, scale, pad_x, pad_y = _letterbox(frame, self.input_width, self.input_height)
@@ -458,7 +997,6 @@ class ONNXRuntimeBackend(BaseYoloBackend):
         if self.onnx_normalize:
             tensor = tensor / 255.0
 
-        # Infer input layout from first input shape. Typical YOLO ONNX uses NCHW.
         if len(self.input_shape) >= 4 and self.input_shape[1] in (1, 3):
             tensor = np.transpose(tensor, (2, 0, 1))
             tensor = np.expand_dims(np.ascontiguousarray(tensor), axis=0)
@@ -474,10 +1012,8 @@ class ONNXRuntimeBackend(BaseYoloBackend):
                 f"providers={self.session.get_providers()}, "
                 f"output_shapes={[np.asarray(out).shape for out in outputs]}"
             )
-        detections, details = _parse_dense_outputs(
+        detections, details, adapter_metadata = self.output_adapter.parse(
             outputs=outputs,
-            classes=self.classes,
-            config=self.config,
             frame_shape=frame.shape,
             input_width=self.input_width,
             input_height=self.input_height,
@@ -494,6 +1030,7 @@ class ONNXRuntimeBackend(BaseYoloBackend):
             "onnx_normalize": self.onnx_normalize,
             "onnx_provider": self.session.get_providers()[0] if self.session.get_providers() else None,
             "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            **adapter_metadata,
         }
 
 

@@ -21,6 +21,113 @@ class ScriptValidationError(Exception):
     pass
 
 
+class _ScriptSecurityValidator(ast.NodeVisitor):
+    """基于 AST 的脚本安全检查，避免字符串匹配误判。"""
+
+    FORBIDDEN_CALLS = {
+        'eval': 'eval() 函数存在安全风险',
+        'exec': 'exec() 函数存在安全风险',
+        '__import__': '直接使用 __import__ 可能绕过安全限制',
+        'compile': 'compile() 函数可能被滥用',
+        'open': '文件操作应使用提供的工具函数',
+    }
+    FORBIDDEN_MODULE_IMPORTS = {
+        'subprocess': 'subprocess 模块可能被用于执行系统命令',
+        'socket': '网络操作被限制',
+    }
+    FORBIDDEN_ATTR_CALLS = {
+        'os.system': 'os.system() 存在命令注入风险',
+        'os.popen': 'os.popen() 存在命令注入风险',
+    }
+
+    def __init__(self):
+        self.module_aliases: Dict[str, str] = {}
+        self.imported_symbols: Dict[str, str] = {}
+        self.violations = []
+
+    def validate(self, tree: ast.AST):
+        self.visit(tree)
+        if self.violations:
+            self.violations.sort(key=lambda item: (item[0], item[1]))
+            line, col, message = self.violations[0]
+            raise ScriptValidationError(
+                f"第 {line} 行, 第 {col + 1} 列检测到潜在危险操作: {message}"
+            )
+
+    def visit_Import(self, node: ast.Import):
+        for alias in node.names:
+            local_name = alias.asname or alias.name.split('.')[0]
+            self.module_aliases[local_name] = alias.name
+
+            root_name = alias.name.split('.')[0]
+            if root_name in self.FORBIDDEN_MODULE_IMPORTS:
+                self._add_violation(node, self.FORBIDDEN_MODULE_IMPORTS[root_name])
+
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        module_name = node.module or ''
+        root_name = module_name.split('.')[0] if module_name else ''
+        if root_name in self.FORBIDDEN_MODULE_IMPORTS:
+            self._add_violation(node, self.FORBIDDEN_MODULE_IMPORTS[root_name])
+
+        for alias in node.names:
+            local_name = alias.asname or alias.name
+            imported_name = f"{module_name}.{alias.name}" if module_name else alias.name
+            self.imported_symbols[local_name] = imported_name
+
+            if imported_name in self.FORBIDDEN_ATTR_CALLS:
+                self._add_violation(node, self.FORBIDDEN_ATTR_CALLS[imported_name])
+
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call):
+        resolved_name = self._resolve_callable(node.func)
+        simple_name = resolved_name.split('.')[-1] if resolved_name else ''
+        if resolved_name in self.FORBIDDEN_CALLS:
+            self._add_violation(node, self.FORBIDDEN_CALLS[resolved_name])
+        elif simple_name in self.FORBIDDEN_CALLS and resolved_name.startswith('builtins.'):
+            self._add_violation(node, self.FORBIDDEN_CALLS[simple_name])
+        elif resolved_name in self.FORBIDDEN_ATTR_CALLS:
+            self._add_violation(node, self.FORBIDDEN_ATTR_CALLS[resolved_name])
+        else:
+            for module_name, message in self.FORBIDDEN_MODULE_IMPORTS.items():
+                if resolved_name.startswith(f"{module_name}."):
+                    self._add_violation(node, message)
+                    break
+
+        self.generic_visit(node)
+
+    def _resolve_callable(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            local_name = node.id
+            return self.imported_symbols.get(local_name, local_name)
+
+        if isinstance(node, ast.Attribute):
+            base_name = self._resolve_name(node.value)
+            if base_name:
+                return f"{base_name}.{node.attr}"
+            return node.attr
+
+        return ''
+
+    def _resolve_name(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            local_name = node.id
+            return self.imported_symbols.get(local_name, self.module_aliases.get(local_name, local_name))
+
+        if isinstance(node, ast.Attribute):
+            base_name = self._resolve_name(node.value)
+            if base_name:
+                return f"{base_name}.{node.attr}"
+            return node.attr
+
+        return ''
+
+    def _add_violation(self, node: ast.AST, message: str):
+        self.violations.append((getattr(node, 'lineno', 0), getattr(node, 'col_offset', 0), message))
+
+
 class ScriptLoader:
     """脚本加载器"""
 
@@ -152,32 +259,12 @@ class ScriptLoader:
         Raises:
             ScriptValidationError: 检测到危险操作
         """
-        forbidden_patterns = {
-            'eval': 'eval() 函数存在安全风险',
-            'exec': 'exec() 函数存在安全风险',
-            '__import__': '直接使用 __import__ 可能绕过安全限制',
-            'compile': 'compile() 函数可能被滥用',
-            'open(': '文件操作应使用提供的工具函数',
-            'subprocess.': 'subprocess 模块可能被用于执行系统命令',
-            'os.system': 'os.system() 存在命令注入风险',
-            'os.popen': 'os.popen() 存在命令注入风险',
-            'socket.': '网络操作被限制',
-        }
-
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 source = f.read()
 
-            # 简单的字符串匹配（生产环境应使用更复杂的AST分析）
-            for pattern, message in forbidden_patterns.items():
-                if pattern in source:
-                    # 检查是否在注释中
-                    lines = source.split('\n')
-                    for i, line in enumerate(lines, 1):
-                        if pattern in line and not line.strip().startswith('#'):
-                            raise ScriptValidationError(
-                                f"第 {i} 行检测到潜在危险操作 ({pattern}): {message}"
-                            )
+            tree = ast.parse(source, filename=file_path)
+            _ScriptSecurityValidator().validate(tree)
 
             return True
 

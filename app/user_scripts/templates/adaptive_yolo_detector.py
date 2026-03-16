@@ -18,8 +18,8 @@ from app.user_scripts.common.yolo_backends import create_backend
 
 SCRIPT_METADATA = {
     "name": "自适应YOLO检测",
-    "version": "v1.1",
-    "description": "根据模型类型自动在 ultralytics YOLO 与 RKNNLite 之间切换",
+    "version": "v1.2",
+    "description": "根据模型类型自动在 ultralytics / ONNX Runtime / RKNNLite 之间切换，并支持模型级后处理适配",
     "author": "system",
     "category": "detection",
     "tags": ["yolo", "adaptive", "rknn", "ultralytics", "single-model"],
@@ -133,6 +133,25 @@ SCRIPT_METADATA = {
             "label": "ONNX Provider",
             "default": "",
             "description": "可选，例如 CPUExecutionProvider"
+        },
+        "postprocess_profile": {
+            "type": "select",
+            "label": "后处理适配",
+            "default": "auto",
+            "options": [
+                {"value": "auto", "label": "自动"},
+                {"value": "dense", "label": "Dense输出"},
+                {"value": "head_decoded", "label": "多分支已解码Head"},
+                {"value": "head_anchor_based", "label": "Anchor-based Head"}
+            ],
+            "description": "auto 会按输出 shape 选择；raw head 建议显式指定"
+        },
+        "model_postprocess": {
+            "type": "string",
+            "label": "模型后处理JSON",
+            "default": "",
+            "placeholder": "{\"layout\":\"channels_first\",\"anchors\":[[[10,13],[16,30],[33,23]]],\"strides\":[8]}",
+            "description": "按模型输出 shape 调整 layout/anchors/strides/score_mode/bbox_format/apply_sigmoid"
         }
     },
     "performance": {
@@ -177,7 +196,7 @@ def init(config: dict) -> Dict[str, Any]:
     logger.info(
         f"[自适应YOLO检测] 初始化: model_id={model_id}, backend={backend.name}, "
         f"framework={model_info.get('framework')}, model_type={model_info.get('model_type')}, "
-        f"model_path={model_path}"
+        f"model_path={model_path}, postprocess_profile={config.get('postprocess_profile', 'auto')}"
     )
 
     return {
