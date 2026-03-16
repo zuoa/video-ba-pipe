@@ -1,6 +1,7 @@
 import logging.config
-import os
 import sys
+
+from app.config import DEBUG_LOG_PATH, RUN_LOG_PATH, WORKFLOW_DEBUG_LOG_PATH, WORKFLOW_LOG_PATH
 
 LOG_CONF = {
     'version': 1,
@@ -27,7 +28,7 @@ LOG_CONF = {
             'when': 'W0',
             'interval': 1,
             'backupCount': 1,
-            'filename': '/data/logs/run.log' if os.path.exists('/.dockerenv') else 'data/logs/run.log',
+            'filename': RUN_LOG_PATH,
             'formatter': 'verbose'
         },
         'debug': {
@@ -36,7 +37,7 @@ LOG_CONF = {
             'when': 'W0',
             'interval': 1,
             'backupCount': 1,
-            'filename': '/data/logs/debug.log' if os.path.exists('/.dockerenv') else 'data/logs/debug.log',
+            'filename': DEBUG_LOG_PATH,
             'formatter': 'verbose'
         },
         'workflow_file': {
@@ -45,7 +46,7 @@ LOG_CONF = {
             'when': 'W0',
             'interval': 1,
             'backupCount': 1,
-            'filename': '/data/logs/workflow.log' if os.path.exists('/.dockerenv') else 'data/logs/workflow.log',
+            'filename': WORKFLOW_LOG_PATH,
             'formatter': 'verbose'
         },
         'workflow_debug': {
@@ -54,7 +55,7 @@ LOG_CONF = {
             'when': 'W0',
             'interval': 1,
             'backupCount': 1,
-            'filename': '/data/logs/workflow_debug.log' if os.path.exists('/.dockerenv') else 'data/logs/workflow_debug.log',
+            'filename': WORKFLOW_DEBUG_LOG_PATH,
             'formatter': 'verbose'
         }
     },

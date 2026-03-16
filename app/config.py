@@ -42,6 +42,14 @@ os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
 MODEL_SAVE_PATH = _resolve_data_path('MODEL_SAVE_PATH', 'models')
 os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
 
+LOG_SAVE_PATH = _resolve_data_path('LOG_SAVE_PATH', 'logs')
+os.makedirs(LOG_SAVE_PATH, exist_ok=True)
+
+RUN_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'run.log')
+DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'debug.log')
+WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
+WORKFLOW_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow_debug.log')
+
 
 
 SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')

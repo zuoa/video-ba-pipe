@@ -17,13 +17,14 @@ from urllib.error import HTTPError, URLError
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.core.database_models import MLModel, Algorithm, db
+from app.config import MODEL_SAVE_PATH
 from app import logger
 
 # 创建蓝图
 models_bp = Blueprint('models', __name__, url_prefix='/api/models')
 
-# 模型存储根目录（项目根目录下的 models 文件夹）
-MODELS_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'models')
+# 模型存储根目录（由配置项控制）
+MODELS_ROOT = MODEL_SAVE_PATH
 
 # 允许的模型文件扩展名
 ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
