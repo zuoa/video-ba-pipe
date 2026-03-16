@@ -75,18 +75,19 @@ COPY app/ /app/app/
 COPY env.example /app/.env.example
 
 # 创建必要的数据目录
-RUN mkdir -p /app/app/data/db \
-    /app/app/data/frames \
-    /app/app/data/videos \
-    /app/app/data/models \
-    /app/app/data/snapshots \
-    /app/app/data/logs
+RUN mkdir -p /data/db \
+    /data/frames \
+    /data/videos \
+    /data/models \
+    /data/snapshots \
+    /data/logs \
+    /data/user_scripts
 
 RUN chmod +x /app/app/entrypoint.sh
 
 # NPU 运行时库路径（请在运行时挂载 /opt/rknn）
 ENV LD_LIBRARY_PATH="/opt/rknn/lib:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
-VOLUME ["/opt/rknn", "/app/app/data"]
+VOLUME ["/opt/rknn", "/data"]
 
 # 暴露端口
 EXPOSE 5000

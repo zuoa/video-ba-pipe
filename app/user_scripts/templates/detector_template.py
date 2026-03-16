@@ -405,7 +405,7 @@ def filter_by_roi(detections: List[dict], roi_regions: List[dict]) -> List[dict]
 
 4. 调试技巧：
    - 使用 logger.info/debug/error() 记录日志
-   - 日志文件位置：app/data/logs/debug.log
+   - 日志文件位置：/data/logs/debug.log
    - 在 process() 中添加 metadata 字段返回调试信息
    - 使用算法测试功能上传图片测试
 

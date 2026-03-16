@@ -78,7 +78,7 @@ docker buildx build --platform=linux/arm64 \
 ```bash
 docker run --rm -it \
   -v /opt/rknn:/opt/rknn:ro \
-  -v /data/video-ba:/app/app/data \
+  -v /data/video-ba:/data \
   -p 5000:5000 \
   ghcr.io/<org>/<repo>:rk
 ```

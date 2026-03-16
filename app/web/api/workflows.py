@@ -7,6 +7,7 @@ from copy import deepcopy
 from flask import jsonify, request
 
 from app.core.database_models import Workflow, WorkflowNode, VideoSource, Algorithm
+from app.config import SNAPSHOT_SAVE_PATH
 
 
 def register_workflows_api(app):
@@ -240,7 +241,7 @@ def register_workflows_api(app):
             
             # 优先级1: 如果视频源正在运行，优先读取快照（最快且不占用连接）
             if source.status == 'RUNNING':
-                snapshot_path = os.path.join('app/data/snapshots', f'{source.source_code}.jpg')
+                snapshot_path = os.path.join(SNAPSHOT_SAVE_PATH, f'{source.source_code}.jpg')
                 if os.path.exists(snapshot_path):
                     try:
                         with open(snapshot_path, 'rb') as f:
@@ -565,4 +566,3 @@ def register_workflows_api(app):
         except Exception as e:
             app.logger.error(f"批量删除工作流失败: {e}")
             return jsonify({'error': str(e)}), 500
-

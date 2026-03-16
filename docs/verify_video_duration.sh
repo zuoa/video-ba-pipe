@@ -6,7 +6,7 @@ echo "视频时长验证脚本"
 echo "======================================"
 echo ""
 
-VIDEO_DIR="app/data/videos"
+VIDEO_DIR="${VIDEO_DIR:-data/videos}"
 
 # 读取配置
 PRE_DURATION=${PRE_ALERT_DURATION:-10}
@@ -97,11 +97,10 @@ elif [ $total_pass -eq 0 ]; then
     echo "❌ 所有视频时长都不正常，请检查："
     echo "   1. 是否已重启应用？"
     echo "   2. 检查的视频是否是修复后录制的？"
-    echo "   3. 查看日志: tail -f app/data/logs/debug.log | grep 录制"
+    echo "   3. 查看日志: tail -f data/logs/debug.log | grep 录制"
     exit 1
 else
     echo "⚠️  部分视频时长正常，部分不正常"
     echo "   旧视频可能是修复前录制的，请触发新的告警录制"
     exit 0
 fi
-

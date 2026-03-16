@@ -18,6 +18,7 @@ services:
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
       - MODEL_SAVE_PATH=/data/models
+      - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60
@@ -64,6 +65,7 @@ services:
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
       - MODEL_SAVE_PATH=/data/models
+      - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60

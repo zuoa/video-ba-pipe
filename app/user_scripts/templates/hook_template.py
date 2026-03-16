@@ -427,7 +427,7 @@ def handle_post_record(context: dict) -> dict:
    - 使用logger记录关键信息
    - 在metadata中返回调试数据
    - 测试各种边界情况
-   - 查看日志文件：app/data/logs/debug.log
+   - 查看日志文件：/data/logs/debug.log
 
 7. 最佳实践：
    - 明确Hook的目的和功能
