@@ -14,6 +14,7 @@ from peewee import OperationalError
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
 from app.core.database_models import db
@@ -1040,6 +1041,8 @@ def get_image(file_path):
         # 返回图片文件
         return send_file(full_path, as_attachment=False)
         
+    except HTTPException:
+        raise
     except Exception as e:
         app.logger.error(f"Error serving image {file_path}: {str(e)}")
         abort(500, description="Internal server error")
@@ -1140,6 +1143,8 @@ def get_video(file_path):
         
         return response
         
+    except HTTPException:
+        raise
     except Exception as e:
         app.logger.error(f"Error serving video {file_path}: {str(e)}")
         abort(500, description=f"Error serving video {file_path}: {str(e)}")
