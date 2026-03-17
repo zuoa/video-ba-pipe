@@ -2,11 +2,19 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from app.config import USER_SCRIPTS_ROOT
 from app.core.script_loader import ScriptLoader, ScriptValidationError
 
 
 class ScriptLoaderSecurityTests(unittest.TestCase):
+    def test_default_scripts_root_uses_config_strategy(self):
+        with patch.dict('os.environ', {}, clear=True):
+            loader = ScriptLoader()
+
+        self.assertEqual(loader.user_scripts_root, USER_SCRIPTS_ROOT)
+
     def _write_script(self, content: str) -> str:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

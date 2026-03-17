@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 
+from app.config import USER_SCRIPTS_ROOT
+
 
 class ScriptLoadError(Exception):
     """脚本加载错误"""
@@ -140,7 +142,7 @@ class ScriptLoader:
         """
         current_dir = Path(__file__).parent
         self.builtin_scripts_root = str(current_dir.parent / "user_scripts")
-        self.user_scripts_root = scripts_root or os.getenv("USER_SCRIPTS_ROOT") or self.builtin_scripts_root
+        self.user_scripts_root = scripts_root or os.getenv("USER_SCRIPTS_ROOT") or USER_SCRIPTS_ROOT
         self.search_roots = [self.user_scripts_root]
         if os.path.normpath(self.user_scripts_root) != os.path.normpath(self.builtin_scripts_root):
             self.search_roots.append(self.builtin_scripts_root)
