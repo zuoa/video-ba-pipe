@@ -163,6 +163,35 @@ class BaseAlgorithm(ABC):
         return (b, g, r)  # OpenCV使用BGR格式
 
     @staticmethod
+    def _get_detection_box(det):
+        """兼容 box/bbox 两种字段名。"""
+        if not isinstance(det, dict):
+            return None
+        box = det.get('box')
+        if box is None:
+            box = det.get('bbox')
+        if not isinstance(box, (list, tuple)) or len(box) < 4:
+            return None
+        return box
+
+    @staticmethod
+    def _get_detection_label(det, default='Object'):
+        """兼容 label/label_name/class_name。"""
+        if not isinstance(det, dict):
+            return default
+        return det.get('label_name') or det.get('label') or det.get('class_name') or default
+
+    @staticmethod
+    def _get_detection_confidence(det, default=1.0):
+        """兼容 confidence/score。"""
+        if not isinstance(det, dict):
+            return default
+        conf = det.get('confidence')
+        if conf is None:
+            conf = det.get('score')
+        return conf if conf is not None else default
+
+    @staticmethod
     def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
@@ -249,12 +278,17 @@ class BaseAlgorithm(ABC):
 
         # 绘制检测结果
         for result in results:
-            x1, y1, x2, y2 = map(int, result.get('box', [0, 0, 0, 0]))
+            box = BaseAlgorithm._get_detection_box(result)
+            if box is None:
+                logger.debug(f"Skip visualization for invalid detection payload: {result}")
+                continue
+
+            x1, y1, x2, y2 = map(int, box[:4])
             logger.debug(f"Main detection box: {x1, y1, x2, y2}")
 
-            label_prefix = result.get('label_name', 'Object')
+            label_prefix = BaseAlgorithm._get_detection_label(result, 'Object')
             cls = result.get('class', 0)
-            conf = result.get('confidence', 1.0)
+            conf = BaseAlgorithm._get_detection_confidence(result, 1.0)
             stages = result.get('stages', [])
 
 
@@ -262,10 +296,14 @@ class BaseAlgorithm(ABC):
             if stages:
                 logger.debug(f"Drawing {len(stages)} stages")
                 for i, stage in enumerate(stages):
-                    stage_x1, stage_y1, stage_x2, stage_y2 = map(int, stage.get('box', [0, 0, 0, 0]))
+                    stage_box = BaseAlgorithm._get_detection_box(stage)
+                    if stage_box is None:
+                        continue
+
+                    stage_x1, stage_y1, stage_x2, stage_y2 = map(int, stage_box[:4])
                     stage_model = stage.get('model_name', f'Stage{i+1}')
-                    stage_label = stage.get('label_name', stage_model)
-                    stage_conf = stage.get('confidence', 0.0)
+                    stage_label = BaseAlgorithm._get_detection_label(stage, stage_model)
+                    stage_conf = BaseAlgorithm._get_detection_confidence(stage, 0.0)
 
                     
                     # 使用循环颜色为不同stage分配颜色
