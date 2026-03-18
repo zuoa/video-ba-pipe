@@ -205,6 +205,7 @@ class WorkflowExecutor:
 
                         # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
                         full_config.update(node_config)
+                        full_config, effective_confidence_threshold = self._sync_single_model_confidence(full_config)
 
                         logger.info(f"[Workflow-{self.workflow_id}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
@@ -222,7 +223,8 @@ class WorkflowExecutor:
                         self.algorithm_configs[node_id] = {
                             'algorithm_id': algo_id,
                             'node_id': node_id,
-                            'runtime_config': runtime_config
+                            'runtime_config': runtime_config,
+                            'effective_confidence_threshold': effective_confidence_threshold,
                         }
 
                         logger.info(f"[Workflow-{self.workflow_id}] 成功加载算法: {algo.name}, 脚本路径: {algo.script_path}, 节点ID: {node_id}")
@@ -232,6 +234,55 @@ class WorkflowExecutor:
                         traceback.print_exc()
                 else:
                     logger.warning(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 没有 data_id，跳过加载")
+
+    def _sync_single_model_confidence(self, config: dict) -> tuple[dict, Optional[float]]:
+        """单模型脚本将 node confidence 与 models[0].confidence 取最大值作为最终阈值。"""
+        if not isinstance(config, dict):
+            return config, None
+
+        raw_threshold = config.get('confidence')
+        models = config.get('models')
+        if not isinstance(models, list) or len(models) != 1:
+            try:
+                threshold = None if raw_threshold is None else max(0.0, min(1.0, float(raw_threshold)))
+            except (TypeError, ValueError):
+                threshold = None
+            return config, threshold
+
+        model_config = models[0]
+        if not isinstance(model_config, dict):
+            try:
+                threshold = None if raw_threshold is None else max(0.0, min(1.0, float(raw_threshold)))
+            except (TypeError, ValueError):
+                threshold = None
+            return config, threshold
+
+        try:
+            node_threshold = None if raw_threshold is None else float(raw_threshold)
+        except (TypeError, ValueError):
+            node_threshold = None
+
+        try:
+            model_threshold = None if model_config.get('confidence') is None else float(model_config.get('confidence'))
+        except (TypeError, ValueError):
+            model_threshold = None
+
+        candidates = [value for value in (node_threshold, model_threshold) if value is not None]
+        if not candidates:
+            return config, None
+
+        threshold = max(0.0, min(1.0, max(candidates)))
+
+        synced_config = dict(config)
+        synced_models = [dict(model_config)]
+        synced_models[0]['confidence'] = threshold
+        synced_config['models'] = synced_models
+        synced_config['confidence'] = threshold
+
+        logger.info(
+            f"[Workflow-{self.workflow_id}] 单模型配置同步最终 confidence={threshold:.2f} 到 models[0]"
+        )
+        return synced_config, threshold
 
     def _get_node_runtime_config(self, node_data_dict):
         """
@@ -531,6 +582,14 @@ class WorkflowExecutor:
 
     def _get_algorithm_confidence_threshold(self, node_id: str) -> Optional[float]:
         """获取算法节点生效的置信度阈值，兼容旧版顶层字段。"""
+        runtime_config = self.algorithm_configs.get(node_id) or {}
+        runtime_threshold = runtime_config.get('effective_confidence_threshold')
+        if runtime_threshold is not None:
+            try:
+                return max(0.0, min(1.0, float(runtime_threshold)))
+            except (TypeError, ValueError):
+                pass
+
         node_data_dict = self._get_workflow_node_dict(node_id)
         if not node_data_dict:
             return None
@@ -568,21 +627,42 @@ class WorkflowExecutor:
         if threshold is None:
             return result
 
-        filtered = [
-            det for det in detections
-            if BaseAlgorithm._get_detection_confidence(det, 1.0) >= threshold
-        ]
-        filtered_count = len(detections) - len(filtered)
+        filtered = []
+        filtered_count = 0
+        stage_filtered_count = 0
+
+        for det in detections:
+            if BaseAlgorithm._get_detection_confidence(det, 1.0) < threshold:
+                filtered_count += 1
+                continue
+
+            filtered_det = dict(det)
+            stages = det.get('stages')
+            if isinstance(stages, list):
+                filtered_stages = [
+                    stage for stage in stages
+                    if BaseAlgorithm._get_detection_confidence(stage, 1.0) >= threshold
+                ]
+                stage_filtered_count += len(stages) - len(filtered_stages)
+                filtered_det['stages'] = filtered_stages
+
+            filtered.append(filtered_det)
 
         metadata = dict(result.get('metadata') or {})
         metadata.setdefault('confidence_threshold', threshold)
-        if filtered_count <= 0:
+        if filtered_count <= 0 and stage_filtered_count <= 0:
             filtered_result = dict(result)
             filtered_result['metadata'] = metadata
             return filtered_result
 
-        metadata['detections_before_confidence_filter'] = len(detections)
-        metadata['confidence_filtered_count'] = filtered_count
+        if filtered_count > 0:
+            metadata['detections_before_confidence_filter'] = len(detections)
+            metadata['confidence_filtered_count'] = filtered_count
+        if stage_filtered_count > 0:
+            metadata['stages_before_confidence_filter'] = sum(
+                len(det.get('stages', [])) for det in detections if isinstance(det.get('stages'), list)
+            )
+            metadata['stage_confidence_filtered_count'] = stage_filtered_count
 
         filtered_result = dict(result)
         filtered_result['detections'] = filtered
@@ -590,7 +670,8 @@ class WorkflowExecutor:
 
         logger.info(
             f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 按 confidence={threshold:.2f} "
-            f"过滤检测结果: {len(detections)} -> {len(filtered)}"
+            f"过滤检测结果: {len(detections)} -> {len(filtered)}, "
+            f"stages 过滤 {stage_filtered_count} 个"
         )
         return filtered_result
     
