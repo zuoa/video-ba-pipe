@@ -163,9 +163,9 @@ const Header: React.FC = () => {
             href="/gpu-calculator"
             target="_blank"
             className="site-tools__button"
-          >
-            算力
-          </Button>
+            title="算力"
+            aria-label="算力"
+          />
 
           <Button
             type="text"
@@ -173,9 +173,9 @@ const Header: React.FC = () => {
             href="/alert-wall"
             target="_blank"
             className="site-tools__button"
-          >
-            大屏
-          </Button>
+            title="大屏"
+            aria-label="大屏"
+          />
 
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Link
