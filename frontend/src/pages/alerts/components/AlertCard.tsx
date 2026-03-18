@@ -11,7 +11,8 @@ import {
     ClockCircleOutlined,
     PlayCircleOutlined,
     ApartmentOutlined,
-    FireOutlined
+    FireOutlined,
+    SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import {Alert, Task} from '../types';
 import RelativeTime from './RelativeTime';
@@ -365,7 +366,7 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                                 background: colorScheme.bg,
                             }}
                         >
-                            <ShieldCheckOutlined style={{fontSize: 11}}/>
+                            <SafetyCertificateOutlined style={{fontSize: 11}}/>
                             <span>已确认</span>
                         </div>
                     )}

@@ -10,7 +10,7 @@ import {
 import { StatusBadge } from '@/components/common';
 import './ModelCard.css';
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 
 interface ModelCardProps {
   model: {
@@ -103,13 +103,13 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
 
       {/* 描述 */}
       {model.description && (
-        <Text
+        <Paragraph
           type="secondary"
           ellipsis={{ rows: 2 }}
           className="model-description"
         >
           {model.description}
-        </Text>
+        </Paragraph>
       )}
 
       {/* 底部 */}

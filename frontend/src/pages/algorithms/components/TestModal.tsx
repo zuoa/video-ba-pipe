@@ -62,6 +62,13 @@ interface DetectionResult {
   }>;
 }
 
+interface DebugDetection {
+  box: number[];
+  confidence: number;
+  class: number;
+  class_name: string;
+}
+
 interface TestResponse {
   success: boolean;
   detection_count: number;
@@ -69,21 +76,24 @@ interface TestResponse {
   detections?: DetectionResult[];
   error?: string;
   metadata?: {
+    model_path?: string;
     model_count?: number;
     inference_time_ms?: number;
     total_detections?: number;
+    confidence_threshold?: number;
+    class_filter?: number[] | string;
+    detections_detail?: DebugDetection[];
+    image_size?: {
+      width: number;
+      height: number;
+    };
     roi_mode?: string;
     model_debug_info?: Array<{
       model_name: string;
       model_path: string;
       success: boolean;
       detections_count?: number;
-      detections?: Array<{
-        box: number[];
-        confidence: number;
-        class: number;
-        class_name: string;
-      }>;
+      detections?: DebugDetection[];
       confidence_threshold?: number;
       class_filter?: number[];
       error?: string;
@@ -526,7 +536,6 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                           message="模型推理失败"
                                           description={modelInfo.error}
                                           showIcon
-                                          size="small"
                                         />
                                       ) : (
                                         <>
@@ -587,7 +596,6 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                               message="该模型未检测到任何目标"
                                               description="可能原因：置信度阈值过高、类别过滤不匹配、目标不在此模型检测范围内"
                                               showIcon
-                                              size="small"
                                             />
                                           )}
                                         </>

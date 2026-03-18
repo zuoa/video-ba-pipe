@@ -9,6 +9,7 @@ import {
   BugOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import type { RangePickerProps } from 'antd/es/date-picker';
 import { Task, Workflow } from '../types';
 
 const { RangePicker } = DatePicker;
@@ -47,7 +48,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   loading = false,
 }) => {
   // 自定义时间范围的状态
-  const [customDateRange, setCustomDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [customDateRange, setCustomDateRange] = useState<RangePickerProps['value']>(null);
 
   // 时间范围选项
   const timeRangeOptions = [
@@ -59,7 +60,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   ];
 
   // 处理自定义时间范围
-  const handleDateRangeChange = (dates: [Dayjs, Dayjs] | null) => {
+  const handleDateRangeChange: RangePickerProps['onChange'] = (dates) => {
     setCustomDateRange(dates);
     if (dates && dates[0] && dates[1]) {
       // 将日期转换为 ISO 格式并传递给父组件

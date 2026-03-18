@@ -107,7 +107,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
               <div
                 key={alert.id}
                 className="recent-alert-item"
-                onClick={() => handleAlertClick(alert)}
+                onClick={handleAlertClick}
               >
                 {imageUrl ? (
                   <div className="alert-image-wrapper">

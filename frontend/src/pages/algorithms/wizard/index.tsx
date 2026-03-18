@@ -59,6 +59,8 @@ interface ConfigSchema {
   };
 }
 
+type ConfigField = ConfigSchema[string];
+
 interface SelectedDetector {
   type: 'template' | 'script';
   id: number | null;
@@ -308,7 +310,7 @@ export default function AlgorithmWizard() {
       if (field.type === 'model_list') {
         const items = [];
         const itemIds = modelItems[key] || [];
-        const itemSchema = field.item_schema || {};
+        const itemSchema = (field.item_schema || {}) as Record<string, ConfigField>;
 
         for (const itemId of itemIds) {
           const item: any = {};
@@ -889,4 +891,3 @@ export default function AlgorithmWizard() {
     </Spin>
   );
 }
-

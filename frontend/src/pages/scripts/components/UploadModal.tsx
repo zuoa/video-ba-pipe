@@ -53,6 +53,10 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
     if (info.fileList.length > 0) {
       const file = info.fileList[0].originFileObj;
+      if (!file) {
+        setCodeContent('');
+        return;
+      }
 
       // 读取文件内容
       const reader = new FileReader();

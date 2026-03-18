@@ -98,11 +98,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             // 使用匹配到的源的id，确保类型一致
             formValues.videoSourceId = matchingSource.id;
             console.log('视频源匹配成功:', {
-              节点中的值: sourceId,
-              类型: typeof sourceId,
-              匹配源的id: matchingSource.id,
-              类型: typeof matchingSource.id,
-              视频源名称: matchingSource.name
+              nodeSourceId: sourceId,
+              nodeSourceType: typeof sourceId,
+              matchedSourceId: matchingSource.id,
+              matchedSourceType: typeof matchingSource.id,
+              matchedSourceName: matchingSource.name
             });
           } else {
             console.warn('未找到匹配的视频源:', sourceId, '可用视频源:', videoSources);

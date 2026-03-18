@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { RecordingOutlined } from '@ant-design/icons';
+import { VideoCameraAddOutlined } from '@ant-design/icons';
 import './BaseNode.css';
 
 const RecordNode = ({ data }: any) => {
@@ -8,7 +8,7 @@ const RecordNode = ({ data }: any) => {
     <div className="custom-node record-node">
       <Handle type="target" position={Position.Left} id="input" className="node-handle" />
       <div className="node-header">
-        <RecordingOutlined className="node-icon" />
+        <VideoCameraAddOutlined className="node-icon" />
         <span className="node-title">{data.label}</span>
       </div>
       {data.description && (

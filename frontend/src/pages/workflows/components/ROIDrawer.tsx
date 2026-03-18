@@ -550,7 +550,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                           <div style={{ fontWeight: 'bold', fontSize: 13 }}>
                             {region.name}
                           </div>
-                          <Tag size="small" color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
+                          <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
                             {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
                           </Tag>
                           <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4 }}>

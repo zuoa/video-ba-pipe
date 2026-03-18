@@ -746,7 +746,7 @@ export default function WorkflowEditorPage() {
             >
               测试
             </Button>
-            <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
+            <Button type="primary" icon={<SaveOutlined />} onClick={() => void handleSave()}>
               保存
             </Button>
           </Space>

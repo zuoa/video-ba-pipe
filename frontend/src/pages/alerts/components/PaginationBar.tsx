@@ -40,7 +40,6 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
           onChange={onChange}
           showSizeChanger={showSizeChanger}
           pageSizeOptions={pageSizeOptions.map(s => parseInt(s))}
-          showTotal={false}
         />
       </Space>
     </Card>
