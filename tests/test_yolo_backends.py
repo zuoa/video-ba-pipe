@@ -72,6 +72,32 @@ class YoloOutputAdapterTests(unittest.TestCase):
         self.assertEqual(len(detections), 1)
         self.assertEqual(details[0]["class"], 1)
 
+    def test_dense_profile_auto_transposes_single_class_channels_first_output(self):
+        adapter = YoloOutputAdapter(
+            model_info={},
+            config={"confidence": 0.5},
+            classes={},
+            input_width=64,
+            input_height=64,
+        )
+        output = np.full((1, 5, 6), -8.0, dtype=np.float32)
+        output[0, :, 2] = np.array([0.5, 0.5, 0.25, 0.25, 8.0], dtype=np.float32)
+
+        detections, details, metadata = adapter.parse(
+            outputs=[output],
+            frame_shape=(64, 64, 3),
+            input_width=64,
+            input_height=64,
+            scale=1.0,
+            pad_x=0,
+            pad_y=0,
+        )
+
+        self.assertEqual(metadata["postprocess_profile"], "dense")
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(details[0]["class"], 0)
+        self.assertGreater(details[0]["confidence"], 0.9)
+
     def test_head_decoded_profile_channels_first(self):
         adapter = YoloOutputAdapter(
             model_info={},

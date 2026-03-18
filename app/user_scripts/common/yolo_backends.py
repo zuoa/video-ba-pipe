@@ -287,11 +287,17 @@ def _flatten_output(output: Any) -> np.ndarray:
         return np.empty((0, 0), dtype=np.float32)
 
     if arr.ndim == 2:
-        if arr.shape[0] < 6 and arr.shape[1] >= 6:
+        if arr.shape[0] == 1 and arr.shape[1] >= 5:
             return arr
+        # 当一维明显是属性维（如单类检测常见的 5x8400），应转置成 NxA。
+        if 1 < arr.shape[0] < 6 and arr.shape[1] >= 6:
+            arr_t = arr.T
+            if arr_t.shape[1] >= 5:
+                return arr_t
+            return np.empty((0, 0), dtype=np.float32)
         if arr.shape[1] < 6 and arr.shape[0] >= 6:
             arr_t = arr.T
-            if arr_t.shape[1] >= 6:
+            if arr_t.shape[1] >= 5:
                 return arr_t
         # Prefer the orientation whose last dimension looks like attributes,
         # so common CxN exports such as (84, 8400) become (8400, 84).
@@ -310,6 +316,22 @@ def _flatten_output(output: Any) -> np.ndarray:
     if last_dim >= 6:
         return arr.reshape(-1, last_dim)
     return np.empty((0, 0), dtype=np.float32)
+
+
+def _normalize_score_value(value: float) -> float:
+    score = float(value)
+    if score < 0.0 or score > 1.0:
+        score = float(_sigmoid(np.asarray([score], dtype=np.float32))[0])
+    return score
+
+
+def _normalize_score_array(values: np.ndarray) -> np.ndarray:
+    scores = np.asarray(values, dtype=np.float32)
+    if scores.size == 0:
+        return scores
+    if float(np.min(scores)) < 0.0 or float(np.max(scores)) > 1.0:
+        scores = _sigmoid(scores)
+    return scores
 
 
 def _collect_row_items_from_dense_outputs(outputs: List[Any]) -> List[Dict[str, Any]]:
@@ -338,27 +360,30 @@ def _extract_confidence_and_class(
     if score_mode == "flat":
         if row.size < 6:
             return None
-        return float(row[4]), int(round(row[5]))
+        return _normalize_score_value(row[4]), int(round(row[5]))
 
     if score_mode == "class_only":
-        class_scores = row[4:]
+        class_scores = _normalize_score_array(row[4:])
         if class_scores.size == 0:
             return None
         cls = int(np.argmax(class_scores))
         return float(class_scores[cls]), cls
 
     if score_mode == "objectness_class":
-        objectness = float(row[4])
-        class_scores = row[5:]
+        objectness = _normalize_score_value(row[4])
+        class_scores = _normalize_score_array(row[5:])
         if class_scores.size == 0:
             return objectness, 0
         cls = int(np.argmax(class_scores))
         class_conf = float(class_scores[cls])
-        conf = objectness * class_conf if objectness <= 1.0 else class_conf
+        conf = objectness * class_conf
         return conf, cls
 
+    if row.size == 5:
+        return _normalize_score_value(row[4]), 0
+
     if row.size == 6:
-        return float(row[4]), int(round(row[5]))
+        return _normalize_score_value(row[4]), int(round(row[5]))
 
     if class_count > 0:
         if row.size == 4 + class_count:
