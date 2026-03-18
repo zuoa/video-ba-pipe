@@ -1,16 +1,20 @@
-import React, { useState } from 'react';
-import { Modal, Descriptions, Tag, Image, Space, Button, List, Typography } from 'antd';
+import React from 'react';
+import { Modal, Image, Space, Button, Typography } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
-  CloseOutlined,
   InfoCircleOutlined,
   VideoCameraOutlined,
   PlayCircleOutlined,
   FileImageOutlined,
   ApartmentOutlined,
+  ClockCircleOutlined,
+  AlertOutlined,
+  DashboardOutlined,
+  FileTextOutlined,
+  NumberOutlined,
 } from '@ant-design/icons';
-import { Alert, Task, DetectionImage } from '../types';
+import { Alert, Task, DetectionImage, WindowStats, getAlertTypeConfig } from '../types';
 import { buildAlertVideoUrl } from '@/utils/media';
 import './AlertDetailModal.css';
 
@@ -26,6 +30,52 @@ interface AlertDetailModalProps {
   onNavigate: (direction: 'prev' | 'next') => void;
 }
 
+type MediaItem =
+  | {
+      key: string;
+      label: string;
+      type: 'image';
+      src: string;
+      previewTitle: string;
+    }
+  | {
+      key: string;
+      label: string;
+      type: 'video';
+      src: string;
+    };
+
+const safeParseJson = <T,>(value: string | T | undefined, fallback: T): T => {
+  if (typeof value === 'string') {
+    if (!value.trim()) return fallback;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return value ?? fallback;
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString('zh-CN', { hour12: false });
+};
+
+const formatClockTime = (value?: string) => {
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleTimeString('zh-CN', { hour12: false });
+};
+
 const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   visible,
   alert,
@@ -35,188 +85,318 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   onClose,
   onNavigate,
 }) => {
-  const [imagePreview, setImagePreview] = useState<string>('');
-
   if (!alert) return null;
 
   const task = tasks.find(t => t.id === alert.task_id);
   const taskName = task?.name || `任务 #${alert.task_id}`;
+  const alertTypeConfig = getAlertTypeConfig(alert.alert_type);
+  const windowStats = safeParseJson<Partial<WindowStats>>(alert.window_stats, {});
+  const detectionImages = safeParseJson<DetectionImage[]>(alert.detection_images, []);
+  const hasWindowStats = Object.keys(windowStats).length > 0;
 
-  // 解析窗口统计
-  const windowStats = typeof alert.window_stats === 'string'
-    ? JSON.parse(alert.window_stats || '{}')
-    : alert.window_stats || {};
+  const computedRatio = typeof windowStats.detection_ratio === 'number'
+    ? windowStats.detection_ratio * 100
+    : ((windowStats.detection_count || 0) / Math.max(windowStats.total_count || 1, 1)) * 100;
+  const ratioPercent = Number.isFinite(computedRatio) ? Math.min(100, Math.max(0, computedRatio)) : 0;
 
-  // 解析检测图片
-  const detectionImages = typeof alert.detection_images === 'string'
-    ? JSON.parse(alert.detection_images || '[]')
-    : alert.detection_images || [];
+  const mediaItems: MediaItem[] = [];
+
+  if (alert.alert_image) {
+    mediaItems.push({
+      key: 'alert-image',
+      label: '告警截图',
+      type: 'image',
+      src: `/api/image/frames/${alert.alert_image}`,
+      previewTitle: '告警截图',
+    });
+  }
+
+  if (alert.alert_video) {
+    mediaItems.push({
+      key: 'alert-video',
+      label: '告警视频',
+      type: 'video',
+      src: buildAlertVideoUrl(alert.alert_video),
+    });
+  }
+
+  if (alert.alert_image_ori) {
+    mediaItems.push({
+      key: 'origin-image',
+      label: '原始画面',
+      type: 'image',
+      src: `/api/image/frames/${alert.alert_image_ori}`,
+      previewTitle: '原始画面',
+    });
+  }
+
+  const [primaryMedia, ...secondaryMedia] = mediaItems;
+
+  const metaItems = [
+    {
+      label: '告警时间',
+      value: formatDateTime(alert.alert_time),
+      icon: <ClockCircleOutlined />,
+    },
+    {
+      label: '检测帧数',
+      value: `${alert.detection_count} 帧`,
+      icon: <DashboardOutlined />,
+    },
+    {
+      label: '工作流',
+      value: alert.workflow_id ? (alert.workflow_name || `流程编排 #${alert.workflow_id}`) : '未关联',
+      icon: <ApartmentOutlined />,
+    },
+  ];
+
+  const detailItems = [
+    { label: '记录编号', value: `#${alert.id}` },
+    { label: '任务名称', value: taskName },
+    { label: '任务 ID', value: `#${alert.task_id}` },
+    { label: '告警类型', value: alertTypeConfig.label },
+    { label: '原始类型', value: alert.alert_type },
+    { label: '工作流 ID', value: alert.workflow_id ? `#${alert.workflow_id}` : '未关联' },
+  ];
 
   return (
-    <>
-      <Modal
-        open={visible}
-        onCancel={onClose}
-        footer={null}
-        width={900}
-        className="alertDetailModal"
-        title={
-          <Space style={{ width: '100%', justifyContent: 'space-between' }} size="large">
-            <Space size="middle">
-              <InfoCircleOutlined style={{ fontSize: 18 }} />
-              <span>告警详情</span>
-              <Text style={{ color: 'rgba(255, 255, 255, 0.85)' }}>
-                ({currentIndex + 1} / {total})
-              </Text>
-            </Space>
-            <Space className="modalNavButtons">
-              <Button
-                icon={<LeftOutlined />}
-                onClick={() => onNavigate('prev')}
-                disabled={currentIndex === 0}
-              >
-                上一条
-              </Button>
-              <Button
-                icon={<RightOutlined />}
-                onClick={() => onNavigate('next')}
-                disabled={currentIndex === total - 1}
-              >
-                下一条
-              </Button>
-            </Space>
+    <Modal
+      open={visible}
+      onCancel={onClose}
+      footer={null}
+      width={1120}
+      className="alertDetailModal"
+      title={
+        <div className="alertDetailModal__toolbar">
+          <div className="alertDetailModal__toolbarTitle">
+            <InfoCircleOutlined />
+            <span>告警详情</span>
+            <span className="alertDetailModal__position">
+              {currentIndex + 1} / {total}
+            </span>
+          </div>
+          <Space className="alertDetailModal__toolbarActions" size="small">
+            <Button
+              icon={<LeftOutlined />}
+              onClick={() => onNavigate('prev')}
+              disabled={currentIndex === 0}
+            >
+              上一条
+            </Button>
+            <Button
+              icon={<RightOutlined />}
+              onClick={() => onNavigate('next')}
+              disabled={currentIndex === total - 1}
+            >
+              下一条
+            </Button>
           </Space>
-        }
+        </div>
+      }
+    >
+      <div
+        className="alertDetail"
+        style={{
+          ['--alert-accent' as string]: alertTypeConfig.color,
+          ['--alert-accent-soft' as string]: alertTypeConfig.bgColor,
+          ['--alert-accent-border' as string]: alertTypeConfig.borderColor,
+        }}
       >
-        <div className="alertContent">
-          {/* 基本信息 */}
-          <div className="infoCard">
-            <Descriptions bordered={false} column={2} size="small">
-              <Descriptions.Item label="任务">{taskName}</Descriptions.Item>
-              <Descriptions.Item label="告警类型">
-                <Tag color="blue" style={{ margin: 0 }}>{alert.alert_type}</Tag>
-              </Descriptions.Item>
+        <section className="alertDetail__hero">
+          <div className="alertDetail__heroMain">
+            <div className="alertDetail__eyebrow">
+              <AlertOutlined />
+              <span>事件摘要</span>
+            </div>
+
+            <div className="alertDetail__heroTags">
+              <span className="alertDetail__typePill">{alertTypeConfig.label}</span>
               {alert.workflow_id && (
-                <Descriptions.Item label={<span><ApartmentOutlined /> 流程编排</span>}>
-                  <Tag color="purple" icon={<ApartmentOutlined />} style={{ margin: 0 }}>
-                    {alert.workflow_name || `流程编排 #${alert.workflow_id}`}
-                  </Tag>
-                </Descriptions.Item>
+                <span className="alertDetail__workflowPill">
+                  <ApartmentOutlined />
+                  <span>{alert.workflow_name || `流程编排 #${alert.workflow_id}`}</span>
+                </span>
               )}
-              <Descriptions.Item label="告警时间">
-                {new Date(alert.alert_time).toLocaleString('zh-CN')}
-              </Descriptions.Item>
-              <Descriptions.Item label="检测帧数">
-                <Tag color="green" style={{ margin: 0 }}>{alert.detection_count} 帧</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="告警消息" span={2}>
-                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {alert.alert_message}
-                </div>
-              </Descriptions.Item>
-            </Descriptions>
+            </div>
+
+            <Title level={4} className="alertDetail__heroTitle">
+              {taskName}
+            </Title>
+
+            <div className="alertDetail__messageCard">
+              <div className="alertDetail__messageLabel">
+                <FileTextOutlined />
+                <span>告警描述</span>
+              </div>
+              <div className="alertDetail__messageText">
+                {alert.alert_message || '暂无告警说明'}
+              </div>
+            </div>
           </div>
 
-          {/* 窗口统计 */}
-          {Object.keys(windowStats).length > 0 && (
-            <>
-              <Title level={5} className="sectionTitle">
-                <VideoCameraOutlined />
-                时间窗口检测统计
-              </Title>
-              <div className="statsTags">
-                <Tag color="blue">
-                  检测帧数: <strong>{windowStats.detection_count}</strong> / {windowStats.total_count}
-                </Tag>
-                <Tag color="purple">
-                  检测比例: <strong>{(windowStats.detection_ratio * 100).toFixed(1)}%</strong>
-                </Tag>
-                <Tag color="orange">
-                  最大连续: <strong>{windowStats.max_consecutive}</strong> 次
-                </Tag>
+          <div className="alertDetail__heroAside">
+            {metaItems.map(item => (
+              <div key={item.label} className="alertDetail__metaCard">
+                <div className="alertDetail__metaIcon">{item.icon}</div>
+                <div className="alertDetail__metaContent">
+                  <span className="alertDetail__metaLabel">{item.label}</span>
+                  <span className="alertDetail__metaValue">{item.value}</span>
+                </div>
               </div>
+            ))}
+          </div>
+        </section>
 
-              {detectionImages.length > 0 && (
-                <>
-                  <Title level={5} className="sectionTitle">
-                    <FileImageOutlined />
-                    检测图片序列
-                  </Title>
-                  <div className="detectionImageGrid">
-                    {detectionImages.map((img: DetectionImage | any, index: number) => (
-                      <div key={index} className="detectionImageItem">
-                        <Image
-                          src={`/api/image/frames/${img.image_path}`}
-                          alt={`检测 ${index + 1}`}
-                          preview={{
-                            title: `第 ${index + 1} 次检测 - ${img.detection_time}`,
-                          }}
-                          style={{ width: '100%' }}
-                        />
-                        <div className="detectionImageIndex">
-                          第 {index + 1} 次
-                          <span style={{ marginLeft: '4px', opacity: 0.8 }}>
-                            {new Date(img.detection_time).toLocaleTimeString('zh-CN', { hour12: false })}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-          {/* 告警媒体 */}
-          {(alert.alert_image || alert.alert_image_ori || alert.alert_video) && (
-            <>
-              <Title level={5} className="sectionTitle">
+        {primaryMedia && (
+          <section className="alertDetail__panel">
+            <div className="alertDetail__panelHeader">
+              <div className="alertDetail__panelTitle">
                 <PlayCircleOutlined />
-                告警媒体资源
-              </Title>
-              <div className="mediaSection">
-                {alert.alert_image && (
-                  <div className="mediaCard">
-                    <div className="mediaCardLabel">告警图片</div>
-                    <div className="mediaCardImage">
-                      <Image
-                        src={`/api/image/frames/${alert.alert_image}`}
-                        alt="告警图片"
-                        preview={{ title: '告警图片' }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {alert.alert_image_ori && (
-                  <div className="mediaCard">
-                    <div className="mediaCardLabel">原始图片</div>
-                    <div className="mediaCardImage">
-                      <Image
-                        src={`/api/image/frames/${alert.alert_image_ori}`}
-                        alt="原始图片"
-                        preview={{ title: '原始图片' }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {alert.alert_video && (
-                  <div className="mediaCard">
-                    <div className="mediaCardLabel">告警视频</div>
-                    <div className="mediaCardVideo">
-                      <video
-                        controls
-                        preload="metadata"
-                        src={buildAlertVideoUrl(alert.alert_video)}
-                      />
-                    </div>
-                  </div>
-                )}
+                <span>现场画面</span>
               </div>
-            </>
+              <Text type="secondary">优先展示最能说明问题的告警素材</Text>
+            </div>
+
+            <div className="alertDetail__mediaLayout">
+              <div className="alertDetail__mediaStage">
+                <div className="alertDetail__mediaStageLabel">{primaryMedia.label}</div>
+                <div className="alertDetail__mediaStageBody">
+                  {primaryMedia.type === 'image' ? (
+                    <Image
+                      src={primaryMedia.src}
+                      alt={primaryMedia.label}
+                      preview={{ title: primaryMedia.previewTitle }}
+                    />
+                  ) : (
+                    <video controls preload="metadata" src={primaryMedia.src} />
+                  )}
+                </div>
+              </div>
+
+              {secondaryMedia.length > 0 && (
+                <div className="alertDetail__mediaRail">
+                  {secondaryMedia.map(item => (
+                    <div key={item.key} className="alertDetail__mediaCard">
+                      <div className="alertDetail__mediaCardLabel">{item.label}</div>
+                      <div className="alertDetail__mediaCardBody">
+                        {item.type === 'image' ? (
+                          <Image
+                            src={item.src}
+                            alt={item.label}
+                            preview={{ title: item.previewTitle }}
+                          />
+                        ) : (
+                          <video controls preload="metadata" src={item.src} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        <div className="alertDetail__panelGrid">
+          <section className="alertDetail__panel">
+            <div className="alertDetail__panelHeader">
+              <div className="alertDetail__panelTitle">
+                <NumberOutlined />
+                <span>事件信息</span>
+              </div>
+            </div>
+
+            <div className="alertDetail__infoGrid">
+              {detailItems.map(item => (
+                <div key={item.label} className="alertDetail__infoItem">
+                  <span className="alertDetail__infoLabel">{item.label}</span>
+                  <span className="alertDetail__infoValue">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {hasWindowStats && (
+            <section className="alertDetail__panel">
+              <div className="alertDetail__panelHeader">
+                <div className="alertDetail__panelTitle">
+                  <VideoCameraOutlined />
+                  <span>窗口统计</span>
+                </div>
+              </div>
+
+              <div className="alertDetail__statsGrid">
+                <div className="alertDetail__statCard">
+                  <span className="alertDetail__statLabel">检测帧数</span>
+                  <strong className="alertDetail__statValue">
+                    {windowStats.detection_count || 0}
+                    <small> / {windowStats.total_count || 0}</small>
+                  </strong>
+                </div>
+                <div className="alertDetail__statCard">
+                  <span className="alertDetail__statLabel">检测比例</span>
+                  <strong className="alertDetail__statValue">{ratioPercent.toFixed(1)}%</strong>
+                </div>
+                <div className="alertDetail__statCard">
+                  <span className="alertDetail__statLabel">最大连续命中</span>
+                  <strong className="alertDetail__statValue">{windowStats.max_consecutive || 0}</strong>
+                </div>
+              </div>
+
+              <div className="alertDetail__ratioBlock">
+                <div className="alertDetail__ratioHeader">
+                  <span>窗口内命中密度</span>
+                  <strong>{ratioPercent.toFixed(1)}%</strong>
+                </div>
+                <div className="alertDetail__ratioTrack">
+                  <div
+                    className="alertDetail__ratioBar"
+                    style={{ width: `${ratioPercent}%` }}
+                  />
+                </div>
+                <Text type="secondary">
+                  以时间窗口内检测命中率与连续命中次数辅助判断告警稳定性。
+                </Text>
+              </div>
+            </section>
           )}
         </div>
-      </Modal>
-    </>
+
+        {detectionImages.length > 0 && (
+          <section className="alertDetail__panel">
+            <div className="alertDetail__panelHeader">
+              <div className="alertDetail__panelTitle">
+                <FileImageOutlined />
+                <span>检测序列</span>
+              </div>
+              <Text type="secondary">按触发顺序查看时间窗口中的关键帧</Text>
+            </div>
+
+            <div className="alertDetail__sequenceGrid">
+              {detectionImages.map((img, index) => (
+                <div key={`${img.image_path}-${index}`} className="alertDetail__sequenceCard">
+                  <div className="alertDetail__sequenceThumb">
+                    <Image
+                      src={`/api/image/frames/${img.image_path}`}
+                      alt={`检测 ${index + 1}`}
+                      preview={{
+                        title: `第 ${index + 1} 次检测`,
+                      }}
+                    />
+                  </div>
+                  <div className="alertDetail__sequenceMeta">
+                    <span className="alertDetail__sequenceIndex">第 {index + 1} 次</span>
+                    <span className="alertDetail__sequenceTime">
+                      {formatClockTime(img.detection_time)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </Modal>
   );
 };
 
