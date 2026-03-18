@@ -1057,9 +1057,19 @@ def get_video(file_path):
     支持 Range 请求以便视频播放器可以 seek
     """
     try:
-        normalized_path = (file_path or '').lstrip('/')
+        normalized_path = (file_path or '').replace('\\', '/').strip()
+        normalized_path = normalized_path.lstrip('/')
+
         if normalized_path.startswith('api/video/'):
             normalized_path = normalized_path[len('api/video/'):]
+
+        while normalized_path.startswith('videos/videos/'):
+            normalized_path = normalized_path[len('videos/'):]
+
+        videos_marker = '/videos/'
+        videos_index = normalized_path.rfind(videos_marker)
+        if videos_index != -1:
+            normalized_path = normalized_path[videos_index + len(videos_marker):]
 
         if normalized_path.startswith('videos/'):
             relative_path = normalized_path[len('videos/'):]

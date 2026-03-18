@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Image, Space, Button, Typography } from 'antd';
 import {
   LeftOutlined,
@@ -13,9 +13,11 @@ import {
   DashboardOutlined,
   FileTextOutlined,
   NumberOutlined,
+  LinkOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { Alert, Task, DetectionImage, WindowStats, getAlertTypeConfig } from '../types';
-import { buildAlertVideoUrl } from '@/utils/media';
+import { buildAlertVideoUrls } from '@/utils/media';
 import './AlertDetailModal.css';
 
 const { Title, Text } = Typography;
@@ -42,7 +44,8 @@ type MediaItem =
       key: string;
       label: string;
       type: 'video';
-      src: string;
+      srcCandidates: string[];
+      rawPath: string;
     };
 
 const safeParseJson = <T,>(value: string | T | undefined, fallback: T): T => {
@@ -74,6 +77,79 @@ const formatClockTime = (value?: string) => {
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleTimeString('zh-CN', { hour12: false });
+};
+
+const VideoPreview: React.FC<{
+  title: string;
+  candidates: string[];
+  rawPath: string;
+  compact?: boolean;
+}> = ({ title, candidates, rawPath, compact = false }) => {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const candidateKey = candidates.join('|');
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setFailed(false);
+  }, [rawPath, candidateKey]);
+
+  const currentSrc = candidates[activeIndex] || '';
+  const hasAlternative = activeIndex < candidates.length - 1;
+
+  const handleError = () => {
+    if (hasAlternative) {
+      setActiveIndex(prev => prev + 1);
+      return;
+    }
+
+    setFailed(true);
+  };
+
+  const handleRetry = () => {
+    setActiveIndex(0);
+    setFailed(false);
+  };
+
+  if (!currentSrc) {
+    return (
+      <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
+        <VideoCameraOutlined />
+        <strong>{title}暂不可用</strong>
+        <span>未生成可播放的视频地址。</span>
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
+        <VideoCameraOutlined />
+        <strong>{title}加载失败</strong>
+        <span className="alertDetail__videoFallbackPath">{rawPath}</span>
+        <div className="alertDetail__videoFallbackActions">
+          <Button size="small" icon={<ReloadOutlined />} onClick={handleRetry}>
+            重试
+          </Button>
+          <Button size="small" type="link" icon={<LinkOutlined />} href={currentSrc} target="_blank">
+            新窗口打开
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="alertDetail__videoShell">
+      <video controls preload="metadata" src={currentSrc} onError={handleError} />
+      <div className="alertDetail__videoMeta">
+        <span>{hasAlternative ? `正在尝试地址 ${activeIndex + 1}/${candidates.length}` : '视频地址已就绪'}</span>
+        <a href={currentSrc} target="_blank" rel="noreferrer">
+          打开原视频
+        </a>
+      </div>
+    </div>
+  );
 };
 
 const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
@@ -116,7 +192,8 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
       key: 'alert-video',
       label: '告警视频',
       type: 'video',
-      src: buildAlertVideoUrl(alert.alert_video),
+      srcCandidates: buildAlertVideoUrls(alert.alert_video),
+      rawPath: alert.alert_video,
     });
   }
 
@@ -169,8 +246,13 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
       title={
         <div className="alertDetailModal__toolbar">
           <div className="alertDetailModal__toolbarTitle">
-            <InfoCircleOutlined />
-            <span>告警详情</span>
+            <span className="alertDetailModal__titleIcon">
+              <InfoCircleOutlined />
+            </span>
+            <div className="alertDetailModal__titleGroup">
+              <span className="alertDetailModal__titleEyebrow">告警详情</span>
+              <span className="alertDetailModal__titleMain">{taskName}</span>
+            </div>
             <span className="alertDetailModal__position">
               {currentIndex + 1} / {total}
             </span>
@@ -202,6 +284,25 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           ['--alert-accent-border' as string]: alertTypeConfig.borderColor,
         }}
       >
+        <section className="alertDetail__summaryBand">
+          <div className="alertDetail__summaryItem">
+            <span className="alertDetail__summaryLabel">告警类型</span>
+            <strong>{alertTypeConfig.label}</strong>
+          </div>
+          <div className="alertDetail__summaryItem">
+            <span className="alertDetail__summaryLabel">发生时间</span>
+            <strong>{formatDateTime(alert.alert_time)}</strong>
+          </div>
+          <div className="alertDetail__summaryItem">
+            <span className="alertDetail__summaryLabel">检测帧数</span>
+            <strong>{alert.detection_count} 帧</strong>
+          </div>
+          <div className="alertDetail__summaryItem">
+            <span className="alertDetail__summaryLabel">记录编号</span>
+            <strong>#{alert.id}</strong>
+          </div>
+        </section>
+
         <section className="alertDetail__hero">
           <div className="alertDetail__heroMain">
             <div className="alertDetail__eyebrow">
@@ -268,7 +369,11 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                       preview={{ title: primaryMedia.previewTitle }}
                     />
                   ) : (
-                    <video controls preload="metadata" src={primaryMedia.src} />
+                    <VideoPreview
+                      title={primaryMedia.label}
+                      candidates={primaryMedia.srcCandidates}
+                      rawPath={primaryMedia.rawPath}
+                    />
                   )}
                 </div>
               </div>
@@ -286,7 +391,12 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                             preview={{ title: item.previewTitle }}
                           />
                         ) : (
-                          <video controls preload="metadata" src={item.src} />
+                          <VideoPreview
+                            title={item.label}
+                            candidates={item.srcCandidates}
+                            rawPath={item.rawPath}
+                            compact
+                          />
                         )}
                       </div>
                     </div>
