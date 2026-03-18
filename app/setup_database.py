@@ -3,7 +3,8 @@ import json
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
-    Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, SourceHealthLog
+    Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, SourceHealthLog,
+    SystemSetting
 )
 
 
@@ -32,7 +33,9 @@ def setup_database():
         # 用户表
         User,
         # 健康监控表
-        SourceHealthLog
+        SourceHealthLog,
+        # 系统设置表
+        SystemSetting
     ], safe=True)
     _ensure_ml_models_schema()
 

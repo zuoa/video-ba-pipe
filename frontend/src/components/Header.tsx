@@ -18,6 +18,7 @@ import {
   CalculatorOutlined,
   LogoutOutlined,
   TeamOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 
 const Header: React.FC = () => {
@@ -55,6 +56,11 @@ const Header: React.FC = () => {
   };
 
   const userMenuItems = [
+    ...(user?.role === 'admin' ? [{
+      key: 'system-settings',
+      icon: <SettingOutlined />,
+      label: <Link to="/system-settings">系统设置</Link>,
+    }] : []),
     ...(user?.role === 'admin' ? [{
       key: 'users',
       icon: <TeamOutlined />,

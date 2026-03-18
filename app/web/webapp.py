@@ -20,6 +20,7 @@ from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, Sou
 from app.core.database_models import db
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.vl_validator import get_vl_service_config, save_vl_service_config
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
 from app.version import get_app_version
@@ -59,6 +60,29 @@ def get_system_info():
         'success': True,
         'version': get_app_version(),
     })
+
+
+@app.route('/api/system/vl-config', methods=['GET'])
+def get_system_vl_config():
+    return jsonify({
+        'success': True,
+        'config': get_vl_service_config(),
+    })
+
+
+@app.route('/api/system/vl-config', methods=['PUT'])
+def update_system_vl_config():
+    data = request.json or {}
+    try:
+        config = save_vl_service_config(data, updated_by='admin')
+        return jsonify({
+            'success': True,
+            'config': config,
+            'message': 'VL 配置已更新',
+        })
+    except Exception as e:
+        app.logger.error(f"更新 VL 配置失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])

@@ -62,6 +62,12 @@ const AlertNode = ({ data }: any) => {
           <span className="meta-value">{getSuppressionText()}</span>
         </div>
       )}
+      {data.vlValidation?.enable && (
+        <div className="node-meta">
+          <span className="meta-label">VL:</span>
+          <span className="meta-value">已启用</span>
+        </div>
+      )}
     </div>
   );
 };

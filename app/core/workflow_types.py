@@ -121,6 +121,15 @@ class AlertNodeData(NodeContext):
     }
     """
 
+    vl_validation: Optional[Dict[str, Any]] = None
+    """
+    VL核验配置
+    {
+        "enable": bool,
+        "prompt_template": str
+    }
+    """
+
     message_format: Optional[str] = None
     """
     消息格式类型（用于 ExecutionLogCollector）
@@ -216,6 +225,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         message_format = data.get('messageFormat') or data.get('message_format')
         trigger_condition = data.get('triggerCondition') or data.get('trigger_condition')
         suppression = data.get('suppression')
+        vl_validation = data.get('vlValidation') or data.get('vl_validation')
 
         return node_class(
             node_type=node_type,
@@ -225,11 +235,11 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             alert_type=alert_type,
             message_format=message_format,
             trigger_condition=trigger_condition,
-            suppression=suppression
+            suppression=suppression,
+            vl_validation=vl_validation
         )
     else:
         return node_class(
             node_type=node_type,
             node_id=node_id
         )
-

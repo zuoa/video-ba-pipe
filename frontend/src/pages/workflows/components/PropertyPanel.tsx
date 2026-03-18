@@ -20,6 +20,7 @@ const { Text } = Typography;
 export interface PropertyPanelProps {
   node: any;
   videoSources: any[];
+  vlConfig?: any;
   edges?: any[];
   nodes?: any[];
   onUpdate: (data: any) => void;
@@ -29,6 +30,7 @@ export interface PropertyPanelProps {
 const PropertyPanel: React.FC<PropertyPanelProps> = ({
   node,
   videoSources,
+  vlConfig,
   edges = [],
   nodes = [],
   onUpdate,
@@ -38,6 +40,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const [activeTab, setActiveTab] = useState('basic');
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [roiDrawerVisible, setRoiDrawerVisible] = useState(false);
+  const vlConfigReady = Boolean(vlConfig?.has_required_fields);
 
   // 使用 useRef 而不是 useState，确保同步更新
   const isUpdatingVideoSourceRef = useRef(false);
@@ -172,6 +175,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.suppressionEnable = false;
           formValues.suppressionSeconds = 60;
         }
+
+        const vlValidation = node.data.vlValidation;
+        formValues.vlValidationEnable = vlConfigReady && vlValidation?.enable === true;
+        formValues.vlValidationPromptTemplate = vlValidation?.promptTemplate || vlValidation?.prompt_template || '';
       } else if (nodeType === 'record') {
         formValues.recordDuration = node.data.recordDuration || 10;
       }
@@ -192,7 +199,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
       }, 100);
     }
-  }, [node, node?.data, node?.id, form]); // 移除 videoSources 依赖，避免不必要的重渲染
+  }, [node, node?.data, node?.id, form, vlConfigReady]); // 移除 videoSources 依赖，避免不必要的重渲染
 
   if (!node) {
     return (
@@ -298,6 +305,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           };
         }
 
+        updatedData.vlValidation = {
+          enable: vlConfigReady && values.vlValidationEnable === true,
+          promptTemplate: vlConfigReady && values.vlValidationEnable === true
+            ? (values.vlValidationPromptTemplate || '').trim()
+            : '',
+        };
+
         // 清理临时字段
         delete updatedData.triggerConditionEnable;
         delete updatedData.triggerConditionWindowSize;
@@ -305,6 +319,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.triggerConditionThreshold;
         delete updatedData.suppressionEnable;
         delete updatedData.suppressionSeconds;
+        delete updatedData.vlValidationEnable;
+        delete updatedData.vlValidationPromptTemplate;
       } else if (nodeType === 'function') {
         // 自动从连线中识别上游算法节点
         const upstreamAlgorithmNodes = edges
@@ -1038,6 +1054,80 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                           );
                         }}
                       </Form.Item>
+                    </>
+                  );
+                }}
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">VL 二次核验</span>
+              </div>
+
+              <Form.Item
+                label="启用 VL 核验"
+                name="vlValidationEnable"
+                extra="开启后，告警在真正输出前会调用全局配置的 VL 模型做一次复核。"
+                valuePropName="checked"
+              >
+                <Switch disabled={!vlConfigReady} />
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.vlValidationEnable !== currentValues.vlValidationEnable}>
+                {({ getFieldValue }) => {
+                  const enableVlValidation = getFieldValue('vlValidationEnable');
+
+                  if (!vlConfigReady) {
+                  return (
+                    <div className="info-box" style={{ marginTop: 12, background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                      <InfoCircleOutlined />
+                      <span>全局未配置 VL 模型参数，当前节点不可启用 VL 二次核验</span>
+                    </div>
+                  );
+                }
+
+                  if (!enableVlValidation) {
+                  return (
+                    <div className="info-box" style={{ marginTop: 12, background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a' }}>
+                      <InfoCircleOutlined />
+                      <span>VL 核验已禁用，满足条件后将直接输出告警</span>
+                    </div>
+                  );
+                }
+
+                return (
+                    <>
+                    <Form.Item
+                      label="核验提示词模板"
+                      name="vlValidationPromptTemplate"
+                      rules={[
+                        {
+                          validator: (_, value) => {
+                            if (!getFieldValue('vlValidationEnable')) {
+                              return Promise.resolve();
+                            }
+                            if ((value || '').trim()) {
+                              return Promise.resolve();
+                            }
+                            return Promise.reject(new Error('启用 VL 核验时必须配置核验提示词模板'));
+                          }
+                        }
+                      ]}
+                      extra="支持占位符：{alert_type}、{alert_message}、{detection_count}、{detection_summary}、{detections_json}、{workflow_name}、{workflow_id}、{node_id}"
+                    >
+                      <Input.TextArea
+                        rows={8}
+                        placeholder={'例如：请根据图像判断是否真的发生“{alert_type}”告警。\n当前告警文案：{alert_message}\n检测数量：{detection_count}\n检测摘要：\n{detection_summary}\n\n只返回JSON：{"is_alert": true/false, "confidence": 0-1, "reason": "..."}'}
+                      />
+                    </Form.Item>
+
+                    <div className="info-box" style={{ marginTop: 12, background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
+                      <InfoCircleOutlined />
+                      <span>每个告警输出节点都应单独配置核验提示词模板，用于表达当前算法的判定规则</span>
+                    </div>
                     </>
                   );
                 }}

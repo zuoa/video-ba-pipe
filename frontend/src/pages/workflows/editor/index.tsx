@@ -27,7 +27,7 @@ import { nodeTypes } from '../components/nodes';
 import ComponentSidebar from '../components/ComponentSidebar';
 import PropertyPanel from '../components/PropertyPanel';
 import TestPanel from '../components/TestPanel';
-import { getWorkflow, updateWorkflow, getVideoSources } from '@/services/api';
+import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig } from '@/services/api';
 import '../components/WorkflowEditor.css';
 
 export default function WorkflowEditorPage() {
@@ -39,6 +39,7 @@ export default function WorkflowEditorPage() {
   const [rightPanel, setRightPanel] = useState<'properties' | 'test'>('properties');
   const [workflow, setWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
+  const [vlConfig, setVlConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [videoSourcesLoaded, setVideoSourcesLoaded] = useState(false);
 
@@ -64,6 +65,7 @@ export default function WorkflowEditorPage() {
     const loadAllData = async () => {
       setLoading(true);
       await loadVideoSources();
+      await loadVlConfig();
       setVideoSourcesLoaded(true);
     };
     loadAllData();
@@ -140,12 +142,14 @@ export default function WorkflowEditorPage() {
                 nodeData.alertType = node.data.alertType;
                 nodeData.alertMessage = node.data.alertMessage;
                 nodeData.suppression = node.data.suppression;
+                nodeData.vlValidation = node.data.vlValidation;
                 console.log('🚨 [EDITOR] Alert 节点加载配置:', {
                   id: node.id,
                   alertLevel: nodeData.alertLevel,
                   alertType: nodeData.alertType,
                   alertMessage: nodeData.alertMessage,
                   suppression: nodeData.suppression,
+                  vlValidation: nodeData.vlValidation,
                 });
               }
               // Condition 节点：读取 targetCount 和 comparisonType
@@ -250,11 +254,13 @@ export default function WorkflowEditorPage() {
               nodeData.messageFormat = node.data?.messageFormat || 'detailed';
               nodeData.triggerCondition = node.data?.triggerCondition;
               nodeData.suppression = node.data?.suppression;
+              nodeData.vlValidation = node.data?.vlValidation;
               console.log('🚨 Alert 节点加载数据:', {
                 节点ID: node.id,
                 alertLevel: nodeData.alertLevel,
                 alertType: nodeData.alertType,
                 messageFormat: nodeData.messageFormat,
+                vlValidation: nodeData.vlValidation,
               });
             }
 
@@ -363,6 +369,16 @@ export default function WorkflowEditorPage() {
       setVideoSources(data || []);
     } catch (error) {
       console.error('加载视频源失败:', error);
+    }
+  };
+
+  const loadVlConfig = async () => {
+    try {
+      const data = await getVlConfig();
+      setVlConfig(data?.config || null);
+    } catch (error) {
+      console.error('加载 VL 配置失败:', error);
+      setVlConfig(null);
     }
   };
 
@@ -477,6 +493,7 @@ export default function WorkflowEditorPage() {
             messageFormat: node.data?.messageFormat || 'detailed',  // 添加消息格式字段
             triggerCondition: node.data?.triggerCondition,
             suppression: node.data?.suppression,
+            vlValidation: node.data?.vlValidation,
           };
           console.log('🚨 [EDITOR] Alert 节点保存数据:', {
             id: node.id,
@@ -486,6 +503,7 @@ export default function WorkflowEditorPage() {
             messageFormat: saveData.data.messageFormat,  // 添加日志
             triggerCondition: saveData.data.triggerCondition,
             suppression: saveData.data.suppression,
+            vlValidation: saveData.data.vlValidation,
           });
         } else if (nodeType === 'condition') {
           // Condition 节点：保存 targetCount 和 comparisonType 到 data 字段
@@ -586,6 +604,13 @@ export default function WorkflowEditorPage() {
         icon: nodeData.icon,
         color: nodeData.color,
         config: nodeData.config || {},  // 使用传入的 config，而不是 null
+        alertLevel: nodeData.alertLevel,
+        alertMessage: nodeData.alertMessage,
+        alertType: nodeData.alertType,
+        messageFormat: nodeData.messageFormat,
+        triggerCondition: nodeData.triggerCondition,
+        suppression: nodeData.suppression,
+        vlValidation: nodeData.vlValidation,
         // ROI 节点初始化空的 roiRegions 数组
         ...(nodeData.type === 'roi' ? { roiRegions: [] } : {}),
       },
@@ -802,6 +827,7 @@ export default function WorkflowEditorPage() {
               <PropertyPanel
                 node={selectedNode}
                 videoSources={videoSources}
+                vlConfig={vlConfig}
                 edges={edges}
                 nodes={nodes}
                 onUpdate={handleUpdateNode}

@@ -97,6 +97,12 @@ export default defineConfig({
       component: './users',
       icon: 'UserOutlined',
     },
+    {
+      name: '系统设置',
+      path: '/system-settings',
+      component: './system-settings',
+      icon: 'SettingOutlined',
+    },
   ],
   npmClient: 'npm',
   proxy: {

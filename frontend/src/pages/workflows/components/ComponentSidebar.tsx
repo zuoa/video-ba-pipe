@@ -269,6 +269,10 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               alertMessage: '检测到目标',
               alertType: 'detection',
               messageFormat: 'detailed',  // 添加默认消息格式
+              vlValidation: {
+                enable: false,
+                promptTemplate: '',
+              },
             })}
             style={{ borderColor: '#f5222d' }}
           >

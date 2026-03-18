@@ -16,6 +16,17 @@ export async function getSystemInfo() {
   return request('/api/system/info');
 }
 
+export async function getVlConfig() {
+  return request('/api/system/vl-config');
+}
+
+export async function updateVlConfig(data: any) {
+  return request('/api/system/vl-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }

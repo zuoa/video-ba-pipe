@@ -136,3 +136,13 @@ MAX_CONSECUTIVE_ERRORS = int(os.getenv('MAX_CONSECUTIVE_ERRORS', '60'))
 
 # 监控时间戳更新间隔（秒）- DecoderWorker定期更新last_write_time的间隔
 MONITOR_UPDATE_INTERVAL = float(os.getenv('MONITOR_UPDATE_INTERVAL', '1.0'))
+
+# ============ VL 模型核验配置 ============
+VL_MODEL_BASE_URL = os.getenv('VL_MODEL_BASE_URL', '').strip()
+VL_MODEL_NAME = os.getenv('VL_MODEL_NAME', '').strip()
+VL_MODEL_KEY = os.getenv('VL_MODEL_KEY', '').strip()
+VL_MODEL_TIMEOUT_SECONDS = int(os.getenv('VL_MODEL_TIMEOUT_SECONDS', '30'))
+VL_MODEL_PROMPT = os.getenv(
+    'VL_MODEL_PROMPT',
+    '你是视频告警复核助手。请基于图像内容和算法摘要判断当前场景是否应该触发告警。'
+).strip()

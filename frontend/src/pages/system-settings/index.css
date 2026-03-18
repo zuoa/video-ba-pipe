@@ -1,0 +1,20 @@
+.system-settings-page {
+  min-height: 100%;
+}
+
+.system-settings-card {
+  border-radius: 20px;
+  border: 1px solid var(--app-line-soft);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.system-settings-alert {
+  margin-bottom: 20px;
+}
+
+.system-settings-loading {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

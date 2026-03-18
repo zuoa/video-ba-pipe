@@ -35,6 +35,7 @@ from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData
@@ -1959,6 +1960,77 @@ class WorkflowExecutor:
                 )
             return
 
+        vl_validation = alert_node.vl_validation or {}
+        if vl_validation.get('enable'):
+            prompt_template = (vl_validation.get('prompt_template') or '').strip()
+            if not prompt_template:
+                if log_collector:
+                    log_collector.add_warning(node_id, "VL核验已启用，但未配置核验提示词")
+                self._cache_output_result(
+                    node_id=node_id,
+                    alert_triggered=False,
+                    detection_count=detection_count,
+                    trigger_reason='VL核验已启用，但未配置核验提示词'
+                )
+                logger.warning(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 已启用 VL 核验，但未配置提示词")
+                return
+
+            vl_result = validate_frame_with_vl(
+                frame_rgb=frame,
+                alert_type=alert_type,
+                alert_message=alert_message,
+                result=result,
+                config=get_vl_service_config(),
+                prompt_template=prompt_template,
+                extra_context={
+                    'workflow_id': self.workflow_id,
+                    'workflow_name': self.workflow.name if self.workflow else '',
+                    'node_id': node_id,
+                },
+            )
+
+            if log_collector:
+                if vl_result.checked:
+                    if vl_result.allowed:
+                        log_collector.add_info(
+                            node_id,
+                            f"VL核验通过: {vl_result.reason or '允许告警'}",
+                            metadata={
+                                'vl_checked': True,
+                                'vl_allowed': True,
+                                'vl_confidence': vl_result.confidence,
+                            }
+                        )
+                    else:
+                        log_collector.add_warning(
+                            node_id,
+                            f"VL核验未通过: {vl_result.reason or '判定为非真实告警'}",
+                            metadata={
+                                'vl_checked': True,
+                                'vl_allowed': False,
+                                'vl_confidence': vl_result.confidence,
+                            }
+                        )
+                else:
+                    log_collector.add_warning(
+                        node_id,
+                        f"VL核验已跳过: {vl_result.reason or '未执行'}",
+                        metadata={'vl_checked': False}
+                    )
+
+            if not vl_result.allowed:
+                self._cache_output_result(
+                    node_id=node_id,
+                    alert_triggered=False,
+                    detection_count=detection_count,
+                    trigger_reason=f"VL核验未通过: {vl_result.reason or '判定为非真实告警'}"
+                )
+                logger.info(
+                    f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 被 VL 核验拦截: "
+                    f"{vl_result.reason or '判定为非真实告警'}"
+                )
+                return
+
         # 步骤3：记录触发时间（用于后续抑制计算）
         self.window_detector.record_trigger(
             source_id=self.video_source.id,
@@ -2618,6 +2690,30 @@ class WorkflowExecutor:
         )
 
         logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 测试结果: has_detection={has_detection}, 检测数={detection_count}")
+
+        vl_validation = alert_node.vl_validation or {}
+        if log_collector and vl_validation.get('enable'):
+            prompt_configured = bool((vl_validation.get('prompt_template') or '').strip())
+            if prompt_configured:
+                log_collector.add_info(
+                    node_id,
+                    "VL核验已启用，测试模式未实际调用外部模型",
+                    metadata={
+                        'vl_checked': False,
+                        'test_mode': True,
+                        'vl_prompt_configured': True,
+                    }
+                )
+            else:
+                log_collector.add_warning(
+                    node_id,
+                    "VL核验已启用，但未配置核验提示词模板",
+                    metadata={
+                        'vl_checked': False,
+                        'test_mode': True,
+                        'vl_prompt_configured': False,
+                    }
+                )
 
         # 记录测试日志
         if log_collector:

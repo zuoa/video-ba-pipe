@@ -379,10 +379,14 @@ class SourceHealthLog(BaseModel):
             (('created_at',), False),            # 用于时间范围查询
         )
 
-    @property
-    def details_dict(self):
-        """获取解析后的详情"""
-        try:
-            return json.loads(self.details) if self.details else {}
-        except:
-            return {}
+
+class SystemSetting(BaseModel):
+    """系统设置表"""
+    key = pw.CharField(unique=True, max_length=100)
+    value = pw.TextField(default='')
+    description = pw.TextField(null=True)
+    updated_at = pw.DateTimeField(null=True)
+    updated_by = pw.CharField(default='system')
+
+    class Meta:
+        table_name = 'system_settings'
