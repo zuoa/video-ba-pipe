@@ -23,6 +23,7 @@ interface Model {
   file_path: string;
   file_size_mb: number;
   input_shape?: string;
+  model_postprocess?: Record<string, any> | null;
   description?: string;
   enabled: boolean;
   usage_count: number;

@@ -293,6 +293,7 @@ class MLModel(BaseModel):
     framework = pw.CharField()           # 框架：ultralytics, pytorch, onnx等
     input_shape = pw.CharField(null=True)# 输入尺寸，如 "640x640"
     classes = pw.TextField(null=True)    # 支持的类别JSON，如 {"0": "person", "1": "car"}
+    model_postprocess = pw.TextField(null=True)  # 模型级后处理配置JSON
     description = pw.TextField(null=True)# 描述
     version = pw.CharField(default='v1.0')# 版本号
     tags = pw.TextField(null=True)       # 标签JSON数组，如 ["person", "detection"]
@@ -327,6 +328,14 @@ class MLModel(BaseModel):
             return json.loads(self.tags) if self.tags else []
         except:
             return []
+
+    @property
+    def model_postprocess_dict(self):
+        """获取解析后的模型级后处理配置"""
+        try:
+            return json.loads(self.model_postprocess) if self.model_postprocess else None
+        except:
+            return None
 
     def increment_usage(self):
         """增加使用计数"""

@@ -108,6 +108,7 @@ def _upsert_model_record(
     framework,
     input_shape,
     classes,
+    model_postprocess,
     description,
     tags
 ):
@@ -125,6 +126,7 @@ def _upsert_model_record(
         existing.framework = framework
         existing.input_shape = input_shape or None
         existing.classes = classes or None
+        existing.model_postprocess = model_postprocess or None
         existing.description = description or None
         existing.tags = tags or None
         existing.updated_at = datetime.now()
@@ -141,6 +143,7 @@ def _upsert_model_record(
         framework=framework,
         input_shape=input_shape or None,
         classes=classes or None,
+        model_postprocess=model_postprocess or None,
         description=description or None,
         version=version,
         tags=tags or None,
@@ -166,6 +169,22 @@ def _parse_json_field(value, field_name, default_value):
     raise ValueError(f'{field_name} 字段类型错误')
 
 
+def _parse_json_object_field(value, field_name):
+    if value is None or value == '':
+        return None
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'{field_name} JSON格式错误: {e}')
+
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} 必须是 JSON 对象')
+
+    return json.dumps(value, ensure_ascii=False)
+
+
 def serialize_model(model):
     """序列化模型对象"""
     return {
@@ -179,6 +198,7 @@ def serialize_model(model):
         'framework': model.framework,
         'input_shape': model.input_shape,
         'classes': model.classes_dict,
+        'model_postprocess': model.model_postprocess_dict,
         'description': model.description,
         'version': model.version,
         'tags': model.tags_list,
@@ -275,6 +295,7 @@ def upload_model():
         framework = request.form.get('framework', '').strip()
         input_shape = request.form.get('input_shape', '').strip()
         classes = request.form.get('classes', '{}').strip()
+        model_postprocess = request.form.get('model_postprocess', '').strip()
         tags = request.form.get('tags', '[]').strip()
         version = request.form.get('version', 'v1.0').strip()
 
@@ -282,6 +303,10 @@ def upload_model():
         try:
             if classes:
                 json.loads(classes)
+            if model_postprocess:
+                parsed_model_postprocess = json.loads(model_postprocess)
+                if not isinstance(parsed_model_postprocess, dict):
+                    return jsonify({'success': False, 'error': 'model_postprocess 必须是 JSON 对象'}), 400
             if tags:
                 json.loads(tags)
         except json.JSONDecodeError as e:
@@ -318,6 +343,7 @@ def upload_model():
             framework=framework,
             input_shape=input_shape,
             classes=classes,
+            model_postprocess=model_postprocess,
             description=description,
             tags=tags
         )
@@ -369,6 +395,7 @@ def import_model_from_url():
 
         try:
             classes_data = _parse_json_field(data.get('classes'), 'classes', {})
+            model_postprocess = _parse_json_object_field(data.get('model_postprocess'), 'model_postprocess')
             tags_data = _parse_json_field(data.get('tags'), 'tags', [])
         except ValueError as e:
             return jsonify({'success': False, 'error': str(e)}), 400
@@ -473,6 +500,7 @@ def import_model_from_url():
             framework=framework,
             input_shape=input_shape,
             classes=classes,
+            model_postprocess=model_postprocess,
             description=description,
             tags=tags
         )
@@ -533,6 +561,11 @@ def update_model(model_id):
             model.input_shape = data['input_shape'].strip() or None
         if 'classes' in data:
             model.classes = json.dumps(data['classes']) if isinstance(data['classes'], dict) else data['classes']
+        try:
+            if 'model_postprocess' in data:
+                model.model_postprocess = _parse_json_object_field(data['model_postprocess'], 'model_postprocess')
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
         if 'tags' in data:
             model.tags = json.dumps(data['tags']) if isinstance(data['tags'], list) else data['tags']
         if 'enabled' in data:

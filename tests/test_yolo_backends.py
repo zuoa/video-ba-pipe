@@ -45,6 +45,33 @@ class YoloOutputAdapterTests(unittest.TestCase):
         self.assertEqual(len(detections), 1)
         self.assertEqual(details[0]["class"], 1)
 
+    def test_dense_profile_auto_transposes_c_by_n_output(self):
+        adapter = YoloOutputAdapter(
+            model_info={},
+            config={"confidence": 0.5},
+            classes={0: "person", 1: "helmet"},
+            input_width=64,
+            input_height=64,
+        )
+        output = np.array(
+            [[0.5], [0.5], [0.25], [0.25], [0.9], [0.1], [0.9]],
+            dtype=np.float32,
+        )
+
+        detections, details, metadata = adapter.parse(
+            outputs=[output],
+            frame_shape=(64, 64, 3),
+            input_width=64,
+            input_height=64,
+            scale=1.0,
+            pad_x=0,
+            pad_y=0,
+        )
+
+        self.assertEqual(metadata["postprocess_profile"], "dense")
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(details[0]["class"], 1)
+
     def test_head_decoded_profile_channels_first(self):
         adapter = YoloOutputAdapter(
             model_info={},
@@ -108,6 +135,45 @@ class YoloOutputAdapterTests(unittest.TestCase):
         self.assertEqual(metadata["postprocess_profile"], "head_anchor_based")
         self.assertEqual(len(detections), 1)
         self.assertEqual(details[0]["class"], 0)
+        self.assertGreater(details[0]["confidence"], 0.9)
+
+    def test_auto_profile_detects_dfl_split_head(self):
+        adapter = YoloOutputAdapter(
+            model_info={},
+            config={
+                "confidence": 0.5,
+                "model_postprocess": {
+                    "strides": [32],
+                    "reg_max": 4,
+                    "layout": "channels_first",
+                },
+            },
+            classes={0: "person", 1: "helmet"},
+            input_width=64,
+            input_height=64,
+        )
+
+        box_output = np.full((1, 16, 2, 2), -8.0, dtype=np.float32)
+        cls_output = np.full((1, 2, 2, 2), -8.0, dtype=np.float32)
+
+        for side in range(4):
+            channel_offset = side * 4
+            box_output[0, channel_offset + 1, 0, 0] = 8.0
+        cls_output[0, 1, 0, 0] = 8.0
+
+        detections, details, metadata = adapter.parse(
+            outputs=[box_output, cls_output],
+            frame_shape=(64, 64, 3),
+            input_width=64,
+            input_height=64,
+            scale=1.0,
+            pad_x=0,
+            pad_y=0,
+        )
+
+        self.assertEqual(metadata["postprocess_profile"], "head_dfl")
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(details[0]["class"], 1)
         self.assertGreater(details[0]["confidence"], 0.9)
 
     def test_auto_profile_warns_for_raw_multi_anchor_head_without_adapter(self):

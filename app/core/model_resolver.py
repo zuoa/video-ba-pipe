@@ -168,7 +168,8 @@ class ModelResolver:
                 'model_type': model.model_type,
                 'framework': model.framework,
                 'input_shape': model.input_shape,
-                'classes': model.classes_dict
+                'classes': model.classes_dict,
+                'model_postprocess': model.model_postprocess_dict,
             }
 
             self._log_model_path_status(model_ref, model_info)

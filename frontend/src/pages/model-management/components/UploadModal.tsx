@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Form, Input, Select, Row, Col, message, Upload, Radio } from 'antd';
 import { UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { uploadModel, importModelFromSource } from '@/services/api';
-import type { UploadFile } from 'antd/es/upload/interface';
+import type { RcFile, UploadFile } from 'antd/es/upload/interface';
 
 const { TextArea } = Input;
 const { Dragger } = Upload;
@@ -56,6 +56,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
+          model_postprocess: values.model_postprocess,
           description: values.description,
         });
 
@@ -68,6 +69,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
+          model_postprocess: values.model_postprocess,
           description: values.description,
           source_url: values.source_url,
         });
@@ -80,6 +82,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
+          model_postprocess: values.model_postprocess,
           description: values.description,
           repo_id: values.repo_id,
           filename: values.repo_filename,
@@ -109,7 +112,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
     name: 'file',
     multiple: false,
     fileList,
-    beforeUpload: (file: File) => {
+    beforeUpload: (file: RcFile) => {
       const validExtensions = ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
       const lowerFileName = file.name.toLowerCase();
       const isValid = validExtensions.some(ext => lowerFileName.endsWith(ext));
@@ -119,7 +122,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
         return Upload.LIST_IGNORE;
       }
 
-      setFileList([file]);
+      setFileList([{
+        uid: file.uid,
+        name: file.name,
+        status: 'done',
+        originFileObj: file,
+      }]);
       const matchedExt = Object.keys(extensionModelHints).find(ext => lowerFileName.endsWith(ext));
       if (matchedExt) {
         form.setFieldsValue(extensionModelHints[matchedExt]);
@@ -237,6 +245,35 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
 
         <Form.Item label="输入尺寸" name="input_shape">
           <Input placeholder="例如: 640x640" />
+        </Form.Item>
+
+        <Form.Item
+          label="模型后处理"
+          name="model_postprocess"
+          extra="可选。用于 RKNN/ONNX 模型的模型级输出适配，填写 JSON 对象。"
+          rules={[
+            {
+              validator: (_, value) => {
+                if (!value) {
+                  return Promise.resolve();
+                }
+                try {
+                  const parsed = JSON.parse(value);
+                  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    return Promise.reject(new Error('必须填写 JSON 对象'));
+                  }
+                  return Promise.resolve();
+                } catch (error) {
+                  return Promise.reject(new Error('JSON 格式错误'));
+                }
+              },
+            },
+          ]}
+        >
+          <TextArea
+            rows={4}
+            placeholder='例如: {"layout":"channels_first","strides":[8,16,32],"reg_max":16}'
+          />
         </Form.Item>
 
         <Form.Item label="描述" name="description">

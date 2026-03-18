@@ -34,6 +34,7 @@ def setup_database():
         # 健康监控表
         SourceHealthLog
     ], safe=True)
+    _ensure_ml_models_schema()
 
     from datetime import datetime
     import hashlib
@@ -219,6 +220,12 @@ def setup_database():
 
     db.close()
     print(f"数据库已使用 Peewee 模型初始化。")
+
+
+def _ensure_ml_models_schema():
+    columns = {row[1] for row in db.execute_sql("PRAGMA table_info(ml_models);").fetchall()}
+    if 'model_postprocess' not in columns:
+        db.execute_sql("ALTER TABLE ml_models ADD COLUMN model_postprocess TEXT;")
 
 
 if __name__ == "__main__":

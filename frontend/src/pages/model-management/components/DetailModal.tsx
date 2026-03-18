@@ -12,6 +12,7 @@ interface Model {
   file_path: string;
   file_size_mb: number;
   input_shape?: string;
+  model_postprocess?: Record<string, any> | null;
   description?: string;
   enabled: boolean;
   usage_count: number;
@@ -115,6 +116,20 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
         <Descriptions.Item label="输入尺寸">{model.input_shape || '-'}</Descriptions.Item>
         <Descriptions.Item label="下载次数">{model.download_count || 0}</Descriptions.Item>
         <Descriptions.Item label="使用次数">{model.usage_count || 0}</Descriptions.Item>
+        {model.model_postprocess && (
+          <Descriptions.Item label="后处理配置" span={2}>
+            <pre style={{
+              margin: 0,
+              padding: '8px 10px',
+              background: '#fafafa',
+              borderRadius: 4,
+              fontSize: 12,
+              overflowX: 'auto'
+            }}>
+              {JSON.stringify(model.model_postprocess, null, 2)}
+            </pre>
+          </Descriptions.Item>
+        )}
         <Descriptions.Item label="上传时间" span={2}>
           {formatDate(model.created_at)}
         </Descriptions.Item>

@@ -287,7 +287,15 @@ def _flatten_output(output: Any) -> np.ndarray:
         return np.empty((0, 0), dtype=np.float32)
 
     if arr.ndim == 2:
-        if arr.shape[1] >= 6:
+        if arr.shape[0] < 6 and arr.shape[1] >= 6:
+            return arr
+        if arr.shape[1] < 6 and arr.shape[0] >= 6:
+            arr_t = arr.T
+            if arr_t.shape[1] >= 6:
+                return arr_t
+        # Prefer the orientation whose last dimension looks like attributes,
+        # so common CxN exports such as (84, 8400) become (8400, 84).
+        if arr.shape[1] >= 6 and arr.shape[1] <= arr.shape[0]:
             return arr
         if arr.shape[0] >= 6:
             arr_t = arr.T
@@ -505,6 +513,10 @@ class YoloOutputAdapter:
             self.anchor_count = int(self._get_option("postprocess_anchor_count", "anchor_count", default=0) or 0)
         except Exception:
             self.anchor_count = 0
+        try:
+            self.reg_max = int(self._get_option("postprocess_reg_max", "reg_max", default=0) or 0)
+        except Exception:
+            self.reg_max = 0
         self.class_count = _guess_class_count(classes, config)
         self._warnings_emitted = set()
 
@@ -546,6 +558,10 @@ class YoloOutputAdapter:
             row_items = self._collect_anchor_based_rows(outputs)
             bbox_format = "xywh"
             score_mode = "objectness_class"
+        elif resolved_profile == "head_dfl":
+            row_items = self._collect_dfl_head_rows(outputs)
+            bbox_format = "xyxy"
+            score_mode = "class_only"
         else:
             return [], [], metadata
 
@@ -571,12 +587,15 @@ class YoloOutputAdapter:
         return detections, details, metadata
 
     def _resolve_profile(self, outputs: List[Any]) -> Tuple[str, Optional[str]]:
-        if self.profile in ("dense", "head_decoded", "head_anchor_based"):
+        if self.profile in ("dense", "head_decoded", "head_anchor_based", "head_dfl"):
             return self.profile, None
 
         if any(_looks_like_spatial_head_output(output) for output in (outputs or [])):
             if self.anchors:
                 return "head_anchor_based", None
+
+            if self._can_resolve_dfl_profile(outputs):
+                return "head_dfl", None
 
             for output_idx, output in enumerate(outputs or []):
                 if self._normalize_decoded_head(output, output_idx, allow_multi_anchor=False) is not None:
@@ -647,6 +666,76 @@ class YoloOutputAdapter:
         if not row_items:
             warning = (
                 "anchor-based 后处理未能匹配输出 shape，请检查 model_postprocess 中的 anchors/strides/layout。"
+            )
+            self._warn_once(warning)
+        return row_items
+
+    def _collect_dfl_head_rows(self, outputs: List[Any]) -> List[Dict[str, Any]]:
+        row_items = []
+        for group in self._group_spatial_outputs(outputs):
+            box_item = self._select_dfl_box_item(group)
+            cls_item = self._select_dfl_class_item(group, box_item)
+            if box_item is None or cls_item is None:
+                continue
+
+            box_cf = box_item["channels_first"]
+            cls_cf = cls_item["channels_first"]
+            obj_item = self._select_dfl_objectness_item(group, box_item, cls_item)
+            reg_max = self._resolve_reg_max(box_cf.shape[0])
+            if reg_max <= 1 or box_cf.shape[0] != reg_max * 4:
+                continue
+
+            stride = self._resolve_spatial_stride(box_cf.shape[1], box_cf.shape[2], box_item["output_index"])
+            if stride <= 0:
+                continue
+
+            box_logits = box_cf.astype(np.float32, copy=False).reshape(4, reg_max, box_cf.shape[1], box_cf.shape[2])
+            box_logits = np.transpose(box_logits, (2, 3, 0, 1))
+            box_logits = box_logits - np.max(box_logits, axis=-1, keepdims=True)
+            box_probs = np.exp(box_logits)
+            box_probs_sum = np.sum(box_probs, axis=-1, keepdims=True)
+            box_probs = box_probs / np.clip(box_probs_sum, 1e-9, None)
+            bins = np.arange(reg_max, dtype=np.float32)
+            distances = np.sum(box_probs * bins, axis=-1) * stride
+
+            cls_scores = cls_cf.astype(np.float32, copy=False)
+            if self._should_apply_sigmoid(default=True):
+                cls_scores = _sigmoid(cls_scores)
+            cls_scores = np.transpose(cls_scores, (1, 2, 0))
+
+            if obj_item is not None:
+                objectness = obj_item["channels_first"].astype(np.float32, copy=False)
+                if self._should_apply_sigmoid(default=True):
+                    objectness = _sigmoid(objectness)
+                objectness = np.transpose(objectness, (1, 2, 0))
+                cls_scores = cls_scores * objectness
+
+            grid_y, grid_x = np.meshgrid(
+                np.arange(box_cf.shape[1], dtype=np.float32),
+                np.arange(box_cf.shape[2], dtype=np.float32),
+                indexing="ij",
+            )
+            center_x = (grid_x + 0.5) * stride
+            center_y = (grid_y + 0.5) * stride
+
+            boxes = np.empty((box_cf.shape[1], box_cf.shape[2], 4), dtype=np.float32)
+            boxes[..., 0] = center_x - distances[..., 0]
+            boxes[..., 1] = center_y - distances[..., 1]
+            boxes[..., 2] = center_x + distances[..., 2]
+            boxes[..., 3] = center_y + distances[..., 3]
+
+            for row_idx, (box, cls_score) in enumerate(zip(boxes.reshape(-1, 4), cls_scores.reshape(-1, cls_scores.shape[-1]))):
+                row = np.concatenate([box, cls_score], axis=0)
+                row_items.append({
+                    "row": row.astype(np.float32, copy=False),
+                    "output_index": int(box_item["output_index"]),
+                    "row_index": int(row_idx),
+                    "branch_index": int(box_item["output_index"]),
+                })
+
+        if not row_items:
+            warning = (
+                "DFL/head-split 后处理未能匹配输出 shape，请检查 model_postprocess 中的 reg_max/strides/layout。"
             )
             self._warn_once(warning)
         return row_items
@@ -737,6 +826,136 @@ class YoloOutputAdapter:
             return None
 
         return head.astype(np.float32, copy=False), stride, branch_anchors
+
+    def _normalize_spatial_output(self, output: Any) -> Optional[np.ndarray]:
+        arr = _squeeze_output_array(output)
+        if arr.size == 0 or arr.ndim != 3:
+            return None
+
+        if self.layout == "channels_first":
+            if arr.shape[1] <= 1 or arr.shape[2] <= 1:
+                return None
+            return arr.astype(np.float32, copy=False)
+
+        if self.layout == "channels_last":
+            if arr.shape[0] <= 1 or arr.shape[1] <= 1:
+                return None
+            return np.transpose(arr, (2, 0, 1)).astype(np.float32, copy=False)
+
+        first_is_channel = arr.shape[0] < arr.shape[1] and arr.shape[0] < arr.shape[2]
+        last_is_channel = arr.shape[2] < arr.shape[0] and arr.shape[2] < arr.shape[1]
+
+        if first_is_channel and arr.shape[1] > 1 and arr.shape[2] > 1:
+            return arr.astype(np.float32, copy=False)
+        if last_is_channel and arr.shape[0] > 1 and arr.shape[1] > 1:
+            return np.transpose(arr, (2, 0, 1)).astype(np.float32, copy=False)
+        return None
+
+    def _group_spatial_outputs(self, outputs: List[Any]) -> List[List[Dict[str, Any]]]:
+        groups: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+        for output_idx, output in enumerate(outputs or []):
+            normalized = self._normalize_spatial_output(output)
+            if normalized is None:
+                continue
+            key = (int(normalized.shape[1]), int(normalized.shape[2]))
+            groups.setdefault(key, []).append({
+                "output_index": output_idx,
+                "channels_first": normalized,
+                "channel_count": int(normalized.shape[0]),
+            })
+        return list(groups.values())
+
+    def _resolve_reg_max(self, channel_count: int) -> int:
+        if self.reg_max > 1 and channel_count == self.reg_max * 4:
+            return self.reg_max
+        if channel_count % 4 == 0:
+            inferred = channel_count // 4
+            if inferred > 1:
+                return inferred
+        return 0
+
+    def _select_dfl_box_item(self, group: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        candidates = []
+        for item in group:
+            reg_max = self._resolve_reg_max(item["channel_count"])
+            if reg_max > 1:
+                candidates.append((reg_max, item))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        return candidates[0][1]
+
+    def _select_dfl_class_item(
+        self,
+        group: List[Dict[str, Any]],
+        box_item: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        candidates = []
+        for item in group:
+            if box_item is not None and item["output_index"] == box_item["output_index"]:
+                continue
+            if item["channel_count"] <= 0:
+                continue
+            candidates.append(item)
+
+        if not candidates:
+            return None
+
+        if self.class_count > 0:
+            exact = [item for item in candidates if item["channel_count"] == self.class_count]
+            if exact:
+                return exact[0]
+
+        non_objectness = [item for item in candidates if item["channel_count"] > 1]
+        if non_objectness:
+            non_objectness.sort(key=lambda item: item["channel_count"], reverse=True)
+            return non_objectness[0]
+        return None
+
+    def _select_dfl_objectness_item(
+        self,
+        group: List[Dict[str, Any]],
+        box_item: Optional[Dict[str, Any]],
+        cls_item: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        for item in group:
+            if box_item is not None and item["output_index"] == box_item["output_index"]:
+                continue
+            if cls_item is not None and item["output_index"] == cls_item["output_index"]:
+                continue
+            if item["channel_count"] == 1:
+                return item
+        return None
+
+    def _resolve_spatial_stride(self, grid_h: int, grid_w: int, output_idx: int) -> float:
+        if output_idx < len(self.strides):
+            return float(self.strides[output_idx])
+        if len(self.strides) == 1:
+            return float(self.strides[0])
+
+        stride_h = self.input_height / float(grid_h) if grid_h > 0 else 0.0
+        stride_w = self.input_width / float(grid_w) if grid_w > 0 else 0.0
+        if stride_h > 0 and stride_w > 0 and abs(stride_h - stride_w) <= 1.0:
+            return (stride_h + stride_w) / 2.0
+        return 0.0
+
+    def _can_resolve_dfl_profile(self, outputs: List[Any]) -> bool:
+        for group in self._group_spatial_outputs(outputs):
+            box_item = self._select_dfl_box_item(group)
+            cls_item = self._select_dfl_class_item(group, box_item)
+            if box_item is None or cls_item is None:
+                continue
+            reg_max = self._resolve_reg_max(box_item["channel_count"])
+            if reg_max <= 1:
+                continue
+            stride = self._resolve_spatial_stride(
+                box_item["channels_first"].shape[1],
+                box_item["channels_first"].shape[2],
+                box_item["output_index"],
+            )
+            if stride > 0:
+                return True
+        return False
 
     def _guess_attr_count(self, channel_dim: int, output_idx: int) -> Tuple[int, int]:
         expected_counts = []

@@ -308,6 +308,7 @@ export async function uploadModel(file: File, metadata?: {
   framework: string;
   version?: string;
   input_shape?: string;
+  model_postprocess?: string;
   description?: string;
 }) {
   // 验证文件对象
@@ -334,6 +335,7 @@ export async function uploadModel(file: File, metadata?: {
     formData.append('framework', metadata.framework);
     if (metadata.version) formData.append('version', metadata.version);
     if (metadata.input_shape) formData.append('input_shape', metadata.input_shape);
+    if (metadata.model_postprocess) formData.append('model_postprocess', metadata.model_postprocess);
     if (metadata.description) formData.append('description', metadata.description);
   }
 
@@ -373,6 +375,7 @@ export async function importModelFromSource(data: {
   framework: string;
   version?: string;
   input_shape?: string;
+  model_postprocess?: string;
   description?: string;
   source_url?: string;
   repo_id?: string;
