@@ -142,7 +142,7 @@ export default function Scripts() {
                 setUploadModalVisible(true);
               }}
               size="large"
-              className="create-btn"
+              className="app-primary-button create-btn"
             >
               上传脚本
             </Button>

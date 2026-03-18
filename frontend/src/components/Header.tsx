@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, history } from '@umijs/max';
 import { Dropdown, Button, message } from 'antd';
 import { getSystemInfo } from '@/services/api';
+import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import './Header.css';
 import {
   VideoCameraOutlined,
@@ -85,13 +86,6 @@ const Header: React.FC = () => {
     },
   ];
 
-  const navItems = [
-    { path: '/dashboard', icon: <HomeOutlined />, label: '仪表盘' },
-    { path: '/video-sources', icon: <VideoCameraOutlined />, label: '视频源' },
-    { path: '/workflows', icon: <ApartmentOutlined />, label: '算法编排' },
-    { path: '/alerts', icon: <BellOutlined />, label: '告警记录' },
-  ];
-
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
@@ -101,123 +95,107 @@ const Header: React.FC = () => {
     location.pathname === '/algorithms';
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      height: '64px',
-      padding: '0 24px',
-      background: '#fff',
-      borderBottom: '1px solid #e5e7eb'
-    }}>
-      {/* Logo */}
-      <div className="logo-container">
-        <div className="logo-icon">
-          <VideoCameraOutlined style={{ fontSize: '18px' }} />
-        </div>
-        <div className="logo-text">
-          <h1>视频行为分析系统</h1>
-          <div className="logo-meta">
-            <p>Video Behavior Analysis</p>
-            {appVersion ? (
-              <span className="version-tag">v{appVersion}</span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* 导航菜单 */}
-      <div className="nav-menu">
-        {/* 仪表盘 */}
+    <header className="site-header">
+      <div className="site-header__inner">
         <Link
           to="/dashboard"
-          className={`nav-link ${isActive('/dashboard') ? 'active' : ''}`}
+          className="site-brand"
         >
-          <HomeOutlined style={{ marginRight: '8px' }} />
-          仪表盘
+          <div className="site-brand__icon">
+            <VideoCameraOutlined />
+          </div>
+          <div className="site-brand__text">
+            <strong>{SYSTEM_NAME_ZH}</strong>
+            <span>{SYSTEM_NAME_EN}</span>
+          </div>
+          {appVersion ? <span className="site-brand__version">v{appVersion}</span> : null}
         </Link>
 
-        {/* 视频源 */}
-        <Link
-          to="/video-sources"
-          className={`nav-link ${isActive('/video-sources') ? 'active' : ''}`}
-        >
-          <VideoCameraOutlined style={{ marginRight: '8px' }} />
-          视频源
-        </Link>
+        <nav className="site-nav">
+          <Link
+            to="/dashboard"
+            className={`nav-link ${isActive('/dashboard') ? 'active' : ''}`}
+          >
+            <HomeOutlined />
+            <span>仪表盘</span>
+          </Link>
 
-        {/* 算法管理下拉菜单 */}
-        <Dropdown menu={{ items: menuItems }} placement="bottomLeft">
-          <span>
+          <Link
+            to="/video-sources"
+            className={`nav-link ${isActive('/video-sources') ? 'active' : ''}`}
+          >
+            <VideoCameraOutlined />
+            <span>视频源</span>
+          </Link>
+
+          <Dropdown menu={{ items: menuItems }} placement="bottomLeft">
+            <button
+              type="button"
+              className={`nav-link nav-link--button ${isAlgorithmActive ? 'active' : ''}`}
+            >
+              <ExperimentOutlined />
+              <span>算法管理</span>
+              <DownOutlined className="nav-link__arrow" />
+            </button>
+          </Dropdown>
+
+          <Link
+            to="/workflows"
+            className={`nav-link ${isActive('/workflows') ? 'active' : ''}`}
+          >
+            <ApartmentOutlined />
+            <span>算法编排</span>
+          </Link>
+
+          <Link
+            to="/alerts"
+            className={`nav-link ${isActive('/alerts') ? 'active' : ''}`}
+          >
+            <BellOutlined />
+            <span>告警记录</span>
+          </Link>
+        </nav>
+
+        <div className="site-tools">
+          <Button
+            type="text"
+            icon={<CalculatorOutlined />}
+            href="/gpu-calculator"
+            target="_blank"
+            className="site-tools__button"
+          >
+            算力
+          </Button>
+
+          <Button
+            type="text"
+            icon={<DesktopOutlined />}
+            href="/alert-wall"
+            target="_blank"
+            className="site-tools__button"
+          >
+            大屏
+          </Button>
+
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Link
               to="#"
               onClick={(e) => e.preventDefault()}
-              className={`nav-link ${isAlgorithmActive ? 'active' : ''}`}
+              className="site-user"
             >
-              <ExperimentOutlined style={{ marginRight: '8px' }} />
-              算法管理
-              <DownOutlined style={{ marginLeft: '4px', fontSize: '12px' }} />
+              <span className="site-user__avatar">
+                <UserOutlined />
+              </span>
+              <span className="site-user__meta">
+                <span className="site-user__label">当前用户</span>
+                <span className="site-user__name">{user?.username || '未登录'}</span>
+              </span>
+              <DownOutlined className="site-user__arrow" />
             </Link>
-          </span>
-        </Dropdown>
-
-        {/* 算法编排 */}
-        <Link
-          to="/workflows"
-          className={`nav-link ${isActive('/workflows') ? 'active' : ''}`}
-        >
-          <ApartmentOutlined style={{ marginRight: '8px' }} />
-          算法编排
-        </Link>
-
-        {/* 告警记录 */}
-        <Link
-          to="/alerts"
-          className={`nav-link ${isActive('/alerts') ? 'active' : ''}`}
-        >
-          <BellOutlined style={{ marginRight: '8px' }} />
-          告警记录
-        </Link>
+          </Dropdown>
+        </div>
       </div>
-
-      {/* 右侧操作 */}
-      <div className="header-actions">
-        <Button
-          type="text"
-          icon={<BellOutlined />}
-          style={{ position: 'relative' }}
-        >
-          <span className="notification-badge"></span>
-        </Button>
-
-        <Button
-          type="text"
-          icon={<CalculatorOutlined />}
-          href="/gpu-calculator"
-          target="_blank"
-          title="GPU需求计算器"
-        />
-
-        <Button
-          type="text"
-          icon={<DesktopOutlined />}
-          href="/alert-wall"
-          target="_blank"
-          title="大屏"
-        />
-
-        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-          <div className="user-avatar-container">
-            <div className="user-avatar">
-              <UserOutlined style={{ fontSize: '12px' }} />
-            </div>
-            <span className="user-username">
-              {user?.username || '未登录'}
-            </span>
-          </div>
-        </Dropdown>
-      </div>
-    </div>
+    </header>
   );
 };
 

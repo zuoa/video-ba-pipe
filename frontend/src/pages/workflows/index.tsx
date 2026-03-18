@@ -185,7 +185,7 @@ export default function Workflows() {
             icon={<PlusOutlined />}
             onClick={handleCreate}
             size="large"
-            className="create-btn"
+            className="app-primary-button create-btn"
           >
             新建算法编排
           </Button>

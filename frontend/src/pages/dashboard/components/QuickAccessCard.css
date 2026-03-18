@@ -1,16 +1,16 @@
 .quick-access-card {
-  background: white;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
   padding: 24px;
-  border: 1px solid #f0f0f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--app-line-soft);
+  box-shadow: var(--app-shadow-sm);
   height: 100%;
 }
 
 .quick-access-title {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--app-text);
   margin: 0 0 20px 0;
   display: flex;
   align-items: center;
@@ -19,7 +19,7 @@
 
 .title-icon {
   font-size: 18px;
-  color: #595959;
+  color: var(--app-text-muted);
 }
 
 .quick-access-list {
@@ -33,16 +33,17 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  background: #fafafa;
-  border-radius: 8px;
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 16px;
   text-decoration: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .quick-access-item:hover {
-  background: #f0f0f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transform: translateX(4px);
+  transform: translateY(-1px);
+  border-color: var(--app-line);
+  box-shadow: var(--app-shadow-sm);
 }
 
 .item-left {
@@ -56,14 +57,14 @@
 .item-icon {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-size: 16px;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
 }
 
 .item-content {
@@ -74,7 +75,7 @@
 .item-title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--app-text);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -83,7 +84,7 @@
 
 .item-description {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--app-text-muted);
   margin: 2px 0 0 0;
   white-space: nowrap;
   overflow: hidden;
@@ -91,7 +92,7 @@
 }
 
 .item-arrow {
-  color: #595959;
+  color: var(--app-text-muted);
   font-size: 12px;
   transition: transform 0.3s ease;
   flex-shrink: 0;

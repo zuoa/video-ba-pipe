@@ -29,7 +29,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         </div>
       </div>
       <div className="header-right">
-        <Space size="middle">
+        <Space size={12} wrap>
           {count !== undefined && (
             <div className="header-count">
               <span className="count-number">{count}</span>

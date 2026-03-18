@@ -1,140 +1,243 @@
-/* Header 导航链接样式 */
-.nav-link {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-  text-decoration: none;
-  position: relative;
-  transition: all 0.2s ease;
-  border-radius: 4px;
-  display: inline-block;
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 18px 24px 0;
 }
 
-.nav-link:hover {
-  background: #f3f4f6;
-}
-
-.nav-link.active {
-  color: #000;
-}
-
-/* 激活状态下的底部指示条 */
-.nav-link.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: #000;
-}
-
-/* Logo 样式 */
-.logo-container {
+.site-header__inner {
+  width: 100%;
+  padding: 14px 18px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--app-shadow-sm);
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 18px;
 }
 
-.logo-icon {
-  width: 40px;
-  height: 40px;
-  background: #000;
-  border-radius: 8px;
+.site-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-brand__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  background: var(--app-accent);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.logo-text h1 {
   font-size: 18px;
-  font-weight: bold;
-  color: #111827;
-  margin: 0;
-  line-height: 1.2;
+  flex-shrink: 0;
 }
 
-.logo-text p {
-  font-size: 12px;
-  color: #6b7280;
-  margin: 0;
-  line-height: 1.2;
-}
-
-.logo-meta {
+.site-brand__text {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.version-tag {
+.site-brand__text strong {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.site-brand__text span {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+}
+
+.site-brand__version {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  color: #4b5563;
+  background: var(--app-surface-muted);
+  border: 1px solid var(--app-line-soft);
+  color: var(--app-text-muted);
   font-size: 11px;
   font-weight: 600;
-  line-height: 1;
 }
 
-/* 导航菜单容器 */
-.nav-menu {
+.site-nav {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-/* 右侧操作区 */
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* 用户头像容器 */
-.user-avatar-container {
-  display: flex;
+.nav-link {
+  border: none;
+  outline: none;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding-left: 12px;
-  border-left: 1px solid #e5e7eb;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
   cursor: pointer;
 }
 
-.user-avatar {
-  width: 32px;
-  height: 32px;
-  background: #000;
-  border-radius: 50%;
+.nav-link:hover {
+  color: var(--app-text);
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.nav-link.active {
+  color: var(--app-text);
+  background: var(--app-surface-strong);
+  box-shadow: inset 0 0 0 1px var(--app-line-soft);
+}
+
+.nav-link--button {
+  font-family: inherit;
+}
+
+.nav-link__arrow {
+  font-size: 11px;
+}
+
+.site-tools {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
-.user-username {
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-  display: block;
+.site-tools__button.ant-btn {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--app-line-soft);
+  background: rgba(248, 250, 252, 0.82);
+  color: var(--app-text-muted);
+  box-shadow: none;
 }
 
-/* 通知按钮徽章 */
-.notification-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 8px;
-  height: 8px;
-  background: #ef4444;
+.site-tools__button.ant-btn:hover {
+  color: var(--app-text) !important;
+  background: var(--app-surface-strong) !important;
+  border-color: var(--app-line) !important;
+}
+
+.site-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 8px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--app-line-soft);
+  background: rgba(248, 250, 252, 0.88);
+  text-decoration: none;
+}
+
+.site-user:hover {
+  background: var(--app-surface-strong);
+}
+
+.site-user__avatar {
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
+  background: var(--app-accent);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.site-user__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.site-user__label {
+  font-size: 10px;
+  color: var(--app-text-muted);
+  line-height: 1.1;
+}
+
+.site-user__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  line-height: 1.2;
+}
+
+.site-user__arrow {
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+@media (max-width: 1120px) {
+  .site-header__inner {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .site-nav {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .site-header {
+    padding: 12px 16px 0;
+  }
+
+  .site-header__inner {
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .site-brand {
+    width: 100%;
+  }
+
+  .site-brand__text span,
+  .site-user__label,
+  .site-tools__button.ant-btn span:last-child {
+    display: none;
+  }
+
+  .site-brand__version {
+    margin-left: auto;
+  }
+
+  .site-tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .site-user {
+    margin-left: auto;
+  }
 }

@@ -112,7 +112,7 @@ export default function VideoSources() {
               icon={<CloudDownloadOutlined />}
               onClick={handleOpenImport}
               size="large"
-              className="import-btn"
+              className="app-secondary-button import-btn"
             >
               批量导入
             </Button>
@@ -121,7 +121,7 @@ export default function VideoSources() {
               icon={<PlusOutlined />}
               onClick={handleCreate}
               size="large"
-              className="create-btn"
+              className="app-primary-button create-btn"
             >
               手工添加
             </Button>

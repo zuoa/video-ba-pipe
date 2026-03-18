@@ -1,5 +1,47 @@
+import type { ReactNode } from 'react';
 import { history } from '@umijs/max';
-import { message } from 'antd';
+import { App as AntdApp, ConfigProvider, message } from 'antd';
+
+const appTheme = {
+  token: {
+    colorPrimary: '#1f242b',
+    colorInfo: '#1f242b',
+    colorSuccess: '#2f6b4f',
+    colorWarning: '#8a5cf6',
+    colorError: '#c4544f',
+    colorText: '#1f2328',
+    colorTextSecondary: '#6b7280',
+    colorBorder: '#d7dbe2',
+    colorBorderSecondary: '#e5e7eb',
+    colorBgLayout: '#f3f4f6',
+    colorBgContainer: '#ffffff',
+    colorFillAlter: '#f7f8fa',
+    borderRadius: 14,
+    controlHeight: 40,
+    fontFamily:
+      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif',
+    boxShadowSecondary: '0 18px 40px rgba(33, 29, 24, 0.08)',
+  },
+  components: {
+    Button: {
+      controlHeightLG: 44,
+      fontWeight: 600,
+      primaryShadow: 'none',
+    },
+    Card: {
+      bodyPadding: 20,
+    },
+    Modal: {
+      contentBg: '#fffdf8',
+      headerBg: 'transparent',
+    },
+    Table: {
+      headerBg: '#f7f8fa',
+      headerColor: '#6b7280',
+      borderColor: '#e5e7eb',
+    },
+  },
+};
 
 export async function getInitialState() {
   const token = localStorage.getItem('token');
@@ -25,6 +67,14 @@ export async function getInitialState() {
   } catch (error) {
     return { currentUser: null };
   }
+}
+
+export function rootContainer(container: ReactNode) {
+  return (
+    <ConfigProvider theme={appTheme}>
+      <AntdApp>{container}</AntdApp>
+    </ConfigProvider>
+  );
 }
 
 export function onRouteChange({ location }: any) {

@@ -1,16 +1,9 @@
-.users-page {
-  padding: 24px;
+.create-btn {
+  min-width: 112px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+@media (max-width: 768px) {
+  .create-btn {
+    width: 100%;
+  }
 }
-
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-}
-

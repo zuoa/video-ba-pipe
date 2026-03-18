@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Row, Col, message, Spin } from 'antd';
+import { Row, Col, Button, message, Spin } from 'antd';
 import {
   PlusOutlined,
   ApiOutlined,
@@ -148,14 +148,14 @@ const ModelsPage: React.FC = () => {
         count={filteredModels.length}
         countLabel="个模型"
         extra={
-          <button
-            type="button"
-            className="upload-btn"
+          <Button
+            type="primary"
+            className="app-primary-button upload-btn"
+            icon={<PlusOutlined />}
             onClick={() => setUploadModalVisible(true)}
           >
-            <PlusOutlined />
-            <span>上传模型</span>
-          </button>
+            上传模型
+          </Button>
         }
       />
 

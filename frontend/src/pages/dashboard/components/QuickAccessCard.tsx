@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from '@umijs/max';
 import { RightOutlined } from '@ant-design/icons';
 import './QuickAccessCard.css';
 
@@ -26,7 +27,7 @@ const QuickAccessCard: React.FC<QuickAccessCardProps> = ({ title, icon, items })
       </h3>
       <div className="quick-access-list">
         {items.map((item, index) => (
-          <a key={index} href={item.path} className="quick-access-item">
+          <Link key={index} to={item.path} className="quick-access-item">
             <div className="item-left">
               <div
                 className="item-icon"
@@ -42,7 +43,7 @@ const QuickAccessCard: React.FC<QuickAccessCardProps> = ({ title, icon, items })
               </div>
             </div>
             <RightOutlined className="item-arrow" />
-          </a>
+          </Link>
         ))}
       </div>
     </div>

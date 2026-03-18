@@ -1,5 +1,4 @@
 .algorithms-page {
-  padding: 24px;
   min-height: 100vh;
 }
 
@@ -11,9 +10,7 @@
 
 /* Buttons - use Ant Design styles */
 .wizard-btn {
-  height: 36px;
-  padding: 0 20px;
-  font-weight: 500;
+  min-width: 118px;
 }
 
 .create-btn {
@@ -24,10 +21,6 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .algorithms-page {
-    padding: 16px;
-  }
-
   .header-actions {
     flex-direction: column;
     gap: 8px;
@@ -36,7 +29,6 @@
   .wizard-btn,
   .create-btn {
     width: 100%;
-    height: 40px;
   }
 }
 

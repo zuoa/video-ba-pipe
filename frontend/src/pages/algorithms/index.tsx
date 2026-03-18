@@ -102,7 +102,7 @@ export default function Algorithms() {
               type="primary"
               icon={<BulbOutlined />}
               onClick={handleOpenWizard}
-              className="wizard-btn"
+              className="app-primary-button wizard-btn"
             >
               配置向导
             </Button>

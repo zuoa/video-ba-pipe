@@ -6,8 +6,8 @@ const WelcomeBanner: React.FC = () => {
   return (
     <div className="welcome-banner">
       <div className="welcome-content">
-        <h2 className="welcome-title">欢迎使用视频分析系统</h2>
-        <p className="welcome-subtitle">基于AI的智能视频监控与分析平台</p>
+        <h2 className="welcome-title">系统概览</h2>
+        <p className="welcome-subtitle">在一个界面内查看任务运行、算法配置与最新告警。</p>
       </div>
       <div className="welcome-icon-wrapper">
         <div className="welcome-icon-bg">

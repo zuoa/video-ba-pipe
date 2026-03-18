@@ -1,7 +1,8 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons';
 import { Button, Form, Input, message, Modal, Select, Space, Switch, Table } from 'antd';
 import { useEffect, useState } from 'react';
 import { getUsers, createUser, updateUser, deleteUser } from '@/services/api';
+import { PageHeader } from '@/components/common';
 import './index.css';
 
 interface User {
@@ -135,12 +136,23 @@ export default function Users() {
 
   return (
     <div className="users-page">
-      <div className="page-header">
-        <h1>用户管理</h1>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新增用户
-        </Button>
-      </div>
+      <PageHeader
+        icon={<TeamOutlined />}
+        title="用户管理"
+        subtitle="维护系统账号、权限与启用状态"
+        count={users.length}
+        countLabel="位用户"
+        extra={(
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleAdd}
+            className="app-primary-button create-btn"
+          >
+            新增用户
+          </Button>
+        )}
+      />
 
       <Table
         columns={columns}
@@ -206,4 +218,3 @@ export default function Users() {
     </div>
   );
 }
-

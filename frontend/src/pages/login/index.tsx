@@ -3,6 +3,7 @@ import { Button, Form, Input, message } from 'antd';
 import { useState } from 'react';
 import { history } from '@umijs/max';
 import { login } from '@/services/api';
+import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import './index.css';
 
 export default function Login() {
@@ -36,20 +37,20 @@ export default function Login() {
             <div className="logo-wrapper">
               <VideoCameraOutlined className="logo-icon" />
             </div>
-            <h1 className="brand-title">视频分析系统</h1>
-            <p className="brand-subtitle">智能视频监控 · 实时行为分析 · 多目标追踪</p>
+            <h1 className="brand-title">{SYSTEM_NAME_ZH}</h1>
+            <p className="brand-subtitle">{SYSTEM_NAME_EN}</p>
             <div className="features">
               <div className="feature-item">
                 <SafetyOutlined />
-                <span>AI 智能识别</span>
+                <span>实时识别</span>
               </div>
               <div className="feature-item">
                 <VideoCameraOutlined />
-                <span>实时监控</span>
+                <span>流式监控</span>
               </div>
               <div className="feature-item">
                 <SafetyOutlined />
-                <span>安全可靠</span>
+                <span>告警追踪</span>
               </div>
             </div>
           </div>
@@ -99,7 +100,7 @@ export default function Login() {
                   loading={loading} 
                   block 
                   size="large"
-                  className="login-button"
+                  className="app-primary-button login-button"
                 >
                   登录
                 </Button>
@@ -107,7 +108,7 @@ export default function Login() {
             </Form>
             
             <div className="login-footer">
-              <span>© 2026 视频分析系统</span>
+              <span>© 2026 {SYSTEM_NAME_ZH}</span>
             </div>
           </div>
         </div>
@@ -115,4 +116,3 @@ export default function Login() {
     </div>
   );
 }
-

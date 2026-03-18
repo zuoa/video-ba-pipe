@@ -1,7 +1,188 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+:root {
+  --app-bg: #f3f4f6;
+  --app-bg-soft: #f7f8fa;
+  --app-surface: rgba(255, 255, 255, 0.84);
+  --app-surface-strong: #ffffff;
+  --app-surface-muted: #f7f8fa;
+  --app-text: #1f2328;
+  --app-text-muted: #6b7280;
+  --app-line: #d7dbe2;
+  --app-line-soft: #e5e7eb;
+  --app-accent: #1f242b;
+  --app-accent-soft: #eceff3;
+  --app-shadow-sm: 0 10px 24px rgba(15, 23, 42, 0.05);
+  --app-shadow-md: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --app-radius-s: 12px;
+  --app-radius-m: 18px;
+  --app-radius-l: 26px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root,
+#__umi {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--app-text);
+  background: #f5f6f8;
+  font-family:
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    'Segoe UI',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  color: #fff;
+  background: rgba(31, 36, 43, 0.78);
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-shell__main {
+  padding: 18px 24px 40px;
+}
+
+.app-shell__content {
+  width: 100%;
+}
+
+.app-primary-button.ant-btn,
+.app-primary-button {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 999px !important;
+  border-color: var(--app-accent) !important;
+  background: var(--app-accent) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.app-primary-button.ant-btn:hover,
+.app-primary-button:hover {
+  border-color: #333a43 !important;
+  background: #333a43 !important;
+  color: #fff !important;
+}
+
+.app-primary-button.ant-btn:active,
+.app-primary-button:active {
+  border-color: #161a20 !important;
+  background: #161a20 !important;
+}
+
+.app-secondary-button.ant-btn,
+.app-secondary-button {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 999px !important;
+  border: 1px solid var(--app-line) !important;
+  background: var(--app-surface-strong) !important;
+  color: var(--app-text) !important;
+  box-shadow: none !important;
+}
+
+.app-secondary-button.ant-btn:hover,
+.app-secondary-button:hover {
+  border-color: #c5ccd6 !important;
+  background: #f8fafc !important;
+  color: var(--app-text) !important;
+}
+
+.ant-input-affix-wrapper,
+.ant-input,
+.ant-select-selector,
+.ant-picker,
+.ant-input-number,
+.ant-input-number-affix-wrapper {
+  border-radius: 12px !important;
+}
+
+.ant-input-affix-wrapper,
+.ant-input,
+.ant-select-selector,
+.ant-picker,
+.ant-input-number,
+.ant-input-number-affix-wrapper,
+.ant-input-outlined,
+.ant-input-affix-wrapper-outlined {
+  border-color: var(--app-line) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  box-shadow: none !important;
+}
+
+.ant-input-affix-wrapper:hover,
+.ant-input:hover,
+.ant-select-selector:hover,
+.ant-picker:hover,
+.ant-input-number:hover,
+.ant-input-affix-wrapper-focused,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-input-number-focused {
+  border-color: #b8c0cc !important;
+}
+
+.ant-table-wrapper {
+  border: 1px solid var(--app-line-soft);
+  border-radius: var(--app-radius-m);
+  overflow: hidden;
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.ant-table {
+  background: transparent !important;
+}
+
+.ant-table-thead > tr > th {
+  color: var(--app-text-muted) !important;
+  font-weight: 600 !important;
+  background: var(--app-surface-muted) !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-color: var(--app-line-soft) !important;
+}
+
+.ant-card,
+.ant-modal .ant-modal-content,
+.ant-dropdown .ant-dropdown-menu,
+.ant-popover .ant-popover-inner {
+  border: 1px solid var(--app-line-soft);
+  border-radius: var(--app-radius-m);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.ant-modal .ant-modal-content {
+  padding: 24px;
+}
+
+.ant-empty-description,
+.ant-form-item-explain,
+.ant-typography-secondary {
+  color: var(--app-text-muted) !important;
+}
+
+@media (max-width: 768px) {
+  .app-shell__main {
+    padding: 14px 16px 28px;
+  }
+}

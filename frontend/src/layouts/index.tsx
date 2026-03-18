@@ -1,15 +1,24 @@
 import React from 'react';
-import { Outlet } from '@umijs/max';
+import { Outlet, useLocation } from '@umijs/max';
 import Header from '@/components/Header';
 
 export default function Layout() {
+  const location = useLocation();
+  const isStandalonePage =
+    location.pathname === '/login' || location.pathname === '/alert-wall';
+
+  if (isStandalonePage) {
+    return <Outlet />;
+  }
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <div className="app-shell">
       <Header />
-      <div style={{ padding: '24px' }}>
-        <Outlet />
-      </div>
+      <main className="app-shell__main">
+        <div className="app-shell__content">
+          <Outlet />
+        </div>
+      </main>
     </div>
   );
 }
-
