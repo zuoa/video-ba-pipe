@@ -155,6 +155,14 @@ class WorkflowExecutor:
                         if node_config is None:
                             node_config = {}
 
+                        legacy_confidence = node_data_dict.get('confidence')
+                        if legacy_confidence is not None and 'confidence' not in node_config:
+                            node_config = dict(node_config)
+                            node_config['confidence'] = legacy_confidence
+                            logger.info(
+                                f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 使用旧版 confidence 配置: {legacy_confidence}"
+                            )
+
                         # 获取运行时配置（从节点配置）
                         runtime_config = self._get_node_runtime_config(node_data_dict)
 
@@ -516,6 +524,75 @@ class WorkflowExecutor:
 
         # logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是算法节点且不在 algorithms 中，返回 interval=0")
         return 0
+
+    def _get_workflow_node_dict(self, node_id: str) -> dict:
+        """从 workflow_data 中读取节点原始配置。"""
+        return next((n for n in self.workflow_data.get('nodes', []) if n.get('id') == node_id), {}) or {}
+
+    def _get_algorithm_confidence_threshold(self, node_id: str) -> Optional[float]:
+        """获取算法节点生效的置信度阈值，兼容旧版顶层字段。"""
+        node_data_dict = self._get_workflow_node_dict(node_id)
+        if not node_data_dict:
+            return None
+
+        config = node_data_dict.get('config')
+        if not isinstance(config, dict):
+            config = {}
+
+        raw_threshold = config.get('confidence')
+        if raw_threshold is None:
+            raw_threshold = node_data_dict.get('confidence')
+        if raw_threshold is None:
+            return None
+
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"[Workflow-{self.workflow_id}] 算法节点 {node_id} confidence 配置无效: {raw_threshold}"
+            )
+            return None
+
+        return max(0.0, min(1.0, threshold))
+
+    def _apply_algorithm_confidence_filter(self, node_id: str, result: dict) -> dict:
+        """按算法节点配置的 confidence 阈值统一过滤检测结果。"""
+        if not isinstance(result, dict):
+            return result
+
+        detections = result.get('detections')
+        if not isinstance(detections, list) or not detections:
+            return result
+
+        threshold = self._get_algorithm_confidence_threshold(node_id)
+        if threshold is None:
+            return result
+
+        filtered = [
+            det for det in detections
+            if BaseAlgorithm._get_detection_confidence(det, 1.0) >= threshold
+        ]
+        filtered_count = len(detections) - len(filtered)
+
+        metadata = dict(result.get('metadata') or {})
+        metadata.setdefault('confidence_threshold', threshold)
+        if filtered_count <= 0:
+            filtered_result = dict(result)
+            filtered_result['metadata'] = metadata
+            return filtered_result
+
+        metadata['detections_before_confidence_filter'] = len(detections)
+        metadata['confidence_filtered_count'] = filtered_count
+
+        filtered_result = dict(result)
+        filtered_result['detections'] = filtered
+        filtered_result['metadata'] = metadata
+
+        logger.info(
+            f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 按 confidence={threshold:.2f} "
+            f"过滤检测结果: {len(detections)} -> {len(filtered)}"
+        )
+        return filtered_result
     
     def _should_execute_node(self, node_id):
         current_time = time.time()
@@ -557,6 +634,7 @@ class WorkflowExecutor:
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
             result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
+            result = self._apply_algorithm_confidence_filter(node_id, result)
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
             if result is None:
                 raise RuntimeError(f"algo.process returned None for node {node_id}")

@@ -128,6 +128,10 @@ export default function WorkflowEditorPage() {
               config: node.config || node.data?.config,
             };
 
+            if (nodeType === 'algorithm') {
+              nodeData.confidence = node.config?.confidence ?? node.data?.confidence ?? 0.5;
+            }
+
             // 特殊处理：从 data 字段读取额外的配置
             if (node.data && typeof node.data === 'object') {
               // Alert 节点：读取 alertLevel, alertType, alertMessage, suppression

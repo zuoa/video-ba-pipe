@@ -110,7 +110,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           }
         }
       } else if (nodeType === 'algorithm') {
-        formValues.confidence = node.data.confidence || 0.5;
+        formValues.confidence = nodeConfig.confidence ?? node.data.confidence ?? 0.5;
 
         // 执行配置
         formValues.intervalSeconds = nodeConfig.interval_seconds || 1;
@@ -246,6 +246,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       if (nodeType === 'algorithm') {
         const config = node.data?.config || {};
 
+        config.confidence = values.confidence ?? config.confidence ?? 0.5;
         // 保存执行配置
         config.interval_seconds = values.intervalSeconds;
         config.runtime_timeout = values.runtimeTimeout;
@@ -253,6 +254,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
 
+        updatedData.confidence = config.confidence;
         updatedData.config = config;
 
         delete updatedData.intervalSeconds;
