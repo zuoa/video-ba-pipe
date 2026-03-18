@@ -25,9 +25,12 @@ from app.config import (
     POST_ALERT_DURATION,
     RECORDING_FPS,
     RINGBUFFER_DURATION,
-    ALERT_SUPPRESSION_DURATION
+    ALERT_SUPPRESSION_DURATION,
+    LOG_SAVE_PATH,
+    DETECTION_JSONL_LOG_ENABLED,
 )
 from app.core.database_models import Workflow, VideoSource, Algorithm, Alert
+from app.core.algorithm import BaseAlgorithm
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
@@ -36,6 +39,8 @@ from app.core.window_detector import get_window_detector
 from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData
 from app.core.execution_log_collector import ExecutionLogCollector
+
+DETECTION_JSONL_LOG_LOCK = threading.Lock()
 
 
 class WorkflowExecutor:
@@ -580,6 +585,63 @@ class WorkflowExecutor:
             logger.error(f"[Workflow-{self.workflow_id}] 错误：算法节点 {node_id} 在处理过程中发生异常: {exc}")
             logger.exception(exc, exc_info=True)
             raise
+
+    @staticmethod
+    def _to_jsonable(value):
+        """将 numpy / tuple 等对象转换为 JSON 可序列化结构。"""
+        if isinstance(value, dict):
+            return {str(k): WorkflowExecutor._to_jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [WorkflowExecutor._to_jsonable(v) for v in value]
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
+
+    def _append_detection_result_jsonl(self, node_id: str, result: Dict[str, Any], frame_timestamp: Optional[float]):
+        """按行追加算法检测结果，便于对比不同部署环境的输出差异。"""
+        if not DETECTION_JSONL_LOG_ENABLED or not isinstance(result, dict):
+            return
+
+        result_payload = result.get('result') or {}
+        detections = result_payload.get('detections') or []
+        metadata = result_payload.get('metadata') or {}
+        ts = float(frame_timestamp) if isinstance(frame_timestamp, (int, float)) else time.time()
+        date_str = time.strftime('%Y%m%d', time.localtime(ts))
+        log_path = os.path.join(LOG_SAVE_PATH, f'detection_results_{date_str}.jsonl')
+
+        source = self.video_source
+        source_id = getattr(source, 'id', None)
+        source_code = getattr(source, 'source_code', None)
+        source_name = getattr(source, 'name', None)
+        algorithm_info = self.algorithm_datamap.get(node_id, {}) if isinstance(self.algorithm_datamap, dict) else {}
+
+        payload = {
+            'logged_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
+            'workflow_id': self.workflow_id,
+            'workflow_name': getattr(self.workflow, 'name', None),
+            'source_id': source_id,
+            'source_code': source_code,
+            'source_name': source_name,
+            'node_id': node_id,
+            'algorithm_name': algorithm_info.get('name'),
+            'frame_timestamp': ts,
+            'has_detection': bool(result.get('has_detection')),
+            'detection_count': len(detections),
+            'label_color': result.get('label_color'),
+            'detections': detections,
+            'metadata': metadata,
+        }
+
+        json_line = json.dumps(self._to_jsonable(payload), ensure_ascii=False, default=str)
+
+        try:
+            with DETECTION_JSONL_LOG_LOCK:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json_line + '\n')
+        except Exception as e:
+            logger.warning(f"[Workflow-{self.workflow_id}] 写入检测结果 JSONL 失败: {e}")
     
     def _evaluate_condition(self, condition, context):
         """
@@ -734,6 +796,8 @@ class WorkflowExecutor:
         try:
             result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
             if result:
+                self._append_detection_result_jsonl(node_id, result, frame_timestamp)
+
                 if self.test_mode:
                     detections = result.get('result', {}).get('detections', [])
                     result_image = self._save_test_result_image(
@@ -1355,20 +1419,11 @@ class WorkflowExecutor:
 
         for det in detections or []:
             box = det.get('box') or det.get('bbox')
-            if not box or len(box) < 4:
+            box_coords = BaseAlgorithm._normalize_box_for_canvas(box, canvas.shape[1], canvas.shape[0])
+            if box_coords is None:
                 continue
 
-            try:
-                x1, y1, x2, y2 = [int(round(v)) for v in box[:4]]
-            except Exception:
-                continue
-
-            x1 = max(0, min(x1, canvas.shape[1] - 1))
-            y1 = max(0, min(y1, canvas.shape[0] - 1))
-            x2 = max(0, min(x2, canvas.shape[1] - 1))
-            y2 = max(0, min(y2, canvas.shape[0] - 1))
-            if x2 <= x1 or y2 <= y1:
-                continue
+            x1, y1, x2, y2 = box_coords
 
             cv2.rectangle(canvas, (x1, y1), (x2, y2), box_color, 2)
 
@@ -1379,6 +1434,71 @@ class WorkflowExecutor:
             cv2.putText(canvas, text, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2, cv2.LINE_AA)
 
         return canvas
+
+    def _resolve_visualizer_node_id(self, node_id: Optional[str]) -> Optional[str]:
+        """递归向上查找最近的算法节点，用于告警图片可视化。"""
+        if not node_id:
+            return None
+
+        visited = set()
+        stack = [node_id]
+
+        while stack:
+            current_id = stack.pop()
+            if not current_id or current_id in visited:
+                continue
+            visited.add(current_id)
+
+            if current_id in self.algorithms:
+                return current_id
+
+            for conn in self.connections:
+                if conn['to'] == current_id:
+                    upstream_id = conn['from']
+                    if upstream_id not in visited:
+                        stack.append(upstream_id)
+
+        return None
+
+    def _save_visualized_frame(self, frame_rgb: np.ndarray, detections: List[dict], save_path: str,
+                               label_color: str = '#FF0000', roi_mask=None, roi_regions=None,
+                               upstream_node_id: Optional[str] = None) -> bool:
+        """
+        保存带标注的告警图片。
+        优先复用上游算法的 visualize；找不到算法节点时回退到通用框绘制，避免退化成原始帧。
+        """
+        if frame_rgb is None:
+            return False
+
+        visualizer_node_id = self._resolve_visualizer_node_id(upstream_node_id)
+
+        try:
+            if visualizer_node_id and visualizer_node_id in self.algorithms:
+                self.algorithms[visualizer_node_id].visualize(
+                    frame_rgb,
+                    detections or [],
+                    save_path=save_path,
+                    label_color=label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=roi_regions or []
+                )
+            else:
+                BaseAlgorithm.visualize(
+                    frame_rgb,
+                    detections or [],
+                    save_path=save_path,
+                    label_color=label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=roi_regions or []
+                )
+            return os.path.exists(save_path)
+        except Exception as e:
+            logger.warning(f"[Workflow-{self.workflow_id}] 保存告警可视化图片失败，回退到原始帧: {e}")
+            try:
+                save_frame(frame_rgb, save_path)
+                return os.path.exists(save_path)
+            except Exception:
+                return False
 
     def _save_test_result_image(self, node_id: str, frame_rgb: np.ndarray, detections: List[dict], label_color: str = '#FF0000',
                                 roi_mask=None, roi_regions=None, upstream_node_id: Optional[str] = None) -> Optional[str]:
@@ -1395,20 +1515,16 @@ class WorkflowExecutor:
         abs_path = os.path.join(FRAME_SAVE_PATH, rel_path)
 
         try:
-            # 优先复用算法的可视化逻辑，保持和运行模式一致
-            if upstream_node_id and upstream_node_id in self.algorithms:
-                self.algorithms[upstream_node_id].visualize(
-                    frame_rgb,
-                    detections or [],
-                    save_path=abs_path,
-                    label_color=label_color,
-                    roi_mask=roi_mask,
-                    roi_regions=roi_regions or []
-                )
-            else:
-                canvas = self._draw_test_detections(frame_rgb, detections or [], label_color)
-                if canvas is None or not cv2.imwrite(abs_path, canvas):
-                    return None
+            if not self._save_visualized_frame(
+                frame_rgb=frame_rgb,
+                detections=detections or [],
+                save_path=abs_path,
+                label_color=label_color,
+                roi_mask=roi_mask,
+                roi_regions=roi_regions or [],
+                upstream_node_id=upstream_node_id
+            ):
+                return None
 
             if os.path.exists(abs_path):
                 return f"/api/image/frames/{rel_path}"
@@ -1555,18 +1671,15 @@ class WorkflowExecutor:
                     # 回退到算法节点自身的ROI配置
                     effective_roi_regions = self.algorithm_roi_configs.get(upstream_node_id, [])
 
-            # 如果有上游算法节点，使用其 visualize 方法
-            if upstream_node_id and upstream_node_id in self.algorithms:
-                self.algorithms[upstream_node_id].visualize(
-                    frame, result.get("detections"),
-                    save_path=filepath_absolute,
-                    label_color=label_color,
-                    roi_mask=roi_mask,
-                    roi_regions=effective_roi_regions
-                )
-            else:
-                # 没有上游算法节点，保存原始帧
-                save_frame(frame, filepath_absolute)
+            self._save_visualized_frame(
+                frame_rgb=frame,
+                detections=result.get("detections"),
+                save_path=filepath_absolute,
+                label_color=label_color,
+                roi_mask=roi_mask,
+                roi_regions=effective_roi_regions,
+                upstream_node_id=upstream_node_id
+            )
 
             # 同时保存原始图片（.ori.jpg）
             filepath_ori = f"{filepath}.ori.jpg"
@@ -1744,18 +1857,15 @@ class WorkflowExecutor:
                     if effective_roi_regions:
                         logger.info(f"[Workflow-{self.workflow_id}] Alert可视化：使用算法节点配置，包含 {len(effective_roi_regions)} 个区域")
 
-            # 如果有上游算法节点，使用其 visualize 方法
-            if upstream_node_id and upstream_node_id in self.algorithms:
-                self.algorithms[upstream_node_id].visualize(
-                    frame, result.get("detections"),
-                    save_path=filepath_absolute,
-                    label_color=label_color,
-                    roi_mask=roi_mask,
-                    roi_regions=effective_roi_regions
-                )
-            else:
-                # 没有上游算法节点，保存原始帧
-                save_frame(frame, filepath_absolute)
+            self._save_visualized_frame(
+                frame_rgb=frame,
+                detections=result.get("detections"),
+                save_path=filepath_absolute,
+                label_color=label_color,
+                roi_mask=roi_mask,
+                roi_regions=effective_roi_regions,
+                upstream_node_id=upstream_node_id
+            )
 
             filepath_ori = f"{filepath}.ori.jpg"
             filepath_ori_absolute = os.path.join(FRAME_SAVE_PATH, filepath_ori)

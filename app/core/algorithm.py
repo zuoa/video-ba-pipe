@@ -192,6 +192,47 @@ class BaseAlgorithm(ABC):
         return conf if conf is not None else default
 
     @staticmethod
+    def _normalize_box_for_canvas(box, width: int, height: int):
+        """
+        将检测框统一转换为画布坐标。
+        兼容绝对像素 xyxy、归一化 xyxy，以及 RKNN 场景中常见的 xywh/cxcywh 表达。
+        """
+        if not isinstance(box, (list, tuple)) or len(box) < 4 or width <= 0 or height <= 0:
+            return None
+
+        try:
+            values = [float(v) for v in box[:4]]
+        except Exception:
+            return None
+
+        if max(abs(v) for v in values) <= 1.5:
+            values[0] *= width
+            values[1] *= height
+            values[2] *= width
+            values[3] *= height
+
+        x1, y1, x2, y2 = values
+
+        if x2 <= x1 or y2 <= y1:
+            cx, cy, w, h = values
+            if w <= 0 or h <= 0:
+                return None
+            x1 = cx - w / 2.0
+            y1 = cy - h / 2.0
+            x2 = cx + w / 2.0
+            y2 = cy + h / 2.0
+
+        x1 = max(0, min(int(round(x1)), width - 1))
+        y1 = max(0, min(int(round(y1)), height - 1))
+        x2 = max(0, min(int(round(x2)), width - 1))
+        y2 = max(0, min(int(round(y2)), height - 1))
+
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        return x1, y1, x2, y2
+
+    @staticmethod
     def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
@@ -279,11 +320,12 @@ class BaseAlgorithm(ABC):
         # 绘制检测结果
         for result in results:
             box = BaseAlgorithm._get_detection_box(result)
-            if box is None:
+            canvas_box = BaseAlgorithm._normalize_box_for_canvas(box, img_vis.shape[1], img_vis.shape[0])
+            if canvas_box is None:
                 logger.debug(f"Skip visualization for invalid detection payload: {result}")
                 continue
 
-            x1, y1, x2, y2 = map(int, box[:4])
+            x1, y1, x2, y2 = canvas_box
             logger.debug(f"Main detection box: {x1, y1, x2, y2}")
 
             label_prefix = BaseAlgorithm._get_detection_label(result, 'Object')
@@ -291,16 +333,25 @@ class BaseAlgorithm(ABC):
             conf = BaseAlgorithm._get_detection_confidence(result, 1.0)
             stages = result.get('stages', [])
 
+            # 主检测框始终绘制，避免多阶段结果只显示子框、主框缺失。
+            cv2.rectangle(img_vis, (x1, y1), (x2, y2), main_color, 3)
+            label = f"{label_prefix}: {conf:.2f}"
+            label_y = y1 - 10 if y1 > 24 else y1 + 22
+            cv2.putText(img_vis, label, (x1, label_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, main_color, 2)
 
             # 绘制stages信息
             if stages:
                 logger.debug(f"Drawing {len(stages)} stages")
                 for i, stage in enumerate(stages):
                     stage_box = BaseAlgorithm._get_detection_box(stage)
-                    if stage_box is None:
+                    stage_canvas_box = BaseAlgorithm._normalize_box_for_canvas(
+                        stage_box, img_vis.shape[1], img_vis.shape[0]
+                    )
+                    if stage_canvas_box is None:
                         continue
 
-                    stage_x1, stage_y1, stage_x2, stage_y2 = map(int, stage_box[:4])
+                    stage_x1, stage_y1, stage_x2, stage_y2 = stage_canvas_box
                     stage_model = stage.get('model_name', f'Stage{i+1}')
                     stage_label = BaseAlgorithm._get_detection_label(stage, stage_model)
                     stage_conf = BaseAlgorithm._get_detection_confidence(stage, 0.0)
@@ -318,12 +369,6 @@ class BaseAlgorithm(ABC):
                     label_y = stage_y2 + 15 + (i * 15)  # 垂直偏移避免重叠
                     cv2.putText(img_vis, stage_label, (stage_x1, label_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, stage_color, 1)
-            else:
-                # 绘制主检测框（使用label_color）
-                cv2.rectangle(img_vis, (x1, y1), (x2, y2), main_color, 3)
-                label = f"{label_prefix}: {conf:.2f}"
-                cv2.putText(img_vis, label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, main_color, 2)
 
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)

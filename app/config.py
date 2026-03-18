@@ -53,6 +53,10 @@ DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'debug.log')
 WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
 WORKFLOW_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow_debug.log')
 
+# ============ 检测结果调试日志 ============
+# 输出算法检测结果到 logs/detection_results_YYYYMMDD.jsonl，便于排查不同部署环境输出差异
+DETECTION_JSONL_LOG_ENABLED = os.getenv('DETECTION_JSONL_LOG_ENABLED', 'false').lower() in ('true', '1', 'yes')
+
 
 
 SNAPSHOT_ENABLED = os.getenv('SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
