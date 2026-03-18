@@ -1052,34 +1052,30 @@ def get_video(file_path):
     """
     安全的视频返回接口
     支持的视频路径：
-    - videos/ 下的视频文件
+    - videos/<相对路径>
+    - <相对路径>（兼容历史数据）
     支持 Range 请求以便视频播放器可以 seek
     """
     try:
-        # 定义允许访问的基础路径（主要是 videos 目录）
-        allowed_bases = {
-            'videos': VIDEO_SAVE_PATH
-        }
-        
-        # 解析路径的第一部分作为基础目录类型
-        path_parts = file_path.split('/', 1)
-        if len(path_parts) < 2:
+        normalized_path = (file_path or '').lstrip('/')
+        if normalized_path.startswith('api/video/'):
+            normalized_path = normalized_path[len('api/video/'):]
+
+        if normalized_path.startswith('videos/'):
+            relative_path = normalized_path[len('videos/'):]
+        else:
+            relative_path = normalized_path
+
+        if not relative_path:
             abort(400, description="Invalid path format")
-            
-        base_type, relative_path = path_parts
-        
-        # 检查基础路径是否被允许
-        if base_type not in allowed_bases:
-            abort(403, description="Access to this directory is not allowed")
-            
-        base_path = allowed_bases[base_type]
-        
+
+        base_path = os.path.abspath(VIDEO_SAVE_PATH)
+
         # 构建完整的文件路径
         full_path = os.path.join(base_path, relative_path)
         
         # 规范化路径，防止路径遍历攻击
         full_path = os.path.abspath(full_path)
-        base_path = os.path.abspath(base_path)
         
         # 确保请求的文件在允许的基础路径内
         if not full_path.startswith(base_path + os.sep) and full_path != base_path:

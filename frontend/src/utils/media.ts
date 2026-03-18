@@ -11,8 +11,41 @@ function getApiBase(): string {
   return '';
 }
 
+function withApiBase(path: string): string {
+  const base = getApiBase();
+  if (!path) return base;
+  if (!base) return path;
+  return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`;
+}
+
 export function buildAlertVideoUrl(relativePath?: string | null): string {
   if (!relativePath) return '';
-  const base = getApiBase();
-  return `${base}/api/video/videos/${relativePath}`;
+
+  const trimmed = relativePath.trim();
+  if (!trimmed) return '';
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/api/video/')) {
+    return withApiBase(trimmed);
+  }
+
+  let normalized = trimmed.replace(/^\/+/, '');
+  if (normalized.startsWith('api/video/')) {
+    return withApiBase(`/${normalized}`);
+  }
+
+  if (normalized.startsWith('videos/')) {
+    normalized = normalized.slice('videos/'.length);
+  }
+
+  const encodedPath = normalized
+    .split('/')
+    .filter(Boolean)
+    .map(segment => encodeURIComponent(segment))
+    .join('/');
+
+  return withApiBase(`/api/video/videos/${encodedPath}`);
 }
