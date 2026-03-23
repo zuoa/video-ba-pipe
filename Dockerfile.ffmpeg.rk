@@ -32,6 +32,31 @@ RUN set -eux; \
 ARG FFMPEG_RK_PACKAGE=""
 COPY vendor/ffmpeg/ /tmp/ffmpeg_vendor/
 RUN set -eux; \
+    copy_runtime_lib() { \
+      src="$1"; \
+      dest_dir="$2"; \
+      resolved="$(readlink -f "$src")"; \
+      mkdir -p "$dest_dir"; \
+      cp -L "$resolved" "$dest_dir/$(basename "$resolved")"; \
+      if [ "$(basename "$src")" != "$(basename "$resolved")" ]; then \
+        ln -sf "$(basename "$resolved")" "$dest_dir/$(basename "$src")"; \
+      fi; \
+    }; \
+    seed_packaged_runtime_libs() { \
+      mkdir -p /opt/ffmpeg/lib; \
+      for search_root in /opt/ffmpeg /tmp/ffmpeg_extract; do \
+        if [ ! -d "$search_root" ]; then \
+          continue; \
+        fi; \
+        find "$search_root" \
+          \( -type f -o -type l \) \
+          \( -name 'libav*.so*' -o -name 'libsw*.so*' -o -name 'libpostproc.so*' \) \
+          -print0 \
+          | while IFS= read -r -d '' lib; do \
+              copy_runtime_lib "$lib" /opt/ffmpeg/lib; \
+            done; \
+      done; \
+    }; \
     bundle_runtime_libs() { \
       mkdir -p /opt/ffmpeg/lib; \
       LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu" \
@@ -39,7 +64,7 @@ RUN set -eux; \
         | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' \
         | sort -u \
         | while read -r lib; do \
-            cp -L "$lib" /opt/ffmpeg/lib/; \
+            copy_runtime_lib "$lib" /opt/ffmpeg/lib; \
           done; \
     }; \
     validate_ffmpeg_runtime() { \
@@ -97,6 +122,7 @@ RUN set -eux; \
         ffmpeg_root="$(dirname "$(dirname "$ffmpeg_bin")")"; \
         cp -a "$ffmpeg_root"/. /opt/ffmpeg/; \
       fi; \
+      seed_packaged_runtime_libs; \
       bundle_runtime_libs; \
       validate_ffmpeg_runtime; \
       if /opt/ffmpeg/bin/ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi rkmpp; then \
