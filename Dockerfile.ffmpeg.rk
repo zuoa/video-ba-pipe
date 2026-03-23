@@ -96,13 +96,27 @@ RUN set -eux; \
     }; \
     bundle_runtime_libs() { \
       mkdir -p /opt/ffmpeg/lib; \
-      LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu" \
-      ldd /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe \
-        | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' \
-        | sort -u \
-        | while read -r lib; do \
-            copy_runtime_lib "$lib" /opt/ffmpeg/lib; \
-          done; \
+      while true; do \
+        before_count="$(find /opt/ffmpeg/lib -maxdepth 1 \( -type f -o -type l \) | wc -l)"; \
+        tmp_libs="/tmp/ffmpeg-runtime-libs.txt"; \
+        : > "$tmp_libs"; \
+        find /opt/ffmpeg/bin /opt/ffmpeg/lib -maxdepth 1 \( -type f -o -type l \) -print0 \
+          | while IFS= read -r -d '' target; do \
+              LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu" \
+              ldd "$target" 2>/dev/null \
+                | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' >> "$tmp_libs" || true; \
+            done; \
+        sort -u "$tmp_libs" \
+          | while read -r lib; do \
+              if [ -n "$lib" ]; then \
+                copy_runtime_lib "$lib" /opt/ffmpeg/lib; \
+              fi; \
+            done; \
+        after_count="$(find /opt/ffmpeg/lib -maxdepth 1 \( -type f -o -type l \) | wc -l)"; \
+        if [ "$after_count" -eq "$before_count" ]; then \
+          break; \
+        fi; \
+      done; \
     }; \
     validate_ffmpeg_runtime() { \
       export PATH="/opt/ffmpeg/bin:${PATH}"; \
