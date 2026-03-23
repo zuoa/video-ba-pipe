@@ -65,6 +65,21 @@ RUN set -eux; \
       done; \
       return 0; \
     }; \
+    seed_system_runtime_libs() { \
+      mkdir -p /opt/ffmpeg/lib; \
+      for lib_dir in /usr/lib/aarch64-linux-gnu /lib/aarch64-linux-gnu; do \
+        if [ ! -d "$lib_dir" ]; then \
+          continue; \
+        fi; \
+        for pattern in 'libav*.so*' 'libsw*.so*' 'libpostproc.so*'; do \
+          for lib in "$lib_dir"/$pattern; do \
+            if [ -e "$lib" ]; then \
+              copy_runtime_lib "$lib" /opt/ffmpeg/lib; \
+            fi; \
+          done; \
+        done; \
+      done; \
+    }; \
     install_debian_ffmpeg_runtime_libs() { \
       apt-get -o Acquire::Retries=3 update; \
       apt-get install -y --no-install-recommends \
@@ -148,6 +163,7 @@ RUN set -eux; \
       if ! has_required_ffmpeg_libs; then \
         echo "Packaged FFmpeg libs not found, installing Debian runtime FFmpeg libs as compatibility fallback"; \
         install_debian_ffmpeg_runtime_libs; \
+        seed_system_runtime_libs; \
       fi; \
       bundle_runtime_libs; \
       validate_ffmpeg_runtime; \
@@ -165,6 +181,7 @@ RUN set -eux; \
       mkdir -p /opt/ffmpeg/bin /opt/ffmpeg/lib; \
       cp /usr/bin/ffmpeg /opt/ffmpeg/bin/ffmpeg; \
       cp /usr/bin/ffprobe /opt/ffmpeg/bin/ffprobe; \
+      seed_system_runtime_libs; \
       bundle_runtime_libs; \
       validate_ffmpeg_runtime; \
       echo "Using Debian ffmpeg fallback (software decode only)"; \
