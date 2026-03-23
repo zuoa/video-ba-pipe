@@ -14,6 +14,7 @@ from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
     IS_EXTREME_DECODE_MODE,
+    VIDEO_DECODER_TYPE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
     RECORDING_ENABLED,
@@ -157,7 +158,7 @@ class DecoderWorker:
             logger.info(f"已初始化流处理器: {self.streamer.__class__.__name__} ({self.stream_url})")
 
             # 初始化解码器
-            decoder_type = self.decoder_config.get('type', 'ffmpeg_sw')
+            decoder_type = self.decoder_config.get('type', VIDEO_DECODER_TYPE)
             decoder_id = self.decoder_config.get('id', 401)
             
             # 如果提供了source参数，使用source的宽高参数，否则使用配置参数
@@ -578,9 +579,15 @@ if __name__ == '__main__':
 
     # 解码器配置参数
     decoder_group = parser.add_argument_group('解码器配置')
-    decoder_group.add_argument('--decoder-type', default='ffmpeg_sw',
-                               choices=['ffmpeg_sw', 'ffmpeg_hw', 'nvdec'],
-                               help='解码器类型 (默认: ffmpeg_sw)')
+    decoder_group.add_argument('--decoder-type', default=VIDEO_DECODER_TYPE,
+                               choices=[
+                                   'ffmpeg_sw', 'ffmpeg',
+                                   'ffmpeg_nvdec', 'nvdec',
+                                   'opencv', 'pynvcodec', 'gstreamer',
+                                   'ffmpeg_videotoolbox', 'vtdec',
+                                   'ffmpeg_rkmpp', 'rk_mpp', 'rkmpp'
+                               ],
+                               help='解码器类型 (默认读取 VIDEO_DECODER_TYPE，RK3588 在 ffmpeg 含 rkmpp 时可设为 rk_mpp)')
     decoder_group.add_argument('--decoder-id', type=int, default=401,
                                help='解码器 ID (默认: 401)')
     decoder_group.add_argument('--width', type=int, default=1920,

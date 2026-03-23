@@ -1,6 +1,7 @@
 from app.core.decoder.async_dec import AsyncSoftwareDecoder
 from app.core.decoder.base import FFmpegSoftwareDecoder, OpenCVDecoder, PyNvCodecDecoder, GStreamerNVDecoder, BaseDecoder, DecoderStatus
 from app.core.decoder.nv import FFmpegNVDECDecoder
+from app.core.decoder.rk import FFmpegRKMPPDecoder
 from app.core.decoder.vt import FFmpegVTDecoder
 
 
@@ -39,6 +40,9 @@ class DecoderFactory:
             'gstreamer': GStreamerNVDecoder,
             'ffmpeg_videotoolbox': FFmpegVTDecoder,  # <--- 添加这一行
             'vtdec': FFmpegVTDecoder,  # <--- 添加这一行 (作为简称)
+            'ffmpeg_rkmpp': FFmpegRKMPPDecoder,
+            'rk_mpp': FFmpegRKMPPDecoder,
+            'rkmpp': FFmpegRKMPPDecoder,
         }
 
         decoder_class = decoders.get(decoder_type.lower())

@@ -48,6 +48,7 @@
 - 需要 NPU 运行时库请在运行时挂载（见下文）。
 - `Dockerfile.rk` 不再自行处理 FFmpeg 包，而是通过 `COPY --from=${FFMPEG_RK_IMAGE}` 获取 `/opt/ffmpeg`。
 - `Dockerfile.rk` 内置默认值为本地镜像名 `video-ba-pipe-ffmpeg-rk:rkmpp`，便于离线/本地联调；GitHub Actions 会在构建时自动覆盖为当前仓库 owner 对应的 GHCR 镜像。
+- 业务代码侧已支持 `VIDEO_DECODER_TYPE=rk_mpp`，但仅当镜像内 `ffmpeg -decoders` 能看到 `rkmpp` 时才应启用；否则请保持默认软解。
 
 ## 本地构建（可选）
 

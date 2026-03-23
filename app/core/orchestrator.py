@@ -10,6 +10,7 @@ from app import logger
 from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
+    VIDEO_DECODER_TYPE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
     RECORDING_ENABLED,
@@ -246,6 +247,7 @@ class Orchestrator:
             'python', 'decoder_worker.py',
             '--url', source.source_url,
             '--source-id', str(source.id),
+            '--decoder-type', VIDEO_DECODER_TYPE,
             '--sample-mode', 'fps',
             '--analysis-fps', str(analysis_fps),
             '--recording-fps', str(RECORDING_FPS),

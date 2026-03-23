@@ -74,6 +74,10 @@ os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 # 极速解码模式，每次取最新的帧，扔掉所有老的帧
 IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in ('true', '1', 'yes')
 
+# 默认视频解码器类型
+# RK3588 推荐使用 rk_mpp，其他环境默认 ffmpeg_sw。
+VIDEO_DECODER_TYPE = (os.getenv('VIDEO_DECODER_TYPE') or 'ffmpeg_sw').strip().lower() or 'ffmpeg_sw'
+
 
 # ============ 视频录制配置 ============
 # 预警录制功能开关
