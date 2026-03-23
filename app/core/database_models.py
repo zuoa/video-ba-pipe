@@ -1,8 +1,20 @@
 import json
+import time
+from typing import Callable, TypeVar
 
 import peewee as pw
 
-from app.config import DB_PATH
+from app.config import (
+    DB_PATH,
+    DB_SQLITE_BUSY_TIMEOUT_MS,
+    DB_SQLITE_CACHE_SIZE_KB,
+    DB_SQLITE_JOURNAL_MODE,
+    DB_SQLITE_MMAP_SIZE,
+    DB_SQLITE_SYNCHRONOUS,
+    DB_SQLITE_WAL_AUTOCHECKPOINT,
+)
+
+T = TypeVar('T')
 
 
 class DatabaseConfig:
@@ -10,7 +22,21 @@ class DatabaseConfig:
 
     def __init__(self, db_path: str = 'app.db'):
         self.db_path = db_path
-        self.database = pw.SqliteDatabase(db_path, pragmas={'check_same_thread': False})
+        self.database = pw.SqliteDatabase(
+            db_path,
+            timeout=max(DB_SQLITE_BUSY_TIMEOUT_MS / 1000.0, 1.0),
+            check_same_thread=False,
+            pragmas={
+                'journal_mode': DB_SQLITE_JOURNAL_MODE,
+                'busy_timeout': DB_SQLITE_BUSY_TIMEOUT_MS,
+                'synchronous': DB_SQLITE_SYNCHRONOUS,
+                'foreign_keys': 1,
+                'cache_size': -abs(DB_SQLITE_CACHE_SIZE_KB),
+                'wal_autocheckpoint': DB_SQLITE_WAL_AUTOCHECKPOINT,
+                'temp_store': 'memory',
+                'mmap_size': max(DB_SQLITE_MMAP_SIZE, 0),
+            }
+        )
 
     def get_database(self):
         return self.database
@@ -18,6 +44,38 @@ class DatabaseConfig:
 
 db_config = DatabaseConfig(DB_PATH)
 db = db_config.get_database()
+
+
+def is_retryable_sqlite_error(exc: BaseException) -> bool:
+    if not isinstance(exc, pw.OperationalError):
+        return False
+    message = str(exc).lower()
+    return 'database is locked' in message or 'database table is locked' in message
+
+
+def run_db_with_retry(
+    operation: Callable[[], T],
+    *,
+    retries: int = 5,
+    initial_delay: float = 0.1,
+    backoff: float = 2.0,
+    logger=None,
+    operation_name: str = 'database operation',
+) -> T:
+    delay = max(initial_delay, 0.01)
+    for attempt in range(1, retries + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            if not is_retryable_sqlite_error(exc) or attempt == retries:
+                raise
+            if logger is not None:
+                logger.warning(
+                    f"{operation_name} 遇到 SQLite 锁，{delay:.2f} 秒后重试 "
+                    f"({attempt}/{retries})：{exc}"
+                )
+            time.sleep(delay)
+            delay *= backoff
 
 
 class BaseModel(pw.Model):

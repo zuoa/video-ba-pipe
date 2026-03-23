@@ -15,7 +15,7 @@ from app.config import (
     HIGH_ERROR_COUNT_THRESHOLD,
     HEALTH_MONITOR_ENABLED
 )
-from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog
+from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog, run_db_with_retry
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -58,9 +58,12 @@ class Orchestrator:
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
         self.workflow_config_versions = {}  # 记录运行中工作流的配置版本号
-        db.connect()
-
-        VideoSource.update(status='STOPPED', decoder_pid=None).execute()
+        db.connect(reuse_if_open=True)
+        run_db_with_retry(
+            lambda: VideoSource.update(status='STOPPED', decoder_pid=None).execute(),
+            logger=logger,
+            operation_name='重置视频源状态'
+        )
 
         # 健康监控配置
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
@@ -176,15 +179,26 @@ class Orchestrator:
 
         # 记录到数据库
         try:
-            SourceHealthLog.create(
-                source=source,
-                event_type=event_type,
-                details=json.dumps(details),
-                severity=severity,
-                created_at=datetime.now()
+            run_db_with_retry(
+                lambda: SourceHealthLog.create(
+                    source=source,
+                    event_type=event_type,
+                    details=json.dumps(details),
+                    severity=severity,
+                    created_at=datetime.now()
+                ),
+                logger=logger,
+                operation_name=f'记录健康事件:{event_type}'
             )
         except Exception as e:
             logger.error(f"记录健康事件到数据库失败: {e}")
+
+    def _save_source(self, source: VideoSource, operation_name: str):
+        run_db_with_retry(
+            source.save,
+            logger=logger,
+            operation_name=operation_name
+        )
 
     def _start_source(self, source: VideoSource):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
@@ -216,7 +230,7 @@ class Orchestrator:
 
         source.status = 'RUNNING'
         source.decoder_pid = decoder_p.pid
-        source.save()
+        self._save_source(source, f'保存视频源启动状态:{source.id}')
 
         self.running_processes[source.id] = {'decoder': decoder_p}
 
@@ -270,7 +284,7 @@ class Orchestrator:
 
         source.status = 'STOPPED'
         source.decoder_pid = None
-        source.save()
+        self._save_source(source, f'保存视频源停止状态:{source.id}')
 
     def manage_sources(self):
         # 查找需要启动的视频源
@@ -295,7 +309,7 @@ class Orchestrator:
             self._stop_source(source)
             source.status = 'STOPPED'
             source.decoder_pid = None
-            source.save()
+            self._save_source(source, f'保存视频源异常恢复状态:{source.id}')
 
         # 健康检查
         running_sources = VideoSource.select().where(VideoSource.status == 'RUNNING')
@@ -334,7 +348,7 @@ class Orchestrator:
                     # 重置状态为STOPPED，让manage_sources在下一轮自动重启
                     source.status = 'STOPPED'
                     source.decoder_pid = None
-                    source.save()
+                    self._save_source(source, f'保存视频源重启状态:{source.id}')
                     logger.debug(f"✅ 视频源 ID {source.id} 已标记为STOPPED，将在下一轮管理循环中自动重启")
     
     def _start_workflow(self, workflow: Workflow):

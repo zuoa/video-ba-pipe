@@ -29,7 +29,7 @@ from app.config import (
     LOG_SAVE_PATH,
     DETECTION_JSONL_LOG_ENABLED,
 )
-from app.core.database_models import Workflow, VideoSource, Algorithm, Alert
+from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, run_db_with_retry
 from app.core.algorithm import BaseAlgorithm
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
@@ -2114,19 +2114,23 @@ class WorkflowExecutor:
 
         # 创建告警记录
         logger.info(f"[Workflow-{self.workflow_id}] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
-        alert = Alert.create(
-            video_source=self.video_source,
-            workflow=self.workflow,
-            alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
-            alert_type=alert_type,
-            alert_level=alert_level,
-            alert_message=alert_message,
-            alert_image=main_image,
-            alert_image_ori=main_image_ori,
-            alert_video="",
-            detection_count=len(detection_images),
-            window_stats=json.dumps(trigger_stats) if trigger_stats else None,
-            detection_images=json.dumps(detection_images) if detection_images else None
+        alert = run_db_with_retry(
+            lambda: Alert.create(
+                video_source=self.video_source,
+                workflow=self.workflow,
+                alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
+                alert_type=alert_type,
+                alert_level=alert_level,
+                alert_message=alert_message,
+                alert_image=main_image,
+                alert_image_ori=main_image_ori,
+                alert_video="",
+                detection_count=len(detection_images),
+                window_stats=json.dumps(trigger_stats) if trigger_stats else None,
+                detection_images=json.dumps(detection_images) if detection_images else None
+            ),
+            logger=logger,
+            operation_name=f'创建告警:{self.workflow_id}'
         )
         self._cache_output_result(
             node_id=node_id,
@@ -2149,7 +2153,11 @@ class WorkflowExecutor:
                     post_seconds=POST_ALERT_DURATION
                 )
                 alert.alert_video = video_path
-                alert.save()
+                run_db_with_retry(
+                    alert.save,
+                    logger=logger,
+                    operation_name=f'更新告警视频:{alert.id}'
+                )
                 logger.info(f"[Workflow-{self.workflow_id}] 已启动视频录制任务: {video_path}")
             except Exception as rec_err:
                 logger.error(f"[Workflow-{self.workflow_id}] 启动视频录制失败: {rec_err}", exc_info=True)

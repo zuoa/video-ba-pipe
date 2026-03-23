@@ -26,6 +26,12 @@ def _resolve_data_path(env_name: str, relative_path: str) -> str:
 # Database configuration
 DB_PATH = _resolve_data_path('DB_PATH', 'db/ba.db')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+DB_SQLITE_BUSY_TIMEOUT_MS = int(os.getenv('DB_SQLITE_BUSY_TIMEOUT_MS', '15000'))
+DB_SQLITE_JOURNAL_MODE = os.getenv('DB_SQLITE_JOURNAL_MODE', 'wal').strip().lower()
+DB_SQLITE_SYNCHRONOUS = os.getenv('DB_SQLITE_SYNCHRONOUS', 'normal').strip().lower()
+DB_SQLITE_CACHE_SIZE_KB = int(os.getenv('DB_SQLITE_CACHE_SIZE_KB', '65536'))
+DB_SQLITE_WAL_AUTOCHECKPOINT = int(os.getenv('DB_SQLITE_WAL_AUTOCHECKPOINT', '1000'))
+DB_SQLITE_MMAP_SIZE = int(os.getenv('DB_SQLITE_MMAP_SIZE', str(128 * 1024 * 1024)))
 
 FRAME_SAVE_PATH = _resolve_data_path('FRAME_SAVE_PATH', 'frames')
 os.makedirs(FRAME_SAVE_PATH, exist_ok=True)

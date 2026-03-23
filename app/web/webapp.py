@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
+from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, run_db_with_retry
 from app.core.database_models import db
 from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
@@ -29,6 +29,18 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
+
+
+@app.before_request
+def open_db_connection():
+    if db.is_closed():
+        db.connect(reuse_if_open=True)
+
+
+@app.teardown_appcontext
+def close_db_connection(_exception):
+    if not db.is_closed():
+        db.close()
 
 # 初始化数据库（如果不存在则创建所有表）
 try:
@@ -883,7 +895,11 @@ def create_alert():
             except Workflow.DoesNotExist:
                 return jsonify({'error': f'Workflow {workflow_id} does not exist'}), 400
 
-        alert = Alert.create(**alert_params)
+        alert = run_db_with_retry(
+            lambda: Alert.create(**alert_params),
+            logger=app.logger,
+            operation_name='创建告警API记录'
+        )
         
         # 发布预警消息到RabbitMQ
         try:

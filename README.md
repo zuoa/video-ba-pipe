@@ -42,6 +42,8 @@ docker compose -f docker-compose.yml.cuda up -d
 docker compose -f docker-compose.yml.rknn up -d
 ```
 
+说明：RK 部署默认改为 `WEB_CONCURRENCY=1`，并启用 SQLite 的 `WAL + busy_timeout`，避免 `api + worker + workflow_worker` 多进程同时访问同一数据库文件时频繁出现 `database is locked`。
+
 ## 访问地址
 
 - 前端：`http://localhost:8080`
