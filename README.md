@@ -43,6 +43,7 @@ docker compose -f docker-compose.yml.rknn up -d
 ```
 
 说明：RK 部署默认改为 `WEB_CONCURRENCY=1`，并启用 SQLite 的 `WAL + busy_timeout`，避免 `api + worker + workflow_worker` 多进程同时访问同一数据库文件时频繁出现 `database is locked`。
+如需启用 RK 硬解，推荐先构建独立的 `ffmpeg+rkmpp` 基础镜像，再由 `Dockerfile.rk` 通过 `COPY --from` 复用；在 CI 中会自动按当前仓库 owner 选择对应的基础镜像，部署时 compose 仍可保持拉取远程镜像。
 
 ## 访问地址
 

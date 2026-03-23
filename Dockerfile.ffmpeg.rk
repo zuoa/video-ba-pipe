@@ -1,0 +1,91 @@
+# syntax=docker/dockerfile:1.7
+
+# ============================================
+# FFmpeg RK3588 Runtime Image
+# 仅包含 FFmpeg/FFprobe 及其运行库，供业务镜像 COPY --from 使用
+# ============================================
+
+FROM --platform=linux/arm64 arm64v8/debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Shanghai
+
+WORKDIR /opt
+
+RUN set -eux; \
+    apt-get -o Acquire::Retries=3 update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      libglib2.0-0 \
+      libsm6 \
+      libxext6 \
+      libxrender1 \
+      libgomp1 \
+      libgl1; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+# 优先使用 build-arg FFMPEG_RK_PACKAGE 指定 URL；
+# 未指定时，回退到仓库中的 vendor/ffmpeg/*.tar.gz|*.tgz|*.tar.xz|*.tar
+# 如果两者都没有，则安装 Debian 官方 ffmpeg（无 rkmpp，仍可软解）
+ARG FFMPEG_RK_PACKAGE=""
+COPY vendor/ffmpeg/ /tmp/ffmpeg_vendor/
+RUN set -eux; \
+    archive=""; \
+    if [ -n "$FFMPEG_RK_PACKAGE" ]; then \
+      case "$FFMPEG_RK_PACKAGE" in \
+        http://*|https://*) \
+          archive="/tmp/ffmpeg-rk-package.tar"; \
+          curl -fsSL "$FFMPEG_RK_PACKAGE" -o "$archive"; \
+          ;; \
+        *) \
+          echo "FFMPEG_RK_PACKAGE currently supports URL values only: $FFMPEG_RK_PACKAGE" >&2; \
+          exit 1; \
+          ;; \
+      esac; \
+    else \
+      archive="$(find /tmp/ffmpeg_vendor -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.tar' \) | head -n 1 || true)"; \
+    fi; \
+    if [ -n "$archive" ]; then \
+      mkdir -p /opt/ffmpeg /tmp/ffmpeg_extract; \
+      tar -xf "$archive" -C /tmp/ffmpeg_extract; \
+      if [ -x /tmp/ffmpeg_extract/bin/ffmpeg ]; then \
+        cp -a /tmp/ffmpeg_extract/. /opt/ffmpeg/; \
+      else \
+        ffmpeg_bin="$(find /tmp/ffmpeg_extract -path '*/bin/ffmpeg' | head -n 1)"; \
+        if [ -z "$ffmpeg_bin" ]; then \
+          echo "Invalid FFmpeg package layout: expected bin/ffmpeg inside archive" >&2; \
+          exit 1; \
+        fi; \
+        ffmpeg_root="$(dirname "$(dirname "$ffmpeg_bin")")"; \
+        cp -a "$ffmpeg_root"/. /opt/ffmpeg/; \
+      fi; \
+      /opt/ffmpeg/bin/ffmpeg -version; \
+      if /opt/ffmpeg/bin/ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi rkmpp; then \
+        echo "Detected rkmpp-enabled ffmpeg package"; \
+      else \
+        echo "Warning: supplied ffmpeg package does not expose rkmpp decoders" >&2; \
+      fi; \
+      rm -rf /tmp/ffmpeg_extract; \
+    else \
+      apt-get -o Acquire::Retries=3 update; \
+      apt-get install -y --no-install-recommends ffmpeg; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
+      mkdir -p /opt/ffmpeg/bin /opt/ffmpeg/lib; \
+      cp /usr/bin/ffmpeg /opt/ffmpeg/bin/ffmpeg; \
+      cp /usr/bin/ffprobe /opt/ffmpeg/bin/ffprobe; \
+      ldd /usr/bin/ffmpeg /usr/bin/ffprobe \
+        | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' \
+        | sort -u \
+        | while read -r lib; do \
+            cp -L "$lib" /opt/ffmpeg/lib/; \
+          done; \
+      echo "Using Debian ffmpeg fallback (software decode only)"; \
+    fi
+
+ENV PATH="/opt/ffmpeg/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
+
+CMD ["ffmpeg", "-version"]

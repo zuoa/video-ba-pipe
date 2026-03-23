@@ -29,6 +29,11 @@ on:
         required: false
         default: ''
         type: string
+      ffmpeg_rk_image:
+        description: 'Optional ffmpeg RK base image (leave empty to default to ghcr.io/<repo_owner>/video-ba-pipe-ffmpeg-rk:rkmpp)'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -67,6 +72,8 @@ jobs:
 
       - name: Build and push RK3588 image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        env:
+          DEFAULT_FFMPEG_RK_IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/video-ba-pipe-ffmpeg-rk:rkmpp
         with:
           context: .
           file: ./${{ github.event.inputs.dockerfile }}
@@ -76,5 +83,6 @@ jobs:
             TORCH_WHL=${{ github.event.inputs.torch_whl }}
             ONNXRUNTIME_WHL=${{ github.event.inputs.onnxruntime_whl }}
             RKNN_TOOLKIT_LITE2_WHL=${{ github.event.inputs.rknn_toolkit_lite2_whl }}
+            FFMPEG_RK_IMAGE=${{ github.event.inputs.ffmpeg_rk_image != '' && github.event.inputs.ffmpeg_rk_image || env.DEFAULT_FFMPEG_RK_IMAGE }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.tag }}
           labels: ${{ steps.meta.outputs.labels }}

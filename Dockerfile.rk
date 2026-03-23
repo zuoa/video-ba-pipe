@@ -1,7 +1,12 @@
+# syntax=docker/dockerfile:1.7
+
 # ============================================
 # Video BA Pipe - RK3588 (Debian + NPU)
 # 适用于RK3588 arm64 Debian + NPU运行时
 # ============================================
+
+ARG FFMPEG_RK_IMAGE=video-ba-pipe-ffmpeg-rk:rkmpp
+FROM ${FFMPEG_RK_IMAGE} AS ffmpeg_rk
 
 # 明确 arm64 架构
 # RKNNLite wheel currently bundled in vendor/rknn_wheels targets CPython 3.11.
@@ -28,11 +33,12 @@ RUN set -eux; \
       libxrender1 \
       libgomp1 \
       libgl1 \
-      ffmpeg \
       curl \
       git; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg_rk /opt/ffmpeg /opt/ffmpeg
 
 # 升级 pip
 RUN python -m pip install --upgrade pip setuptools wheel
@@ -86,7 +92,8 @@ RUN mkdir -p /data/db \
 RUN chmod +x /app/app/entrypoint.sh
 
 # NPU 运行时库路径（请在运行时挂载 /opt/rknn）
-ENV LD_LIBRARY_PATH="/opt/rknn/lib:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
+ENV PATH="/opt/ffmpeg/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
 VOLUME ["/opt/rknn", "/data"]
 
 # 暴露端口
