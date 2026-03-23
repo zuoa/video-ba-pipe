@@ -45,10 +45,24 @@ RUN set -eux; \
     validate_ffmpeg_runtime() { \
       export PATH="/opt/ffmpeg/bin:${PATH}"; \
       export LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu"; \
+      for pattern in 'libavdevice.so*' 'libavcodec.so*' 'libavformat.so*' 'libavutil.so*'; do \
+        if ! find /opt/ffmpeg/lib /opt/ffmpeg/lib64 -maxdepth 1 -name "$pattern" -print -quit 2>/dev/null | grep -q .; then \
+          echo "Missing required FFmpeg runtime library matching $pattern" >&2; \
+          echo "Contents of /opt/ffmpeg/lib:" >&2; \
+          ls -la /opt/ffmpeg/lib >&2 || true; \
+          echo "Contents of /opt/ffmpeg/lib64:" >&2; \
+          ls -la /opt/ffmpeg/lib64 >&2 || true; \
+          exit 1; \
+        fi; \
+      done; \
       missing="$(ldd /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe | grep 'not found' || true)"; \
       if [ -n "$missing" ]; then \
         echo "FFmpeg runtime is incomplete:" >&2; \
         echo "$missing" >&2; \
+        echo "Contents of /opt/ffmpeg/lib:" >&2; \
+        ls -la /opt/ffmpeg/lib >&2 || true; \
+        echo "Contents of /opt/ffmpeg/lib64:" >&2; \
+        ls -la /opt/ffmpeg/lib64 >&2 || true; \
         exit 1; \
       fi; \
       /opt/ffmpeg/bin/ffmpeg -version; \
