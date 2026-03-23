@@ -18,7 +18,15 @@ from werkzeug.exceptions import HTTPException
 
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, run_db_with_retry
 from app.core.database_models import db
-from app.config import FRAME_SAVE_PATH, SNAPSHOT_SAVE_PATH, VIDEO_SAVE_PATH, MODEL_SAVE_PATH, VIDEO_SOURCE_PATH
+from app.config import (
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
+    FRAME_SAVE_PATH,
+    SNAPSHOT_SAVE_PATH,
+    VIDEO_SAVE_PATH,
+    MODEL_SAVE_PATH,
+    VIDEO_SOURCE_PATH,
+)
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.vl_validator import get_vl_service_config, save_vl_service_config
 from app.core.window_detector import get_window_detector
@@ -479,7 +487,8 @@ def get_source_health(source_id):
         # 尝试获取 ring buffer 的健康状态
         from app.core.ringbuffer import VideoRingBuffer
 
-        buffer_name = source.buffer_name
+        buffer_name = source.analysis_buffer_name
+        analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
         if not buffer_name:
             return jsonify({
                 'source_id': source_id,
@@ -493,8 +502,8 @@ def get_source_health(source_id):
                 name=buffer_name,
                 create=False,
                 frame_shape=(source.source_decode_height, source.source_decode_width, 3),
-                fps=source.source_fps,
-                duration_seconds=30  # 这里的 duration_seconds 只是估算，实际由创建时决定
+                fps=analysis_fps,
+                duration_seconds=ANALYSIS_BUFFER_SECONDS
             )
             health_status = buffer.get_health_status()
             buffer.close()

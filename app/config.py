@@ -88,8 +88,22 @@ POST_ALERT_DURATION = int(os.getenv('POST_ALERT_DURATION', '5'))
 # 录制视频的帧率
 RECORDING_FPS = int(os.getenv('RECORDING_FPS', '5'))
 
-# RingBuffer缓冲时长（秒）- 需要足够大以容纳PRE_ALERT_DURATION
-RINGBUFFER_DURATION = int(os.getenv('RINGBUFFER_DURATION', '30'))
+# 分析链路缓冲配置
+# 分析工作流只消费最新帧，因此默认使用更小的 buffer 和更低的采样率。
+ANALYSIS_TARGET_FPS = int(os.getenv('ANALYSIS_TARGET_FPS', '3'))
+ANALYSIS_BUFFER_SECONDS = int(os.getenv('ANALYSIS_BUFFER_SECONDS', '5'))
+
+# 录制链路缓冲配置
+# 为兼容旧配置，未显式设置时仍回退到 RINGBUFFER_DURATION，但确保至少覆盖前后录制窗口。
+_legacy_ringbuffer_duration = int(os.getenv('RINGBUFFER_DURATION', '30'))
+RECORDING_BUFFER_DURATION = int(
+    os.getenv(
+        'RECORDING_BUFFER_DURATION',
+        str(max(_legacy_ringbuffer_duration, PRE_ALERT_DURATION + POST_ALERT_DURATION + 2))
+    )
+)
+RECORDING_JPEG_QUALITY = int(os.getenv('RECORDING_JPEG_QUALITY', '85'))
+RECORDING_COMPRESSED_MAX_BYTES = int(os.getenv('RECORDING_COMPRESSED_MAX_BYTES', str(512 * 1024)))
 
 # ============ 告警抑制配置 ============
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警

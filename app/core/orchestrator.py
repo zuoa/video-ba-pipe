@@ -8,13 +8,19 @@ from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import (
-    RINGBUFFER_DURATION,
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
+    RECORDING_BUFFER_DURATION,
+    RECORDING_COMPRESSED_MAX_BYTES,
+    RECORDING_ENABLED,
     RECORDING_FPS,
+    RECORDING_JPEG_QUALITY,
     NO_FRAME_WARNING_THRESHOLD,
     NO_FRAME_CRITICAL_THRESHOLD,
     HIGH_ERROR_COUNT_THRESHOLD,
     HEALTH_MONITOR_ENABLED
 )
+from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog, run_db_with_retry
 from app.core.ringbuffer import VideoRingBuffer
 
@@ -55,6 +61,7 @@ class Orchestrator:
         self.running_processes = {}
         self.workflow_processes = {}
         self.buffers = {}
+        self.recording_buffers = {}
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
         self.workflow_config_versions = {}  # 记录运行中工作流的配置版本号
@@ -203,17 +210,36 @@ class Orchestrator:
     def _start_source(self, source: VideoSource):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
-        # 创建共享内存环形缓冲区
-        buffer = VideoRingBuffer(
-            name=source.buffer_name,
+        analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
+        analysis_buffer = VideoRingBuffer(
+            name=source.analysis_buffer_name,
             create=True,
             frame_shape=(source.source_decode_height, source.source_decode_width, 3),
-            fps=source.source_fps,
-            duration_seconds=RINGBUFFER_DURATION
+            fps=analysis_fps,
+            duration_seconds=ANALYSIS_BUFFER_SECONDS
         )
-        self.buffers[source.id] = buffer
+        self.buffers[source.id] = analysis_buffer
 
-        logger.debug(f"创建RingBuffer: fps={source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={buffer.capacity}帧, frame_shape={buffer.frame_shape}")
+        logger.debug(
+            f"创建分析RingBuffer: fps={analysis_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
+            f"capacity={analysis_buffer.capacity}帧, frame_shape={analysis_buffer.frame_shape}"
+        )
+
+        if RECORDING_ENABLED:
+            recording_buffer = CompressedVideoRingBuffer(
+                name=source.recording_buffer_name,
+                create=True,
+                frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+                fps=RECORDING_FPS,
+                duration_seconds=RECORDING_BUFFER_DURATION,
+                max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
+                jpeg_quality=RECORDING_JPEG_QUALITY,
+            )
+            self.recording_buffers[source.id] = recording_buffer
+            logger.debug(
+                f"创建录制CompressedRingBuffer: fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
+                f"capacity={recording_buffer.capacity}帧, frame_shape={recording_buffer.frame_shape}"
+            )
 
         # 启动解码器进程
         decoder_args = [
@@ -221,7 +247,8 @@ class Orchestrator:
             '--url', source.source_url,
             '--source-id', str(source.id),
             '--sample-mode', 'fps',
-            '--sample-fps', str(source.source_fps),
+            '--analysis-fps', str(analysis_fps),
+            '--recording-fps', str(RECORDING_FPS),
             '--width', str(source.source_decode_width),
             '--height', str(source.source_decode_height)
         ]
@@ -249,6 +276,11 @@ class Orchestrator:
             self.buffers[source.id].close()
             self.buffers[source.id].unlink()
             del self.buffers[source.id]
+
+        if source.id in self.recording_buffers:
+            self.recording_buffers[source.id].close()
+            self.recording_buffers[source.id].unlink()
+            del self.recording_buffers[source.id]
 
         # 清除启动时间记录
         if source.id in self.source_start_times:

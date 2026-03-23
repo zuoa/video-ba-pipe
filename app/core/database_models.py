@@ -132,7 +132,15 @@ class VideoSource(BaseModel):
 
     @property
     def buffer_name(self):
-        return f'video_buffer.{self.source_code}'
+        return self.analysis_buffer_name
+
+    @property
+    def analysis_buffer_name(self):
+        return f'video_buffer.analysis.{self.source_code}'
+
+    @property
+    def recording_buffer_name(self):
+        return f'video_buffer.recording.{self.source_code}'
 
 
 # ==================== 工作流配置表 ====================

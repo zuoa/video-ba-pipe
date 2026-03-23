@@ -11,8 +11,14 @@ from app.config import (
     SNAPSHOT_ENABLED,
     SNAPSHOT_SAVE_PATH,
     SNAPSHOT_INTERVAL,
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
     IS_EXTREME_DECODE_MODE,
+    RECORDING_BUFFER_DURATION,
+    RECORDING_COMPRESSED_MAX_BYTES,
+    RECORDING_ENABLED,
     RECORDING_FPS,
+    RECORDING_JPEG_QUALITY,
     NO_FRAME_CRITICAL_THRESHOLD,
     LOW_FPS_RATIO,
     FPS_CHECK_INTERVAL,
@@ -20,6 +26,7 @@ from app.config import (
     MONITOR_UPDATE_INTERVAL,
     HEALTH_MONITOR_ENABLED
 )
+from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
 from app.core.ringbuffer import VideoRingBuffer
@@ -30,41 +37,54 @@ from app.core.utils import save_frame
 class DecoderWorker:
     """通用视频流解码工作进程，支持 RTSP、文件、HTTP-FLV、HLS 等多种流类型"""
 
-    def __init__(self, stream_url, buffer_name, source_info,
-                 stream_config=None, decoder_config=None, sample_config=None):
+    def __init__(
+        self,
+        stream_url,
+        analysis_buffer_name,
+        recording_buffer_name,
+        source_info,
+        stream_config=None,
+        decoder_config=None,
+        analysis_config=None,
+        recording_config=None,
+    ):
         """
         初始化解码工作进程。
 
         Args:
             stream_url: 流源地址（RTSP URL、文件路径、HTTP-FLV URL等）
-            buffer_name: 共享内存缓冲区名称
+            analysis_buffer_name: 分析缓冲区名称
+            recording_buffer_name: 录制缓冲区名称
             source_info: 源信息字典，包含 code 和 name
             stream_config: 流配置字典，包含 type, transport, loop 等参数
             decoder_config: 解码器配置字典
-            sample_config: 采样配置字典
+            analysis_config: 分析采样配置字典
+            recording_config: 录制采样配置字典
         """
         self.stream_url = stream_url
-        self.buffer_name = buffer_name
+        self.analysis_buffer_name = analysis_buffer_name
+        self.recording_buffer_name = recording_buffer_name
         self.source_info = source_info or {}
         self.stream_config = stream_config or {}
         self.decoder_config = decoder_config or {}
-        self.sample_config = sample_config or {}
+        self.analysis_config = analysis_config or {}
+        self.recording_config = recording_config or {}
 
-        self.buffer = None
+        self.analysis_buffer = None
+        self.recording_buffer = None
         self.streamer = None
         self.decoder = None
         self.running = False
 
-        # 采样配置
-        self.sample_mode = self.sample_config.get('mode', 'interval')  # all, interval, fps
-        self.sample_interval = self.sample_config.get('interval', 1.0)  # 秒
-        self.target_fps = self.sample_config.get('fps', 1)
+        self.analysis_sample_mode = self.analysis_config.get('mode', 'fps')
+        self.analysis_sample_interval = self.analysis_config.get('interval', 1.0)
+        self.analysis_target_fps = max(1, int(self.analysis_config.get('fps', ANALYSIS_TARGET_FPS)))
+        self.analysis_last_write_time = 0.0
+        self.analysis_frame_interval = 1.0 / self.analysis_target_fps if self.analysis_target_fps > 0 else 0.0
 
-        # 采样状态
-        self.last_write_time = 0
-        self.frame_interval = 0
-        if self.target_fps and self.target_fps > 0:
-            self.frame_interval = 1.0 / self.target_fps
+        self.recording_target_fps = max(1, int(self.recording_config.get('fps', RECORDING_FPS)))
+        self.recording_last_write_time = 0.0
+        self.recording_frame_interval = 1.0 / self.recording_target_fps if self.recording_target_fps > 0 else 0.0
 
         # Snapshot
         self.last_snapshot_time = 0
@@ -75,37 +95,54 @@ class DecoderWorker:
         self.last_monitor_update = 0  # 上次更新监控时间戳的时间
         self.last_warning_time = 0  # 上次输出警告的时间
         self.warning_interval = 10  # 警告间隔（秒）
-        self.expected_fps = self.target_fps if self.sample_mode == 'fps' else 1
+        self.expected_fps = self.analysis_target_fps if self.analysis_sample_mode == 'fps' else 1
         self.fps_check_grace_period = 30  # 帧率检查宽限期（秒），启动后30秒内不检查帧率
 
     def setup(self, source=None):
         """初始化所有组件"""
         try:
-            # 连接到共享内存缓冲区（必须使用与创建时相同的参数）
-            from app.config import RINGBUFFER_DURATION, RECORDING_FPS
-            
             # 如果提供了source参数，使用source的参数，否则使用默认配置
             if source:
-                fps = source.source_fps
                 frame_shape = (source.source_decode_height, source.source_decode_width, 3)
-                logger.info(f"使用视频源参数: fps={fps}, frame_shape={frame_shape}")
+                logger.info(f"使用视频源参数: frame_shape={frame_shape}")
             else:
-                fps = RECORDING_FPS
                 frame_shape = (1080, 1920, 3)  # 默认形状
-                logger.info(f"使用默认配置: fps={fps}, frame_shape={frame_shape}")
-            
-            self.buffer = VideoRingBuffer(
-                name=self.buffer_name, 
+                logger.info(f"使用默认配置: frame_shape={frame_shape}")
+
+            self.analysis_buffer = VideoRingBuffer(
+                name=self.analysis_buffer_name,
                 create=False,
                 frame_shape=frame_shape,
-                fps=fps,
-                duration_seconds=RINGBUFFER_DURATION
+                fps=self.analysis_target_fps,
+                duration_seconds=ANALYSIS_BUFFER_SECONDS
             )
-            logger.info(f"已连接到缓冲区: {self.buffer_name} (fps={fps}, duration={RINGBUFFER_DURATION}s, capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape})")
+            logger.info(
+                f"已连接分析缓冲区: {self.analysis_buffer_name} "
+                f"(fps={self.analysis_target_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
+                f"capacity={self.analysis_buffer.capacity}, frame_shape={self.analysis_buffer.frame_shape})"
+            )
 
             # 注销资源跟踪器(避免进程退出时的警告)
-            shm_name = self.buffer_name if os.name == 'nt' else f"/{self.buffer_name}"
+            shm_name = self.analysis_buffer_name if os.name == 'nt' else f"/{self.analysis_buffer_name}"
             resource_tracker.unregister(shm_name, 'shared_memory')
+
+            if self.recording_buffer_name:
+                self.recording_buffer = CompressedVideoRingBuffer(
+                    name=self.recording_buffer_name,
+                    create=False,
+                    frame_shape=frame_shape,
+                    fps=self.recording_target_fps,
+                    duration_seconds=RECORDING_BUFFER_DURATION,
+                    max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
+                    jpeg_quality=RECORDING_JPEG_QUALITY,
+                )
+                logger.info(
+                    f"已连接录制缓冲区: {self.recording_buffer_name} "
+                    f"(compressed jpeg, fps={self.recording_target_fps}, duration={RECORDING_BUFFER_DURATION}s, "
+                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape})"
+                )
+                shm_name = self.recording_buffer_name if os.name == 'nt' else f"/{self.recording_buffer_name}"
+                resource_tracker.unregister(shm_name, 'shared_memory')
 
             # 使用工厂创建合适的 Streamer
             stream_type = self.stream_config.get('type')
@@ -149,13 +186,15 @@ class DecoderWorker:
             # 连接流处理管道
             self.streamer.add_packet_handler(self.decoder.send_packet)
 
-            # 日志采样配置
-            if self.sample_mode == 'all':
-                logger.info("采样模式: 写入所有帧")
-            elif self.sample_mode == 'interval':
-                logger.info(f"采样模式: 按时间间隔 ({self.sample_interval}秒)")
-            elif self.sample_mode == 'fps':
-                logger.info(f"采样模式: 按目标帧率 ({self.target_fps} fps)")
+            if self.analysis_sample_mode == 'all':
+                logger.info("分析采样模式: 写入所有帧")
+            elif self.analysis_sample_mode == 'interval':
+                logger.info(f"分析采样模式: 按时间间隔 ({self.analysis_sample_interval}秒)")
+            elif self.analysis_sample_mode == 'fps':
+                logger.info(f"分析采样模式: 按目标帧率 ({self.analysis_target_fps} fps)")
+
+            if self.recording_buffer:
+                logger.info(f"录制采样模式: 按目标帧率 ({self.recording_target_fps} fps)")
 
         except Exception as e:
             logger.error(f"初始化失败: {e}", exc_info=True)
@@ -197,30 +236,39 @@ class DecoderWorker:
 
         return kwargs
 
-    def should_write_frame(self):
-        """判断是否应该写入当前帧"""
-        if self.sample_mode == 'all':
+    def _should_write_analysis_frame(self, current_time: float) -> bool:
+        """判断是否应该写入分析缓冲区。"""
+        if self.analysis_sample_mode == 'all':
             return True
 
-        current_time = time.time()
-
-        if self.sample_mode == 'interval':
-            # 按时间间隔采样
-            if current_time - self.last_write_time >= self.sample_interval:
-                self.last_write_time = current_time
+        if self.analysis_sample_mode == 'interval':
+            if current_time - self.analysis_last_write_time >= self.analysis_sample_interval:
+                self.analysis_last_write_time = current_time
                 return True
             return False
 
-        elif self.sample_mode == 'fps':
-            # 按目标帧率采样
-            if self.frame_interval == 0:
+        if self.analysis_sample_mode == 'fps':
+            if self.analysis_frame_interval == 0:
                 return True
-            if current_time - self.last_write_time >= self.frame_interval:
-                self.last_write_time = current_time
+            if current_time - self.analysis_last_write_time >= self.analysis_frame_interval:
+                self.analysis_last_write_time = current_time
                 return True
             return False
 
         return True
+
+    def _should_write_recording_frame(self, current_time: float) -> bool:
+        """判断是否应该写入录制缓冲区。"""
+        if not self.recording_buffer:
+            return False
+
+        if self.recording_frame_interval == 0:
+            return True
+
+        if current_time - self.recording_last_write_time >= self.recording_frame_interval:
+            self.recording_last_write_time = current_time
+            return True
+        return False
 
     def snapshot(self, frame):
         """保存快照"""
@@ -241,11 +289,15 @@ class DecoderWorker:
             self.running = True
 
             stream_type = self.streamer.__class__.__name__
-            logger.info(f"[PID:{os.getpid()}] 开始解码 {stream_type}: {self.stream_url} -> {self.buffer_name}")
+            logger.info(
+                f"[PID:{os.getpid()}] 开始解码 {stream_type}: {self.stream_url} "
+                f"-> analysis={self.analysis_buffer_name}, recording={self.recording_buffer_name or 'disabled'}"
+            )
 
             frame_count = 0
-            written_count = 0
-            skipped_count = 0
+            analysis_written_count = 0
+            recording_written_count = 0
+            analysis_skipped_count = 0
             error_count = 0
             max_consecutive_errors = MAX_CONSECUTIVE_ERRORS
 
@@ -265,29 +317,44 @@ class DecoderWorker:
                     if frame is not None:
                         frame_count += 1
                         current_time = time.time()
+                        frame_timestamp = current_time
 
                         # 更新最后出帧时间
                         self.last_frame_time = current_time
 
-                        # 判断是否写入此帧
-                        if self.should_write_frame():
-                            # 写入共享内存
-                            self.buffer.write(frame)
-                            written_count += 1
+                        wrote_analysis = False
+                        if self._should_write_analysis_frame(current_time):
+                            self.analysis_buffer.write(frame, timestamp=frame_timestamp)
+                            analysis_written_count += 1
+                            wrote_analysis = True
                             error_count = 0  # 重置错误计数
 
                             # 定期更新监控时间戳（避免每次写帧都更新）
                             if HEALTH_MONITOR_ENABLED and \
                                current_time - self.last_monitor_update >= MONITOR_UPDATE_INTERVAL:
-                                self.buffer.update_last_write_time(current_time)
+                                self.analysis_buffer.update_last_write_time(current_time)
                                 self.last_monitor_update = current_time
 
-                            # 定期输出状态和快照
-                            if frame_count % 100 == 0:
-                                logger.info(f"已解码 {frame_count} 帧, 写入 {written_count} 帧, 跳过 {skipped_count} 帧")
-                                self.snapshot(frame)
                         else:
-                            skipped_count += 1
+                            analysis_skipped_count += 1
+
+                        if self._should_write_recording_frame(current_time):
+                            try:
+                                self.recording_buffer.write(frame, timestamp=frame_timestamp)
+                                recording_written_count += 1
+                            except Exception as recording_error:
+                                logger.warning(
+                                    f"录制缓冲区写入失败，已跳过当前帧: {recording_error}"
+                                )
+
+                        if frame_count % 100 == 0 and wrote_analysis:
+                            logger.info(
+                                f"已解码 {frame_count} 帧, "
+                                f"分析写入 {analysis_written_count} 帧, "
+                                f"分析跳过 {analysis_skipped_count} 帧, "
+                                f"录制写入 {recording_written_count} 帧"
+                            )
+                            self.snapshot(frame)
 
                         # 定期检查帧率
                         if current_time - last_fps_check_time >= FPS_CHECK_INTERVAL:
@@ -315,7 +382,8 @@ class DecoderWorker:
                             # 输出当前状态（同时显示两种帧率）
                             logger.info(
                                 f"解码状态: 已解码 {frame_count} 帧, "
-                                f"写入 {written_count} 帧, "
+                                f"分析写入 {analysis_written_count} 帧, "
+                                f"录制写入 {recording_written_count} 帧, "
                                 f"最近10秒 {recent_fps:.2f} fps, "
                                 f"整体平均 {overall_fps:.2f} fps"
                             )
@@ -335,8 +403,8 @@ class DecoderWorker:
                                     f"可能解码器卡死或流断开，主动退出"
                                 )
                                 # 记录错误到buffer
-                                if self.buffer:
-                                    self.buffer.increment_error_count()
+                                if self.analysis_buffer:
+                                    self.analysis_buffer.increment_error_count()
                                 break
                             elif time_no_frame >= NO_FRAME_CRITICAL_THRESHOLD * 0.7:
                                 # 70% 阈值时警告（限制频率）
@@ -358,8 +426,8 @@ class DecoderWorker:
                 except Exception as e:
                     logger.error(f"处理帧时出错: {e}", exc_info=True)
                     error_count += 1
-                    if self.buffer:
-                        self.buffer.increment_error_count()
+                    if self.analysis_buffer:
+                        self.analysis_buffer.increment_error_count()
                     if error_count >= max_consecutive_errors:
                         logger.error("错误过多，停止工作")
                         break
@@ -397,12 +465,19 @@ class DecoderWorker:
             except Exception as e:
                 logger.error(f"关闭解码器失败: {e}")
 
-        if self.buffer:
+        if self.analysis_buffer:
             try:
-                self.buffer.close()
-                logger.info("已断开缓冲区连接")
+                self.analysis_buffer.close()
+                logger.info("已断开分析缓冲区连接")
             except Exception as e:
-                logger.error(f"关闭缓冲区失败: {e}")
+                logger.error(f"关闭分析缓冲区失败: {e}")
+
+        if self.recording_buffer:
+            try:
+                self.recording_buffer.close()
+                logger.info("已断开录制缓冲区连接")
+            except Exception as e:
+                logger.error(f"关闭录制缓冲区失败: {e}")
 
         logger.info("资源清理完成")
 
@@ -422,7 +497,6 @@ def main(args):
     source = VideoSource.get_by_id(source_id)
     source_code = source.source_code
     source_name = source.name
-    buffer_name = source.buffer_name
 
     source_info = {
         'code': source_code,
@@ -446,21 +520,26 @@ def main(args):
         'output_format': args.output_format
     }
 
-    # 采样配置
-    sample_config = {
+    analysis_config = {
         'mode': args.sample_mode,
         'interval': args.sample_interval,
-        'fps': args.sample_fps
+        'fps': args.analysis_fps or args.sample_fps or ANALYSIS_TARGET_FPS
+    }
+
+    recording_config = {
+        'fps': args.recording_fps or RECORDING_FPS
     }
 
     # 创建工作进程
     worker = DecoderWorker(
         stream_url=args.url,
-        buffer_name=buffer_name,
+        analysis_buffer_name=source.analysis_buffer_name,
+        recording_buffer_name=source.recording_buffer_name if RECORDING_ENABLED else None,
         source_info=source_info,
         stream_config=stream_config,
         decoder_config=decoder_config,
-        sample_config=sample_config
+        analysis_config=analysis_config,
+        recording_config=recording_config
     )
 
     # 注册信号处理器
@@ -524,6 +603,10 @@ if __name__ == '__main__':
                               help='采样时间间隔(秒), 仅在 interval 模式下生效 (默认: 1.0)')
     sample_group.add_argument('--sample-fps', type=float, default=None,
                               help='目标采样帧率, 仅在 fps 模式下生效 (例如: 5 表示每秒5帧)')
+    sample_group.add_argument('--analysis-fps', type=float, default=None,
+                              help='分析缓冲区目标帧率（默认读取 ANALYSIS_TARGET_FPS）')
+    sample_group.add_argument('--recording-fps', type=float, default=None,
+                              help='录制缓冲区目标帧率（默认读取 RECORDING_FPS）')
 
     # 日志级别
     parser.add_argument('--log-level', default='INFO',

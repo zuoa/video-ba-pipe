@@ -18,17 +18,22 @@ from app import logger as main_logger
 from app import logging
 logger = logging.getLogger("workflow_executor")
 from app.config import (
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
     FRAME_SAVE_PATH,
     VIDEO_SAVE_PATH,
     RECORDING_ENABLED,
+    RECORDING_BUFFER_DURATION,
+    RECORDING_COMPRESSED_MAX_BYTES,
     PRE_ALERT_DURATION,
     POST_ALERT_DURATION,
     RECORDING_FPS,
-    RINGBUFFER_DURATION,
+    RECORDING_JPEG_QUALITY,
     ALERT_SUPPRESSION_DURATION,
     LOG_SAVE_PATH,
     DETECTION_JSONL_LOG_ENABLED,
 )
+from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, run_db_with_retry
 from app.core.algorithm import BaseAlgorithm
 from app.core.ringbuffer import VideoRingBuffer
@@ -87,6 +92,7 @@ class WorkflowExecutor:
         self.source_node = None
         self.video_source = None
         self.buffer = None
+        self.recording_buffer = None
         self.algorithms = {}
         self.algorithm_configs = {}
         self.algorithm_datamap = {}
@@ -362,7 +368,8 @@ class WorkflowExecutor:
             raise ValueError("Source node must have data_id")
 
         self.video_source = VideoSource.get_by_id(source_id)
-        buffer_name = self.video_source.buffer_name
+        analysis_buffer_name = self.video_source.analysis_buffer_name
+        analysis_fps = max(1, min(int(self.video_source.source_fps), int(ANALYSIS_TARGET_FPS)))
 
         logger.info(f"[Workflow-{self.workflow_id}] 启动 Workflow {self.workflow.name} (ID: {self.workflow_id})，处理视频源 {self.video_source.name} (ID: {self.video_source.source_code})")
 
@@ -373,25 +380,29 @@ class WorkflowExecutor:
         for attempt in range(1, max_retries + 1):
             try:
                 self.buffer = VideoRingBuffer(
-                    name=buffer_name,
+                    name=analysis_buffer_name,
                     create=False,
                     frame_shape=(self.video_source.source_decode_height, self.video_source.source_decode_width, 3),
-                    fps=self.video_source.source_fps,
-                    duration_seconds=RINGBUFFER_DURATION
+                    fps=analysis_fps,
+                    duration_seconds=ANALYSIS_BUFFER_SECONDS
                 )
-                logger.info(f"已连接到缓冲区: {buffer_name} (fps={self.video_source.source_fps}, duration={RINGBUFFER_DURATION}s, capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape})")
+                logger.info(
+                    f"已连接分析缓冲区: {analysis_buffer_name} "
+                    f"(fps={analysis_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
+                    f"capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape})"
+                )
                 break  # 成功连接，退出重试循环
 
             except FileNotFoundError:
                 if attempt < max_retries:
                     logger.warning(
                         f"[Workflow-{self.workflow_id}] 尝试 {attempt}/{max_retries}: "
-                        f"缓冲区 /{buffer_name} 尚未就绪，等待 {retry_interval} 秒后重试..."
+                        f"分析缓冲区 /{analysis_buffer_name} 尚未就绪，等待 {retry_interval} 秒后重试..."
                     )
                     time.sleep(retry_interval)
                 else:
                     # 最后一次尝试仍然失败
-                    logger.error(f"[Workflow-{self.workflow_id}] 无法连接到共享内存缓冲区: /{buffer_name}")
+                    logger.error(f"[Workflow-{self.workflow_id}] 无法连接到分析共享内存缓冲区: /{analysis_buffer_name}")
                     logger.error(f"[Workflow-{self.workflow_id}] 这通常意味着视频源 {self.video_source.name} (ID={self.video_source.id}) 的 Decoder Worker 未运行或尚未创建缓冲区")
                     logger.error(f"[Workflow-{self.workflow_id}] 请检查：")
                     logger.error(f"[Workflow-{self.workflow_id}]   1. 视频源状态是否为 RUNNING（当前状态: {self.video_source.status}）")
@@ -399,18 +410,50 @@ class WorkflowExecutor:
                     logger.error(f"[Workflow-{self.workflow_id}]   3. Orchestrator 是否已正确启动该视频源")
                     raise
 
-        shm_name = buffer_name if os.name == 'nt' else f"/{buffer_name}"
+        shm_name = analysis_buffer_name if os.name == 'nt' else f"/{analysis_buffer_name}"
         resource_tracker.unregister(shm_name, 'shared_memory')
-        
+
         if RECORDING_ENABLED:
-            recorder_manager = VideoRecorderManager()
-            self.video_recorder = recorder_manager.get_recorder(
-                source_id=self.video_source.id,
-                buffer=self.buffer,
-                save_dir=VIDEO_SAVE_PATH,
-                fps=RECORDING_FPS
-            )
-            logger.info(f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 (前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)")
+            recording_buffer_name = self.video_source.recording_buffer_name
+            try:
+                self.recording_buffer = CompressedVideoRingBuffer(
+                    name=recording_buffer_name,
+                    create=False,
+                    frame_shape=(self.video_source.source_decode_height, self.video_source.source_decode_width, 3),
+                    fps=RECORDING_FPS,
+                    duration_seconds=RECORDING_BUFFER_DURATION,
+                    max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
+                    jpeg_quality=RECORDING_JPEG_QUALITY,
+                )
+                shm_name = recording_buffer_name if os.name == 'nt' else f"/{recording_buffer_name}"
+                resource_tracker.unregister(shm_name, 'shared_memory')
+                logger.info(
+                    f"已连接录制缓冲区: {recording_buffer_name} "
+                    f"(compressed jpeg, fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
+                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape})"
+                )
+            except FileNotFoundError:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 录制缓冲区 /{recording_buffer_name} 不可用，本次仅启用分析链路"
+                )
+
+            if self.recording_buffer is not None:
+                recorder_manager = VideoRecorderManager()
+                self.video_recorder = recorder_manager.get_recorder(
+                    source_id=self.video_source.id,
+                    buffer=self.recording_buffer,
+                    save_dir=VIDEO_SAVE_PATH,
+                    fps=RECORDING_FPS
+                )
+                logger.info(
+                    f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 "
+                    f"(前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)"
+                )
+            else:
+                self.video_recorder = None
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 录制缓冲区不可用，已禁用告警视频录制，避免回退到分析缓冲区导致录像不完整"
+                )
 
         # 加载算法
         self._load_algorithms()
@@ -1804,7 +1847,7 @@ class WorkflowExecutor:
                 suppression_config={'enable': False}
             )
 
-        trigger_time = time.time()
+        trigger_time = frame_timestamp
 
         # 检查是否启用了窗口检测
         window_detection_enabled = trigger_condition and trigger_condition.get('enable', False)
@@ -2118,7 +2161,7 @@ class WorkflowExecutor:
             lambda: Alert.create(
                 video_source=self.video_source,
                 workflow=self.workflow,
-                alert_time=time.strftime('%Y-%m-%d %H:%M:%S'),
+                alert_time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger_time)),
                 alert_type=alert_type,
                 alert_level=alert_level,
                 alert_message=alert_message,
