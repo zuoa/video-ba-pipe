@@ -57,6 +57,28 @@ RUN set -eux; \
             done; \
       done; \
     }; \
+    has_required_ffmpeg_libs() { \
+      for pattern in 'libavdevice.so*' 'libavcodec.so*' 'libavformat.so*' 'libavutil.so*'; do \
+        if ! find /opt/ffmpeg/lib /opt/ffmpeg/lib64 -maxdepth 1 -name "$pattern" -print -quit 2>/dev/null | grep -q .; then \
+          return 1; \
+        fi; \
+      done; \
+      return 0; \
+    }; \
+    install_debian_ffmpeg_runtime_libs() { \
+      apt-get -o Acquire::Retries=3 update; \
+      apt-get install -y --no-install-recommends \
+        libavcodec59 \
+        libavdevice59 \
+        libavfilter8 \
+        libavformat59 \
+        libavutil57 \
+        libpostproc56 \
+        libswresample4 \
+        libswscale6; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
+    }; \
     bundle_runtime_libs() { \
       mkdir -p /opt/ffmpeg/lib; \
       LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu" \
@@ -123,6 +145,10 @@ RUN set -eux; \
         cp -a "$ffmpeg_root"/. /opt/ffmpeg/; \
       fi; \
       seed_packaged_runtime_libs; \
+      if ! has_required_ffmpeg_libs; then \
+        echo "Packaged FFmpeg libs not found, installing Debian runtime FFmpeg libs as compatibility fallback"; \
+        install_debian_ffmpeg_runtime_libs; \
+      fi; \
       bundle_runtime_libs; \
       validate_ffmpeg_runtime; \
       if /opt/ffmpeg/bin/ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi rkmpp; then \
