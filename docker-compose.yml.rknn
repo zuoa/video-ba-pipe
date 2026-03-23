@@ -10,6 +10,8 @@ services:
     
     # 环境变量
     environment:
+      - PATH=/opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - LD_LIBRARY_PATH=/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
       - DB_PATH=/data/db/ba.db
       - FRAME_SAVE_PATH=/data/frames
       - VIDEO_SAVE_PATH=/data/videos
@@ -55,6 +57,8 @@ services:
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     environment:
+      - PATH=/opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - LD_LIBRARY_PATH=/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
       - DB_PATH=/data/db/ba.db
       - FRAME_SAVE_PATH=/data/frames
       - VIDEO_SAVE_PATH=/data/videos

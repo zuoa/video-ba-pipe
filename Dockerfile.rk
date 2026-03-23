@@ -40,6 +40,12 @@ RUN set -eux; \
 
 COPY --from=ffmpeg_rk /opt/ffmpeg /opt/ffmpeg
 
+RUN set -eux; \
+    export PATH="/opt/ffmpeg/bin:${PATH}"; \
+    export LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu"; \
+    /opt/ffmpeg/bin/ffmpeg -version; \
+    /opt/ffmpeg/bin/ffprobe -version
+
 # 升级 pip
 RUN python -m pip install --upgrade pip setuptools wheel
 

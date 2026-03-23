@@ -32,6 +32,28 @@ RUN set -eux; \
 ARG FFMPEG_RK_PACKAGE=""
 COPY vendor/ffmpeg/ /tmp/ffmpeg_vendor/
 RUN set -eux; \
+    bundle_runtime_libs() { \
+      mkdir -p /opt/ffmpeg/lib; \
+      LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu" \
+      ldd /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe \
+        | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' \
+        | sort -u \
+        | while read -r lib; do \
+            cp -L "$lib" /opt/ffmpeg/lib/; \
+          done; \
+    }; \
+    validate_ffmpeg_runtime() { \
+      export PATH="/opt/ffmpeg/bin:${PATH}"; \
+      export LD_LIBRARY_PATH="/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/usr/local/lib:/usr/lib/aarch64-linux-gnu"; \
+      missing="$(ldd /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe | grep 'not found' || true)"; \
+      if [ -n "$missing" ]; then \
+        echo "FFmpeg runtime is incomplete:" >&2; \
+        echo "$missing" >&2; \
+        exit 1; \
+      fi; \
+      /opt/ffmpeg/bin/ffmpeg -version; \
+      /opt/ffmpeg/bin/ffprobe -version; \
+    }; \
     archive=""; \
     if [ -n "$FFMPEG_RK_PACKAGE" ]; then \
       case "$FFMPEG_RK_PACKAGE" in \
@@ -61,7 +83,8 @@ RUN set -eux; \
         ffmpeg_root="$(dirname "$(dirname "$ffmpeg_bin")")"; \
         cp -a "$ffmpeg_root"/. /opt/ffmpeg/; \
       fi; \
-      /opt/ffmpeg/bin/ffmpeg -version; \
+      bundle_runtime_libs; \
+      validate_ffmpeg_runtime; \
       if /opt/ffmpeg/bin/ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi rkmpp; then \
         echo "Detected rkmpp-enabled ffmpeg package"; \
       else \
@@ -76,12 +99,8 @@ RUN set -eux; \
       mkdir -p /opt/ffmpeg/bin /opt/ffmpeg/lib; \
       cp /usr/bin/ffmpeg /opt/ffmpeg/bin/ffmpeg; \
       cp /usr/bin/ffprobe /opt/ffmpeg/bin/ffprobe; \
-      ldd /usr/bin/ffmpeg /usr/bin/ffprobe \
-        | awk '/=> \\/|^\\// {for (i = 1; i <= NF; i++) if ($i ~ /^\\//) print $i}' \
-        | sort -u \
-        | while read -r lib; do \
-            cp -L "$lib" /opt/ffmpeg/lib/; \
-          done; \
+      bundle_runtime_libs; \
+      validate_ffmpeg_runtime; \
       echo "Using Debian ffmpeg fallback (software decode only)"; \
     fi
 

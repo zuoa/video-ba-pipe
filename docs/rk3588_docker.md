@@ -109,6 +109,7 @@ docker buildx build --platform=linux/arm64 \
 - 推荐将 wheel 放在仓库的 `vendor/rknn_wheels/` 目录下，文件名保持 `rknn_toolkit_lite2-*.whl`。
 - 推荐将预编译 FFmpeg 包放在仓库的 `vendor/ffmpeg/` 目录下，或通过 `FFMPEG_RK_PACKAGE` 指向可下载 URL。
 - FFmpeg 包建议解压后包含 `bin/ffmpeg`、`bin/ffprobe`，以及需要的 `lib/` 运行库。
+- `Dockerfile.ffmpeg.rk` 会在构建阶段验证 `ffmpeg/ffprobe` 的共享库依赖；如果预编译包缺少 `libav*.so` 等运行库，构建会直接失败，而不是生成无法运行的镜像。
 - FFmpeg 基础镜像构建完成后，可在镜像内通过 `ffmpeg -decoders | grep rkmpp` 验证是否带有 RK 硬解能力。
 - 业务镜像在 CI 中默认引用 `ghcr.io/<repo_owner>/video-ba-pipe-ffmpeg-rk:rkmpp`；如果你的组织或 tag 不同，也可以显式通过 `FFMPEG_RK_IMAGE` 覆盖。
 - wheel 的 Python ABI 需要与镜像一致；当前 RK 镜像要求 `cp311`。
