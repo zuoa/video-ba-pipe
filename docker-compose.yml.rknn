@@ -11,27 +11,16 @@ services:
     # 环境变量
     environment:
       - DB_PATH=/data/db/ba.db
-      - DB_SQLITE_BUSY_TIMEOUT_MS=15000
-      - DB_SQLITE_JOURNAL_MODE=wal
-      - DB_SQLITE_SYNCHRONOUS=normal
       - FRAME_SAVE_PATH=/data/frames
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
       - MODEL_SAVE_PATH=/data/models
       - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
-      - SNAPSHOT_ENABLED=true
-      - SNAPSHOT_INTERVAL=60
-      - IS_EXTREME_DECODE_MODE=false
       - RECORDING_ENABLED=true
       - PRE_ALERT_DURATION=30
       - POST_ALERT_DURATION=30
-      - ANALYSIS_TARGET_FPS=3
-      - ANALYSIS_BUFFER_SECONDS=5
       - RECORDING_FPS=10
-      - RECORDING_BUFFER_DURATION=62
-      - RECORDING_JPEG_QUALITY=85
-      - RECORDING_COMPRESSED_MAX_BYTES=524288
       - ALERT_SUPPRESSION_DURATION=60
       - RABBITMQ_ENABLED=true
       - RABBITMQ_HOST=rabbitmq
@@ -73,18 +62,11 @@ services:
       - MODEL_SAVE_PATH=/data/models
       - USER_SCRIPTS_ROOT=/data/user_scripts
       - SNAPSHOT_PATH=/data/snapshots
-      - SNAPSHOT_ENABLED=true
-      - SNAPSHOT_INTERVAL=60
-      - IS_EXTREME_DECODE_MODE=false
+      - VIDEO_DECODER_TYPE=rk_mpp
       - RECORDING_ENABLED=true
       - PRE_ALERT_DURATION=30
       - POST_ALERT_DURATION=30
-      - ANALYSIS_TARGET_FPS=3
-      - ANALYSIS_BUFFER_SECONDS=5
       - RECORDING_FPS=10
-      - RECORDING_BUFFER_DURATION=62
-      - RECORDING_JPEG_QUALITY=85
-      - RECORDING_COMPRESSED_MAX_BYTES=524288
       - ALERT_SUPPRESSION_DURATION=60
       - RABBITMQ_ENABLED=true
       - RABBITMQ_HOST=rabbitmq
@@ -98,6 +80,13 @@ services:
     volumes:
       - ./data:/data
       - /opt/rknn:/opt/rknn:ro
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/mpp_service:/dev/mpp_service
+      - /dev/rga:/dev/rga
+      - /dev/video0:/dev/video0
+      - /dev/video-dec0:/dev/video-dec0
+      - /dev/video-enc0:/dev/video-enc0
     networks:
       - video-ba-network
     

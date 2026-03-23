@@ -51,6 +51,11 @@ docker compose -p video-analysis -f docker-compose.yml.rknn up -d
 docker compose -p video-analysis -f docker-compose.yml.rknn ps
 ```
 
+补充说明：
+- `docker-compose.yml.rknn` 里只保留了偏离默认值或 RK 专属的关键变量。
+- `worker` 默认透传 `/dev/dri`、`/dev/mpp_service`、`/dev/rga`、`/dev/video0`、`/dev/video-dec0`、`/dev/video-enc0`，用于 `ffmpeg+rkmpp` 硬解。
+- `VIDEO_DECODER_TYPE=rk_mpp` 目前仅在 `worker` 中启用；`api` 保持默认软解，避免在未使用测试解码能力时额外占用 RK 设备。
+
 ## 5. 连通性验证
 
 ```bash
@@ -72,4 +77,3 @@ docker exec -it video-ba-pipe-frontend sh -lc 'wget -T 3 -qO- http://app:5002/ |
 ## 7. 重启后持久化提示
 
 `iptables -P FORWARD ACCEPT` 可能在重启后丢失。建议将该策略持久化（按系统运维规范处理），确保开机后容器网络仍可用。
-
