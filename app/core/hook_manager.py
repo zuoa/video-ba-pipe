@@ -221,6 +221,10 @@ class HookManager:
 
         return hooks
 
+    def has_hooks_for_algorithm(self, algorithm_id: int, hook_point: str) -> bool:
+        """判断算法在指定 Hook 点是否存在启用中的 Hook。"""
+        return bool(self.get_hooks_for_algorithm(algorithm_id, hook_point))
+
     def execute_hooks(self, algorithm_id: int, hook_point: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行算法指定Hook点的所有Hook

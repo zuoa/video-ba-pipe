@@ -49,6 +49,28 @@ from app.core.execution_log_collector import ExecutionLogCollector
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
 
 
+class FrameExecutionContext(dict):
+    """按需提供 BGR 视图，避免实时链路每帧无条件做色彩空间转换。"""
+
+    def get(self, key, default=None):
+        if key == 'frame_bgr':
+            return self._get_frame_bgr(default)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        if key == 'frame_bgr':
+            return self._get_frame_bgr()
+        return super().__getitem__(key)
+
+    def _get_frame_bgr(self, default=None):
+        if 'frame_bgr' not in self:
+            frame_rgb = super().get('frame')
+            if frame_rgb is None:
+                return default
+            super().__setitem__('frame_bgr', cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+        return super().get('frame_bgr', default)
+
+
 class WorkflowExecutor:
     """
     工作流执行器 - 统一的执行引擎
@@ -758,6 +780,7 @@ class WorkflowExecutor:
 
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
+            # 保持脚本算法兼容性：历史上 frame 参数一直是可写副本，用户脚本可能会原地修改。
             result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
             result = self._apply_algorithm_confidence_filter(node_id, result)
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
@@ -2239,17 +2262,20 @@ class WorkflowExecutor:
         if test_image_bgr is None:
             test_image_bgr = cv2.cvtColor(test_frame, cv2.COLOR_RGB2BGR)
 
+        readonly_frame = test_frame.view()
+        readonly_frame.setflags(write=False)
+
         # 创建日志收集器
         log_collector = ExecutionLogCollector()
 
         # 创建初始 context（与运行模式保持一致）
-        context = {
-            'frame': test_frame,
+        context = FrameExecutionContext({
+            'frame': readonly_frame,
             'frame_bgr': test_image_bgr,
             'frame_timestamp': time.time(),
             'log_collector': log_collector,
             'roi_regions': [],
-        }
+        })
 
         # ========== 清空执行状态 ==========
         with self._state_lock:
@@ -2302,6 +2328,8 @@ class WorkflowExecutor:
 
                 # Decoder 输出 rgb24 格式，实际是 RGB
                 frame_rgb, frame_timestamp = peek_result
+                readonly_frame = frame_rgb.view()
+                readonly_frame.setflags(write=False)
 
                 # 检查是否为新的帧（避免重复处理同一帧）
                 if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
@@ -2319,13 +2347,12 @@ class WorkflowExecutor:
                 log_collector = ExecutionLogCollector()
 
                 # 创建 context
-                context = {
-                    'frame': frame_rgb,
-                    'frame_bgr': cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR),
+                context = FrameExecutionContext({
+                    'frame': readonly_frame,
                     'frame_timestamp': frame_timestamp,
                     'log_collector': log_collector,
                     'roi_regions': [],
-                }
+                })
 
                 # 清空执行状态
                 with self._state_lock:

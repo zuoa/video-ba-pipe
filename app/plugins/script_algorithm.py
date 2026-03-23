@@ -183,8 +183,13 @@ class ScriptAlgorithm(BaseAlgorithm):
 
         # 1. 执行pre_detect Hooks
         if self.algorithm_id:
+            hook_frame = frame
+            if self.hook_manager.has_hooks_for_algorithm(self.algorithm_id, 'pre_detect'):
+                # pre_detect hook 允许修改输入帧，单独复制，避免为每个算法都做防御式整帧 copy。
+                hook_frame = frame.copy()
+
             modified_frame, should_skip = self.hook_manager.execute_pre_detect_hooks(
-                self.algorithm_id, frame, self.config.get('source_id', 0)
+                self.algorithm_id, hook_frame, self.config.get('source_id', 0)
             )
 
             if should_skip:
