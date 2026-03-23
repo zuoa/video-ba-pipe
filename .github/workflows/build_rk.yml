@@ -78,6 +78,7 @@ jobs:
           context: .
           file: ./${{ github.event.inputs.dockerfile }}
           platforms: linux/arm64
+          pull: true
           push: true
           build-args: |
             TORCH_WHL=${{ github.event.inputs.torch_whl }}

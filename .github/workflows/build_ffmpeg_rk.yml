@@ -3,11 +3,6 @@ name: Build and publish RK3588 FFmpeg image
 on:
   workflow_dispatch:
     inputs:
-      dockerfile:
-        description: 'Dockerfile name'
-        required: false
-        default: 'Dockerfile.ffmpeg.rk'
-        type: string
       image_name:
         description: 'Container image name'
         required: false
@@ -52,13 +47,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Extract metadata (tags, labels) for FFmpeg image
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.inputs.image_name }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag }}
+            type=sha,prefix=sha-
+
       - name: Build and push RK3588 FFmpeg image
+        id: build
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
-          file: ./${{ github.event.inputs.dockerfile }}
+          file: ./Dockerfile.ffmpeg.rk
           platforms: linux/arm64
+          pull: true
           push: true
           build-args: |
             FFMPEG_RK_PACKAGE=${{ github.event.inputs.ffmpeg_rk_package }}
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.event.inputs.image_name }}:${{ github.event.inputs.tag }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Print published image references
+        run: |
+          echo "Revision: ${{ github.sha }}"
+          echo "Digest:   ${{ steps.build.outputs.digest }}"
+          echo "Tags:"
+          printf '%s\n' "${{ steps.meta.outputs.tags }}"

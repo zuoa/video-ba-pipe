@@ -23,15 +23,16 @@
 工作流：`Build and publish RK3588 FFmpeg image`
 
 参数：
-1. `dockerfile`：默认 `Dockerfile.ffmpeg.rk`
-2. `image_name`：默认 `video-ba-pipe-ffmpeg-rk`
-3. `tag`：默认 `rkmpp`
-4. `ffmpeg_rk_package`：可选。用于指定预编译 `ffmpeg+rkmpp` 包的 URL。留空时会优先查找仓库内 `vendor/ffmpeg/` 中的归档文件，再回退到 Debian 官方 `ffmpeg`（仅软解）。
+1. `image_name`：默认 `video-ba-pipe-ffmpeg-rk`
+2. `tag`：默认 `rkmpp`
+3. `ffmpeg_rk_package`：可选。用于指定预编译 `ffmpeg+rkmpp` 包的 URL。留空时会优先查找仓库内 `vendor/ffmpeg/` 中的归档文件，再回退到 Debian 官方 `ffmpeg`（仅软解）。
 
 说明：
 - 该 workflow 只构建 `linux/arm64` 镜像。
 - 该镜像只提供 `/opt/ffmpeg` 运行时，不包含业务代码和 Python 环境。
 - 推荐将业务镜像中的 `FFMPEG_RK_IMAGE` 指向这个镜像。
+- workflow 固定使用 `Dockerfile.ffmpeg.rk`，不会再通过手工输入切换到其他 Dockerfile。
+- workflow 会同时推送手工指定 tag 和 `sha-<commit>` tag，便于核对镜像是否来自目标提交。
 
 ### 业务镜像
 
