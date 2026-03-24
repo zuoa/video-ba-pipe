@@ -61,7 +61,7 @@ class RoiDrawNodeData(NodeContext):
     """
     ROI区域配置列表，每个区域包含：
     - name: 区域名称（如：大门、停车场）
-    - mode: 检测模式 ("pre_mask" 或 "post_filter")
+    - mode: 检测模式 ("pre_mask"、"crop_infer" 或 "post_filter")
     - polygon: 多边形顶点坐标数组 [[x1,y1], [x2,y2], ...]（相对坐标 0-1）
 
     该节点功能：
@@ -82,7 +82,7 @@ class RoiDrawNodeData(NodeContext):
       },
       {
         "name": "区域2",
-        "mode": "post_filter",
+        "mode": "crop_infer",
         "polygon": [{"x": 0.5, "y": 0.6}, {"x": 0.7, "y": 0.8}, ...]
       }
     ]

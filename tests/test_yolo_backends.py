@@ -1,10 +1,34 @@
 import unittest
 import types
 import sys
+import importlib.util
+import contextlib
+from pathlib import Path
 
 import numpy as np
 
-if "cv2" not in sys.modules:
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = PROJECT_ROOT / "app" / "user_scripts" / "common" / "yolo_backends.py"
+_MISSING = object()
+
+
+@contextlib.contextmanager
+def patched_sys_modules(overrides):
+    original = {}
+    for name, value in overrides.items():
+        original[name] = sys.modules.get(name, _MISSING)
+        sys.modules[name] = value
+    try:
+        yield
+    finally:
+        for name, value in original.items():
+            if value is _MISSING:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
+
+
+def _load_yolo_output_adapter():
     cv2_stub = types.ModuleType("cv2")
 
     class _DnnModule:
@@ -13,9 +37,26 @@ if "cv2" not in sys.modules:
             return [idx for idx, score in enumerate(scores) if score >= score_threshold]
 
     cv2_stub.dnn = _DnnModule()
-    sys.modules["cv2"] = cv2_stub
 
-from app.user_scripts.common.yolo_backends import YoloOutputAdapter
+    fake_app = types.ModuleType("app")
+    fake_app.logger = types.SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        exception=lambda *args, **kwargs: None,
+    )
+
+    with patched_sys_modules({
+        "cv2": cv2_stub,
+        "app": fake_app,
+    }):
+        spec = importlib.util.spec_from_file_location("test_yolo_backends_module", MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+    return module.YoloOutputAdapter
+
+
+YoloOutputAdapter = _load_yolo_output_adapter()
 
 
 class YoloOutputAdapterTests(unittest.TestCase):

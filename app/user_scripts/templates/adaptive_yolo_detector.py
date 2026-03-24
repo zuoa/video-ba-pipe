@@ -6,13 +6,23 @@ metadata / suffix, with optional manual override.
 """
 
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 import numpy as np
 
 from app.core.model_resolver import get_model_resolver
 from app.user_scripts.common.result import build_result
-from app.user_scripts.common.roi import apply_roi
+from app.user_scripts.common.roi import (
+    ROI_MODE_POST_FILTER,
+    apply_roi,
+    build_crop_plans,
+    crop_frame,
+    filter_items_by_regions,
+    global_nms,
+    normalize_roi_mode,
+    remap_detections_to_full_frame,
+    split_regions,
+)
 from app.user_scripts.common.yolo_backends import create_backend
 
 
@@ -75,8 +85,47 @@ SCRIPT_METADATA = {
             "default": "post_filter",
             "options": [
                 {"value": "post_filter", "label": "后过滤"},
-                {"value": "pre_mask", "label": "前掩码"}
+                {"value": "pre_mask", "label": "前掩码"},
+                {"value": "crop_infer", "label": "裁剪推理"}
             ]
+        },
+        "roi_crop_strategy": {
+            "type": "select",
+            "label": "ROI裁剪策略",
+            "default": "auto",
+            "options": [
+                {"value": "auto", "label": "自动"},
+                {"value": "per_region", "label": "逐区域"},
+                {"value": "union", "label": "合并外接框"}
+            ],
+            "description": "仅 crop_infer 使用；auto 会在小面积多ROI时合并为一次推理"
+        },
+        "roi_crop_padding": {
+            "type": "int",
+            "label": "ROI裁剪补边",
+            "default": 24,
+            "min": 0,
+            "description": "仅 crop_infer 使用，避免边界目标被截断"
+        },
+        "roi_filter_metric": {
+            "type": "select",
+            "label": "ROI过滤判定",
+            "default": "ioa",
+            "options": [
+                {"value": "ioa", "label": "覆盖率"},
+                {"value": "center", "label": "中心点"},
+                {"value": "bottom_center", "label": "底边中心"}
+            ],
+            "description": "crop_infer/post_filter 共用的 ROI 命中判定方式"
+        },
+        "roi_filter_threshold": {
+            "type": "float",
+            "label": "ROI覆盖率阈值",
+            "default": 0.3,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.05,
+            "description": "仅在 ROI过滤判定=覆盖率 时使用"
         },
         "input_width": {
             "type": "int",
@@ -172,12 +221,124 @@ SCRIPT_METADATA = {
 
 
 def _resolve_roi_mode(config: dict, roi_regions: list) -> str:
-    roi_mode = config.get("roi_mode")
-    if not roi_mode and roi_regions:
-        first_region_mode = roi_regions[0].get("mode")
+    roi_mode = normalize_roi_mode(config.get("roi_mode"), default="")
+    if roi_mode:
+        return roi_mode
+    if roi_regions:
+        first_region_mode = normalize_roi_mode(roi_regions[0].get("mode"), default="")
         if first_region_mode:
-            roi_mode = "pre_mask" if first_region_mode in ["pre_mask", "preMask"] else "post_filter"
-    return roi_mode or "post_filter"
+            return first_region_mode
+    return ROI_MODE_POST_FILTER
+
+
+def _prepare_roi_regions(config: dict, roi_regions: list) -> list:
+    if not roi_regions:
+        return []
+
+    default_mode = _resolve_roi_mode(config, roi_regions)
+    prepared = []
+    for region in roi_regions:
+        normalized = dict(region)
+        normalized["mode"] = normalize_roi_mode(region.get("mode"), default=default_mode)
+        prepared.append(normalized)
+    return prepared
+
+
+def _apply_roi_filter(
+    frame: np.ndarray,
+    detections: List[Dict[str, Any]],
+    detections_detail: List[Dict[str, Any]],
+    roi_regions: list,
+    config: dict,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not roi_regions:
+        return detections, detections_detail
+
+    metric = config.get("roi_filter_metric") or "ioa"
+    threshold = float(config.get("roi_filter_threshold", 0.3))
+    filtered_detections = filter_items_by_regions(
+        detections,
+        frame_shape=frame.shape,
+        roi_regions=roi_regions,
+        metric=metric,
+        threshold=threshold,
+    )
+    filtered_details = filter_items_by_regions(
+        detections_detail,
+        frame_shape=frame.shape,
+        roi_regions=roi_regions,
+        metric=metric,
+        threshold=threshold,
+    )
+    return filtered_detections, filtered_details
+
+
+def _run_crop_infer(
+    backend,
+    frame: np.ndarray,
+    crop_regions: list,
+    config: dict,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    crop_strategy = config.get("roi_crop_strategy") or "auto"
+    crop_padding = int(config.get("roi_crop_padding", 24) or 0)
+    crop_plans = build_crop_plans(
+        frame_shape=frame.shape,
+        roi_regions=crop_regions,
+        padding=crop_padding,
+        strategy=crop_strategy,
+    )
+
+    aggregated_detections: List[Dict[str, Any]] = []
+    aggregated_details: List[Dict[str, Any]] = []
+    adapter_metadata: Dict[str, Any] = {}
+    crop_boxes = []
+    detections_before_merge = 0
+
+    for crop_index, plan in enumerate(crop_plans):
+        crop_box = plan["box"]
+        crop_boxes.append(crop_box)
+        cropped_frame = crop_frame(frame, crop_box)
+        detections, details, backend_metadata = backend.infer(cropped_frame)
+        adapter_metadata = backend_metadata or adapter_metadata
+
+        mapped_detections = remap_detections_to_full_frame(detections, crop_box)
+        mapped_details = remap_detections_to_full_frame(details, crop_box)
+        for item in mapped_details:
+            item["crop_index"] = crop_index
+        aggregated_detections.extend(mapped_detections)
+        aggregated_details.extend(mapped_details)
+
+    detections_before_merge = len(aggregated_detections)
+    merged_detections, merged_details = global_nms(
+        aggregated_detections,
+        aggregated_details,
+        score_threshold=float(config.get("confidence", 0.6)),
+        nms_threshold=float(config.get("nms_iou", 0.45)),
+    )
+    merged_detections, merged_details = _apply_roi_filter(
+        frame=frame,
+        detections=merged_detections,
+        detections_detail=merged_details,
+        roi_regions=crop_regions,
+        config=config,
+    )
+
+    crop_area = 0
+    for crop_box in crop_boxes:
+        crop_area += max(0, crop_box[2] - crop_box[0]) * max(0, crop_box[3] - crop_box[1])
+    frame_area = max(1, frame.shape[0] * frame.shape[1])
+
+    crop_metadata = {
+        **adapter_metadata,
+        "roi_crop_enabled": True,
+        "roi_crop_strategy": crop_strategy,
+        "roi_crop_padding": crop_padding,
+        "roi_crop_count": len(crop_boxes),
+        "roi_crop_boxes": crop_boxes,
+        "roi_crop_area_ratio": float(crop_area) / float(frame_area),
+        "detections_before_crop_roi_merge": detections_before_merge,
+    }
+    return merged_detections, merged_details, crop_metadata
 
 
 def init(config: dict) -> Dict[str, Any]:
@@ -215,18 +376,36 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
         return build_result([], metadata={"error": "Model not initialized"})
 
     backend = state["backend"]
-    roi_mode = _resolve_roi_mode(config, roi_regions)
-    roi_regions_effective = roi_regions
-    if roi_regions and roi_mode:
-        roi_regions_effective = [{**r, "mode": roi_mode} for r in roi_regions]
+    roi_regions_effective = _prepare_roi_regions(config, roi_regions)
+    _, crop_infer_regions, post_filter_regions = split_regions(roi_regions_effective)
+    roi_modes = sorted({region.get("mode", ROI_MODE_POST_FILTER) for region in roi_regions_effective}) if roi_regions_effective else []
+    crop_infer_enabled = bool(crop_infer_regions) and backend.name == "rknn"
+    crop_infer_fallback = bool(crop_infer_regions) and backend.name != "rknn"
 
-    frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
-    detections, detections_detail, backend_metadata = backend.infer(frame_to_detect)
+    if crop_infer_enabled:
+        detections, detections_detail, backend_metadata = _run_crop_infer(
+            backend=backend,
+            frame=frame,
+            crop_regions=crop_infer_regions,
+            config=config,
+        )
+    else:
+        frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
+        detections, detections_detail, backend_metadata = backend.infer(frame_to_detect)
 
     detections_before_roi = len(detections)
     roi_filtered_count = 0
-    if roi_regions_effective and detections:
-        _, detections = apply_roi(frame, detections, roi_regions_effective)
+    filter_regions = list(post_filter_regions)
+    if crop_infer_fallback:
+        filter_regions = crop_infer_regions + filter_regions
+    if filter_regions and detections:
+        detections, detections_detail = _apply_roi_filter(
+            frame=frame,
+            detections=detections,
+            detections_detail=detections_detail,
+            roi_regions=filter_regions,
+            config=config,
+        )
         roi_filtered_count = detections_before_roi - len(detections)
 
     processing_time = (time.time() - start_time) * 1000.0
@@ -247,10 +426,16 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
         **(backend_metadata or {}),
     }
 
-    if roi_regions:
+    if roi_regions_effective:
         metadata["roi_enabled"] = True
-        metadata["roi_mode"] = roi_mode
-        metadata["roi_regions_count"] = len(roi_regions)
+        metadata["roi_mode"] = roi_modes[0] if len(roi_modes) == 1 else "mixed"
+        metadata["roi_modes"] = roi_modes
+        metadata["roi_regions_count"] = len(roi_regions_effective)
+        metadata["roi_crop_requested"] = bool(crop_infer_regions)
+        metadata["roi_crop_active"] = crop_infer_enabled
+        metadata["roi_crop_backend_fallback"] = crop_infer_fallback
+        metadata["roi_filter_metric"] = config.get("roi_filter_metric") or "ioa"
+        metadata["roi_filter_threshold"] = float(config.get("roi_filter_threshold", 0.3))
         metadata["detections_before_roi"] = detections_before_roi
         metadata["roi_filtered_count"] = roi_filtered_count
 
