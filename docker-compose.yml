@@ -1,5 +1,11 @@
 version: '3.8'
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ============================================
   # CPU版本服务
@@ -53,6 +59,9 @@ services:
         aliases:
           - api
 
+    # 日志配置
+    logging: *default-logging
+
   worker:
     image: ghcr.io/zuoa/video-ba-pipe:cpu
     container_name: video-ba-pipe-worker
@@ -91,11 +100,7 @@ services:
       - video-ba-network
     
     # 日志配置
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
     
     # 性能优化建议
     # CPU版本可能需要限制资源使用
@@ -118,6 +123,7 @@ services:
       - "8080:80"
     networks:
       - video-ba-network
+    logging: *default-logging
 
 networks:
   video-ba-network:

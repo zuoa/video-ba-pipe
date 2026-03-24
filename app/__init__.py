@@ -1,7 +1,14 @@
 import logging.config
 import sys
 
-from app.config import DEBUG_LOG_PATH, RUN_LOG_PATH, WORKFLOW_DEBUG_LOG_PATH, WORKFLOW_LOG_PATH
+from app.config import (
+    DEBUG_LOG_PATH,
+    LOG_BACKUP_COUNT,
+    LOG_MAX_BYTES,
+    RUN_LOG_PATH,
+    WORKFLOW_DEBUG_LOG_PATH,
+    WORKFLOW_LOG_PATH,
+)
 
 LOG_CONF = {
     'version': 1,
@@ -25,36 +32,32 @@ LOG_CONF = {
         'file': {
             'level': logging.INFO,
             'class': 'app.core.ajlog.SafeRotatingFileHandler',
-            'when': 'W0',
-            'interval': 1,
-            'backupCount': 1,
+            'maxBytes': LOG_MAX_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
             'filename': RUN_LOG_PATH,
             'formatter': 'verbose'
         },
         'debug': {
             'level': logging.DEBUG,
             'class': 'app.core.ajlog.SafeRotatingFileHandler',
-            'when': 'W0',
-            'interval': 1,
-            'backupCount': 1,
+            'maxBytes': LOG_MAX_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
             'filename': DEBUG_LOG_PATH,
             'formatter': 'verbose'
         },
         'workflow_file': {
             'level': logging.INFO,
             'class': 'app.core.ajlog.SafeRotatingFileHandler',
-            'when': 'W0',
-            'interval': 1,
-            'backupCount': 1,
+            'maxBytes': LOG_MAX_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
             'filename': WORKFLOW_LOG_PATH,
             'formatter': 'verbose'
         },
         'workflow_debug': {
             'level': logging.DEBUG,
             'class': 'app.core.ajlog.SafeRotatingFileHandler',
-            'when': 'W0',
-            'interval': 1,
-            'backupCount': 1,
+            'maxBytes': LOG_MAX_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
             'filename': WORKFLOW_DEBUG_LOG_PATH,
             'formatter': 'verbose'
         }

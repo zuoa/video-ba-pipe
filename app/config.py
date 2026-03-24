@@ -54,6 +54,9 @@ os.makedirs(USER_SCRIPTS_ROOT, exist_ok=True)
 LOG_SAVE_PATH = _resolve_data_path('LOG_SAVE_PATH', 'logs')
 os.makedirs(LOG_SAVE_PATH, exist_ok=True)
 
+LOG_MAX_BYTES = int(os.getenv('LOG_MAX_BYTES', str(10 * 1024 * 1024)))
+LOG_BACKUP_COUNT = int(os.getenv('LOG_BACKUP_COUNT', '3'))
+
 RUN_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'run.log')
 DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'debug.log')
 WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
