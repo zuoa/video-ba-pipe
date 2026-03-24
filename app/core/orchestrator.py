@@ -19,8 +19,9 @@ from app.config import (
     NO_FRAME_WARNING_THRESHOLD,
     NO_FRAME_CRITICAL_THRESHOLD,
     HIGH_ERROR_COUNT_THRESHOLD,
-    HEALTH_MONITOR_ENABLED
+    HEALTH_MONITOR_ENABLED,
 )
+from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog, run_db_with_retry
 from app.core.ringbuffer import VideoRingBuffer
@@ -67,6 +68,7 @@ class Orchestrator:
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
         self.workflow_host_signatures = {}
+        self.media_cleaner = AlertMediaCleaner()
         db.connect(reuse_if_open=True)
         run_db_with_retry(
             lambda: VideoSource.update(status='STOPPED', decoder_pid=None).execute(),
@@ -554,6 +556,7 @@ class Orchestrator:
 
     def run(self):
         print("🚀 编排器启动，开始动态管理视频源和工作流...")
+        self.media_cleaner.start()
         while True:
             self.manage_sources()
             self.manage_workflows()
@@ -561,6 +564,7 @@ class Orchestrator:
 
     def stop(self):
         print("\n优雅地关闭所有正在运行的工作流和视频源...")
+        self.media_cleaner.stop()
 
         for source_id in list(self.workflow_hosts.keys()):
             self._stop_source_host(source_id)

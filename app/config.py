@@ -62,6 +62,12 @@ DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'debug.log')
 WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
 WORKFLOW_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow_debug.log')
 
+ALERT_IMAGE_CLEANUP_ENABLED = os.getenv('ALERT_IMAGE_CLEANUP_ENABLED', 'false').lower() in ('true', '1', 'yes')
+ALERT_IMAGE_RETENTION_DAYS = max(0, int(os.getenv('ALERT_IMAGE_RETENTION_DAYS', '7')))
+WINDOW_DETECTION_RETENTION_HOURS = max(0, int(os.getenv('WINDOW_DETECTION_RETENTION_HOURS', '24')))
+ALERT_IMAGE_MIN_FREE_GB = max(0.0, float(os.getenv('ALERT_IMAGE_MIN_FREE_GB', '2')))
+MEDIA_CLEANUP_INTERVAL_SECONDS = max(60, int(os.getenv('MEDIA_CLEANUP_INTERVAL_SECONDS', '3600')))
+
 # ============ 检测结果调试日志 ============
 # 输出算法检测结果到 logs/detection_results_YYYYMMDD.jsonl，便于排查不同部署环境输出差异
 DETECTION_JSONL_LOG_ENABLED = os.getenv('DETECTION_JSONL_LOG_ENABLED', 'false').lower() in ('true', '1', 'yes')
