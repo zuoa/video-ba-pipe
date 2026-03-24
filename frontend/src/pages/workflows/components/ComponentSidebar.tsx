@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Collapse } from 'antd';
+import { Collapse, message } from 'antd';
 import {
   VideoCameraOutlined,
   BugOutlined,
@@ -16,9 +16,10 @@ import './ComponentSidebar.css';
 export interface ComponentSidebarProps {
   onAddNode: (nodeData: any) => void;
   videoSources: any[];
+  hasSourceNode?: boolean;
 }
 
-const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSources }) => {
+const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSources, hasSourceNode = false }) => {
   const [algorithms, setAlgorithms] = useState<any[]>([]);
 
   useEffect(() => {
@@ -53,14 +54,20 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
         <div className="component-list">
           <div
             className="component-item"
-            onClick={() => handleAddNode({
-              type: 'videoSource',
-              nodeType: 'videoSource',
-              label: '视频源',
-              description: '选择视频源',
-              icon: <VideoCameraOutlined />,
-              color: '#1890ff',
-            })}
+            onClick={() => {
+              if (hasSourceNode) {
+                message.warning('一个编排只允许一个视频源节点');
+                return;
+              }
+              handleAddNode({
+                type: 'videoSource',
+                nodeType: 'videoSource',
+                label: '视频源',
+                description: '选择视频源',
+                icon: <VideoCameraOutlined />,
+                color: '#1890ff',
+              });
+            }}
             style={{ borderColor: '#1890ff' }}
           >
             <div className="component-item-inner">

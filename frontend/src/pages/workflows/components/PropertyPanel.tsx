@@ -93,7 +93,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       // 根据节点类型回显特定字段
       if (nodeType === 'videoSource' || nodeType === 'source') {
         // 确保 videoSourceId 的类型与 videoSources 中的 id 类型一致
-        const sourceId = node.data.videoSourceId;
+        const sourceId = node.data.dataId ?? node.data.videoSourceId;
         if (sourceId !== undefined && sourceId !== null) {
           // 找到匹配的视频源来确认类型
           const matchingSource = videoSources.find(s => String(s.id) === String(sourceId));
@@ -400,7 +400,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       case 'videoSource':
       case 'source':
         // 获取当前选中的视频源
-        const currentSourceId = node.data.videoSourceId;
+        const currentSourceId = node.data.dataId ?? node.data.videoSourceId;
         const currentSource = videoSources.find(s => String(s.id) === String(currentSourceId));
 
         console.log('渲染视频源配置 -', {
@@ -1281,7 +1281,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
       <VideoSourceSelector
         visible={selectorVisible}
-        value={node.data.videoSourceId}
+        value={node.data.dataId ?? node.data.videoSourceId}
         videoSources={videoSources}
         onChange={(value) => {
           console.log('🎬 VideoSourceSelector onChange 被调用，新值:', value);

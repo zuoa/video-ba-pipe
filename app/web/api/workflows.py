@@ -7,6 +7,7 @@ from copy import deepcopy
 from flask import jsonify, request
 
 from app.core.database_models import Workflow, WorkflowNode, VideoSource, Algorithm
+from app.core.workflow_runtime import normalize_source_node_fields, validate_single_source_node
 from app.config import SNAPSHOT_SAVE_PATH
 
 
@@ -105,8 +106,28 @@ def register_workflows_api(app):
             if 'description' in data:
                 workflow.description = data['description']
             if 'workflow_data' in data:
-                workflow_data_str = json.dumps(data['workflow_data'])
-                app.logger.info(f"保存工作流 {id} 数据: nodes={len(data['workflow_data'].get('nodes', []))}, connections={len(data['workflow_data'].get('connections', []))}")
+                workflow_data = deepcopy(data['workflow_data']) if isinstance(data['workflow_data'], dict) else data['workflow_data']
+                is_valid, error_message = validate_single_source_node(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+
+                try:
+                    source_id = next(
+                        int(node.get('dataId'))
+                        for node in workflow_data.get('nodes', [])
+                        if node.get('type') == 'source'
+                    )
+                except (StopIteration, TypeError, ValueError):
+                    return jsonify({'error': '视频源节点 dataId 非法'}), 400
+
+                try:
+                    source = VideoSource.get_by_id(source_id)
+                except VideoSource.DoesNotExist:
+                    return jsonify({'error': f'视频源不存在: {source_id}'}), 400
+
+                workflow_data = normalize_source_node_fields(workflow_data, source)
+                workflow_data_str = json.dumps(workflow_data)
+                app.logger.info(f"保存工作流 {id} 数据: nodes={len(workflow_data.get('nodes', []))}, connections={len(workflow_data.get('connections', []))}")
                 app.logger.debug(f"工作流数据内容: {workflow_data_str[:500]}")
 
                 # 检查工作流数据是否真的变化了
@@ -398,14 +419,11 @@ def register_workflows_api(app):
 
                     # 深拷贝 workflow_data
                     new_data = deepcopy(template_data)
+                    is_valid, error_message = validate_single_source_node(new_data)
+                    if not is_valid:
+                        raise ValueError(error_message)
 
-                    # 替换 source 节点的 dataId
-                    for node in new_data.get('nodes', []):
-                        if node.get('type') == 'source':
-                            # 同时更新两个可能的位置，确保兼容性
-                            node['dataId'] = source_id
-                            if 'data' in node and isinstance(node['data'], dict):
-                                node['data']['dataId'] = source_id
+                    new_data = normalize_source_node_fields(new_data, source)
 
                     # 生成名称
                     name = generate_workflow_name(source, new_data, template.name)

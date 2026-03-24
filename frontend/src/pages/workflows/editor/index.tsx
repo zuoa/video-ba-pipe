@@ -183,7 +183,8 @@ export default function WorkflowEditorPage() {
 
             // 特殊处理：保留 videoSourceId 和 videoSourceName
             if (nodeType === 'videoSource') {
-              const sourceId = node.videoSourceId || node.data?.videoSourceId || node.dataId || node.data_id;
+              const sourceId = node.dataId ?? node.data?.dataId ?? node.videoSourceId ?? node.data?.videoSourceId ?? node.data_id;
+              nodeData.dataId = sourceId;
               nodeData.videoSourceId = sourceId;
 
               console.log('🔍 处理视频源节点:', {
@@ -413,11 +414,30 @@ export default function WorkflowEditorPage() {
     }
   };
 
+  const getSourceNodes = (targetNodes: any[] = nodes) => {
+    return targetNodes.filter((node) => {
+      const nodeType = node.data?.type || node.type;
+      return nodeType === 'videoSource' || nodeType === 'source';
+    });
+  };
+
   const handleSave = async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent);
     try {
       console.log('💾 ============ [EDITOR] handleSave 开始 ============');
       console.log('📊 [EDITOR] 当前nodes数量:', nodes.length);
+
+      const sourceNodes = getSourceNodes(nodes);
+      if (sourceNodes.length !== 1) {
+        const errorMsg = sourceNodes.length === 0
+          ? '工作流必须包含一个视频源节点'
+          : '工作流只允许包含一个视频源节点';
+        console.warn('⚠️ [EDITOR] 保存被阻止，source 节点数量非法:', sourceNodes.length);
+        if (!silent) {
+          message.error(errorMsg);
+        }
+        return false;
+      }
 
       // 打印所有当前节点的videoSourceId
       console.log('📊 [EDITOR] 保存前所有节点的videoSourceId:',
@@ -444,18 +464,22 @@ export default function WorkflowEditorPage() {
         // 根据节点类型保存不同的字段
         if (nodeType === 'videoSource' || nodeType === 'source') {
           // 后端使用 dataId 字段存储视频源ID
-          const videoSourceId = node.data?.videoSourceId || node.data?.dataId;
-          saveData.dataId = videoSourceId;
+          const sourceId = node.data?.dataId ?? node.data?.videoSourceId ?? null;
+          const selectedSource = sourceId != null
+            ? videoSources.find((source) => String(source.id) === String(sourceId))
+            : null;
+          saveData.dataId = sourceId;
 
           // 额外保存这些字段用于前端显示（后端不使用，但保存后前端加载时需要）
-          saveData.videoSourceId = videoSourceId;
-          saveData.videoSourceName = node.data?.videoSourceName;
-          saveData.videoSourceCode = node.data?.videoSourceCode;
+          saveData.videoSourceId = sourceId;
+          saveData.videoSourceName = selectedSource?.name || node.data?.videoSourceName;
+          saveData.videoSourceCode = selectedSource?.source_code || node.data?.videoSourceCode;
 
           console.log('🎥 [EDITOR] 视频源节点保存数据:', {
             id: node.id,
             内部类型: nodeType,
             保存类型: backendType,
+            从node_data读取的dataId: node.data?.dataId,
             从node_data读取的videoSourceId: node.data?.videoSourceId,
             dataId: saveData.dataId,
             videoSourceId: saveData.videoSourceId,
@@ -590,6 +614,11 @@ export default function WorkflowEditorPage() {
 
   const handleAddNode = (nodeData: any) => {
     console.log('🚀 [EDITOR] handleAddNode 收到的数据:', nodeData);
+
+    if (nodeData.type === 'videoSource' && getSourceNodes().length > 0) {
+      message.warning('一个编排只允许一个视频源节点');
+      return;
+    }
 
     const newNode: Node = {
       id: `${nodeData.type}-${Date.now()}`,
@@ -785,7 +814,11 @@ export default function WorkflowEditorPage() {
       {/* 编辑器主体 */}
       <div className="editor-body" style={{ flex: 1, overflow: 'hidden' }}>
         {/* 左侧组件面板 */}
-        <ComponentSidebar onAddNode={handleAddNode} videoSources={videoSources} />
+        <ComponentSidebar
+          onAddNode={handleAddNode}
+          videoSources={videoSources}
+          hasSourceNode={getSourceNodes().length > 0}
+        />
 
         {/* 中间画布 */}
         <div className="editor-canvas">

@@ -1,7 +1,12 @@
 import threading
 
 from app.core.workflow_executor import WorkflowExecutor
-from app.core.workflow_runtime import build_workflow_signature, extract_source_id_from_workflow_data
+from app.core.workflow_runtime import (
+    build_workflow_signature,
+    extract_source_id_from_workflow_data,
+    normalize_source_node_fields,
+    validate_single_source_node,
+)
 
 
 class _FakeAlgorithmWithCleanup:
@@ -29,6 +34,55 @@ def test_extract_source_id_from_workflow_data_returns_source_node_data_id():
     }
 
     assert extract_source_id_from_workflow_data(workflow_data) == 7
+
+
+def test_validate_single_source_node_rejects_multiple_sources():
+    workflow_data = {
+        "nodes": [
+            {"id": "source_1", "type": "source", "dataId": 1},
+            {"id": "source_2", "type": "source", "dataId": 2},
+        ]
+    }
+
+    is_valid, error_message = validate_single_source_node(workflow_data)
+
+    assert is_valid is False
+    assert "只允许包含一个视频源节点" in error_message
+
+
+def test_normalize_source_node_fields_syncs_runtime_and_display_fields():
+    workflow_data = {
+        "nodes": [
+            {
+                "id": "source_1",
+                "type": "source",
+                "dataId": 3,
+                "videoSourceId": 3,
+                "videoSourceName": "old-name",
+                "videoSourceCode": "old-code",
+                "data": {
+                    "dataId": 3,
+                    "videoSourceId": 3,
+                    "videoSourceName": "old-name",
+                    "videoSourceCode": "old-code",
+                },
+            }
+        ]
+    }
+    source = type("VideoSource", (), {"id": 7, "name": "Lobby Cam", "source_code": "cam-007"})()
+
+    normalized = normalize_source_node_fields(workflow_data, source)
+
+    source_node = normalized["nodes"][0]
+    assert source_node["dataId"] == 7
+    assert source_node["videoSourceId"] == 7
+    assert source_node["videoSourceName"] == "Lobby Cam"
+    assert source_node["videoSourceCode"] == "cam-007"
+    assert source_node["data"]["dataId"] == 7
+    assert source_node["data"]["videoSourceId"] == 7
+    assert source_node["data"]["videoSourceName"] == "Lobby Cam"
+    assert source_node["data"]["videoSourceCode"] == "cam-007"
+    assert workflow_data["nodes"][0]["dataId"] == 3
 
 
 def test_build_workflow_signature_is_sorted_and_version_sensitive():
