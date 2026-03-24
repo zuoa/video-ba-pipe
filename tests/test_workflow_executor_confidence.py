@@ -91,6 +91,28 @@ def test_process_algorithm_supports_legacy_top_level_confidence():
     assert detections[0]["confidence"] == 0.81
 
 
+def test_process_algorithm_result_does_not_retain_frame_payload():
+    executor = _build_executor(
+        node_config={"confidence": 0.5},
+        result={
+            "detections": [
+                {"box": [1, 1, 5, 5], "confidence": 0.9, "label_name": "person"},
+            ]
+        },
+    )
+
+    result = executor._process_algorithm(
+        node_id="algo_1",
+        frame=np.zeros((32, 32, 3), dtype=np.uint8),
+        frame_timestamp=123.0,
+        roi_regions=None,
+        upstream_results={},
+    )
+
+    assert "frame" not in result
+    assert "frame_timestamp" not in result
+
+
 def test_process_algorithm_filters_stage_boxes_by_config_confidence():
     executor = _build_executor(
         node_config={"confidence": 0.7},

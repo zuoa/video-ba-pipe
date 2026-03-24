@@ -41,7 +41,7 @@ from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
-from app.core.window_detector import get_window_detector
+from app.core.window_detector import WindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData
 from app.core.execution_log_collector import ExecutionLogCollector
@@ -81,7 +81,7 @@ class WorkflowExecutor:
     3. 避免代码重复，修改一次即可同时影响测试和运行
     """
 
-    def __init__(self, workflow_id, test_mode=False):
+    def __init__(self, workflow_id, test_mode=False, window_detector=None):
         """
         初始化工作流执行器
 
@@ -121,7 +121,10 @@ class WorkflowExecutor:
         self.algorithm_roi_configs = {}
         self.execution_graph = defaultdict(list)
         self.video_recorder = None
-        self.window_detector = get_window_detector()
+        self.window_detector = window_detector or WindowDetector()
+        self.recorder_key = f"workflow:{self.workflow_id}"
+        self.running = True
+        self._cleaned_up = False
 
         # ========== 执行状态追踪 ==========
         # node_results_cache: 存储节点执行结果（用于下游节点访问）
@@ -159,6 +162,94 @@ class WorkflowExecutor:
         for node_id in self.nodes.keys():
             self.node_last_exec_time[node_id] = 0
         self._state_lock = threading.Lock()
+
+    def stop(self):
+        self.running = False
+
+    def _cleanup_algorithms(self):
+        for node_id, algorithm in list(self.algorithms.items()):
+            cleanup = getattr(algorithm, 'cleanup', None)
+            if not callable(cleanup):
+                continue
+
+            try:
+                cleanup()
+            except Exception as exc:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 清理算法节点 {node_id} 失败: {exc}",
+                    exc_info=True,
+                )
+
+        self.algorithms.clear()
+
+    def _cleanup_runtime_state(self):
+        with self._state_lock:
+            self.node_results_cache.clear()
+            self.execution_results.clear()
+            self.executed_nodes.clear()
+
+    def _cleanup_window_detector(self):
+        if self.video_source is None:
+            return
+
+        for node_id, node in self.nodes.items():
+            if isinstance(node, AlertNodeData):
+                try:
+                    self.window_detector.clear_buffer(self.video_source.id, node_id)
+                except Exception as exc:
+                    logger.warning(
+                        f"[Workflow-{self.workflow_id}] 清理窗口检测缓存失败: node={node_id}, error={exc}",
+                        exc_info=True,
+                    )
+
+    def cleanup(self):
+        if self._cleaned_up:
+            return
+
+        self.running = False
+        self._cleaned_up = True
+
+        self._cleanup_algorithms()
+        self._cleanup_window_detector()
+        self._cleanup_runtime_state()
+
+        if self.buffer is not None:
+            try:
+                self.buffer.close()
+            except Exception as exc:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 关闭分析缓冲区失败: {exc}",
+                    exc_info=True,
+                )
+            self.buffer = None
+
+        if self.recording_buffer is not None:
+            should_close_recording_buffer = True
+        else:
+            should_close_recording_buffer = False
+
+        if self.video_source is not None and self.video_recorder is not None:
+            try:
+                recorder_manager = VideoRecorderManager()
+                recorder_cleaned = recorder_manager.cleanup_recorder(self.recorder_key)
+                if not recorder_cleaned:
+                    should_close_recording_buffer = False
+            except Exception as exc:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 清理录制器失败: {exc}",
+                    exc_info=True,
+                )
+        self.video_recorder = None
+
+        if self.recording_buffer is not None and should_close_recording_buffer:
+            try:
+                self.recording_buffer.close()
+            except Exception as exc:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 关闭录制缓冲区失败: {exc}",
+                    exc_info=True,
+                )
+            self.recording_buffer = None
 
     def _load_algorithms(self):
         """加载算法节点所需的算法（供测试模式和实时模式使用）"""
@@ -462,6 +553,7 @@ class WorkflowExecutor:
             if self.recording_buffer is not None:
                 recorder_manager = VideoRecorderManager()
                 self.video_recorder = recorder_manager.get_recorder(
+                    recorder_key=self.recorder_key,
                     source_id=self.video_source.id,
                     buffer=self.recording_buffer,
                     save_dir=VIDEO_SAVE_PATH,
@@ -800,8 +892,6 @@ class WorkflowExecutor:
                 'node_id': node_id,
                 'has_detection': has_detection,
                 'result': result,
-                'frame': frame,
-                'frame_timestamp': frame_timestamp,
                 'roi_mask': roi_mask,
                 'label_color': label_color,
                 'upstream_node_id': node_id  # 上游节点 ID 就是当前节点 ID
@@ -1248,8 +1338,6 @@ class WorkflowExecutor:
                         'matched_count': len(results)
                     }
                 },
-                'frame': frame,
-                'frame_timestamp': frame_timestamp,
                 'roi_mask': None,
                 'label_color': '#00FF00',  # 函数节点使用绿色
                 'upstream_node_id': node_a_id
@@ -2296,6 +2384,29 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
+    def run_once(self, frame_rgb: np.ndarray, frame_timestamp: float):
+        """执行单帧工作流，用于 source host 统一驱动多个工作流。"""
+        if not self.running:
+            return
+
+        readonly_frame = frame_rgb.view()
+        readonly_frame.setflags(write=False)
+
+        log_collector = ExecutionLogCollector()
+        context = FrameExecutionContext({
+            'frame': readonly_frame,
+            'frame_timestamp': frame_timestamp,
+            'log_collector': log_collector,
+            'roi_regions': [],
+        })
+
+        with self._state_lock:
+            self.execution_results.clear()
+            self.executed_nodes.clear()
+
+        self._execute_by_topology_levels(executor=None, context=context)
+        self._record_to_window_detector_for_all_alerts(context)
+
     def run(self):
         """
         实时运行模式主循环
@@ -2308,83 +2419,58 @@ class WorkflowExecutor:
 
         logger.info(f"[Workflow-{self.workflow_id}] 开始实时运行工作流 {self.workflow_id}")
 
-        # 创建日志收集器（每帧重新创建）
-        import cv2
-
         frame_count = 0
         error_count = 0
         max_consecutive_errors = 10
 
-        while True:
-            try:
-                # 从 buffer 读取最新帧
-                # peek_with_timestamp(-1) 获取最新的帧和时间戳（不消费帧，支持多 workflow 共享）
-                peek_result = self.buffer.peek_with_timestamp(-1)
+        try:
+            while self.running:
+                try:
+                    # 从 buffer 读取最新帧
+                    # peek_with_timestamp(-1) 获取最新的帧和时间戳（不消费帧，支持多 workflow 共享）
+                    peek_result = self.buffer.peek_with_timestamp(-1)
 
-                if peek_result is None:
-                    # 缓冲区为空，短暂休眠后继续
-                    time.sleep(0.01)
-                    continue
+                    if peek_result is None:
+                        # 缓冲区为空，短暂休眠后继续
+                        time.sleep(0.01)
+                        continue
 
-                # Decoder 输出 rgb24 格式，实际是 RGB
-                frame_rgb, frame_timestamp = peek_result
-                readonly_frame = frame_rgb.view()
-                readonly_frame.setflags(write=False)
+                    # Decoder 输出 rgb24 格式，实际是 RGB
+                    frame_rgb, frame_timestamp = peek_result
 
-                # 检查是否为新的帧（避免重复处理同一帧）
-                if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
-                    # 帧未更新，短暂休眠后继续
-                    time.sleep(0.001)  # 短暂休眠避免 CPU 占用过高
-                    continue
+                    # 检查是否为新的帧（避免重复处理同一帧）
+                    if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
+                        # 帧未更新，短暂休眠后继续
+                        time.sleep(0.001)  # 短暂休眠避免 CPU 占用过高
+                        continue
 
-                # 更新最后处理的帧时间戳
-                self.last_frame_timestamp = frame_timestamp
+                    # 更新最后处理的帧时间戳
+                    self.last_frame_timestamp = frame_timestamp
 
-                frame_count += 1
-                error_count = 0  # 重置错误计数
+                    frame_count += 1
+                    error_count = 0  # 重置错误计数
 
-                # 创建日志收集器
-                log_collector = ExecutionLogCollector()
+                    self.run_once(frame_rgb, frame_timestamp)
 
-                # 创建 context
-                context = FrameExecutionContext({
-                    'frame': readonly_frame,
-                    'frame_timestamp': frame_timestamp,
-                    'log_collector': log_collector,
-                    'roi_regions': [],
-                })
+                    # 定期输出日志
+                    if frame_count % 100 == 0:
+                        logger.info(f"[Workflow-{self.workflow_id}] 已处理 {frame_count} 帧")
 
-                # 清空执行状态
-                with self._state_lock:
-                    self.execution_results.clear()
-                    self.executed_nodes.clear()
-                # 注意：不清空 node_results_cache，因为可能需要跨帧的数据
-
-                # 执行工作流
-                self._execute_by_topology_levels(executor=None, context=context)
-
-                # 每帧执行后，为启用了窗口检测的 Alert 节点记录到窗口检测器
-                self._record_to_window_detector_for_all_alerts(context)
-
-                # 定期输出日志
-                if frame_count % 100 == 0:
-                    logger.info(f"[Workflow-{self.workflow_id}] 已处理 {frame_count} 帧")
-
-            except KeyboardInterrupt:
-                logger.info(f"[Workflow-{self.workflow_id}] 收到中断信号，停止运行")
-                break
-            except Exception as e:
-                error_count += 1
-                logger.error(f"[Workflow-{self.workflow_id}] 处理帧时发生异常 (连续错误: {error_count}/{max_consecutive_errors}): {e}")
-                import traceback
-                traceback.print_exc()
-
-                if error_count >= max_consecutive_errors:
-                    logger.error(f"[Workflow-{self.workflow_id}] 连续错误过多，停止运行")
+                except KeyboardInterrupt:
+                    logger.info(f"[Workflow-{self.workflow_id}] 收到中断信号，停止运行")
                     break
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"[Workflow-{self.workflow_id}] 处理帧时发生异常 (连续错误: {error_count}/{max_consecutive_errors}): {e}")
+                    import traceback
+                    traceback.print_exc()
 
-                # 短暂休眠后继续
-                time.sleep(0.1)
+                    if error_count >= max_consecutive_errors:
+                        logger.error(f"[Workflow-{self.workflow_id}] 连续错误过多，停止运行")
+                        break
+                    time.sleep(0.1)
+        finally:
+            self.cleanup()
 
         logger.info(f"[Workflow-{self.workflow_id}] 工作流 {self.workflow_id} 运行结束，共处理 {frame_count} 帧")
 

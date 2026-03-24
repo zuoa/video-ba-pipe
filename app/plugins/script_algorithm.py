@@ -4,6 +4,7 @@
 import inspect
 import traceback
 import time
+import uuid
 import numpy as np
 
 from app import logger
@@ -96,6 +97,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         self.memory_limit = self.config.get('memory_limit_mb', 512)
         self._empty_detection_count = 0
         self._last_empty_detection_log_at = 0.0
+        self.script_loader_key = f"{self.config.get('id', 'algo')}:{uuid.uuid4().hex}"
 
         # 如果没有 script_path，跳过加载（插件管理器扫描时可能没有完整配置）
         if not self.script_path:
@@ -110,9 +112,15 @@ class ScriptAlgorithm(BaseAlgorithm):
         )
 
         # 加载脚本模块
+        loader = None
+        script_loaded = False
         try:
             loader = get_script_loader()
-            self.script_module, metadata = loader.load(self.script_path)
+            self.script_module, metadata = loader.load(
+                self.script_path,
+                isolate_key=self.script_loader_key,
+            )
+            script_loaded = True
             self.script_metadata = metadata
 
             logger.info(f"[{self.name}] 脚本加载成功: {metadata.get('name', 'unknown')} v{metadata.get('version', '1.0')}")
@@ -141,6 +149,17 @@ class ScriptAlgorithm(BaseAlgorithm):
             logger.error(f"[{self.name}] 脚本加载失败: {e}")
             raise
         except Exception as e:
+            if loader is not None and script_loaded:
+                try:
+                    loader.unload(
+                        self.script_path,
+                        isolate_key=self.script_loader_key,
+                    )
+                except Exception as unload_error:
+                    logger.warning(
+                        f"[{self.name}] 初始化失败后回收脚本模块失败: {unload_error}",
+                        exc_info=True,
+                    )
             logger.error(
                 f"[{self.name}] 脚本初始化异常: script_path={self.script_path}, "
                 f"source_id={self.config.get('source_id')}, "
@@ -317,4 +336,4 @@ class ScriptAlgorithm(BaseAlgorithm):
         # 卸载脚本
         if hasattr(self, 'script_path'):
             loader = get_script_loader()
-            loader.unload(self.script_path)
+            loader.unload(self.script_path, isolate_key=getattr(self, 'script_loader_key', None))

@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 
@@ -151,6 +152,8 @@ class ScriptLoader:
 
         # 缓存：{script_path: {'module': module, 'mtime': float, 'hash': str, 'state': Any}}
         self._cache: Dict[str, Dict] = {}
+        self._isolated_cache: Dict[Tuple[str, str], Dict] = {}
+        self._lock = threading.Lock()
 
         # 确保可写脚本根目录存在
         os.makedirs(self.user_scripts_root, exist_ok=True)
@@ -277,13 +280,43 @@ class ScriptLoader:
             print(f"[ScriptLoader] 警告: 安全检查失败: {e}")
             return True
 
-    def load(self, script_path: str, reload: bool = False) -> Tuple[Any, Dict]:
+    @staticmethod
+    def _build_module_name(script_path: str, isolate_key: Optional[str] = None) -> str:
+        normalized_path = script_path.replace("/", ".").replace("\\", ".")
+        if normalized_path.endswith(".py"):
+            normalized_path = normalized_path[:-3]
+
+        if not isolate_key:
+            return f"user_scripts.{normalized_path}"
+
+        suffix = hashlib.sha1(str(isolate_key).encode("utf-8")).hexdigest()[:12]
+        return f"user_scripts_isolated.{normalized_path}__{suffix}"
+
+    @staticmethod
+    def _load_module_from_path(abs_path: str, module_name: str):
+        spec = importlib.util.spec_from_file_location(module_name, abs_path)
+        if spec is None or spec.loader is None:
+            raise ScriptLoadError(f"无法创建模块规范: {abs_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def _remove_module(module_name: Optional[str]):
+        """移除已注册但未成功缓存的模块，避免失败重试残留。"""
+        if module_name and module_name in sys.modules:
+            del sys.modules[module_name]
+
+    def load(self, script_path: str, reload: bool = False, isolate_key: Optional[str] = None) -> Tuple[Any, Dict]:
         """
         加载脚本模块
 
         Args:
             script_path: 相对于 scripts_root 的路径
             reload: 是否强制重新加载
+            isolate_key: 隔离加载 key。提供后会为该 key 创建独立模块命名空间。
 
         Returns:
             (module, metadata)
@@ -301,11 +334,18 @@ class ScriptLoader:
         # 获取文件修改时间
         mtime = os.path.getmtime(abs_path)
 
-        # 检查缓存
-        if script_path in self._cache and not reload:
-            cached = self._cache[script_path]
-            if cached['mtime'] == mtime:
-                return cached['module'], cached.get('metadata', {})
+        cache_key = (script_path, str(isolate_key)) if isolate_key is not None else None
+
+        with self._lock:
+            if cache_key is not None and cache_key in self._isolated_cache and not reload:
+                cached = self._isolated_cache[cache_key]
+                if cached['mtime'] == mtime:
+                    return cached['module'], cached.get('metadata', {})
+
+            if cache_key is None and script_path in self._cache and not reload:
+                cached = self._cache[script_path]
+                if cached['mtime'] == mtime:
+                    return cached['module'], cached.get('metadata', {})
 
         # 验证语法
         try:
@@ -322,20 +362,11 @@ class ScriptLoader:
         # 计算hash
         file_hash, content_hash = self.calculate_hash(abs_path)
 
+        module_name = self._build_module_name(script_path, isolate_key=isolate_key)
+
         # 动态加载模块
         try:
-            normalized_path = script_path.replace("/", ".").replace("\\", ".")
-            if normalized_path.endswith(".py"):
-                normalized_path = normalized_path[:-3]
-            module_name = f"user_scripts.{normalized_path}"
-
-            spec = importlib.util.spec_from_file_location(module_name, abs_path)
-            if spec is None or spec.loader is None:
-                raise ScriptLoadError(f"无法创建模块规范: {abs_path}")
-
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
+            module = self._load_module_from_path(abs_path, module_name)
             
             # === 注入模型解析器辅助函数 ===
             # 让脚本可以直接使用 resolve_model() 等函数，无需导入
@@ -348,12 +379,14 @@ class ScriptLoader:
                 warnings.warn(f"注入模型解析器失败: {inject_error}")
 
         except Exception as e:
+            self._remove_module(module_name)
             raise ScriptLoadError(f"模块加载失败: {e}")
 
         # 验证元数据
         try:
             has_metadata = self.validate_metadata(module)
         except ScriptValidationError as e:
+            self._remove_module(module_name)
             raise ScriptLoadError(f"元数据验证失败: {e}")
 
         # 获取元数据
@@ -361,17 +394,29 @@ class ScriptLoader:
 
         # 验证必需函数
         if not hasattr(module, 'process'):
+            self._remove_module(module_name)
             raise ScriptLoadError(f"脚本缺少必需的 process() 函数")
 
         # 缓存
-        self._cache[script_path] = {
+        cache_entry = {
             'module': module,
             'mtime': mtime,
             'hash': file_hash,
             'content_hash': content_hash,
             'metadata': metadata,
-            'state': None  # init() 函数的状态
+            'state': None,  # init() 函数的状态
+            'module_name': module_name,
         }
+
+        with self._lock:
+            if cache_key is not None:
+                old_cached = self._isolated_cache.get(cache_key)
+                if old_cached:
+                    old_module_name = old_cached.get('module_name')
+                    self._remove_module(old_module_name)
+                self._isolated_cache[cache_key] = cache_entry
+            else:
+                self._cache[script_path] = cache_entry
 
         return module, metadata
 
@@ -401,35 +446,44 @@ class ScriptLoader:
         """
         return self.load(script_path, reload=True)
 
-    def unload(self, script_path: str):
+    def unload(self, script_path: str, isolate_key: Optional[str] = None):
         """
         卸载脚本（从缓存移除）
 
         Args:
             script_path: 脚本路径
+            isolate_key: 隔离加载 key
         """
-        if script_path in self._cache:
-            # 调用 cleanup 函数（如果存在）
-            cached = self._cache[script_path]
-            module = cached['module']
-            state = cached.get('state')
+        cache_key = (script_path, str(isolate_key)) if isolate_key is not None else None
 
-            if hasattr(module, 'cleanup') and state is not None:
-                try:
-                    module.cleanup(state)
-                except Exception as e:
-                    print(f"[ScriptLoader] 警告: cleanup() 调用失败: {e}")
+        with self._lock:
+            if cache_key is not None:
+                cached = self._isolated_cache.pop(cache_key, None)
+                module_name = (
+                    cached.get('module_name')
+                    if cached
+                    else self._build_module_name(script_path, isolate_key=isolate_key)
+                )
+                self._remove_module(module_name)
+                return
 
-            # 从缓存移除
-            del self._cache[script_path]
+            if script_path in self._cache:
+                # 调用 cleanup 函数（如果存在）
+                cached = self._cache[script_path]
+                module = cached['module']
+                state = cached.get('state')
 
-            # 从 sys.modules 移除
-            normalized_path = script_path.replace("/", ".").replace("\\", ".")
-            if normalized_path.endswith(".py"):
-                normalized_path = normalized_path[:-3]
-            module_name = f"user_scripts.{normalized_path}"
-            if module_name in sys.modules:
-                del sys.modules[module_name]
+                if hasattr(module, 'cleanup') and state is not None:
+                    try:
+                        module.cleanup(state)
+                    except Exception as e:
+                        print(f"[ScriptLoader] 警告: cleanup() 调用失败: {e}")
+
+                # 从缓存移除
+                del self._cache[script_path]
+
+                module_name = cached.get('module_name') or self._build_module_name(script_path)
+                self._remove_module(module_name)
 
     def check_updates(self) -> list:
         """
@@ -522,6 +576,7 @@ class ScriptLoader:
         """
         return {
             'cached_count': len(self._cache),
+            'isolated_cached_count': len(self._isolated_cache),
             'scripts_root': self.scripts_root,
             'builtin_scripts_root': self.builtin_scripts_root,
             'search_roots': self.search_roots,

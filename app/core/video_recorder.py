@@ -57,6 +57,8 @@ class VideoRecorder:
         Returns:
             视频文件相对路径
         """
+        self.cleanup_completed_tasks(max_age_seconds=300)
+
         # 生成输出文件名
         if output_filename is None:
             timestamp_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(trigger_time))
@@ -353,6 +355,26 @@ class VideoRecorder:
                 del self.recording_tasks[alert_id]
                 logger.debug(f"清理录制任务 {alert_id}")
 
+    def shutdown(self):
+        """关闭录制器，优先等待活跃录制线程退出。"""
+        active_threads = []
+        with self.lock:
+            for info in self.recording_tasks.values():
+                thread = info.get('thread')
+                if thread is not None and thread.is_alive():
+                    active_threads.append(thread)
+
+        for thread in active_threads:
+            thread.join(timeout=10)
+
+        still_running = any(thread.is_alive() for thread in active_threads)
+        if still_running:
+            logger.warning("VideoRecorder 关闭时仍有活跃录制线程，暂不回收录制器")
+            return False
+
+        self.cleanup_completed_tasks(max_age_seconds=0)
+        return True
+
 
 class VideoRecorderManager:
     """视频录制管理器，管理多个任务的录制器"""
@@ -372,11 +394,17 @@ class VideoRecorderManager:
         if self._initialized:
             return
         
-        self.recorders = {}  # source_id -> VideoRecorder
+        self.recorders = {}  # recorder_key -> VideoRecorder
         self._initialized = True
     
-    def get_recorder(self, source_id: int, buffer: VideoRingBuffer, 
-                     save_dir: str, fps: int = 10) -> VideoRecorder:
+    def get_recorder(
+        self,
+        source_id: int,
+        buffer: VideoRingBuffer,
+        save_dir: str,
+        fps: int = 10,
+        recorder_key=None,
+    ) -> VideoRecorder:
         """
         获取或创建指定视频源的录制器
         
@@ -389,13 +417,17 @@ class VideoRecorderManager:
         Returns:
             VideoRecorder实例
         """
-        if source_id not in self.recorders:
-            self.recorders[source_id] = VideoRecorder(buffer, save_dir, fps)
+        key = recorder_key if recorder_key is not None else source_id
+        if key not in self.recorders:
+            self.recorders[key] = VideoRecorder(buffer, save_dir, fps)
         
-        return self.recorders[source_id]
+        return self.recorders[key]
     
-    def cleanup_recorder(self, source_id: int):
+    def cleanup_recorder(self, recorder_key):
         """清理指定视频源的录制器"""
-        if source_id in self.recorders:
-            del self.recorders[source_id]
-
+        if recorder_key in self.recorders:
+            if self.recorders[recorder_key].shutdown():
+                del self.recorders[recorder_key]
+                return True
+            return False
+        return True

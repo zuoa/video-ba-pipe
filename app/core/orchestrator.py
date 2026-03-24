@@ -2,9 +2,6 @@ import signal
 import subprocess
 import threading
 import time
-from queue import Queue
-
-from playhouse.shortcuts import model_to_dict
 
 from app import logger
 from app.config import (
@@ -16,6 +13,7 @@ from app.config import (
     RECORDING_ENABLED,
     RECORDING_FPS,
     RECORDING_JPEG_QUALITY,
+    POST_ALERT_DURATION,
     NO_FRAME_WARNING_THRESHOLD,
     NO_FRAME_CRITICAL_THRESHOLD,
     HIGH_ERROR_COUNT_THRESHOLD,
@@ -24,14 +22,15 @@ from app.config import (
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog, run_db_with_retry
 from app.core.ringbuffer import VideoRingBuffer
+from app.core.workflow_runtime import build_workflow_signature, extract_source_id_from_workflow_data
 
 
 class OutputReader(threading.Thread):
     """持续读取子进程输出的线程"""
-    def __init__(self, process, workflow_id, stream_type='stdout'):
+    def __init__(self, process, log_label, stream_type='stdout'):
         super().__init__(daemon=True)
         self.process = process
-        self.workflow_id = workflow_id
+        self.log_label = log_label
         self.stream_type = stream_type
         self.stream = getattr(process, stream_type)
         self.running = True
@@ -45,12 +44,12 @@ class OutputReader(threading.Thread):
                 if line:
                     log_msg = line.rstrip('\n\r')
                     if self.stream_type == 'stderr':
-                        logger.error(f"[Workflow-{self.workflow_id}] {log_msg}")
+                        logger.error(f"[{self.log_label}] {log_msg}")
                     else:
-                        logger.info(f"[Workflow-{self.workflow_id}] {log_msg}")
+                        logger.info(f"[{self.log_label}] {log_msg}")
         except Exception as e:
             if self.running:
-                logger.warning(f"[Workflow-{self.workflow_id}] 读取{self.stream_type}时出错: {e}")
+                logger.warning(f"[{self.log_label}] 读取{self.stream_type}时出错: {e}")
 
     def stop(self):
         """停止读取线程"""
@@ -60,12 +59,12 @@ class OutputReader(threading.Thread):
 class Orchestrator:
     def __init__(self):
         self.running_processes = {}
-        self.workflow_processes = {}
+        self.workflow_hosts = {}
         self.buffers = {}
         self.recording_buffers = {}
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
-        self.workflow_config_versions = {}  # 记录运行中工作流的配置版本号
+        self.workflow_host_signatures = {}
         db.connect(reuse_if_open=True)
         run_db_with_retry(
             lambda: VideoSource.update(status='STOPPED', decoder_pid=None).execute(),
@@ -77,6 +76,61 @@ class Orchestrator:
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
         self.start_grace_period = 60  # 启动后60秒内不进行健康检查
         self.health_log_interval = 30  # 健康日志记录间隔（秒），避免日志泛滥
+
+    def _stop_process(self, process_info: dict, wait_timeout: float = 3.0):
+        if not process_info:
+            return
+
+        process = process_info.get('process')
+        stdout_reader = process_info.get('stdout_reader')
+        stderr_reader = process_info.get('stderr_reader')
+
+        if stdout_reader:
+            stdout_reader.stop()
+        if stderr_reader:
+            stderr_reader.stop()
+
+        if process is None:
+            return
+
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=wait_timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    f"子进程 PID {process.pid} 未在 {wait_timeout}s 内退出，执行 kill"
+                )
+                process.kill()
+                process.wait(timeout=1)
+
+        try:
+            process.communicate(timeout=1)
+        except Exception:
+            pass
+
+        if stdout_reader:
+            stdout_reader.join(timeout=1)
+        if stderr_reader:
+            stderr_reader.join(timeout=1)
+
+    @staticmethod
+    def _extract_source_id(workflow: Workflow):
+        return extract_source_id_from_workflow_data(workflow.data_dict)
+
+    def _build_active_workflow_groups(self):
+        groups = {}
+        for workflow in Workflow.select().where(Workflow.is_active == True):
+            source_id = self._extract_source_id(workflow)
+            if source_id is None:
+                logger.warning(f"工作流 {workflow.id} 没有合法视频源节点，跳过 host 分组")
+                continue
+            groups.setdefault(source_id, []).append(workflow)
+
+        for workflows in groups.values():
+            workflows.sort(key=lambda item: item.id)
+
+        return groups
 
     def _check_source_health(self, source: VideoSource):
         """
@@ -243,8 +297,9 @@ class Orchestrator:
             )
 
         # 启动解码器进程
+        import sys
         decoder_args = [
-            'python', 'decoder_worker.py',
+            sys.executable, 'decoder_worker.py',
             '--url', source.source_url,
             '--source-id', str(source.id),
             '--decoder-type', VIDEO_DECODER_TYPE,
@@ -261,7 +316,10 @@ class Orchestrator:
         source.decoder_pid = decoder_p.pid
         self._save_source(source, f'保存视频源启动状态:{source.id}')
 
-        self.running_processes[source.id] = {'decoder': decoder_p}
+        self.running_processes[source.id] = {
+            'process': decoder_p,
+            'decoder': decoder_p,
+        }
 
         # 记录启动时间（用于健康检查宽限期）
         self.source_start_times[source.id] = time.time()
@@ -270,8 +328,10 @@ class Orchestrator:
     def _stop_source(self, source: VideoSource):
         print(f"  -> 正在停止视频源 ID {source.id}: {source.name}")
 
+        self._stop_source_host(source.id)
+
         if source.id in self.running_processes:
-            self.running_processes[source.id]['decoder'].terminate()
+            self._stop_process(self.running_processes[source.id], wait_timeout=5.0)
             del self.running_processes[source.id]
 
         if source.id in self.buffers:
@@ -291,30 +351,6 @@ class Orchestrator:
         # 清除健康日志时间记录
         if source.id in self.last_health_log_times:
             del self.last_health_log_times[source.id]
-
-        # 停止所有使用该视频源的 workflow 进程
-        workflows_to_stop = []
-        for workflow_id, process_info in list(self.workflow_processes.items()):
-            if process_info.get('source_id') == source.id:
-                workflows_to_stop.append(workflow_id)
-
-        for workflow_id in workflows_to_stop:
-            logger.debug(f"  -> 停止使用视频源 {source.id} 的工作流 ID {workflow_id}")
-            try:
-                # 停止输出读取线程
-                if 'stdout_reader' in self.workflow_processes[workflow_id]:
-                    self.workflow_processes[workflow_id]['stdout_reader'].stop()
-                if 'stderr_reader' in self.workflow_processes[workflow_id]:
-                    self.workflow_processes[workflow_id]['stderr_reader'].stop()
-
-                # 终止进程
-                self.workflow_processes[workflow_id]['process'].terminate()
-
-                # 清理进程记录，让 manage_workflows 在下一轮自动重启
-                del self.workflow_processes[workflow_id]
-                logger.debug(f"  ✅ 工作流 ID {workflow_id} 已停止，将在视频源重启后自动恢复")
-            except Exception as e:
-                logger.error(f"  ❌ 停止工作流 ID {workflow_id} 失败: {e}")
 
         source.status = 'STOPPED'
         source.decoder_pid = None
@@ -352,7 +388,7 @@ class Orchestrator:
                 need_reboot = False
 
                 # 检查1: 进程是否退出
-                exit_code = self.running_processes[source.id]['decoder'].poll()
+                exit_code = self.running_processes[source.id]['process'].poll()
                 if exit_code is not None:
                     logger.warning(
                         f"🚨 视频源 ID {source.id} 的解码器进程已退出 "
@@ -385,41 +421,26 @@ class Orchestrator:
                     self._save_source(source, f'保存视频源重启状态:{source.id}')
                     logger.debug(f"✅ 视频源 ID {source.id} 已标记为STOPPED，将在下一轮管理循环中自动重启")
     
-    def _start_workflow(self, workflow: Workflow):
-        logger.info(f"  -> 正在启动工作流 ID {workflow.id}: {workflow.name}")
-
-        workflow_data = workflow.data_dict
-        logger.debug(f"工作流数据: {workflow_data}")
-        nodes = workflow_data.get('nodes', [])
-
-        source_node = None
-        for node in nodes:
-            if node.get('type') == 'source':
-                source_node = node
-                break
-
-        if not source_node:
-            logger.error(f"工作流 {workflow.id} 没有视频源节点，跳过启动")
-            return
-
-        source_id = source_node.get('dataId')
-        if not source_id:
-            logger.error(f"工作流 {workflow.id} 的视频源节点未配置dataId，跳过启动")
-            return
-
+    def _start_source_host(self, source_id: int, workflows):
         try:
             source = VideoSource.get_by_id(source_id)
-            if source.status != 'RUNNING':
-                logger.warning(f"工作流 {workflow.id} 的视频源 {source.name} (状态: {source.status}) 未运行，跳过启动")
-                return
         except VideoSource.DoesNotExist:
-            logger.error(f"工作流 {workflow.id} 的视频源 ID {source_id} 不存在")
+            logger.error(f"视频源 {source_id} 不存在，无法启动 source host")
             return
+
+        if source.status != 'RUNNING':
+            logger.warning(f"视频源 {source.name} (状态: {source.status}) 未运行，跳过启动 source host")
+            return
+
+        logger.info(
+            f"  -> 正在启动视频源宿主进程 Source={source_id}, "
+            f"workflows={[workflow.id for workflow in workflows]}"
+        )
 
         import sys
         workflow_args = [
-            sys.executable, '-u', 'workflow_worker.py',
-            '--workflow-id', str(workflow.id)
+            sys.executable, '-u', 'source_workflow_host.py',
+            '--source-id', str(source_id)
         ]
         logger.debug(f"启动命令: {' '.join(workflow_args)}")
 
@@ -433,22 +454,25 @@ class Orchestrator:
             )
 
             # 启动输出读取线程
-            stdout_reader = OutputReader(workflow_p, workflow.id, 'stdout')
-            stderr_reader = OutputReader(workflow_p, workflow.id, 'stderr')
+            log_label = f"SourceHost-{source_id}"
+            stdout_reader = OutputReader(workflow_p, log_label, 'stdout')
+            stderr_reader = OutputReader(workflow_p, log_label, 'stderr')
             stdout_reader.start()
             stderr_reader.start()
 
-            self.workflow_processes[workflow.id] = {
+            self.workflow_hosts[source_id] = {
                 'process': workflow_p,
                 'source_id': source_id,
+                'workflow_ids': [workflow.id for workflow in workflows],
                 'stdout_reader': stdout_reader,
                 'stderr_reader': stderr_reader
             }
+            self.workflow_host_signatures[source_id] = build_workflow_signature(workflows)
 
-            # 记录启动时的配置版本号
-            self.workflow_config_versions[workflow.id] = workflow.config_version
-
-            logger.debug(f"工作流 {workflow.id} 已启动，PID: {workflow_p.pid}, 配置版本: v{workflow.config_version}")
+            logger.debug(
+                f"Source host {source_id} 已启动，PID: {workflow_p.pid}, "
+                f"signature={self.workflow_host_signatures[source_id]}"
+            )
 
             time.sleep(0.5)
             exit_code = workflow_p.poll()
@@ -456,92 +480,73 @@ class Orchestrator:
                 stdout_reader.stop()
                 stderr_reader.stop()
                 stdout, stderr = workflow_p.communicate()
-                logger.error(f"工作流 {workflow.id} 启动失败，退出码: {exit_code}")
+                logger.error(f"Source host {source_id} 启动失败，退出码: {exit_code}")
                 logger.error(f"STDOUT: {stdout}")
                 logger.error(f"STDERR: {stderr}")
-                if workflow.id in self.workflow_processes:
-                    del self.workflow_processes[workflow.id]
-                if workflow.id in self.workflow_config_versions:
-                    del self.workflow_config_versions[workflow.id]
+                if source_id in self.workflow_hosts:
+                    del self.workflow_hosts[source_id]
+                if source_id in self.workflow_host_signatures:
+                    del self.workflow_host_signatures[source_id]
         except Exception as e:
-            logger.error(f"启动工作流 {workflow.id} 时发生异常: {e}", exc_info=True)
-    
-    def _stop_workflow(self, workflow: Workflow):
-        logger.info(f"  -> 正在停止工作流 ID {workflow.id}: {workflow.name}")
+            logger.error(f"启动 Source host {source_id} 时发生异常: {e}", exc_info=True)
 
-        if workflow.id in self.workflow_processes:
-            # 停止输出读取线程
-            if 'stdout_reader' in self.workflow_processes[workflow.id]:
-                self.workflow_processes[workflow.id]['stdout_reader'].stop()
-            if 'stderr_reader' in self.workflow_processes[workflow.id]:
-                self.workflow_processes[workflow.id]['stderr_reader'].stop()
+    def _stop_source_host(self, source_id: int):
+        if source_id not in self.workflow_hosts:
+            return
 
-            # 终止进程
-            self.workflow_processes[workflow.id]['process'].terminate()
-            del self.workflow_processes[workflow.id]
-
-        # 清理版本记录
-        if workflow.id in self.workflow_config_versions:
-            del self.workflow_config_versions[workflow.id]
+        logger.info(f"  -> 正在停止视频源宿主进程 Source={source_id}")
+        process_info = self.workflow_hosts[source_id]
+        host_wait_timeout = max(35.0, float(POST_ALERT_DURATION) + 10.0)
+        self._stop_process(process_info, wait_timeout=host_wait_timeout)
+        del self.workflow_hosts[source_id]
+        self.workflow_host_signatures.pop(source_id, None)
     
     def manage_workflows(self):
-        active_workflows = Workflow.select().where(Workflow.is_active == True)
-        logger.debug(f"检测到 {active_workflows.count()} 个激活的工作流")
+        active_groups = self._build_active_workflow_groups()
+        logger.debug(
+            f"检测到 {sum(len(workflows) for workflows in active_groups.values())} 个激活工作流，"
+            f"分布在 {len(active_groups)} 个视频源"
+        )
 
-        for workflow in active_workflows:
-            if workflow.id not in self.workflow_processes:
-                logger.info(f"发现新的激活工作流: {workflow.name} (ID: {workflow.id})")
-                self._start_workflow(workflow)
-            else:
-                # 检查配置版本是否变化
-                # 强制从数据库重新读取，避免 ORM 缓存问题
-                try:
-                    fresh_workflow = Workflow.get_by_id(workflow.id)
-                    current_version = fresh_workflow.config_version
-                except Workflow.DoesNotExist:
-                    logger.warning(f"工作流 {workflow.id} 已被删除，跳过检查")
-                    continue
+        for source_id, workflows in active_groups.items():
+            signature = build_workflow_signature(workflows)
+            running_info = self.workflow_hosts.get(source_id)
 
-                running_version = self.workflow_config_versions.get(workflow.id, 0)
+            if running_info is None:
+                self._start_source_host(source_id, workflows)
+                continue
 
-                if running_version != current_version:
-                    logger.info(
-                        f"🔄 工作流 {workflow.id} ({workflow.name}) 配置已变更 "
-                        f"(v{running_version} -> v{current_version})，自动重启中..."
-                    )
-                    self._stop_workflow(workflow)
-                    # 清理后会在下一轮自动重启（因为 is_active=True）
+            running_signature = self.workflow_host_signatures.get(source_id)
+            if running_signature != signature:
+                logger.info(
+                    f"🔄 Source {source_id} 的工作流集合已变更 "
+                    f"({running_signature} -> {signature})，重启 source host"
+                )
+                self._stop_source_host(source_id)
+                self._start_source_host(source_id, workflows)
 
-        inactive_workflows = Workflow.select().where(Workflow.is_active == False)
-        for workflow in inactive_workflows:
-            if workflow.id in self.workflow_processes:
-                logger.info(f"工作流 ID {workflow.id} 已停用，正在停止...")
-                self._stop_workflow(workflow)
+        for source_id in list(self.workflow_hosts.keys()):
+            if source_id not in active_groups:
+                logger.info(f"Source {source_id} 已无激活工作流，停止 source host")
+                self._stop_source_host(source_id)
 
-        for workflow_id in list(self.workflow_processes.keys()):
-            process_info = self.workflow_processes[workflow_id]
+        for source_id in list(self.workflow_hosts.keys()):
+            process_info = self.workflow_hosts[source_id]
             exit_code = process_info['process'].poll()
             if exit_code is not None:
-                logger.warning(f"🚨 工作流 ID {workflow_id} 的进程已退出 (退出码:{exit_code})，准备自动重启")
-
-                # 停止输出读取线程
-                if 'stdout_reader' in process_info:
-                    process_info['stdout_reader'].stop()
-                if 'stderr_reader' in process_info:
-                    process_info['stderr_reader'].stop()
-
+                logger.warning(
+                    f"🚨 Source host {source_id} 的进程已退出 (退出码:{exit_code})，准备自动重启"
+                )
                 try:
                     stdout, stderr = process_info['process'].communicate(timeout=1)
                     if stderr:
-                        logger.error(f"工作流 {workflow_id} 错误输出: {stderr}")
-                except:
+                        logger.error(f"Source host {source_id} 错误输出: {stderr}")
+                except Exception:
                     pass
 
-                # 清理进程记录，让manage_workflows在下一轮自动重启
-                del self.workflow_processes[workflow_id]
-                if workflow_id in self.workflow_config_versions:
-                    del self.workflow_config_versions[workflow_id]
-                logger.info(f"✅ 工作流 ID {workflow_id} 已清理进程记录，将在下一轮管理循环中自动重启")
+                del self.workflow_hosts[source_id]
+                self.workflow_host_signatures.pop(source_id, None)
+                logger.info(f"✅ Source host {source_id} 已清理进程记录，将在下一轮管理循环中自动重启")
 
     def run(self):
         print("🚀 编排器启动，开始动态管理视频源和工作流...")
@@ -552,14 +557,10 @@ class Orchestrator:
 
     def stop(self):
         print("\n优雅地关闭所有正在运行的工作流和视频源...")
-        
-        for workflow_id in list(self.workflow_processes.keys()):
-            try:
-                workflow = Workflow.get_by_id(workflow_id)
-                self._stop_workflow(workflow)
-            except:
-                pass
-        
+
+        for source_id in list(self.workflow_hosts.keys()):
+            self._stop_source_host(source_id)
+
         for source in VideoSource.select().where(VideoSource.status == 'RUNNING'):
             self._stop_source(source)
         

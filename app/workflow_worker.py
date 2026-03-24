@@ -5,6 +5,7 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,13 @@ def main(args):
     logger.info(f"[WorkflowWorker:{os.getpid()}] 工作流工作进程启动，参数: {args}")
     workflow_id = args.workflow_id
     executor = WorkflowExecutor(workflow_id)
+
+    def _handle_signal(signum, frame):
+        logger.info(f"[WorkflowWorker:{os.getpid()}] 收到信号 {signum}，准备停止")
+        executor.stop()
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
     executor.run()
 
 
