@@ -7,6 +7,7 @@ from typing import Optional
 import numpy as np
 
 from app import logger
+from app.config import FFMPEG_SW_DECODER_THREADS
 from app.core.decoder.base import BaseDecoder
 
 
@@ -132,9 +133,11 @@ class AsyncFFmpegDecoder(BaseDecoder):
 class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
     def _build_ffmpeg_command(self) -> list:
         self.logger.info("构建异步FFmpeg软件解码命令 (仅解码关键帧 - 修正版)...")
+        threads = max(1, int(self.config.get('threads', FFMPEG_SW_DECODER_THREADS)))
 
         # 将输入参数放在 -i pipe:0 之前
         input_args = [
+            '-threads', str(threads),
             '-skip_frame', 'nokey',  # 跳过非关键帧
             '-fflags', '+genpts+discardcorrupt',
             '-f', self.config.get('input_format', 'h264'),

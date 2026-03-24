@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 import numpy as np
 
 from app import logger
+from app.config import DECODER_OUTPUT_QUEUE_SIZE
 
 
 class DecoderStatus(Enum):
@@ -41,7 +42,8 @@ class BaseDecoder(ABC):
         # 为每个解码器实例创建独立的 logger
         self.logger = logging.getLogger(f"Decoder-{self.decoder_id}")
 
-        self.output_queue = queue.Queue(maxsize=30)
+        output_queue_size = max(1, int(kwargs.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)))
+        self.output_queue = queue.Queue(maxsize=output_queue_size)
 
         self.frames_decoded = 0
         self.frames_dropped = 0

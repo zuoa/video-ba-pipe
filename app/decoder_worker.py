@@ -15,6 +15,8 @@ from app.config import (
     ANALYSIS_TARGET_FPS,
     IS_EXTREME_DECODE_MODE,
     VIDEO_DECODER_TYPE,
+    FFMPEG_SW_DECODER_THREADS,
+    DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
     RECORDING_ENABLED,
@@ -180,7 +182,11 @@ class DecoderWorker:
                 width=width,
                 height=height,
                 input_format=input_format,
-                output_format=output_format
+                output_format=output_format,
+                threads=int(self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)),
+                output_queue_size=int(
+                    self.decoder_config.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)
+                ),
             )
             logger.info(f"已创建解码器: {decoder_type} ({width}x{height})")
 
@@ -518,7 +524,9 @@ def main(args):
         'width': args.width,
         'height': args.height,
         'input_format': args.input_format,
-        'output_format': args.output_format
+        'output_format': args.output_format,
+        'threads': args.decoder_threads,
+        'output_queue_size': args.decoder_output_queue_size,
     }
 
     analysis_config = {
@@ -600,6 +608,10 @@ if __name__ == '__main__':
     decoder_group.add_argument('--output-format', default='rgb24',
                                choices=['rgb24', 'bgr24', 'yuv420p'],
                                help='输出格式 (默认: rgb24)')
+    decoder_group.add_argument('--decoder-threads', type=int, default=FFMPEG_SW_DECODER_THREADS,
+                               help='软解 ffmpeg 线程数 (默认读取 FFMPEG_SW_DECODER_THREADS)')
+    decoder_group.add_argument('--decoder-output-queue-size', type=int, default=DECODER_OUTPUT_QUEUE_SIZE,
+                               help='解码输出队列大小，越大越占内存 (默认读取 DECODER_OUTPUT_QUEUE_SIZE)')
 
     # 帧采样参数
     sample_group = parser.add_argument_group('帧采样配置')
