@@ -2,23 +2,101 @@ from copy import deepcopy
 from typing import Iterable, Optional, Tuple
 
 
+SOURCE_NODE_TYPES = {'source', 'videosource', 'video_source'}
+SOURCE_ID_KEYS = ('dataId', 'data_id', 'videoSourceId', 'video_source_id')
+
+
+def get_node_type(node: dict) -> str:
+    if not isinstance(node, dict):
+        return ''
+
+    data = node.get('data')
+    nested_type = data.get('type') if isinstance(data, dict) else None
+    return str(node.get('type') or nested_type or '').strip().lower()
+
+
+def is_source_node(node: dict) -> bool:
+    return get_node_type(node) in SOURCE_NODE_TYPES
+
+
+def iter_source_node_id_values(node: dict):
+    if not isinstance(node, dict):
+        return
+
+    data = node.get('data')
+    for key in SOURCE_ID_KEYS:
+        yield node.get(key)
+
+    if isinstance(data, dict):
+        for key in SOURCE_ID_KEYS:
+            yield data.get(key)
+
+
+def extract_source_id_from_node(node: dict) -> Optional[int]:
+    for source_id in iter_source_node_id_values(node):
+        if source_id in (None, ''):
+            continue
+
+        try:
+            return int(source_id)
+        except (TypeError, ValueError):
+            continue
+
+    return None
+
+
+def _source_node_has_any_id_value(node: dict) -> bool:
+    return any(source_id not in (None, '') for source_id in iter_source_node_id_values(node))
+
+
+def _build_runtime_comparable_workflow_data(workflow_data: dict) -> dict:
+    comparable = deepcopy(workflow_data) if isinstance(workflow_data, dict) else {}
+    nodes = comparable.get('nodes')
+    if not isinstance(nodes, list):
+        return comparable
+
+    for node in nodes:
+        if not is_source_node(node):
+            continue
+
+        node['type'] = 'source'
+        node.pop('videoSourceName', None)
+        node.pop('videoSourceCode', None)
+
+        data = node.get('data')
+        if isinstance(data, dict):
+            data['type'] = 'source'
+            data.pop('videoSourceName', None)
+            data.pop('videoSourceCode', None)
+
+        source_id = extract_source_id_from_node(node)
+        if source_id is None:
+            continue
+
+        node['dataId'] = source_id
+        node['videoSourceId'] = source_id
+        if isinstance(data, dict):
+            data['dataId'] = source_id
+            data['videoSourceId'] = source_id
+
+    return comparable
+
+
+def workflow_configs_equivalent(left: dict, right: dict) -> bool:
+    """比较两个工作流是否在运行时语义上等价。"""
+    return _build_runtime_comparable_workflow_data(left) == _build_runtime_comparable_workflow_data(right)
+
+
 def extract_source_id_from_workflow_data(workflow_data: dict) -> Optional[int]:
     """从工作流 JSON 中提取 source 节点绑定的视频源 ID。"""
     if not isinstance(workflow_data, dict):
         return None
 
     for node in workflow_data.get('nodes', []):
-        if node.get('type') != 'source':
+        if not is_source_node(node):
             continue
 
-        source_id = node.get('dataId')
-        if source_id in (None, ''):
-            return None
-
-        try:
-            return int(source_id)
-        except (TypeError, ValueError):
-            return None
+        return extract_source_id_from_node(node)
 
     return None
 
@@ -32,19 +110,16 @@ def validate_single_source_node(workflow_data: dict) -> tuple[bool, str]:
     if not isinstance(nodes, list):
         return False, "workflow_data.nodes 必须是数组"
 
-    source_nodes = [node for node in nodes if node.get('type') == 'source']
+    source_nodes = [node for node in nodes if is_source_node(node)]
     if not source_nodes:
         return False, "工作流必须包含一个视频源节点"
     if len(source_nodes) > 1:
         return False, "工作流只允许包含一个视频源节点"
 
-    source_id = source_nodes[0].get('dataId')
-    if source_id in (None, ''):
+    source_id = extract_source_id_from_node(source_nodes[0])
+    if source_id is None and not _source_node_has_any_id_value(source_nodes[0]):
         return False, "视频源节点缺少 dataId"
-
-    try:
-        int(source_id)
-    except (TypeError, ValueError):
+    if source_id is None:
         return False, "视频源节点 dataId 非法"
 
     return True, ""
@@ -63,9 +138,10 @@ def normalize_source_node_fields(workflow_data: dict, source) -> dict:
     source_code = getattr(source, 'source_code', None)
 
     for node in nodes:
-        if node.get('type') != 'source':
+        if not is_source_node(node):
             continue
 
+        node['type'] = 'source'
         node['dataId'] = source_id
         node['videoSourceId'] = source_id
         node['videoSourceName'] = source_name
@@ -73,6 +149,7 @@ def normalize_source_node_fields(workflow_data: dict, source) -> dict:
 
         data = node.get('data')
         if isinstance(data, dict):
+            data['type'] = 'source'
             data['dataId'] = source_id
             data['videoSourceId'] = source_id
             data['videoSourceName'] = source_name

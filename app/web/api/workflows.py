@@ -7,7 +7,12 @@ from copy import deepcopy
 from flask import jsonify, request
 
 from app.core.database_models import Workflow, WorkflowNode, VideoSource, Algorithm
-from app.core.workflow_runtime import normalize_source_node_fields, validate_single_source_node
+from app.core.workflow_runtime import (
+    extract_source_id_from_workflow_data,
+    normalize_source_node_fields,
+    validate_single_source_node,
+    workflow_configs_equivalent,
+)
 from app.config import SNAPSHOT_SAVE_PATH
 
 
@@ -106,18 +111,14 @@ def register_workflows_api(app):
             if 'description' in data:
                 workflow.description = data['description']
             if 'workflow_data' in data:
+                existing_workflow_data = workflow.data_dict
                 workflow_data = deepcopy(data['workflow_data']) if isinstance(data['workflow_data'], dict) else data['workflow_data']
                 is_valid, error_message = validate_single_source_node(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
 
-                try:
-                    source_id = next(
-                        int(node.get('dataId'))
-                        for node in workflow_data.get('nodes', [])
-                        if node.get('type') == 'source'
-                    )
-                except (StopIteration, TypeError, ValueError):
+                source_id = extract_source_id_from_workflow_data(workflow_data)
+                if source_id is None:
                     return jsonify({'error': '视频源节点 dataId 非法'}), 400
 
                 try:
@@ -130,11 +131,13 @@ def register_workflows_api(app):
                 app.logger.info(f"保存工作流 {id} 数据: nodes={len(workflow_data.get('nodes', []))}, connections={len(workflow_data.get('connections', []))}")
                 app.logger.debug(f"工作流数据内容: {workflow_data_str[:500]}")
 
-                # 检查工作流数据是否真的变化了
-                if workflow.workflow_data != workflow_data_str:
-                    workflow.workflow_data = workflow_data_str
+                # 只有运行时有效配置变化才递增版本号；展示字段刷新不触发重启
+                if not workflow_configs_equivalent(existing_workflow_data, workflow_data):
                     need_version_bump = True
                     app.logger.info(f"工作流 {id} 配置已变更，将递增版本号")
+
+                if workflow.workflow_data != workflow_data_str:
+                    workflow.workflow_data = workflow_data_str
 
             if 'is_active' in data:
                 workflow.is_active = data['is_active']

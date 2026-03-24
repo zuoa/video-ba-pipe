@@ -6,6 +6,7 @@ from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     normalize_source_node_fields,
     validate_single_source_node,
+    workflow_configs_equivalent,
 )
 
 
@@ -36,6 +37,23 @@ def test_extract_source_id_from_workflow_data_returns_source_node_data_id():
     assert extract_source_id_from_workflow_data(workflow_data) == 7
 
 
+def test_extract_source_id_from_workflow_data_supports_legacy_source_shapes():
+    workflow_data = {
+        "nodes": [
+            {
+                "id": "source_1",
+                "type": "videoSource",
+                "data": {
+                    "type": "videoSource",
+                    "videoSourceId": "7",
+                },
+            }
+        ]
+    }
+
+    assert extract_source_id_from_workflow_data(workflow_data) == 7
+
+
 def test_validate_single_source_node_rejects_multiple_sources():
     workflow_data = {
         "nodes": [
@@ -50,18 +68,36 @@ def test_validate_single_source_node_rejects_multiple_sources():
     assert "只允许包含一个视频源节点" in error_message
 
 
+def test_validate_single_source_node_accepts_source_id_from_nested_legacy_data():
+    workflow_data = {
+        "nodes": [
+            {
+                "id": "source_1",
+                "data": {
+                    "type": "videoSource",
+                    "dataId": "9",
+                },
+            }
+        ]
+    }
+
+    is_valid, error_message = validate_single_source_node(workflow_data)
+
+    assert is_valid is True
+    assert error_message == ""
+
+
 def test_normalize_source_node_fields_syncs_runtime_and_display_fields():
     workflow_data = {
         "nodes": [
             {
                 "id": "source_1",
-                "type": "source",
-                "dataId": 3,
+                "type": "videoSource",
                 "videoSourceId": 3,
                 "videoSourceName": "old-name",
                 "videoSourceCode": "old-code",
                 "data": {
-                    "dataId": 3,
+                    "type": "videoSource",
                     "videoSourceId": 3,
                     "videoSourceName": "old-name",
                     "videoSourceCode": "old-code",
@@ -74,15 +110,75 @@ def test_normalize_source_node_fields_syncs_runtime_and_display_fields():
     normalized = normalize_source_node_fields(workflow_data, source)
 
     source_node = normalized["nodes"][0]
+    assert source_node["type"] == "source"
     assert source_node["dataId"] == 7
     assert source_node["videoSourceId"] == 7
     assert source_node["videoSourceName"] == "Lobby Cam"
     assert source_node["videoSourceCode"] == "cam-007"
+    assert source_node["data"]["type"] == "source"
     assert source_node["data"]["dataId"] == 7
     assert source_node["data"]["videoSourceId"] == 7
     assert source_node["data"]["videoSourceName"] == "Lobby Cam"
     assert source_node["data"]["videoSourceCode"] == "cam-007"
-    assert workflow_data["nodes"][0]["dataId"] == 3
+    assert workflow_data["nodes"][0]["type"] == "videoSource"
+    assert workflow_data["nodes"][0]["videoSourceId"] == 3
+
+
+def test_workflow_configs_equivalent_ignores_source_display_fields_and_legacy_shape():
+    existing = {
+        "nodes": [
+            {
+                "id": "source_1",
+                "type": "videoSource",
+                "data": {
+                    "type": "videoSource",
+                    "videoSourceId": "7",
+                    "videoSourceName": "Old Name",
+                    "videoSourceCode": "old-code",
+                },
+            },
+            {"id": "algo_1", "type": "algorithm", "dataId": 12},
+        ],
+        "connections": [{"source": "source_1", "target": "algo_1"}],
+    }
+    updated = {
+        "nodes": [
+            {
+                "id": "source_1",
+                "type": "source",
+                "dataId": 7,
+                "videoSourceId": 7,
+                "videoSourceName": "New Name",
+                "videoSourceCode": "new-code",
+                "data": {
+                    "type": "source",
+                    "dataId": 7,
+                    "videoSourceId": 7,
+                    "videoSourceName": "New Name",
+                    "videoSourceCode": "new-code",
+                },
+            },
+            {"id": "algo_1", "type": "algorithm", "dataId": 12},
+        ],
+        "connections": [{"source": "source_1", "target": "algo_1"}],
+    }
+
+    assert workflow_configs_equivalent(existing, updated) is True
+
+
+def test_workflow_configs_equivalent_detects_runtime_source_change():
+    existing = {
+        "nodes": [
+            {"id": "source_1", "type": "source", "dataId": 7},
+        ]
+    }
+    updated = {
+        "nodes": [
+            {"id": "source_1", "type": "source", "dataId": 8},
+        ]
+    }
+
+    assert workflow_configs_equivalent(existing, updated) is False
 
 
 def test_build_workflow_signature_is_sorted_and_version_sensitive():
