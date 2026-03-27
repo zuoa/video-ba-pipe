@@ -57,14 +57,14 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
       return (
         <div className="recent-alerts-empty">
           <BellOutlined className="loading-icon" spin />
-          <p>加载中...</p>
+          <p>正在加载最新告警...</p>
         </div>
       );
     }
     return (
       <div className="recent-alerts-empty">
         <BellOutlined className="empty-icon" />
-        <p>暂无告警</p>
+        <p>当前没有新的告警记录</p>
       </div>
     );
   };
@@ -84,7 +84,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
         </h3>
         {viewAllPath && (
           <a href={viewAllPath} className="view-all-link">
-            查看全部
+            查看告警
           </a>
         )}
       </div>
@@ -96,7 +96,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
             const task = tasks.find((t) => t.id === alert.task_id);
             const taskName = task
               ? `${task.name} #${task.source_code}`
-              : `任务 #${alert.task_id}`;
+              : `视频源 #${alert.task_id}`;
             const typeConfig = getAlertTypeConfig(alert.alert_type);
             const time = dayjs(alert.alert_time).format('MM-DD HH:mm');
             const imageUrl = alert.alert_image

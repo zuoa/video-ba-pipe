@@ -72,22 +72,22 @@ export default function Dashboard() {
 
   const quickAccessItems = [
     {
-      title: '任务管理',
-      description: '配置和管理分析任务',
+      title: '视频源管理',
+      description: '新增、启停并查看视频源',
       icon: <VideoCameraOutlined />,
       iconBgColor: '#000000',
       path: '/video-sources',
     },
     {
       title: '算法管理',
-      description: '管理AI算法模型',
+      description: '维护检测算法与模型版本',
       icon: <ExperimentOutlined />,
       iconBgColor: '#000000',
       path: '/algorithms',
     },
     {
       title: '告警记录',
-      description: '查看历史告警信息',
+      description: '按时间和视频源追踪最新告警',
       icon: <AlertOutlined />,
       iconBgColor: '#ff4d4f',
       path: '/alerts',
@@ -101,9 +101,9 @@ export default function Dashboard() {
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<AppstoreOutlined />}
-            title="总任务数"
+            title="视频源总数"
             value={stats.totalTasks}
-            subtitle={`运行中: ${stats.runningTasks}`}
+            subtitle={`当前有 ${stats.runningTasks} 路视频源正在运行`}
             iconBgColor="#000000"
             trendIcon={<ArrowUpOutlined />}
           />
@@ -113,7 +113,7 @@ export default function Dashboard() {
             icon={<ExperimentOutlined />}
             title="算法模型"
             value={stats.totalAlgorithms}
-            subtitle="AI 分析引擎"
+            subtitle="已接入的算法与模型总数"
             iconBgColor="#000000"
             trendIcon={<CheckCircleOutlined />}
           />
@@ -123,7 +123,7 @@ export default function Dashboard() {
             icon={<AlertOutlined />}
             title="今日告警"
             value={stats.todayAlerts}
-            subtitle="实时监控中"
+            subtitle="今日累计触发的告警次数"
             iconBgColor="#ff4d4f"
             trendIcon={<ExclamationCircleOutlined />}
           />
@@ -133,7 +133,7 @@ export default function Dashboard() {
             icon={<CheckCircleOutlined />}
             title="系统状态"
             value="运行中"
-            subtitle="正常运行"
+            subtitle="服务、视频流处理与告警链路正常"
             iconBgColor="#52c41a"
             trendIcon={<CheckCircleOutlined />}
           />
@@ -144,14 +144,14 @@ export default function Dashboard() {
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
           <QuickAccessCard
-            title="快速访问"
+            title="常用入口"
             icon={<RocketOutlined />}
             items={quickAccessItems}
           />
         </Col>
         <Col xs={24} lg={12}>
           <RecentAlertCard
-            title="最近告警"
+            title="最新告警"
             icon={<HistoryOutlined />}
             alerts={alerts}
             tasks={tasks}
