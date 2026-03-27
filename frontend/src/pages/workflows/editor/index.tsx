@@ -27,7 +27,8 @@ import { nodeTypes } from '../components/nodes';
 import ComponentSidebar from '../components/ComponentSidebar';
 import PropertyPanel from '../components/PropertyPanel';
 import TestPanel from '../components/TestPanel';
-import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig } from '@/services/api';
+import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig, getAlgorithms } from '@/services/api';
+import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
 import '../components/WorkflowEditor.css';
 
 export default function WorkflowEditorPage() {
@@ -39,9 +40,10 @@ export default function WorkflowEditorPage() {
   const [rightPanel, setRightPanel] = useState<'properties' | 'test'>('properties');
   const [workflow, setWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
+  const [algorithms, setAlgorithms] = useState<any[]>([]);
   const [vlConfig, setVlConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [videoSourcesLoaded, setVideoSourcesLoaded] = useState(false);
+  const [resourcesLoaded, setResourcesLoaded] = useState(false);
 
   // 使用 ref 保存 selectedNode 的最新值，防止闭包陷阱
   const selectedNodeRef = useRef<Node | null>(null);
@@ -64,19 +66,22 @@ export default function WorkflowEditorPage() {
   useEffect(() => {
     const loadAllData = async () => {
       setLoading(true);
-      await loadVideoSources();
-      await loadVlConfig();
-      setVideoSourcesLoaded(true);
+      await Promise.all([
+        loadVideoSources(),
+        loadAlgorithms(),
+        loadVlConfig(),
+      ]);
+      setResourcesLoaded(true);
     };
     loadAllData();
   }, [id]);
 
   // 视频源加载完成后，加载工作流数据
   useEffect(() => {
-    if (videoSourcesLoaded) {
+    if (resourcesLoaded) {
       loadWorkflowData();
     }
-  }, [videoSourcesLoaded, id]);
+  }, [resourcesLoaded, id]);
 
   const loadWorkflowData = async () => {
     try {
@@ -131,7 +136,10 @@ export default function WorkflowEditorPage() {
             };
 
             if (nodeType === 'algorithm') {
-              nodeData.confidence = node.config?.confidence ?? node.data?.confidence ?? 0.5;
+              const runtimeAlgorithmId = nodeData.dataId || nodeData.algorithmId;
+              const currentAlgorithm = algorithms.find((algo: any) => String(algo.id) === String(runtimeAlgorithmId));
+              nodeData.defaultConfidence = getAlgorithmDefaultConfidence(currentAlgorithm) ?? node.data?.defaultConfidence;
+              nodeData.confidence = node.config?.confidence ?? node.data?.confidence ?? nodeData.defaultConfidence;
             }
 
             // 特殊处理：从 data 字段读取额外的配置
@@ -370,6 +378,16 @@ export default function WorkflowEditorPage() {
       setVideoSources(data || []);
     } catch (error) {
       console.error('加载视频源失败:', error);
+    }
+  };
+
+  const loadAlgorithms = async () => {
+    try {
+      const data = await getAlgorithms();
+      setAlgorithms(data || []);
+    } catch (error) {
+      console.error('加载算法失败:', error);
+      setAlgorithms([]);
     }
   };
 
@@ -630,6 +648,8 @@ export default function WorkflowEditorPage() {
         description: nodeData.description,
         dataId: nodeData.dataId || null,
         algorithmId: nodeData.algorithmId || null,
+        defaultConfidence: nodeData.defaultConfidence,
+        confidence: nodeData.defaultConfidence,
         icon: nodeData.icon,
         color: nodeData.color,
         config: nodeData.config || {},  // 使用传入的 config，而不是 null

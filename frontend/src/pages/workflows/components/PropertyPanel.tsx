@@ -113,7 +113,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           }
         }
       } else if (nodeType === 'algorithm') {
-        formValues.confidence = nodeConfig.confidence ?? node.data.confidence ?? 0.5;
+        formValues.confidence = nodeConfig.confidence ?? node.data.confidence ?? node.data.defaultConfidence ?? 0.5;
 
         // 执行配置
         formValues.intervalSeconds = nodeConfig.interval_seconds || 1;
@@ -251,9 +251,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       if (nodeType === 'algorithm') {
-        const config = node.data?.config || {};
+        const config = { ...(node.data?.config || {}) };
+        const confidenceTouched = form.isFieldTouched('confidence');
 
-        config.confidence = values.confidence ?? config.confidence ?? 0.5;
+        if (confidenceTouched) {
+          config.confidence = values.confidence ?? node.data.defaultConfidence ?? 0.5;
+          config.confidence_override_enabled = true;
+        }
         // 保存执行配置
         config.interval_seconds = values.intervalSeconds;
         config.runtime_timeout = values.runtimeTimeout;
@@ -261,7 +265,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
 
-        updatedData.confidence = config.confidence;
+        updatedData.confidence = config.confidence ?? node.data.defaultConfidence;
         updatedData.config = config;
 
         delete updatedData.intervalSeconds;

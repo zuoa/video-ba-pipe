@@ -356,11 +356,12 @@ class WorkflowExecutor:
                     logger.warning(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 没有 data_id，跳过加载")
 
     def _sync_single_model_confidence(self, config: dict) -> tuple[dict, Optional[float]]:
-        """单模型脚本将 node confidence 与 models[0].confidence 取最大值作为最终阈值。"""
+        """单模型脚本同步 confidence，并兼容历史上未显式覆盖的节点配置。"""
         if not isinstance(config, dict):
             return config, None
 
         raw_threshold = config.get('confidence')
+        override_enabled = bool(config.get('confidence_override_enabled'))
         models = config.get('models')
         if not isinstance(models, list) or len(models) != 1:
             try:
@@ -387,11 +388,15 @@ class WorkflowExecutor:
         except (TypeError, ValueError):
             model_threshold = None
 
-        candidates = [value for value in (node_threshold, model_threshold) if value is not None]
-        if not candidates:
+        if override_enabled:
+            effective_threshold = node_threshold if node_threshold is not None else model_threshold
+        else:
+            candidates = [value for value in (node_threshold, model_threshold) if value is not None]
+            effective_threshold = max(candidates) if candidates else None
+        if effective_threshold is None:
             return config, None
 
-        threshold = max(0.0, min(1.0, max(candidates)))
+        threshold = max(0.0, min(1.0, effective_threshold))
 
         synced_config = dict(config)
         synced_models = [dict(model_config)]

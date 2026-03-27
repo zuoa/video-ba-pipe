@@ -149,7 +149,7 @@ def test_process_algorithm_filters_stage_boxes_by_config_confidence():
     assert metadata["stage_confidence_filtered_count"] == 1
 
 
-def test_sync_single_model_confidence_uses_max_threshold():
+def test_sync_single_model_confidence_uses_max_threshold_without_explicit_override():
     executor = WorkflowExecutor.__new__(WorkflowExecutor)
     executor.workflow_id = 1
 
@@ -166,6 +166,60 @@ def test_sync_single_model_confidence_uses_max_threshold():
     assert synced["models"][0]["confidence"] == 0.73
     assert synced["confidence"] == 0.73
     assert config["models"][0]["confidence"] == 0.73
+
+
+def test_sync_single_model_confidence_prefers_explicit_override_threshold():
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow_id = 1
+
+    config = {
+        "confidence": 0.21,
+        "confidence_override_enabled": True,
+        "models": [
+            {"model_id": 1, "confidence": 0.73, "class": 0}
+        ]
+    }
+
+    synced, threshold = executor._sync_single_model_confidence(config)
+
+    assert threshold == 0.21
+    assert synced["models"][0]["confidence"] == 0.21
+    assert synced["confidence"] == 0.21
+
+
+def test_sync_single_model_confidence_override_falls_back_to_model_threshold():
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow_id = 1
+
+    config = {
+        "confidence_override_enabled": True,
+        "models": [
+            {"model_id": 1, "confidence": 0.73, "class": 0}
+        ]
+    }
+
+    synced, threshold = executor._sync_single_model_confidence(config)
+
+    assert threshold == 0.73
+    assert synced["models"][0]["confidence"] == 0.73
+    assert synced["confidence"] == 0.73
+
+
+def test_sync_single_model_confidence_falls_back_to_model_threshold():
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow_id = 1
+
+    config = {
+        "models": [
+            {"model_id": 1, "confidence": 0.73, "class": 0}
+        ]
+    }
+
+    synced, threshold = executor._sync_single_model_confidence(config)
+
+    assert threshold == 0.73
+    assert synced["models"][0]["confidence"] == 0.73
+    assert synced["confidence"] == 0.73
 
 
 def test_get_algorithm_confidence_threshold_prefers_runtime_effective_threshold():
