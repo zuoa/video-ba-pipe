@@ -1,5 +1,13 @@
 import { request } from '@umijs/max';
 
+function getAuthHeaders(extraHeaders?: Record<string, string>) {
+  const token = localStorage.getItem('token');
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extraHeaders,
+  };
+}
+
 // 认证
 export async function login(data: { username: string; password: string }) {
   return request('/api/auth/login', {
@@ -285,6 +293,31 @@ export async function getModel(id: number) {
   return request(`/api/models/${id}`);
 }
 
+export async function downloadModelFile(id: number) {
+  const response = await fetch(`/api/models/${id}/download`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '下载失败');
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const matched = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = matched?.[1] || `model-${id}`;
+
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = decodeURIComponent(filename);
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export async function getModelTypes() {
   return request('/api/models/types');
 }
@@ -421,6 +454,10 @@ export async function updateScript(scriptPath: string, data: any) {
     method: 'PUT',
     data,
   });
+}
+
+export async function getScriptConfigSchema(scriptPath: string) {
+  return request(`/api/scripts/config-schema/${encodeURIComponent(scriptPath)}`);
 }
 
 export async function deleteScript(scriptPath: string) {

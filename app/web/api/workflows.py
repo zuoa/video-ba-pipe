@@ -14,35 +14,52 @@ from app.core.workflow_runtime import (
     workflow_configs_equivalent,
 )
 from app.config import SNAPSHOT_SAVE_PATH
+from app.web.api.auth import (
+    require_auth,
+    apply_owner_scope,
+    require_resource_owner,
+    current_username,
+)
 
 
 def register_workflows_api(app):
     """注册工作流管理 API 路由"""
+
+    def serialize_workflow(workflow):
+        return {
+            'id': workflow.id,
+            'name': workflow.name,
+            'description': workflow.description,
+            'workflow_data': workflow.data_dict,
+            'is_active': workflow.is_active,
+            'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
+            'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
+            'created_by': workflow.created_by,
+        }
     
     @app.route('/api/workflows', methods=['GET'])
+    @require_auth
     def get_workflows():
         """获取所有工作流"""
         try:
-            workflows = Workflow.select()
-            return jsonify([{
-                'id': w.id,
-                'name': w.name,
-                'description': w.description,
-                'workflow_data': w.data_dict,
-                'is_active': w.is_active,
-                'created_at': w.created_at.isoformat() if w.created_at else None,
-                'updated_at': w.updated_at.isoformat() if w.updated_at else None,
-                'created_by': w.created_by
-            } for w in workflows])
+            workflows = apply_owner_scope(
+                Workflow.select().order_by(Workflow.updated_at.desc()),
+                Workflow,
+            )
+            return jsonify([serialize_workflow(w) for w in workflows])
         except Exception as e:
             app.logger.error(f"获取工作流列表失败: {e}")
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/<int:id>', methods=['GET'])
+    @require_auth
     def get_workflow(id):
         """获取单个工作流"""
         try:
             workflow = Workflow.get_by_id(id)
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
             data_dict = workflow.data_dict
             
             # 确保 workflow_data 包含必需的字段
@@ -55,14 +72,8 @@ def register_workflows_api(app):
             app.logger.debug(f"原始数据: {workflow.workflow_data[:500] if workflow.workflow_data else 'None'}")
             
             return jsonify({
-                'id': workflow.id,
-                'name': workflow.name,
-                'description': workflow.description,
+                **serialize_workflow(workflow),
                 'workflow_data': data_dict,
-                'is_active': workflow.is_active,
-                'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
-                'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
-                'created_by': workflow.created_by
             })
         except Workflow.DoesNotExist:
             return jsonify({'error': '工作流不存在'}), 404
@@ -71,6 +82,7 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows', methods=['POST'])
+    @require_auth
     def create_workflow():
         """创建工作流"""
         try:
@@ -79,14 +91,26 @@ def register_workflows_api(app):
             if not data.get('name'):
                 return jsonify({'error': '缺少必填字段: name'}), 400
             
+            workflow_data = deepcopy(data.get('workflow_data', {}))
+            source_id = extract_source_id_from_workflow_data(workflow_data) if workflow_data else None
+            if source_id is not None:
+                try:
+                    source = VideoSource.get_by_id(source_id)
+                except VideoSource.DoesNotExist:
+                    return jsonify({'error': f'视频源不存在: {source_id}'}), 400
+                owner_response = require_resource_owner(source)
+                if owner_response:
+                    return owner_response
+                workflow_data = normalize_source_node_fields(workflow_data, source)
+
             workflow = Workflow.create(
                 name=data['name'],
                 description=data.get('description', ''),
-                workflow_data=json.dumps(data.get('workflow_data', {})),
+                workflow_data=json.dumps(workflow_data),
                 is_active=data.get('is_active', False),
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
-                created_by=data.get('created_by', 'admin')
+                created_by=current_username('admin')
             )
             
             return jsonify({
@@ -98,10 +122,14 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/<int:id>', methods=['PUT'])
+    @require_auth
     def update_workflow(id):
         """更新工作流"""
         try:
             workflow = Workflow.get_by_id(id)
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
             data = request.json
 
             need_version_bump = False
@@ -125,6 +153,10 @@ def register_workflows_api(app):
                     source = VideoSource.get_by_id(source_id)
                 except VideoSource.DoesNotExist:
                     return jsonify({'error': f'视频源不存在: {source_id}'}), 400
+
+                owner_response = require_resource_owner(source)
+                if owner_response:
+                    return owner_response
 
                 workflow_data = normalize_source_node_fields(workflow_data, source)
                 workflow_data_str = json.dumps(workflow_data)
@@ -162,10 +194,14 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/<int:id>', methods=['DELETE'])
+    @require_auth
     def delete_workflow(id):
         """删除工作流"""
         try:
             workflow = Workflow.get_by_id(id)
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
             workflow.delete_instance(recursive=True)
             return jsonify({'message': '工作流删除成功'})
         except Workflow.DoesNotExist:
@@ -175,10 +211,14 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/<int:id>/activate', methods=['POST'])
+    @require_auth
     def activate_workflow(id):
         """激活工作流（将工作流配置应用到实际任务）"""
         try:
             workflow = Workflow.get_by_id(id)
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
             workflow_data = workflow.data_dict
             
             # 这里可以添加逻辑：根据工作流配置创建实际的Task和Algorithm关联
@@ -194,10 +234,14 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/<int:id>/deactivate', methods=['POST'])
+    @require_auth
     def deactivate_workflow(id):
         """停用工作流"""
         try:
             workflow = Workflow.get_by_id(id)
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
             workflow.is_active = False
             workflow.save()
             
@@ -209,11 +253,12 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/resources', methods=['GET'])
+    @require_auth
     def get_workflow_resources():
         """获取可用于工作流的资源（视频源、算法等）"""
         try:
-            sources = VideoSource.select()
-            algorithms = Algorithm.select()
+            sources = apply_owner_scope(VideoSource.select(), VideoSource)
+            algorithms = apply_owner_scope(Algorithm.select(), Algorithm)
             
             return jsonify({
                 'sources': [{
@@ -221,13 +266,15 @@ def register_workflows_api(app):
                     'name': s.name,
                     'source_code': s.source_code,
                     'source_url': s.source_url,
-                    'status': s.status
+                    'status': s.status,
+                    'created_by': s.created_by,
                 } for s in sources],
                 'algorithms': [{
                     'id': a.id,
                     'name': a.name,
                     'label_name': a.label_name,
-                    'script_path': a.script_path
+                    'script_path': a.script_path,
+                    'created_by': a.created_by,
                 } for a in algorithms]
             })
         except Exception as e:
@@ -235,6 +282,7 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/workflows/capture_frame/<int:source_id>', methods=['GET'])
+    @require_auth
     def capture_frame_from_source(source_id):
         """从指定视频源捕获当前帧"""
         import os
@@ -262,6 +310,9 @@ def register_workflows_api(app):
         
         try:
             source = VideoSource.get_by_id(source_id)
+            owner_response = require_resource_owner(source)
+            if owner_response:
+                return owner_response
             
             # 优先级1: 如果视频源正在运行，优先读取快照（最快且不占用连接）
             if source.status == 'RUNNING':
@@ -400,6 +451,7 @@ def register_workflows_api(app):
         return full_name
 
     @app.route('/api/workflows/<int:workflow_id>/batch-copy', methods=['POST'])
+    @require_auth
     def batch_copy_workflow(workflow_id):
         """批量复制工作流到多个视频源"""
         try:
@@ -411,6 +463,9 @@ def register_workflows_api(app):
 
             # 读取模板工作流
             template = Workflow.get_by_id(workflow_id)
+            owner_response = require_resource_owner(template)
+            if owner_response:
+                return owner_response
             template_data = template.data_dict
 
             results = []
@@ -419,6 +474,9 @@ def register_workflows_api(app):
             for source_id in source_ids:
                 try:
                     source = VideoSource.get_by_id(source_id)
+                    source_owner_response = require_resource_owner(source)
+                    if source_owner_response:
+                        raise PermissionError('Forbidden')
 
                     # 深拷贝 workflow_data
                     new_data = deepcopy(template_data)
@@ -439,7 +497,7 @@ def register_workflows_api(app):
                         is_active=False,  # 默认不激活
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
-                        created_by='admin'
+                        created_by=current_username('admin')
                     )
 
                     results.append({
@@ -480,6 +538,7 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/workflows/batch-activate', methods=['POST'])
+    @require_auth
     def batch_activate_workflows():
         """批量激活工作流"""
         try:
@@ -495,6 +554,9 @@ def register_workflows_api(app):
             for workflow_id in workflow_ids:
                 try:
                     workflow = Workflow.get_by_id(workflow_id)
+                    owner_response = require_resource_owner(workflow)
+                    if owner_response:
+                        raise PermissionError('Forbidden')
                     workflow.is_active = True
                     workflow.updated_at = datetime.now()
                     workflow.save()
@@ -517,6 +579,7 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/workflows/batch-deactivate', methods=['POST'])
+    @require_auth
     def batch_deactivate_workflows():
         """批量停用工作流"""
         try:
@@ -532,6 +595,9 @@ def register_workflows_api(app):
             for workflow_id in workflow_ids:
                 try:
                     workflow = Workflow.get_by_id(workflow_id)
+                    owner_response = require_resource_owner(workflow)
+                    if owner_response:
+                        raise PermissionError('Forbidden')
                     workflow.is_active = False
                     workflow.updated_at = datetime.now()
                     workflow.save()
@@ -554,6 +620,7 @@ def register_workflows_api(app):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/workflows/batch-delete', methods=['POST'])
+    @require_auth
     def batch_delete_workflows():
         """批量删除工作流"""
         try:
@@ -569,6 +636,9 @@ def register_workflows_api(app):
             for workflow_id in workflow_ids:
                 try:
                     workflow = Workflow.get_by_id(workflow_id)
+                    owner_response = require_resource_owner(workflow)
+                    if owner_response:
+                        raise PermissionError('Forbidden')
                     workflow.delete_instance(recursive=True)
                     success_count += 1
                 except Exception as e:

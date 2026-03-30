@@ -95,7 +95,7 @@ export default function Users() {
     {
       title: '角色',
       dataIndex: 'role',
-      render: (role: string) => (role === 'admin' ? '管理员' : '普通用户'),
+      render: (role: string) => (role === 'admin' ? '管理员' : '普通操作员'),
     },
     {
       title: '状态',
@@ -196,7 +196,7 @@ export default function Users() {
             initialValue="user"
           >
             <Select>
-              <Select.Option value="user">普通用户</Select.Option>
+              <Select.Option value="user">普通操作员</Select.Option>
               <Select.Option value="admin">管理员</Select.Option>
             </Select>
           </Form.Item>

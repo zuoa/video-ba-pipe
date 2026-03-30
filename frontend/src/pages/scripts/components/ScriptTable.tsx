@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table, Button, Space, Tag, Empty, Input } from 'antd';
+import { Table, Button, Space, Tag, Empty, Input, message } from 'antd';
 import {
   EditOutlined,
   DeleteOutlined,
@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { ChangeEvent } from 'react';
+import { updateScript } from '@/services/api';
 import './ScriptTable.css';
 
 export interface ScriptTableProps {
@@ -126,12 +127,12 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
                   const reader = new FileReader();
                   reader.onload = async (event) => {
                     const content = event.target?.result as string;
-                    // TODO: 调用上传 API
-                    await fetch(`/api/scripts/${record.path}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ content })
-                    });
+                    try {
+                      await updateScript(record.path, { content });
+                      message.success('脚本上传成功');
+                    } catch (error: any) {
+                      message.error(error?.message || '脚本上传失败');
+                    }
                   };
                   reader.readAsText(file);
                 }

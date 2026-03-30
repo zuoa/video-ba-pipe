@@ -13,9 +13,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from app.core.script_loader import get_script_loader, ScriptLoadError, ScriptValidationError
 from app.core.database_models import Algorithm, ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, db
 from app import logger
+from app.web.api.auth import require_auth, require_admin, current_username
 
 # 创建蓝图
 scripts_bp = Blueprint('scripts', __name__, url_prefix='/api/scripts')
+
+
+@scripts_bp.before_request
+def enforce_script_permissions():
+    auth_response = require_auth(lambda: None)()
+    if auth_response is not None:
+        return auth_response
+    admin_response = require_admin(lambda: None)()
+    if admin_response is not None:
+        return admin_response
 
 
 def serialize_script_version(sv):
@@ -228,7 +239,8 @@ def upload_script():
                 runtime_timeout=metadata.get('timeout', 30),
                 memory_limit_mb=metadata.get('memory_limit', 512),
                 label_name=metadata.get('name', 'Custom'),
-                interval_seconds=1
+                interval_seconds=1,
+                created_by=current_username('admin'),
             )
 
             algorithm_id = algorithm.id
@@ -375,7 +387,7 @@ def update_script(script_path):
                     changelog=changelog or f"Backup before update",
                     is_active=False,
                     created_at=datetime.now(),
-                    created_by='api'
+                    created_by=current_username('admin')
                 )
 
             except Algorithm.DoesNotExist:

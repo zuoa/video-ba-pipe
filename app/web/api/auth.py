@@ -3,6 +3,9 @@ import jwt
 import hashlib
 from datetime import datetime, timedelta
 from functools import wraps
+from typing import Any
+
+import peewee as pw
 from flask import Blueprint, request, jsonify, current_app
 
 from app.core.database_models import User
@@ -41,8 +44,20 @@ def require_auth(f):
         payload = verify_token(token)
         if not payload:
             return jsonify({'error': 'Invalid token'}), 401
-        
-        request.user = payload
+
+        try:
+            user = User.get_by_id(payload['user_id'])
+        except User.DoesNotExist:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        if not user.enabled:
+            return jsonify({'error': 'User disabled'}), 403
+
+        request.user = {
+            'user_id': user.id,
+            'username': user.username,
+            'role': user.role,
+        }
         return f(*args, **kwargs)
     return decorated
 
@@ -53,6 +68,48 @@ def require_admin(f):
             return jsonify({'error': 'Forbidden'}), 403
         return f(*args, **kwargs)
     return decorated
+
+
+def forbidden(message='Forbidden'):
+    return jsonify({'error': message}), 403
+
+
+def is_admin_user() -> bool:
+    return getattr(request, 'user', {}).get('role') == 'admin'
+
+
+def current_username(default: str | None = None) -> str | None:
+    return getattr(request, 'user', {}).get('username', default)
+
+
+def resolve_owner_field(model_or_field: Any, owner_field: str = 'created_by'):
+    if isinstance(model_or_field, pw.Field):
+        return model_or_field
+    return getattr(model_or_field, owner_field)
+
+
+def apply_owner_scope(query, model_or_field: Any, owner_field: str = 'created_by'):
+    if is_admin_user():
+        return query
+
+    owner = current_username()
+    if not owner:
+        return query.where(pw.SQL('1 = 0'))
+
+    field = resolve_owner_field(model_or_field, owner_field=owner_field)
+    return query.where(field == owner)
+
+
+def ensure_resource_owner(resource: Any, owner_field: str = 'created_by') -> bool:
+    if is_admin_user():
+        return True
+    return getattr(resource, owner_field, None) == current_username()
+
+
+def require_resource_owner(resource: Any, owner_field: str = 'created_by'):
+    if ensure_resource_owner(resource, owner_field=owner_field):
+        return None
+    return forbidden()
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
@@ -187,4 +244,3 @@ def delete_user(user_id):
     user.delete_instance()
     
     return jsonify({'success': True})
-

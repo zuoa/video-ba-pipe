@@ -31,7 +31,14 @@ import {
   DeleteOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { getScripts, getModels, createAlgorithm, getAlgorithms, updateAlgorithm } from '@/services/api';
+import {
+  getScripts,
+  getModels,
+  createAlgorithm,
+  getAlgorithms,
+  updateAlgorithm,
+  getScriptConfigSchema,
+} from '@/services/api';
 import type { Script } from '@/services/api';
 import './index.css';
 
@@ -125,8 +132,7 @@ export default function AlgorithmWizard() {
 
     if (detector.scriptPath) {
       try {
-        const response = await fetch(`/api/scripts/config-schema/${encodeURIComponent(detector.scriptPath)}`);
-        const data = await response.json();
+        const data = await getScriptConfigSchema(detector.scriptPath);
         if (data.success) {
           const loadedSchema = data.config_schema || {};
           setConfigSchema(loadedSchema);
@@ -184,8 +190,7 @@ export default function AlgorithmWizard() {
 
     if (detector.scriptPath) {
       try {
-        const response = await fetch(`/api/scripts/config-schema/${encodeURIComponent(detector.scriptPath)}`);
-        const data = await response.json();
+        const data = await getScriptConfigSchema(detector.scriptPath);
         if (data.success) {
           setConfigSchema(data.config_schema || {});
         }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Descriptions, Button, Space, Tag, message } from 'antd';
 import { DownloadOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { downloadModelFile } from '@/services/api';
 
 interface Model {
   id: number;
@@ -38,8 +39,12 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
     }
   };
 
-  const handleDownload = () => {
-    window.open(`/api/models/${model.id}/download`, '_blank');
+  const handleDownload = async () => {
+    try {
+      await downloadModelFile(model.id);
+    } catch (error: any) {
+      message.error(error?.message || '下载失败');
+    }
   };
 
   const formatDate = (dateString: string) => {

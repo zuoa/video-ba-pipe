@@ -8,6 +8,7 @@ import {
   DownloadOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
+import { getScriptTemplates } from '@/services/api';
 import './TemplateLibrary.css';
 
 export interface TemplateLibraryProps {
@@ -37,8 +38,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/scripts/templates');
-      const data = await response.json();
+      const data = await getScriptTemplates();
 
       if (data.success) {
         setTemplates(data.templates || []);

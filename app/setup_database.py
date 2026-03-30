@@ -37,7 +37,7 @@ def setup_database():
         # 系统设置表
         SystemSetting
     ], safe=True)
-    _ensure_ml_models_schema()
+    _ensure_schema_columns()
 
     from datetime import datetime
     import hashlib
@@ -229,6 +229,77 @@ def _ensure_ml_models_schema():
     columns = {row[1] for row in db.execute_sql("PRAGMA table_info(ml_models);").fetchall()}
     if 'model_postprocess' not in columns:
         db.execute_sql("ALTER TABLE ml_models ADD COLUMN model_postprocess TEXT;")
+
+
+def _ensure_column(model, column_name: str, ddl: str):
+    table_name = model._meta.table_name
+    columns = {row[1] for row in db.execute_sql(f"PRAGMA table_info({table_name});").fetchall()}
+    if column_name not in columns:
+        db.execute_sql(f"ALTER TABLE {table_name} ADD COLUMN {ddl};")
+
+
+def _ensure_schema_columns():
+    _ensure_ml_models_schema()
+
+    _ensure_column(Algorithm, 'created_by', "created_by TEXT DEFAULT 'admin'")
+    _ensure_column(VideoSource, 'created_by', "created_by TEXT DEFAULT 'admin'")
+    _ensure_column(Alert, 'created_by', "created_by TEXT DEFAULT 'admin'")
+    _ensure_column(WorkflowTestResult, 'created_by', "created_by TEXT DEFAULT 'admin'")
+
+    Algorithm.update(created_by='admin').where(
+        (Algorithm.created_by.is_null(True)) | (Algorithm.created_by == '')
+    ).execute()
+    VideoSource.update(created_by='admin').where(
+        (VideoSource.created_by.is_null(True)) | (VideoSource.created_by == '')
+    ).execute()
+    Workflow.update(created_by='admin').where(
+        (Workflow.created_by.is_null(True)) | (Workflow.created_by == '')
+    ).execute()
+    MLModel.update(uploaded_by='admin').where(
+        (MLModel.uploaded_by.is_null(True)) | (MLModel.uploaded_by == '')
+    ).execute()
+    WorkflowTestResult.update(created_by='admin').where(
+        (WorkflowTestResult.created_by.is_null(True)) | (WorkflowTestResult.created_by == '')
+    ).execute()
+
+    alert_table = Alert._meta.table_name
+    source_table = VideoSource._meta.table_name
+    db.execute_sql(
+        f"""
+        UPDATE {alert_table}
+        SET created_by = COALESCE(
+            (
+                SELECT {source_table}.created_by
+                FROM {source_table}
+                WHERE {source_table}.id = {alert_table}.video_source_id
+            ),
+            'admin'
+        )
+        WHERE created_by IS NULL OR created_by = '';
+        """
+    )
+
+    workflow_test_table = WorkflowTestResult._meta.table_name
+    workflow_table = Workflow._meta.table_name
+    db.execute_sql(
+        f"""
+        UPDATE {workflow_test_table}
+        SET created_by = COALESCE(
+            (
+                SELECT {workflow_table}.created_by
+                FROM {workflow_table}
+                WHERE {workflow_table}.id = {workflow_test_table}.workflow_id
+            ),
+            (
+                SELECT {source_table}.created_by
+                FROM {source_table}
+                WHERE {source_table}.id = {workflow_test_table}.video_source_id
+            ),
+            'admin'
+        )
+        WHERE created_by IS NULL OR created_by = '';
+        """
+    )
 
 
 if __name__ == "__main__":

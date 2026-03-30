@@ -59,13 +59,55 @@ except Exception as e:
     # 不阻止应用启动,让应用继续运行并在后续操作中报告错误
 
 # ========== 注册认证API ==========
-from app.web.api.auth import auth_bp
+from app.web.api.auth import (
+    auth_bp,
+    require_auth,
+    require_admin,
+    apply_owner_scope,
+    require_resource_owner,
+    current_username,
+    is_admin_user,
+)
 app.register_blueprint(auth_bp)
+
+
+def serialize_algorithm(algorithm):
+    ext_config = algorithm.ext_config if hasattr(algorithm, 'ext_config') else {}
+    return {
+        'id': algorithm.id,
+        'name': algorithm.name,
+        'description': algorithm.description,
+        'script_path': algorithm.script_path,
+        'script_config': algorithm.script_config,
+        'enabled_hooks': algorithm.enabled_hooks,
+        'created_at': algorithm.created_at.isoformat() if algorithm.created_at else None,
+        'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
+        'created_by': getattr(algorithm, 'created_by', 'admin'),
+        **ext_config,
+    }
+
+
+def serialize_video_source(source):
+    return {
+        'id': source.id,
+        'name': source.name,
+        'enabled': source.enabled,
+        'source_code': source.source_code,
+        'source_url': source.source_url,
+        'source_decode_width': source.source_decode_width,
+        'source_decode_height': source.source_decode_height,
+        'source_fps': source.source_fps,
+        'buffer_name': source.buffer_name,
+        'status': source.status,
+        'decoder_pid': source.decoder_pid,
+        'created_by': getattr(source, 'created_by', 'admin'),
+    }
 
 # ========== API 端点 ==========
 
 # Plugin API
 @app.route('/api/plugins/modules', methods=['GET'])
+@require_auth
 def list_plugin_modules():
     """
     返回可用的插件模块列表
@@ -75,6 +117,7 @@ def list_plugin_modules():
 
 
 @app.route('/api/system/info', methods=['GET'])
+@require_auth
 def get_system_info():
     return jsonify({
         'success': True,
@@ -83,6 +126,8 @@ def get_system_info():
 
 
 @app.route('/api/system/vl-config', methods=['GET'])
+@require_auth
+@require_admin
 def get_system_vl_config():
     return jsonify({
         'success': True,
@@ -91,10 +136,12 @@ def get_system_vl_config():
 
 
 @app.route('/api/system/vl-config', methods=['PUT'])
+@require_auth
+@require_admin
 def update_system_vl_config():
     data = request.json or {}
     try:
-        config = save_vl_service_config(data, updated_by='admin')
+        config = save_vl_service_config(data, updated_by=current_username('admin'))
         return jsonify({
             'success': True,
             'config': config,
@@ -106,52 +153,28 @@ def update_system_vl_config():
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
+@require_auth
 def get_algorithms():
-    algorithms = Algorithm.select()
-    result = []
-    for a in algorithms:
-        # 获取扩展配置
-        ext_config = a.ext_config if hasattr(a, 'ext_config') else {}
-
-        algo_dict = {
-            'id': a.id,
-            'name': a.name,
-            'description': a.description,
-            'script_path': a.script_path,
-            'script_config': a.script_config,
-            'enabled_hooks': a.enabled_hooks,
-            'created_at': a.created_at.isoformat() if a.created_at else None,
-            'updated_at': a.updated_at.isoformat() if a.updated_at else None,
-            # 合并执行配置字段
-            **ext_config
-        }
-        result.append(algo_dict)
-    return jsonify(result)
+    algorithms = apply_owner_scope(
+        Algorithm.select().order_by(Algorithm.created_at.desc()),
+        Algorithm,
+    )
+    return jsonify([serialize_algorithm(a) for a in algorithms])
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
+@require_auth
 def get_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
-        # 获取扩展配置
-        ext_config = algorithm.ext_config if hasattr(algorithm, 'ext_config') else {}
-
-        algo_dict = {
-            'id': algorithm.id,
-            'name': algorithm.name,
-            'description': algorithm.description,
-            'script_path': algorithm.script_path,
-            'script_config': algorithm.script_config,
-            'enabled_hooks': algorithm.enabled_hooks,
-            'created_at': algorithm.created_at.isoformat() if algorithm.created_at else None,
-            'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
-            # 合并执行配置字段
-            **ext_config
-        }
-        return jsonify(algo_dict)
+        owner_response = require_resource_owner(algorithm)
+        if owner_response:
+            return owner_response
+        return jsonify(serialize_algorithm(algorithm))
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
 
 @app.route('/api/algorithms', methods=['POST'])
+@require_auth
 def create_algorithm():
     data = request.json
     try:
@@ -185,7 +208,8 @@ def create_algorithm():
             ext_config_json=json.dumps(ext_config),
             enabled_hooks=data.get('enabled_hooks'),
             created_at=datetime.now(),
-            updated_at=datetime.now()
+            updated_at=datetime.now(),
+            created_by=current_username('admin'),
         )
 
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
@@ -193,11 +217,15 @@ def create_algorithm():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/algorithms/<int:id>', methods=['PUT'])
+@require_auth
 def update_algorithm(id):
     try:
         from datetime import datetime
 
         algorithm = Algorithm.get_by_id(id)
+        owner_response = require_resource_owner(algorithm)
+        if owner_response:
+            return owner_response
         data = request.json
 
         # 更新基本字段
@@ -244,15 +272,20 @@ def update_algorithm(id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/algorithms/<int:id>', methods=['DELETE'])
+@require_auth
 def delete_algorithm(id):
     try:
         algorithm = Algorithm.get_by_id(id)
+        owner_response = require_resource_owner(algorithm)
+        if owner_response:
+            return owner_response
         algorithm.delete_instance(recursive=True)
         return jsonify({'message': 'Algorithm deleted'})
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
 
 @app.route('/api/algorithms/test', methods=['POST'])
+@require_auth
 def test_algorithm():
     """算法测试API端点"""
     try:
@@ -279,6 +312,10 @@ def test_algorithm():
             algorithm = Algorithm.get_by_id(algorithm_id)
         except Algorithm.DoesNotExist:
             return jsonify({'success': False, 'error': '算法不存在'}), 404
+
+        owner_response = require_resource_owner(algorithm)
+        if owner_response:
+            return owner_response
         
         # 验证文件类型
         if not file.content_type.startswith('image/'):
@@ -381,43 +418,28 @@ def test_algorithm():
 
 # VideoSource API
 @app.route('/api/video-sources', methods=['GET'])
+@require_auth
 def get_video_sources():
-    sources = VideoSource.select()
-    return jsonify([{
-        'id': s.id,
-        'name': s.name,
-        'enabled': s.enabled,
-        'source_code': s.source_code,
-        'source_url': s.source_url,
-        'source_decode_width': s.source_decode_width,
-        'source_decode_height': s.source_decode_height,
-        'source_fps': s.source_fps,
-        'buffer_name': s.buffer_name,
-        'status': s.status,
-        'decoder_pid': s.decoder_pid
-    } for s in sources])
+    sources = apply_owner_scope(
+        VideoSource.select().order_by(VideoSource.id.desc()),
+        VideoSource,
+    )
+    return jsonify([serialize_video_source(s) for s in sources])
 
 @app.route('/api/video-sources/<int:id>', methods=['GET'])
+@require_auth
 def get_video_source(id):
     try:
         source = VideoSource.get_by_id(id)
-        return jsonify({
-            'id': source.id,
-            'name': source.name,
-            'enabled': source.enabled,
-            'source_code': source.source_code,
-            'source_url': source.source_url,
-            'source_decode_width': source.source_decode_width,
-            'source_decode_height': source.source_decode_height,
-            'source_fps': source.source_fps,
-            'buffer_name': source.buffer_name,
-            'status': source.status,
-            'decoder_pid': source.decoder_pid
-        })
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
+        return jsonify(serialize_video_source(source))
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
 
 @app.route('/api/video-sources', methods=['POST'])
+@require_auth
 def create_video_source():
     data = request.json
     try:
@@ -430,16 +452,21 @@ def create_video_source():
             source_decode_height=data.get('source_decode_height', 540),
             source_fps=data.get('source_fps', 10),
             status=data.get('status', 'STOPPED'),
-            decoder_pid=data.get('decoder_pid')
+            decoder_pid=data.get('decoder_pid'),
+            created_by=current_username('admin'),
         )
         return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/video-sources/<int:id>', methods=['PUT'])
+@require_auth
 def update_video_source(id):
     try:
         source = VideoSource.get_by_id(id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
         data = request.json
         source.name = data.get('name', source.name)
         source.enabled = data.get('enabled', source.enabled)
@@ -457,9 +484,13 @@ def update_video_source(id):
         return jsonify({'error': '视频源不存在'}), 404
 
 @app.route('/api/video-sources/<int:id>', methods=['DELETE'])
+@require_auth
 def delete_video_source(id):
     try:
         source = VideoSource.get_by_id(id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
         try:
             source.delete_instance(recursive=True)
         except OperationalError as e:
@@ -479,10 +510,14 @@ def delete_video_source(id):
 # ========== 健康监控API ==========
 
 @app.route('/api/video-sources/<int:source_id>/health', methods=['GET'])
+@require_auth
 def get_source_health(source_id):
     """获取视频源的健康状态"""
     try:
         source = VideoSource.get_by_id(source_id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
 
         # 尝试获取 ring buffer 的健康状态
         from app.core.ringbuffer import VideoRingBuffer
@@ -544,10 +579,14 @@ def get_source_health(source_id):
         return jsonify({'error': '视频源不存在'}), 404
 
 @app.route('/api/video-sources/<int:source_id>/health-logs', methods=['GET'])
+@require_auth
 def get_source_health_logs(source_id):
     """获取视频源的健康事件日志"""
     try:
         source = VideoSource.get_by_id(source_id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
 
         # 获取查询参数
         event_type = request.args.get('event_type')
@@ -597,6 +636,7 @@ def get_source_health_logs(source_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health/event-types', methods=['GET'])
+@require_auth
 def get_health_event_types():
     """获取所有健康事件类型"""
     event_types = [
@@ -609,6 +649,7 @@ def get_health_event_types():
     return jsonify(event_types)
 
 @app.route('/api/health/stats', methods=['GET'])
+@require_auth
 def get_health_stats():
     """获取整体健康统计信息"""
     try:
@@ -616,14 +657,19 @@ def get_health_stats():
         from datetime import datetime, timedelta
 
         # 统计各类状态的视频源数量
-        total_sources = VideoSource.select().count()
-        running_count = VideoSource.select().where(VideoSource.status == 'RUNNING').count()
-        stopped_count = VideoSource.select().where(VideoSource.status == 'STOPPED').count()
-        error_count = VideoSource.select().where(VideoSource.status == 'ERROR').count()
+        source_query = apply_owner_scope(VideoSource.select(), VideoSource)
+        total_sources = source_query.count()
+        running_count = source_query.where(VideoSource.status == 'RUNNING').count()
+        stopped_count = source_query.where(VideoSource.status == 'STOPPED').count()
+        error_count = source_query.where(VideoSource.status == 'ERROR').count()
 
         # 统计最近24小时的健康事件
         start_time = datetime.now() - timedelta(hours=24)
-        recent_logs = SourceHealthLog.select().where(SourceHealthLog.created_at >= start_time)
+        accessible_source_ids = apply_owner_scope(VideoSource.select(VideoSource.id), VideoSource)
+        recent_logs = SourceHealthLog.select().where(
+            (SourceHealthLog.created_at >= start_time) &
+            (SourceHealthLog.source.in_(accessible_source_ids))
+        )
 
         # 按严重级别统计
         severity_stats = {}
@@ -643,7 +689,7 @@ def get_health_stats():
                 'running': running_count,
                 'stopped': stopped_count,
                 'error': error_count,
-                'enabled': VideoSource.select().where(VideoSource.enabled == True).count()
+                'enabled': source_query.where(VideoSource.enabled == True).count()
             },
             'last_24h_events': {
                 'by_severity': severity_stats,
@@ -660,6 +706,7 @@ def get_health_stats():
 ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.m4v', '.webm', '.wmv'}
 
 @app.route('/api/video-sources/upload', methods=['POST'])
+@require_auth
 def upload_video_file():
     """上传视频文件到服务器"""
     try:
@@ -735,6 +782,7 @@ def upload_video_file():
         return jsonify({'success': False, 'error': f'上传失败: {str(e)}'}), 500
 
 @app.route('/api/video-sources/files', methods=['GET'])
+@require_auth
 def list_video_files():
     """列出可用的视频文件"""
     try:
@@ -768,6 +816,7 @@ def list_video_files():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/video-sources/files/<path:filename>', methods=['DELETE'])
+@require_auth
 def delete_video_file(filename):
     """删除视频文件"""
     try:
@@ -811,6 +860,7 @@ def delete_video_file(filename):
 
 # Alert API
 @app.route('/api/alerts', methods=['GET'])
+@require_auth
 def get_alerts():
     source_id = request.args.get('source_id') or request.args.get('task_id')  # 兼容旧参数
     workflow_id = request.args.get('workflow_id')  # 流程编排筛选
@@ -821,7 +871,7 @@ def get_alerts():
     per_page = int(request.args.get('per_page', 30))
 
     # 构建查询
-    query = Alert.select()
+    query = apply_owner_scope(Alert.select(), Alert)
     if source_id:
         query = query.where(Alert.video_source == source_id)
     if workflow_id:
@@ -868,7 +918,8 @@ def get_alerts():
             'alert_video': a.alert_video,
             'detection_count': a.detection_count,
             'window_stats': a.window_stats,
-            'detection_images': a.detection_images
+            'detection_images': a.detection_images,
+            'created_by': a.created_by,
         } for a in alerts],
         'pagination': {
             'page': page,
@@ -879,20 +930,26 @@ def get_alerts():
     })
 
 @app.route('/api/alerts', methods=['POST'])
+@require_auth
 def create_alert():
     data = request.json
     try:
         source_id = data.get('source_id') or data.get('task_id')  # 兼容旧参数
         workflow_id = data.get('workflow_id')  # 可选的 workflow_id
+        source = VideoSource.get_by_id(source_id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
 
         # 准备 Alert 创建参数
         alert_params = {
-            'video_source': source_id,
+            'video_source': source,
             'alert_time': datetime.fromisoformat(data.get('alert_time', datetime.now().isoformat())),
             'alert_type': data['alert_type'],
             'alert_message': data['alert_message'],
             'alert_image': data.get('alert_image'),
-            'alert_video': data.get('alert_video')
+            'alert_video': data.get('alert_video'),
+            'created_by': getattr(source, 'created_by', current_username('admin')),
         }
 
         # 如果提供了 workflow_id，添加到参数中
@@ -900,6 +957,9 @@ def create_alert():
             from app.core.database_models import Workflow
             try:
                 workflow = Workflow.get_by_id(workflow_id)
+                workflow_owner_response = require_resource_owner(workflow)
+                if workflow_owner_response:
+                    return workflow_owner_response
                 alert_params['workflow'] = workflow
             except Workflow.DoesNotExist:
                 return jsonify({'error': f'Workflow {workflow_id} does not exist'}), 400
@@ -925,12 +985,17 @@ def create_alert():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/alert-types', methods=['GET'])
+@require_auth
 def get_alert_types():
     """获取所有可用的告警类型"""
-    alert_types = Alert.select(Alert.alert_type).distinct().order_by(Alert.alert_type)
+    alert_types = apply_owner_scope(
+        Alert.select(Alert.alert_type).distinct().order_by(Alert.alert_type),
+        Alert,
+    )
     return jsonify([at.alert_type for at in alert_types])
 
 @app.route('/api/alerts/today-count', methods=['GET'])
+@require_auth
 def get_today_alerts_count():
     """获取今日告警数量"""
     from datetime import datetime, date
@@ -941,7 +1006,7 @@ def get_today_alerts_count():
     end_of_day = datetime.combine(today, datetime.max.time())
 
     # 查询今日告警数量
-    count = Alert.select().where(
+    count = apply_owner_scope(Alert.select(), Alert).where(
         (Alert.alert_time >= start_of_day) &
         (Alert.alert_time <= end_of_day)
     ).count()
@@ -949,6 +1014,7 @@ def get_today_alerts_count():
     return jsonify({'count': count})
 
 @app.route('/api/alerts/trend', methods=['GET'])
+@require_auth
 def get_alert_trend():
     """获取告警趋势数据"""
     from datetime import datetime, timedelta
@@ -962,7 +1028,7 @@ def get_alert_trend():
     start_date = (end_date - timedelta(days=days-1)).replace(hour=0, minute=0, second=0)
 
     # 查询所有告警
-    alerts = Alert.select().where(
+    alerts = apply_owner_scope(Alert.select(), Alert).where(
         (Alert.alert_time >= start_date) &
         (Alert.alert_time <= end_date)
     )
@@ -988,9 +1054,14 @@ def get_alert_trend():
 # ========== 时间窗口检测API ==========
 
 @app.route('/api/window/stats/<int:source_id>/<algorithm_id>', methods=['GET'])
+@require_auth
 def get_window_stats(source_id, algorithm_id):
     """获取指定视频源和算法的窗口统计信息"""
     try:
+        source = VideoSource.get_by_id(source_id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
         window_detector = get_window_detector()
         stats = window_detector.get_stats(source_id, algorithm_id)
         
@@ -1017,9 +1088,14 @@ def get_window_stats(source_id, algorithm_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/window/stats/<int:source_id>', methods=['GET'])
+@require_auth
 def get_source_window_stats(source_id):
     """获取指定视频源的所有算法窗口统计信息"""
     try:
+        source = VideoSource.get_by_id(source_id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
         # 注意：此API需要工作流系统来管理视频源和算法的关联
         # 目前返回空列表
         return jsonify([])
@@ -1027,6 +1103,7 @@ def get_source_window_stats(source_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/window/memory', methods=['GET'])
+@require_auth
 def get_window_memory_usage():
     """获取窗口检测器的内存使用情况"""
     try:
@@ -1207,6 +1284,7 @@ def get_video(file_path):
 # ========== 流检测API ==========
 
 @app.route('/api/stream/detect', methods=['POST'])
+@require_auth
 def detect_stream_info():
     """检测视频流的分辨率和帧率"""
     try:
@@ -1462,6 +1540,8 @@ def admin_workflows():
     return render_template('workflows.html')
 
 @app.route('/api/upload/model', methods=['POST'])
+@require_auth
+@require_admin
 def upload_model_file():
     try:
         if 'model_file' not in request.files:

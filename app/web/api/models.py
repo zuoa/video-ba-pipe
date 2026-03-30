@@ -19,9 +19,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from app.core.database_models import MLModel, Algorithm, db
 from app.config import MODEL_SAVE_PATH
 from app import logger
+from app.web.api.auth import require_auth, require_admin, current_username
 
 # 创建蓝图
 models_bp = Blueprint('models', __name__, url_prefix='/api/models')
+
+
+@models_bp.before_request
+def enforce_model_permissions():
+    auth_response = require_auth(lambda: None)()
+    if auth_response is not None:
+        return auth_response
+    admin_response = require_admin(lambda: None)()
+    if admin_response is not None:
+        return admin_response
 
 # 模型存储根目录（由配置项控制）
 MODELS_ROOT = MODEL_SAVE_PATH
@@ -110,7 +121,8 @@ def _upsert_model_record(
     classes,
     model_postprocess,
     description,
-    tags
+    tags,
+    uploaded_by='admin',
 ):
     """创建或更新模型记录"""
     existing = MLModel.select().where((MLModel.name == name) & (MLModel.version == version)).first()
@@ -129,6 +141,7 @@ def _upsert_model_record(
         existing.model_postprocess = model_postprocess or None
         existing.description = description or None
         existing.tags = tags or None
+        existing.uploaded_by = uploaded_by or existing.uploaded_by
         existing.updated_at = datetime.now()
         existing.save()
         return existing
@@ -148,7 +161,8 @@ def _upsert_model_record(
         version=version,
         tags=tags or None,
         created_at=now,
-        updated_at=now
+        updated_at=now,
+        uploaded_by=uploaded_by or 'admin',
     )
 
 
@@ -345,7 +359,8 @@ def upload_model():
             classes=classes,
             model_postprocess=model_postprocess,
             description=description,
-            tags=tags
+            tags=tags,
+            uploaded_by=current_username('admin'),
         )
 
         logger.info(f"模型上传成功: {name} ({version}), 路径: {file_path}")
@@ -502,7 +517,8 @@ def import_model_from_url():
             classes=classes,
             model_postprocess=model_postprocess,
             description=description,
-            tags=tags
+            tags=tags,
+            uploaded_by=current_username('admin'),
         )
 
         logger.info(f"模型导入成功: {model_name} ({version}), 来源: {source_url}, 路径: {file_path}")

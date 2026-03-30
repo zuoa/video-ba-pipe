@@ -8,6 +8,7 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { StatusBadge } from '@/components/common';
+import { getModel } from '@/services/api';
 import './ModelCard.css';
 
 const { Text, Paragraph } = Typography;
@@ -33,8 +34,7 @@ interface ModelCardProps {
 const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
   const handleCopyPath = async () => {
     try {
-      const response = await fetch(`/api/models/${model.id}`);
-      const data = await response.json();
+      const data = await getModel(model.id);
       await navigator.clipboard.writeText(data.model.file_path);
       // 使用轻量提示
     } catch (error) {

@@ -2,6 +2,26 @@ import type { ReactNode } from 'react';
 import { history } from '@umijs/max';
 import { App as AntdApp, ConfigProvider, message } from 'antd';
 
+const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts'];
+
+function getStoredUser() {
+  const userStr = localStorage.getItem('user');
+  if (!userStr) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(userStr);
+  } catch (error) {
+    localStorage.removeItem('user');
+    return null;
+  }
+}
+
+function isAdminOnlyPath(pathname: string) {
+  return ADMIN_ONLY_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
 const appTheme = {
   token: {
     colorPrimary: '#1f242b',
@@ -45,9 +65,9 @@ const appTheme = {
 
 export async function getInitialState() {
   const token = localStorage.getItem('token');
-  const userStr = localStorage.getItem('user');
+  const storedUser = getStoredUser();
   
-  if (!token || !userStr) {
+  if (!token || !storedUser) {
     return { currentUser: null };
   }
 
@@ -58,6 +78,7 @@ export async function getInitialState() {
     const data = await response.json();
     
     if (data.success) {
+      localStorage.setItem('user', JSON.stringify(data.user));
       return { currentUser: data.user };
     } else {
       localStorage.removeItem('token');
@@ -79,11 +100,15 @@ export function rootContainer(container: ReactNode) {
 
 export function onRouteChange({ location }: any) {
   const token = localStorage.getItem('token');
+  const user = getStoredUser();
   const isLoginPage = location.pathname === '/login';
   
   if (!token && !isLoginPage) {
     history.push('/login');
   } else if (token && isLoginPage) {
+    history.push('/dashboard');
+  } else if (token && isAdminOnlyPath(location.pathname) && user?.role !== 'admin') {
+    message.error('无权限访问该页面');
     history.push('/dashboard');
   }
 }

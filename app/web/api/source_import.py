@@ -8,6 +8,7 @@ from flask import jsonify, request
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 from app.core.database_models import VideoSource, db
+from app.web.api.auth import require_auth, current_username
 
 
 PROVIDERS = [
@@ -235,7 +236,7 @@ def _validate_commit_payload(data: Dict[str, Any]) -> Tuple[str, int, List[Dict[
     return host, rtsp_port, channels
 
 
-def _commit_hikvision_import(data: Dict[str, Any]) -> Dict[str, Any]:
+def _commit_hikvision_import(data: Dict[str, Any], owner_username: str) -> Dict[str, Any]:
     host, rtsp_port, channels = _validate_commit_payload(data)
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
@@ -271,6 +272,7 @@ def _commit_hikvision_import(data: Dict[str, Any]) -> Dict[str, Any]:
                     source_decode_height=int(item.get('source_decode_height') or 540),
                     source_fps=int(item.get('source_fps') or 10),
                     status='STOPPED',
+                    created_by=owner_username,
                 )
                 created.append({
                     'id': source.id,
@@ -292,19 +294,21 @@ def _commit_hikvision_import(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _commit_import(data: Dict[str, Any]) -> Dict[str, Any]:
+def _commit_import(data: Dict[str, Any], owner_username: str) -> Dict[str, Any]:
     provider_type = data.get('provider_type')
     if provider_type == 'hikvision_nvr':
-        return _commit_hikvision_import(data)
+        return _commit_hikvision_import(data, owner_username)
     raise SourceImportError(f'暂不支持的导入类型: {provider_type}')
 
 
 def register_source_import_api(app):
     @app.route('/api/source-import/providers', methods=['GET'])
+    @require_auth
     def get_source_import_providers():
         return jsonify({'providers': PROVIDERS})
 
     @app.route('/api/source-import/discover', methods=['POST'])
+    @require_auth
     def discover_source_import_channels():
         try:
             data = request.json or {}
@@ -317,10 +321,11 @@ def register_source_import_api(app):
             return jsonify({'success': False, 'error': str(exc)}), 500
 
     @app.route('/api/source-import/commit', methods=['POST'])
+    @require_auth
     def commit_source_import_channels():
         try:
             data = request.json or {}
-            result = _commit_import(data)
+            result = _commit_import(data, current_username('admin'))
             return jsonify({'success': True, **result})
         except SourceImportError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400

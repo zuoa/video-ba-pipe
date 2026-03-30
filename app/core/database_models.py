@@ -99,6 +99,7 @@ class Algorithm(BaseModel):
 
     created_at = pw.DateTimeField(null=True)
     updated_at = pw.DateTimeField(null=True)
+    created_by = pw.CharField(default='admin')
 
     @property
     def config_dict(self):
@@ -129,6 +130,7 @@ class VideoSource(BaseModel):
     source_fps = pw.IntegerField(default=10)
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
+    created_by = pw.CharField(default='admin')
 
     @property
     def buffer_name(self):
@@ -232,6 +234,7 @@ class Alert(BaseModel):
     detection_count = pw.IntegerField(default=1)
     window_stats = pw.TextField(null=True)
     detection_images = pw.TextField(null=True)
+    created_by = pw.CharField(default='admin')
 
 
 class WorkflowTestResult(BaseModel):
@@ -257,6 +260,7 @@ class WorkflowTestResult(BaseModel):
 
     # 保留完整测试结果（JSON字符串）
     result_json = pw.TextField(null=True)
+    created_by = pw.CharField(default='admin')
 
     class Meta:
         table_name = 'workflow_test_results'

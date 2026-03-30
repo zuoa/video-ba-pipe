@@ -2286,7 +2286,8 @@ class WorkflowExecutor:
                 alert_video="",
                 detection_count=len(detection_images),
                 window_stats=json.dumps(trigger_stats) if trigger_stats else None,
-                detection_images=json.dumps(detection_images) if detection_images else None
+                detection_images=json.dumps(detection_images) if detection_images else None,
+                created_by=getattr(self.video_source, 'created_by', 'admin'),
             ),
             logger=logger,
             operation_name=f'创建告警:{self.workflow_id}'

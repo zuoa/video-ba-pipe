@@ -75,16 +75,16 @@ const Header: React.FC = () => {
   ];
 
   const menuItems = [
-    {
+    ...(user?.role === 'admin' ? [{
       key: 'models',
       icon: <FunctionOutlined />,
       label: <Link to="/models">模型管理</Link>,
-    },
-    {
+    }] : []),
+    ...(user?.role === 'admin' ? [{
       key: 'scripts',
       icon: <CodeOutlined />,
       label: <Link to="/scripts">脚本管理</Link>,
-    },
+    }] : []),
     {
       key: 'algorithms',
       icon: <ExperimentOutlined />,

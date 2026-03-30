@@ -19,6 +19,7 @@ from app import logger
 from app.config import FRAME_SAVE_PATH, VIDEO_SAVE_PATH
 from app.core.database_models import Workflow, VideoSource, WorkflowTestResult
 from app.core.workflow_executor import WorkflowExecutor
+from app.web.api.auth import require_auth, require_resource_owner, apply_owner_scope, is_admin_user
 
 
 def _safe_fromisoformat(value: str) -> Optional[datetime]:
@@ -230,6 +231,7 @@ def _persist_test_record(
         window_stats=json.dumps(window_stats, ensure_ascii=False) if window_stats else None,
         detection_images=json.dumps(detection_images, ensure_ascii=False) if detection_images else None,
         result_json=json.dumps(result_payload, ensure_ascii=False, default=str),
+        created_by=getattr(workflow, 'created_by', getattr(source, 'created_by', 'admin')),
     )
 
 
@@ -360,6 +362,7 @@ def register_workflow_test_api(app):
     """注册工作流测试 API 路由"""
 
     @app.route('/api/workflows/<int:workflow_id>/test', methods=['POST'])
+    @require_auth
     def test_workflow(workflow_id):
         """
         测试工作流执行（支持图片与视频）
@@ -375,6 +378,16 @@ def register_workflow_test_api(app):
                 workflow = Workflow.get_by_id(workflow_id)
             except Workflow.DoesNotExist:
                 return jsonify({'error': f'工作流 {workflow_id} 不存在'}), 404
+
+            owner_response = require_resource_owner(workflow)
+            if owner_response:
+                return owner_response
+
+            source = _extract_source_from_workflow(workflow)
+            if source is not None:
+                source_owner_response = require_resource_owner(source)
+                if source_owner_response:
+                    return source_owner_response
 
             media_type = 'image'
             result_payload: Dict[str, Any] = {}
@@ -536,6 +549,7 @@ def register_workflow_test_api(app):
             }), 500
 
     @app.route('/api/workflow-test-results', methods=['GET'])
+    @require_auth
     def get_workflow_test_results():
         """获取工作流测试结果列表（类似 Alert 中心，但独立数据源）"""
         try:
@@ -547,6 +561,8 @@ def register_workflow_test_api(app):
             end_time = request.args.get('end_time')
 
             query = WorkflowTestResult.select()
+            if not is_admin_user():
+                query = apply_owner_scope(query, WorkflowTestResult)
 
             if workflow_id:
                 query = query.where(WorkflowTestResult.workflow == int(workflow_id))
