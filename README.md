@@ -26,7 +26,9 @@ docker compose -f docker-compose.yml up -d
 ```
 
 说明：`docker-compose.yml` 默认将 `RABBITMQ_HOST` 设为 `rabbitmq`，但未内置 RabbitMQ 服务。  
-如不使用消息队列，请先把 `api/worker` 的 `RABBITMQ_ENABLED` 改为 `false`，或接入外部 RabbitMQ。
+如不使用消息队列，请先把 `api/worker` 的 `RABBITMQ_ENABLED` 改为 `false`，或接入外部 RabbitMQ。  
+当前 compose 已内置 PostgreSQL，应用默认通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。  
+如需改用外部 PostgreSQL，可在 `.env` 中覆盖 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。
 
 ### 2) CUDA/GPU 部署
 
@@ -42,7 +44,7 @@ docker compose -f docker-compose.yml.cuda up -d
 docker compose -f docker-compose.yml.rknn up -d
 ```
 
-说明：RK 部署默认改为 `WEB_CONCURRENCY=1`，并启用 SQLite 的 `WAL + busy_timeout`，避免 `api + worker + workflow_worker` 多进程同时访问同一数据库文件时频繁出现 `database is locked`。
+说明：RK 部署默认内置 PostgreSQL，并保持 `WEB_CONCURRENCY=1` 作为稳妥默认值，避免盒子上额外放大 API 侧并发压力。
 如需启用 RK 硬解，推荐先构建独立的 `ffmpeg+rkmpp` 基础镜像，再由 `Dockerfile.rk` 通过 `COPY --from` 复用；在 CI 中会自动按当前仓库 owner 选择对应的基础镜像，部署时 compose 仍可保持拉取远程镜像。
 
 ## 访问地址
@@ -60,7 +62,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 初始化数据库
+# 本地直跑默认使用 SQLite 初始化数据库
 python app/setup_database.py
 
 # 终端 1：启动 worker
@@ -68,6 +70,20 @@ python app/main.py
 
 # 终端 2：启动 API
 python app/web/webapp.py
+```
+
+如需本地直跑也接 PostgreSQL，请先显式设置 `DB_BACKEND=postgres` 和 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD`，并确保数据库已预先创建。
+
+如需将旧 SQLite 数据库迁移到 PostgreSQL：
+
+```bash
+python scripts/migrate_sqlite_to_postgres.py --sqlite-path ./app/data/db/ba.db
+```
+
+如果目标 PostgreSQL 是 compose 内置容器，推荐在容器里执行迁移脚本：
+
+```bash
+docker compose run --rm -v ./data:/data api python /app/scripts/migrate_sqlite_to_postgres.py --sqlite-path /data/db/ba.db
 ```
 
 ### 前端
@@ -90,7 +106,8 @@ cp env.example .env
 
 重点配置项：
 
-- `DB_PATH`：数据库路径
+- `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`：PostgreSQL 连接配置
+- `DB_SSLMODE`：PostgreSQL SSL 模式
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
 - `RECORDING_ENABLED`：是否录制预警视频
 - `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 在镜像内 `ffmpeg` 已启用 `rkmpp` 时推荐设为 `rk_mpp`

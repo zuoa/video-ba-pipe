@@ -10,13 +10,12 @@ import subprocess
 import json
 import threading
 import time
-from peewee import OperationalError
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, run_db_with_retry
+from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
 from app.core.database_models import db
 from app.config import (
     ANALYSIS_BUFFER_SECONDS,
@@ -491,15 +490,7 @@ def delete_video_source(id):
         owner_response = require_resource_owner(source)
         if owner_response:
             return owner_response
-        try:
-            source.delete_instance(recursive=True)
-        except OperationalError as e:
-            # 兼容旧库缺少 source_health_logs 表的场景，先补表再重试删除
-            if 'no such table: source_health_logs' not in str(e):
-                raise
-            app.logger.warning("检测到缺失 source_health_logs 表，自动补建后重试删除")
-            db.create_tables([SourceHealthLog], safe=True)
-            source.delete_instance(recursive=True)
+        source.delete_instance(recursive=True)
         return jsonify({'message': '视频源删除成功'})
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
@@ -964,11 +955,7 @@ def create_alert():
             except Workflow.DoesNotExist:
                 return jsonify({'error': f'Workflow {workflow_id} does not exist'}), 400
 
-        alert = run_db_with_retry(
-            lambda: Alert.create(**alert_params),
-            logger=app.logger,
-            operation_name='创建告警API记录'
-        )
+        alert = Alert.create(**alert_params)
         
         # 发布预警消息到RabbitMQ
         try:

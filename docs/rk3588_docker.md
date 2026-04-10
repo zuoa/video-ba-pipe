@@ -7,6 +7,11 @@
 
 板端部署与网络问题处理请参考：`docs/rk_usage_manual.md`
 
+数据库说明：
+- RK compose 已内置 PostgreSQL 服务。
+- 应用容器通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。
+- 如需迁移旧 SQLite 数据，可在 PostgreSQL 启动后执行 `docker compose -f docker-compose.yml.rknn run --rm -v ./data:/data api python /app/scripts/migrate_sqlite_to_postgres.py --sqlite-path /data/db/ba.db`。
+
 ## GitHub Actions 手动构建
 
 工作流：

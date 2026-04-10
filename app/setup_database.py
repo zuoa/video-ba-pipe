@@ -1,5 +1,3 @@
-import json
-
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
@@ -8,10 +6,23 @@ from app.core.database_models import (
 )
 
 
+def ensure_default_admin_user():
+    from datetime import datetime
+    import hashlib
+
+    User.get_or_create(
+        username='admin',
+        defaults={
+            'password_hash': hashlib.sha256('admin123'.encode()).hexdigest(),
+            'role': 'admin',
+            'created_at': datetime.now()
+        }
+    )
+
 
 def setup_database():
     # 连接数据库并创建表
-    db.connect()
+    db.connect(reuse_if_open=True)
     # 创建所有数据库表，按依赖顺序
     db.create_tables([
         # 基础表
@@ -37,18 +48,9 @@ def setup_database():
         # 系统设置表
         SystemSetting
     ], safe=True)
-    _ensure_schema_columns()
+    _normalize_existing_records()
 
-    from datetime import datetime
-    import hashlib
-    User.get_or_create(
-        username='admin',
-        defaults={
-            'password_hash': hashlib.sha256('admin123'.encode()).hexdigest(),
-            'role': 'admin',
-            'created_at': datetime.now()
-        }
-    )
+    ensure_default_admin_user()
 
 
     # 使用 get_or_create 来安全地插入数据，如果已存在则不会重复创建
@@ -221,31 +223,12 @@ def setup_database():
     #     }
     # )
 
-    db.close()
+    if not db.is_closed():
+        db.close()
     print(f"数据库已使用 Peewee 模型初始化。")
 
 
-def _ensure_ml_models_schema():
-    columns = {row[1] for row in db.execute_sql("PRAGMA table_info(ml_models);").fetchall()}
-    if 'model_postprocess' not in columns:
-        db.execute_sql("ALTER TABLE ml_models ADD COLUMN model_postprocess TEXT;")
-
-
-def _ensure_column(model, column_name: str, ddl: str):
-    table_name = model._meta.table_name
-    columns = {row[1] for row in db.execute_sql(f"PRAGMA table_info({table_name});").fetchall()}
-    if column_name not in columns:
-        db.execute_sql(f"ALTER TABLE {table_name} ADD COLUMN {ddl};")
-
-
-def _ensure_schema_columns():
-    _ensure_ml_models_schema()
-
-    _ensure_column(Algorithm, 'created_by', "created_by TEXT DEFAULT 'admin'")
-    _ensure_column(VideoSource, 'created_by', "created_by TEXT DEFAULT 'admin'")
-    _ensure_column(Alert, 'created_by', "created_by TEXT DEFAULT 'admin'")
-    _ensure_column(WorkflowTestResult, 'created_by', "created_by TEXT DEFAULT 'admin'")
-
+def _normalize_existing_records():
     Algorithm.update(created_by='admin').where(
         (Algorithm.created_by.is_null(True)) | (Algorithm.created_by == '')
     ).execute()

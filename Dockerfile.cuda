@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     git \
+    postgresql-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -57,6 +58,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # 复制应用代码
 COPY app/ /app/app/
+COPY scripts/ /app/scripts/
 COPY env.example /app/.env.example
 
 # 创建必要的数据目录

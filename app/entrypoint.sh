@@ -3,13 +3,16 @@
 # 退出脚本，如果任何命令失败
 set -e
 
-# 等待数据库服务可用 (可选但推荐，特别是如果数据库在另一个容器中启动)
-# 这需要安装 netcat (nc) 或者其他工具
-# while ! nc -z $DB_HOST $DB_PORT; do
-#   echo "Waiting for database..."
-#   sleep 1
-# done
-# echo "Database is up!"
+DB_HOST="${DB_HOST:-postgres}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-video_ba_pipe}"
+DB_NAME="${DB_NAME:-video_ba_pipe}"
+
+echo "Waiting for PostgreSQL at ${DB_HOST}:${DB_PORT}..."
+until pg_isready -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" >/dev/null 2>&1; do
+  sleep 1
+done
+echo "PostgreSQL is up."
 
 echo "Initializing database..."
 # 确保 FLASK_APP 环境变量已设置，或者在 flask 命令中指定 --app

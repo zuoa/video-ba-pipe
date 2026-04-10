@@ -3,7 +3,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DB_BACKEND="${DB_BACKEND:-}"
 DB_PATH="${DB_PATH:-${ROOT_DIR}/app/data/db/ba.db}"
+if [ -z "${DB_BACKEND}" ]; then
+    if [ -n "${DB_HOST:-}" ] || [ -n "${DB_PORT:-}" ] || [ -n "${DB_NAME:-}" ] || [ -n "${DB_USER:-}" ] || [ -n "${DB_PASSWORD:-}" ]; then
+        DB_BACKEND="postgres"
+    else
+        DB_BACKEND="sqlite"
+    fi
+fi
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_NAME="${DB_NAME:-video_ba_pipe}"
+DB_USER="${DB_USER:-video_ba_pipe}"
+DB_PASSWORD="${DB_PASSWORD:-video_ba_pipe}"
+DB_SSLMODE="${DB_SSLMODE:-prefer}"
 LOG_DIR="${LOG_DIR:-${ROOT_DIR}/app/data/logs}"
 WINDOW_MINUTES="${1:-10}"
 SOURCE_ID_FILTER="${2:-}"
@@ -16,19 +30,39 @@ if ! [[ "${WINDOW_MINUTES}" =~ ^[0-9]+$ ]] || [ "${WINDOW_MINUTES}" -le 0 ]; the
     exit 1
 fi
 
-if [ ! -f "${DB_PATH}" ]; then
-    echo "Database not found: ${DB_PATH}"
-    exit 1
-fi
-
-if ! command -v sqlite3 >/dev/null 2>&1; then
-    echo "sqlite3 is required but not found in PATH"
-    exit 1
-fi
-
 if ! command -v rg >/dev/null 2>&1; then
     echo "rg is required but not found in PATH"
     exit 1
+fi
+
+db_query() {
+    if [ "${DB_BACKEND}" = "sqlite" ]; then
+        sqlite3 -tabs "${DB_PATH}" "$1"
+    else
+        psql -v ON_ERROR_STOP=1 -t -A -F $'\t' -c "$1"
+    fi
+}
+
+if [ "${DB_BACKEND}" = "sqlite" ]; then
+    if [ ! -f "${DB_PATH}" ]; then
+        echo "Database not found: ${DB_PATH}"
+        exit 1
+    fi
+    if ! command -v sqlite3 >/dev/null 2>&1; then
+        echo "sqlite3 is required but not found in PATH"
+        exit 1
+    fi
+else
+    if ! command -v psql >/dev/null 2>&1; then
+        echo "psql is required but not found in PATH"
+        exit 1
+    fi
+    export PGHOST="${DB_HOST}"
+    export PGPORT="${DB_PORT}"
+    export PGDATABASE="${DB_NAME}"
+    export PGUSER="${DB_USER}"
+    export PGPASSWORD="${DB_PASSWORD}"
+    export PGSSLMODE="${DB_SSLMODE}"
 fi
 
 SQL_SOURCE_FILTER=""
@@ -40,7 +74,11 @@ if [ -n "${SOURCE_ID_FILTER}" ]; then
     SQL_SOURCE_FILTER=" and v.id = ${SOURCE_ID_FILTER}"
 fi
 
-RECENT_WHERE="l.created_at >= datetime('now', 'localtime', '-${WINDOW_MINUTES} minutes')"
+if [ "${DB_BACKEND}" = "sqlite" ]; then
+    RECENT_WHERE="l.created_at >= datetime('now', 'localtime', '-${WINDOW_MINUTES} minutes')"
+else
+    RECENT_WHERE="l.created_at >= now() - interval '${WINDOW_MINUTES} minutes'"
+fi
 if [ -n "${SOURCE_ID_FILTER}" ]; then
     RECENT_WHERE="${RECENT_WHERE} and l.source_id = ${SOURCE_ID_FILTER}"
 fi
@@ -54,7 +92,15 @@ print_header() {
 
 print_header "Health Check Summary"
 echo "project_root: ${ROOT_DIR}"
-echo "db_path: ${DB_PATH}"
+echo "db_backend: ${DB_BACKEND}"
+if [ "${DB_BACKEND}" = "sqlite" ]; then
+    echo "db_path: ${DB_PATH}"
+else
+    echo "db_host: ${DB_HOST}"
+    echo "db_port: ${DB_PORT}"
+    echo "db_name: ${DB_NAME}"
+    echo "db_user: ${DB_USER}"
+fi
 echo "log_dir: ${LOG_DIR}"
 echo "window_minutes: ${WINDOW_MINUTES}"
 if [ -n "${SOURCE_ID_FILTER}" ]; then
@@ -119,7 +165,7 @@ while IFS=$'\t' read -r source_id source_name source_status decoder_pid source_p
         echo "  warning: status says RUNNING but decoder_pid is empty"
         INCONSISTENT_COUNT=$((INCONSISTENT_COUNT + 1))
     fi
-done < <(sqlite3 -tabs "${DB_PATH}" "${STATUS_QUERY}")
+done < <(db_query "${STATUS_QUERY}")
 
 if [ "${HAS_STATUS_ROWS}" -eq 0 ]; then
     echo "No matching video sources found."
@@ -145,7 +191,7 @@ group by v.id, v.name, l.event_type, l.severity
 order by last_seen_at desc, event_count desc;
 "
 
-EVENT_ROWS="$(sqlite3 -tabs "${DB_PATH}" "${EVENT_SUMMARY_QUERY}")"
+EVENT_ROWS="$(db_query "${EVENT_SUMMARY_QUERY}")"
 if [ -n "${EVENT_ROWS}" ]; then
     while IFS=$'\t' read -r source_id source_name event_type severity event_count last_seen_at; do
         echo "[${source_id}] ${source_name} | ${event_type} | ${severity} | count=${event_count} | last_seen=${last_seen_at}"
@@ -170,7 +216,7 @@ order by l.created_at desc
 limit 20;
 "
 
-PROCESS_EXIT_ROWS="$(sqlite3 -tabs "${DB_PATH}" "${PROCESS_EXIT_QUERY}")"
+PROCESS_EXIT_ROWS="$(db_query "${PROCESS_EXIT_QUERY}")"
 if [ -n "${PROCESS_EXIT_ROWS}" ]; then
     while IFS=$'\t' read -r created_at source_id source_name details; do
         echo "${created_at} | [${source_id}] ${source_name} | ${details}"

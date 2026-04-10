@@ -2,6 +2,7 @@ numpy<2
 python-dotenv
 opencv-python
 peewee
+psycopg2-binary
 ultralytics
 onnxruntime; platform_machine != "aarch64" and platform_machine != "arm64"
 flask

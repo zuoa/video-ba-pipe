@@ -7,6 +7,26 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: video-ba-pipe-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-video_ba_pipe}
+      - POSTGRES_USER=${POSTGRES_USER:-video_ba_pipe}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-video_ba_pipe}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_ba_pipe} -d ${POSTGRES_DB:-video_ba_pipe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   # ============================================
   # CPU版本服务
   # ============================================
@@ -19,7 +39,13 @@ services:
     
     # 环境变量
     environment:
-      - DB_PATH=/data/db/ba.db
+      - DB_BACKEND=${DB_BACKEND:-postgres}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-video_ba_pipe}
+      - DB_USER=${DB_USER:-video_ba_pipe}
+      - DB_PASSWORD=${DB_PASSWORD:-video_ba_pipe}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
       - FRAME_SAVE_PATH=/data/frames
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
@@ -53,6 +79,10 @@ services:
     # 数据卷挂载
     volumes:
       - ./data:/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
     
     # 端口映射
     ports:
@@ -74,7 +104,13 @@ services:
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     environment:
-      - DB_PATH=/data/db/ba.db
+      - DB_BACKEND=${DB_BACKEND:-postgres}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-video_ba_pipe}
+      - DB_USER=${DB_USER:-video_ba_pipe}
+      - DB_PASSWORD=${DB_PASSWORD:-video_ba_pipe}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
       - FRAME_SAVE_PATH=/data/frames
       - VIDEO_SAVE_PATH=/data/videos
       - VIDEO_SOURCE_PATH=/data/video_sources
@@ -106,6 +142,9 @@ services:
       - RABBITMQ_ALERT_ROUTING_KEY=alert
     volumes:
       - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - video-ba-network
     
@@ -138,3 +177,7 @@ services:
 networks:
   video-ba-network:
     driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local

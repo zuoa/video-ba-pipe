@@ -23,7 +23,7 @@ from app.config import (
 )
 from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
-from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog, run_db_with_retry
+from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.workflow_runtime import build_workflow_signature, extract_source_id_from_workflow_data
 
@@ -70,11 +70,7 @@ class Orchestrator:
         self.workflow_host_signatures = {}
         self.media_cleaner = AlertMediaCleaner()
         db.connect(reuse_if_open=True)
-        run_db_with_retry(
-            lambda: VideoSource.update(status='STOPPED', decoder_pid=None).execute(),
-            logger=logger,
-            operation_name='重置视频源状态'
-        )
+        VideoSource.update(status='STOPPED', decoder_pid=None).execute()
 
         # 健康监控配置
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
@@ -245,26 +241,18 @@ class Orchestrator:
 
         # 记录到数据库
         try:
-            run_db_with_retry(
-                lambda: SourceHealthLog.create(
-                    source=source,
-                    event_type=event_type,
-                    details=json.dumps(details),
-                    severity=severity,
-                    created_at=datetime.now()
-                ),
-                logger=logger,
-                operation_name=f'记录健康事件:{event_type}'
+            SourceHealthLog.create(
+                source=source,
+                event_type=event_type,
+                details=json.dumps(details),
+                severity=severity,
+                created_at=datetime.now()
             )
         except Exception as e:
             logger.error(f"记录健康事件到数据库失败: {e}")
 
     def _save_source(self, source: VideoSource, operation_name: str):
-        run_db_with_retry(
-            source.save,
-            logger=logger,
-            operation_name=operation_name
-        )
+        source.save()
 
     def _start_source(self, source: VideoSource):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")

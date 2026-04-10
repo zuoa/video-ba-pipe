@@ -1,6 +1,5 @@
 from flask import jsonify, request
-from peewee import OperationalError
-from app.core.database_models import VideoSource, SourceHealthLog, db
+from app.core.database_models import VideoSource
 
 
 def register_video_sources_api(app):
@@ -86,15 +85,7 @@ def register_video_sources_api(app):
     def delete_video_source(id):
         try:
             source = VideoSource.get_by_id(id)
-            try:
-                source.delete_instance(recursive=True)
-            except OperationalError as e:
-                # 兼容旧库缺少 source_health_logs 表的场景，先补表再重试删除
-                if 'no such table: source_health_logs' not in str(e):
-                    raise
-                app.logger.warning("检测到缺失 source_health_logs 表，自动补建后重试删除")
-                db.create_tables([SourceHealthLog], safe=True)
-                source.delete_instance(recursive=True)
+            source.delete_instance(recursive=True)
             return jsonify({'message': '视频源删除成功'})
         except VideoSource.DoesNotExist:
             return jsonify({'error': '视频源不存在'}), 404
