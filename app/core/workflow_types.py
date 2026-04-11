@@ -149,6 +149,14 @@ class FunctionNodeData(NodeContext):
     input_nodes: Optional[List[str]] = None
 
 
+@dataclass
+class ExternalApiNodeData(NodeContext):
+    node_type: str = "external_api"
+    data_id: Optional[int] = None
+    interval_seconds: Optional[float] = None
+    config: Optional[Dict[str, Any]] = None
+
+
 def create_node_data(node_dict: Dict) -> NodeContext:
     node_type = node_dict.get('type')
     node_id = node_dict.get('id')
@@ -163,6 +171,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'roi': RoiDrawNodeData,
         'alert': AlertNodeData,
         'function': FunctionNodeData,
+        'external_api': ExternalApiNodeData,
     }
 
     node_class = node_classes.get(node_type)
@@ -190,6 +199,15 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             interval_seconds=config.get('interval_seconds'),
             config=config,
             input_nodes=data.get('input_nodes', [])
+        )
+    elif node_type == 'external_api':
+        config = node_dict.get('config', {})
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            data_id=data_id,
+            interval_seconds=config.get('interval_seconds'),
+            config=config
         )
     elif node_type == 'source':
         return node_class(

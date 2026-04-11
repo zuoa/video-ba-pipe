@@ -20,6 +20,7 @@ const { Text } = Typography;
 export interface PropertyPanelProps {
   node: any;
   videoSources: any[];
+  externalApis?: any[];
   vlConfig?: any;
   edges?: any[];
   nodes?: any[];
@@ -30,6 +31,7 @@ export interface PropertyPanelProps {
 const PropertyPanel: React.FC<PropertyPanelProps> = ({
   node,
   videoSources,
+  externalApis = [],
   vlConfig,
   edges = [],
   nodes = [],
@@ -121,6 +123,23 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
         formValues.labelName = nodeConfig.label_name || 'Object';
         formValues.labelColor = nodeConfig.label_color || '#FF0000';
+      } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
+        formValues.externalApiId = node.data.dataId ?? node.data.externalApiId;
+        formValues.executionMode = nodeConfig.execution_mode || node.data.executionMode || 'sync';
+        formValues.intervalSeconds = nodeConfig.interval_seconds || 1;
+        formValues.timeoutSeconds = nodeConfig.timeout_seconds || 30;
+        formValues.includeImage = nodeConfig.include_image !== false;
+        formValues.includeUpstreamResults = nodeConfig.include_upstream_results !== false;
+        formValues.payloadTemplate = JSON.stringify(nodeConfig.payload_template || {}, null, 2);
+        formValues.outputMapping = JSON.stringify(
+          nodeConfig.output_mapping || {
+            has_detection_path: 'has_detection',
+            detections_path: 'detections',
+            metadata_path: 'metadata',
+          },
+          null,
+          2,
+        );
       } else if (nodeType === 'function') {
         // 从 config 中读取函数配置
         const config = node.data?.config || {};
@@ -273,6 +292,31 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.memoryLimitMb;
         delete updatedData.labelName;
         delete updatedData.labelColor;
+      } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
+        const selectedApi = externalApis.find(item => String(item.id) === String(values.externalApiId));
+        const config = { ...(node.data?.config || {}) };
+
+        config.execution_mode = values.executionMode || 'sync';
+        config.interval_seconds = values.intervalSeconds;
+        config.timeout_seconds = values.timeoutSeconds;
+        config.include_image = values.includeImage !== false;
+        config.include_upstream_results = values.includeUpstreamResults !== false;
+        config.payload_template = values.payloadTemplate ? JSON.parse(values.payloadTemplate) : {};
+        config.output_mapping = values.outputMapping ? JSON.parse(values.outputMapping) : {};
+
+        updatedData.dataId = values.externalApiId || null;
+        updatedData.externalApiName = selectedApi?.name || node.data?.externalApiName;
+        updatedData.executionMode = config.execution_mode;
+        updatedData.config = config;
+
+        delete updatedData.externalApiId;
+        delete updatedData.executionMode;
+        delete updatedData.intervalSeconds;
+        delete updatedData.timeoutSeconds;
+        delete updatedData.includeImage;
+        delete updatedData.includeUpstreamResults;
+        delete updatedData.payloadTemplate;
+        delete updatedData.outputMapping;
       } else if (nodeType === 'alert') {
         // Alert 节点：保存触发条件和抑制配置
 
@@ -333,7 +377,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             const sourceNode = nodes.find(n => n.id === edge.source);
             return sourceNode;
           })
-          .filter(n => n && (n.data?.type === 'algorithm' || n.type === 'algorithm'));
+          .filter(n => n && (
+            n.data?.type === 'algorithm' ||
+            n.type === 'algorithm' ||
+            n.data?.type === 'externalApi' ||
+            n.type === 'externalApi'
+          ));
 
         const config = node.data?.config || {};
 
@@ -561,6 +610,112 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
 
+      case 'externalApi':
+      case 'external_api':
+        return (
+          <>
+            <Form.Item
+              label="选择 API"
+              name="externalApiId"
+              rules={[{ required: true, message: '请选择外部 API' }]}
+            >
+              <Select placeholder="选择已配置的外部 API">
+                {externalApis.map((item) => (
+                  <Option key={item.id} value={item.id}>
+                    {item.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            {externalApis.length === 0 && (
+              <div className="info-box" style={{ marginBottom: 16 }}>
+                <InfoCircleOutlined />
+                <span>暂无可用外部 API，请先在“外部 API”页面中配置</span>
+              </div>
+            )}
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">执行配置</span>
+              </div>
+
+              <Form.Item
+                label="执行模式"
+                name="executionMode"
+                extra="同步等待会阻塞当前节点；异步提交只投递请求，不等待结果"
+              >
+                <Select>
+                  <Option value="sync">同步等待</Option>
+                  <Option value="async_submit">异步提交</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item
+                label="调用间隔（秒）"
+                name="intervalSeconds"
+              >
+                <InputNumber min={0.1} max={300} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item
+                label="超时（秒）"
+                name="timeoutSeconds"
+              >
+                <InputNumber min={1} max={300} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item label="包含图片" name="includeImage" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+
+              <Form.Item label="包含上游结果" name="includeUpstreamResults" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">输入参数</span>
+              </div>
+              <div className="info-box" style={{ marginBottom: 12 }}>
+                <InfoCircleOutlined />
+                <span>系统会自动注入 `workflow_id`、`node_id`、`frame_timestamp`，可选注入 `image_base64` 和 `upstream_results`。</span>
+              </div>
+              <Form.Item
+                label="附加请求体"
+                name="payloadTemplate"
+                extra="JSON 对象，会与系统自动生成的字段合并"
+              >
+                <TextArea rows={6} placeholder='{"scene":"gate-1"}' />
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">输出参数</span>
+              </div>
+              <div className="info-box" style={{ marginBottom: 12 }}>
+                <InfoCircleOutlined />
+                <span>请用点路径声明返回值位置，例如 `data.items`。默认兼容 `has_detection`、`detections`、`metadata`。</span>
+              </div>
+              <Form.Item
+                label="输出映射"
+                name="outputMapping"
+                extra="JSON 对象，支持 has_detection_path / detections_path / metadata_path / label_color_path"
+              >
+                <TextArea rows={6} placeholder='{"detections_path":"data.detections"}' />
+              </Form.Item>
+            </div>
+          </>
+        );
+
       case 'condition':
         return (
           <>
@@ -616,7 +771,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               const sourceNode = nodes.find(n => n.id === edge.source);
               return sourceNode;
             })
-            .filter(n => n && (n.data?.type === 'algorithm' || n.type === 'algorithm'));
+            .filter(n => n && (
+              n.data?.type === 'algorithm' ||
+              n.type === 'algorithm' ||
+              n.data?.type === 'externalApi' ||
+              n.type === 'externalApi'
+            ));
 
           return upstreamNodes;
         };

@@ -1,0 +1,38 @@
+.external-apis-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.external-apis-table .ant-table {
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.external-apis-name {
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.external-apis-desc {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.external-apis-url {
+  color: #475569;
+  word-break: break-all;
+}
+
+.external-api-form-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 120px;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .external-api-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -86,6 +86,11 @@ const Header: React.FC = () => {
       label: <Link to="/scripts">脚本管理</Link>,
     }] : []),
     {
+      key: 'external-apis',
+      icon: <FunctionOutlined />,
+      label: <Link to="/external-apis">外部 API</Link>,
+    },
+    {
       key: 'algorithms',
       icon: <ExperimentOutlined />,
       label: <Link to="/algorithms">算法管理</Link>,
@@ -98,6 +103,7 @@ const Header: React.FC = () => {
 
   const isAlgorithmActive = location.pathname === '/models' ||
     location.pathname === '/scripts' ||
+    location.pathname === '/external-apis' ||
     location.pathname === '/algorithms';
 
   return (

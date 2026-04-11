@@ -2,7 +2,7 @@ from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, SourceHealthLog,
-    SystemSetting
+    SystemSetting, ExternalApi
 )
 
 
@@ -28,6 +28,7 @@ def setup_database():
         # 基础表
         Algorithm,
         VideoSource,
+        ExternalApi,
         Alert,
         # 脚本支持相关表
         ScriptVersion,
@@ -237,6 +238,9 @@ def _normalize_existing_records():
     ).execute()
     Workflow.update(created_by='admin').where(
         (Workflow.created_by.is_null(True)) | (Workflow.created_by == '')
+    ).execute()
+    ExternalApi.update(created_by='admin').where(
+        (ExternalApi.created_by.is_null(True)) | (ExternalApi.created_by == '')
     ).execute()
     MLModel.update(uploaded_by='admin').where(
         (MLModel.uploaded_by.is_null(True)) | (MLModel.uploaded_by == '')

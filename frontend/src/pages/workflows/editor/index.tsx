@@ -27,7 +27,7 @@ import { nodeTypes } from '../components/nodes';
 import ComponentSidebar from '../components/ComponentSidebar';
 import PropertyPanel from '../components/PropertyPanel';
 import TestPanel from '../components/TestPanel';
-import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig, getAlgorithms } from '@/services/api';
+import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig, getAlgorithms, getExternalApis } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
 import '../components/WorkflowEditor.css';
 
@@ -41,6 +41,7 @@ export default function WorkflowEditorPage() {
   const [workflow, setWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
   const [algorithms, setAlgorithms] = useState<any[]>([]);
+  const [externalApis, setExternalApis] = useState<any[]>([]);
   const [vlConfig, setVlConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [resourcesLoaded, setResourcesLoaded] = useState(false);
@@ -69,6 +70,7 @@ export default function WorkflowEditorPage() {
       await Promise.all([
         loadVideoSources(),
         loadAlgorithms(),
+        loadExternalApis(),
         loadVlConfig(),
       ]);
       setResourcesLoaded(true);
@@ -108,6 +110,7 @@ export default function WorkflowEditorPage() {
             const originalType = node.type || node.data?.type;
             const nodeType = originalType === 'source' ? 'videoSource' :
                             originalType === 'algorithm' ? 'algorithm' :
+                            originalType === 'external_api' ? 'externalApi' :
                             originalType === 'function' ? 'function' :
                             originalType === 'condition' ? 'condition' :
                             originalType === 'roi' ? 'roi' :
@@ -140,6 +143,13 @@ export default function WorkflowEditorPage() {
               const currentAlgorithm = algorithms.find((algo: any) => String(algo.id) === String(runtimeAlgorithmId));
               nodeData.defaultConfidence = getAlgorithmDefaultConfidence(currentAlgorithm) ?? node.data?.defaultConfidence;
               nodeData.confidence = node.config?.confidence ?? node.data?.confidence ?? nodeData.defaultConfidence;
+            }
+
+            if (nodeType === 'externalApi') {
+              const currentExternalApiId = nodeData.dataId;
+              const currentExternalApi = externalApis.find((api: any) => String(api.id) === String(currentExternalApiId));
+              nodeData.externalApiName = currentExternalApi?.name || node.data?.externalApiName;
+              nodeData.executionMode = node.config?.execution_mode || node.data?.executionMode || 'sync';
             }
 
             // 特殊处理：从 data 字段读取额外的配置
@@ -391,6 +401,16 @@ export default function WorkflowEditorPage() {
     }
   };
 
+  const loadExternalApis = async () => {
+    try {
+      const data = await getExternalApis();
+      setExternalApis(data || []);
+    } catch (error) {
+      console.error('加载外部 API 失败:', error);
+      setExternalApis([]);
+    }
+  };
+
   const loadVlConfig = async () => {
     try {
       const data = await getVlConfig();
@@ -466,7 +486,11 @@ export default function WorkflowEditorPage() {
         // 重要：后端期望的类型是 'source', 'algorithm' 等，不是 'videoSource'
         // 所以需要映射内部类型到后端类型
         const nodeType = node.data?.type || node.type;
-        const backendType = nodeType === 'videoSource' ? 'source' : nodeType;
+        const backendType = nodeType === 'videoSource'
+          ? 'source'
+          : nodeType === 'externalApi'
+            ? 'external_api'
+            : nodeType;
 
         const saveData: any = {
           id: node.id,
@@ -516,6 +540,15 @@ export default function WorkflowEditorPage() {
             区域列表: roiRegions.map((r: any) => r.name),
           });
           saveData.dataId = node.data?.dataId;
+        } else if (nodeType === 'externalApi') {
+          const externalApiId = node.data?.dataId || null;
+          const selectedExternalApi = externalApiId != null
+            ? externalApis.find((item) => String(item.id) === String(externalApiId))
+            : null;
+          saveData.dataId = externalApiId;
+          saveData.data = {
+            externalApiName: selectedExternalApi?.name || node.data?.externalApiName,
+          };
         } else if (nodeType === 'function') {
           // 函数节点：所有配置都在 config 中，input_nodes 也在 data 中
           saveData.data = {
@@ -660,6 +693,8 @@ export default function WorkflowEditorPage() {
         triggerCondition: nodeData.triggerCondition,
         suppression: nodeData.suppression,
         vlValidation: nodeData.vlValidation,
+        externalApiName: nodeData.externalApiName,
+        executionMode: nodeData.config?.execution_mode || 'sync',
         // ROI 节点初始化空的 roiRegions 数组
         ...(nodeData.type === 'roi' ? { roiRegions: [] } : {}),
       },
@@ -862,6 +897,7 @@ export default function WorkflowEditorPage() {
                 switch (node.type) {
                   case 'videoSource': return '#1890ff';
                   case 'algorithm': return '#52c41a';
+                  case 'externalApi': return '#1677ff';
                   case 'function': return '#722ed1';
                   case 'condition': return '#faad14';
                   case 'roi': return '#fa8c16';
@@ -880,6 +916,7 @@ export default function WorkflowEditorPage() {
               <PropertyPanel
                 node={selectedNode}
                 videoSources={videoSources}
+                externalApis={externalApis}
                 vlConfig={vlConfig}
                 edges={edges}
                 nodes={nodes}

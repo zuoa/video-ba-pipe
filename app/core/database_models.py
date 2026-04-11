@@ -124,6 +124,65 @@ class VideoSource(BaseModel):
         return f'video_buffer.recording.{self.source_code}'
 
 
+# ==================== 外部 API 管理表 ====================
+
+class ExternalApi(BaseModel):
+    """外部算法 API 配置表"""
+    id = pw.AutoField()
+    name = pw.CharField(unique=True)
+    description = pw.TextField(null=True)
+    endpoint_url = pw.TextField()
+    method = pw.CharField(default='POST')
+    headers_json = pw.TextField(default='{}')
+    request_template_json = pw.TextField(default='{}')
+    input_schema_json = pw.TextField(default='[]')
+    output_schema_json = pw.TextField(default='[]')
+    output_mapping_json = pw.TextField(default='{}')
+    timeout_seconds = pw.IntegerField(default=30)
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField(null=True)
+    updated_at = pw.DateTimeField(null=True)
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'external_apis'
+
+    @property
+    def headers(self):
+        try:
+            return json.loads(self.headers_json) if self.headers_json else {}
+        except Exception:
+            return {}
+
+    @property
+    def request_template(self):
+        try:
+            return json.loads(self.request_template_json) if self.request_template_json else {}
+        except Exception:
+            return {}
+
+    @property
+    def input_schema(self):
+        try:
+            return json.loads(self.input_schema_json) if self.input_schema_json else []
+        except Exception:
+            return []
+
+    @property
+    def output_schema(self):
+        try:
+            return json.loads(self.output_schema_json) if self.output_schema_json else []
+        except Exception:
+            return []
+
+    @property
+    def output_mapping(self):
+        try:
+            return json.loads(self.output_mapping_json) if self.output_mapping_json else {}
+        except Exception:
+            return {}
+
+
 # ==================== 工作流配置表 ====================
 
 class Workflow(BaseModel):

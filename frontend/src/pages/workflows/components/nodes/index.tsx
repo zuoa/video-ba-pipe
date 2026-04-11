@@ -4,10 +4,12 @@ import ConditionNode from './ConditionNode';
 import ROINode from './ROINode';
 import AlertNode from './AlertNode';
 import FunctionNode from './FunctionNode';
+import ExternalApiNode from './ExternalApiNode';
 
 export const nodeTypes = {
   videoSource: VideoSourceNode,
   algorithm: AlgorithmNode,
+  externalApi: ExternalApiNode,
   condition: ConditionNode,
   roi: ROINode,
   alert: AlertNode,
@@ -23,4 +25,5 @@ export {
   ROINode,
   AlertNode,
   FunctionNode,
+  ExternalApiNode,
 };

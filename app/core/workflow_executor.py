@@ -2,12 +2,14 @@
 工作流执行器 - 负责执行工作流的拓扑排序和节点调度
 可以被实时执行模式和测试模式复用
 """
+import base64
 import json
 import logging
 import os
 import time
 import numpy as np
 import cv2
+import requests
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,7 +36,7 @@ from app.config import (
     DETECTION_JSONL_LOG_ENABLED,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
-from app.core.database_models import Workflow, VideoSource, Algorithm, Alert
+from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi
 from app.core.algorithm import BaseAlgorithm
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
@@ -43,7 +45,7 @@ from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData
 from app.core.execution_log_collector import ExecutionLogCollector
 
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
@@ -119,12 +121,18 @@ class WorkflowExecutor:
         self.algorithm_configs = {}
         self.algorithm_datamap = {}
         self.algorithm_roi_configs = {}
+        self.external_api_configs = {}
+        self.external_api_datamap = {}
         self.execution_graph = defaultdict(list)
         self.video_recorder = None
         self.window_detector = window_detector or WindowDetector()
         self.recorder_key = f"workflow:{self.workflow_id}"
         self.running = True
         self._cleaned_up = False
+        self._async_submit_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix=f"workflow-{self.workflow_id}-external-api",
+        )
 
         # ========== 执行状态追踪 ==========
         # node_results_cache: 存储节点执行结果（用于下游节点访问）
@@ -145,6 +153,7 @@ class WorkflowExecutor:
             'roi': self._handle_roi_draw_node,  # 支持前后端两种类型名称
             'alert': self._handle_output_node,
             'function': self._handle_function_node,
+            'external_api': self._handle_external_api_node,
         }
 
         self._build_execution_graph()
@@ -157,6 +166,7 @@ class WorkflowExecutor:
             logger.info(f"[Workflow-{self.workflow_id}] 测试模式：跳过视频源和buffer初始化")
             # 测试模式下仍需要加载算法
             self._load_algorithms()
+            self._load_external_apis()
 
         self.node_last_exec_time = {}
         for node_id in self.nodes.keys():
@@ -167,7 +177,7 @@ class WorkflowExecutor:
         self.running = False
 
     def _cleanup_algorithms(self):
-        for node_id, algorithm in list(self.algorithms.items()):
+        for node_id, algorithm in list(getattr(self, 'algorithms', {}).items()):
             cleanup = getattr(algorithm, 'cleanup', None)
             if not callable(cleanup):
                 continue
@@ -180,7 +190,12 @@ class WorkflowExecutor:
                     exc_info=True,
                 )
 
-        self.algorithms.clear()
+        if hasattr(self, 'algorithms'):
+            self.algorithms.clear()
+        if hasattr(self, 'external_api_configs'):
+            self.external_api_configs.clear()
+        if hasattr(self, 'external_api_datamap'):
+            self.external_api_datamap.clear()
 
     def _cleanup_runtime_state(self):
         with self._state_lock:
@@ -240,6 +255,17 @@ class WorkflowExecutor:
                     exc_info=True,
                 )
         self.video_recorder = None
+
+        async_submit_executor = getattr(self, '_async_submit_executor', None)
+        if async_submit_executor is not None:
+            try:
+                async_submit_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as exc:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 关闭外部 API 异步线程池失败: {exc}",
+                    exc_info=True,
+                )
+            self._async_submit_executor = None
 
         if self.recording_buffer is not None and should_close_recording_buffer:
             try:
@@ -354,6 +380,63 @@ class WorkflowExecutor:
                         traceback.print_exc()
                 else:
                     logger.warning(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 没有 data_id，跳过加载")
+
+    def _load_external_apis(self):
+        """加载外部 API 节点所需的配置。"""
+        for node_id, node in self.nodes.items():
+            if node.node_type != 'external_api':
+                continue
+
+            api_id = node.data_id
+            if not api_id:
+                logger.warning(f"[Workflow-{self.workflow_id}] 外部 API 节点 {node_id} 没有 data_id，跳过加载")
+                continue
+
+            try:
+                api_config = ExternalApi.get_by_id(api_id)
+                node_data_dict = self._get_workflow_node_dict(node_id)
+                node_config = node_data_dict.get('config')
+                if not isinstance(node_config, dict):
+                    node_config = {}
+
+                merged_output_mapping = dict(api_config.output_mapping)
+                node_output_mapping = node_config.get('output_mapping')
+                if isinstance(node_output_mapping, dict):
+                    merged_output_mapping.update(node_output_mapping)
+
+                runtime_timeout = int(node_config.get('timeout_seconds') or api_config.timeout_seconds or 30)
+                interval_seconds = node_config.get('interval_seconds', 1.0)
+
+                self.external_api_datamap[node_id] = {
+                    'id': api_config.id,
+                    'name': api_config.name,
+                    'endpoint_url': api_config.endpoint_url,
+                    'method': (api_config.method or 'POST').upper(),
+                    'headers': api_config.headers,
+                    'request_template': api_config.request_template,
+                    'input_schema': api_config.input_schema,
+                    'output_schema': api_config.output_schema,
+                    'timeout_seconds': api_config.timeout_seconds,
+                    'enabled': api_config.enabled,
+                }
+                self.external_api_configs[node_id] = {
+                    'external_api_id': api_config.id,
+                    'node_id': node_id,
+                    'interval_seconds': interval_seconds,
+                    'timeout_seconds': runtime_timeout,
+                    'execution_mode': node_config.get('execution_mode') or 'sync',
+                    'include_image': node_config.get('include_image', True),
+                    'include_upstream_results': node_config.get('include_upstream_results', True),
+                    'payload_template': node_config.get('payload_template') if isinstance(node_config.get('payload_template'), dict) else {},
+                    'output_mapping': merged_output_mapping,
+                    'label_color': node_config.get('label_color') or '#1677ff',
+                }
+                logger.info(
+                    f"[Workflow-{self.workflow_id}] 成功加载外部 API 节点 {node_id}: "
+                    f"{api_config.name} ({api_config.endpoint_url})"
+                )
+            except Exception as exc:
+                logger.error(f"[Workflow-{self.workflow_id}] 加载外部 API 节点 {node_id} 失败: {exc}", exc_info=True)
 
     def _sync_single_model_confidence(self, config: dict) -> tuple[dict, Optional[float]]:
         """单模型脚本同步 confidence，并兼容历史上未显式覆盖的节点配置。"""
@@ -576,6 +659,7 @@ class WorkflowExecutor:
 
         # 加载算法
         self._load_algorithms()
+        self._load_external_apis()
     
     def _get_parallel_branch_nodes(self):
         branch_nodes = []
@@ -672,6 +756,7 @@ class WorkflowExecutor:
             'roi_draw': 1,
             'roi': 1,  # 支持前后端两种类型名称
             'algorithm': 2,
+            'external_api': 2,
             'function': 3,
             'condition': 4,
             'output': 5,
@@ -731,9 +816,19 @@ class WorkflowExecutor:
             if node.interval_seconds is not None:
                 return node.interval_seconds
 
+        if isinstance(node, ExternalApiNodeData):
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 是外部 API 节点，interval_seconds={node.interval_seconds}（类型: {type(node.interval_seconds)}）")
+            if node.interval_seconds is not None:
+                return node.interval_seconds
+
         if node_id in self.algorithms:
             interval_from_map = self.algorithm_datamap[node_id].get('interval_seconds', 1)
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 从 algorithm_datamap 获取 interval={interval_from_map}")
+            return interval_from_map
+
+        if node_id in self.external_api_configs:
+            interval_from_map = self.external_api_configs[node_id].get('interval_seconds', 1)
+            logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 从 external_api_configs 获取 interval={interval_from_map}")
             return interval_from_map
 
         # logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是算法节点且不在 algorithms 中，返回 interval=0")
@@ -1090,6 +1185,231 @@ class WorkflowExecutor:
 
         # 所有上游分支都没有找到ROI
         return None
+
+    @staticmethod
+    def _get_nested_value(payload: Any, path: Optional[str], default=None):
+        if path in (None, '', '.'):
+            return payload
+
+        current = payload
+        for segment in str(path).split('.'):
+            if isinstance(current, dict):
+                if segment not in current:
+                    return default
+                current = current[segment]
+                continue
+            if isinstance(current, list) and segment.isdigit():
+                idx = int(segment)
+                if idx < 0 or idx >= len(current):
+                    return default
+                current = current[idx]
+                continue
+            return default
+
+        return current
+
+    @staticmethod
+    def _encode_frame_to_base64_jpeg(frame_bgr: Optional[np.ndarray], quality: int = 85) -> Optional[str]:
+        if frame_bgr is None:
+            return None
+
+        success, encoded = cv2.imencode('.jpg', frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+        if not success:
+            return None
+        return base64.b64encode(encoded.tobytes()).decode('ascii')
+
+    def _build_external_api_payload(
+        self,
+        node_id: str,
+        frame_timestamp: Optional[float],
+        frame_bgr: Optional[np.ndarray],
+        upstream_results: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        api_meta = self.external_api_datamap.get(node_id, {})
+        node_config = self.external_api_configs.get(node_id, {})
+
+        payload = {}
+        request_template = api_meta.get('request_template')
+        if isinstance(request_template, dict):
+            payload.update(request_template)
+
+        payload_template = node_config.get('payload_template')
+        if isinstance(payload_template, dict):
+            payload.update(payload_template)
+
+        payload.setdefault('workflow_id', self.workflow_id)
+        payload.setdefault('node_id', node_id)
+        payload.setdefault('frame_timestamp', frame_timestamp)
+
+        if self.video_source is not None:
+            payload.setdefault('source_id', self.video_source.id)
+            payload.setdefault('source_code', self.video_source.source_code)
+
+        if node_config.get('include_image', True):
+            image_base64 = self._encode_frame_to_base64_jpeg(frame_bgr)
+            if image_base64:
+                payload['image_base64'] = image_base64
+
+        if node_config.get('include_upstream_results', True):
+            payload['upstream_results'] = self._to_jsonable(upstream_results or {})
+
+        return payload
+
+    def _submit_external_api_request(self, node_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        api_meta = self.external_api_datamap.get(node_id, {})
+        node_config = self.external_api_configs.get(node_id, {})
+        endpoint_url = api_meta.get('endpoint_url')
+        method = (api_meta.get('method') or 'POST').upper()
+        headers = dict(api_meta.get('headers') or {})
+        timeout_seconds = int(node_config.get('timeout_seconds') or api_meta.get('timeout_seconds') or 30)
+
+        response = requests.request(
+            method=method,
+            url=endpoint_url,
+            headers=headers,
+            json=payload,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+
+        content_type = (response.headers.get('Content-Type') or '').lower()
+        if 'json' in content_type:
+            body = response.json()
+        else:
+            try:
+                body = response.json()
+            except ValueError:
+                body = {'raw_text': response.text}
+
+        return {
+            'status_code': response.status_code,
+            'headers': dict(response.headers),
+            'body': body,
+        }
+
+    def _normalize_external_api_result(self, node_id: str, response_payload: Dict[str, Any]) -> Dict[str, Any]:
+        api_meta = self.external_api_datamap.get(node_id, {})
+        node_config = self.external_api_configs.get(node_id, {})
+        mapping = node_config.get('output_mapping') or {}
+        body = response_payload.get('body') or {}
+
+        detections = self._get_nested_value(body, mapping.get('detections_path', 'detections'), [])
+        if not isinstance(detections, list):
+            detections = []
+
+        metadata = self._get_nested_value(body, mapping.get('metadata_path'), None)
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {'value': metadata}
+
+        has_detection = self._get_nested_value(body, mapping.get('has_detection_path'), None)
+        if has_detection is None:
+            has_detection = len(detections) > 0
+        else:
+            has_detection = bool(has_detection)
+
+        label_color = self._get_nested_value(body, mapping.get('label_color_path'), None)
+        if not label_color:
+            label_color = node_config.get('label_color') or '#1677ff'
+
+        metadata = {
+            **metadata,
+            'external_api_name': api_meta.get('name'),
+            'external_api_id': api_meta.get('id'),
+            'external_api_status_code': response_payload.get('status_code'),
+            'execution_mode': node_config.get('execution_mode') or 'sync',
+        }
+
+        return {
+            'node_id': node_id,
+            'has_detection': has_detection,
+            'result': {
+                'detections': detections,
+                'metadata': metadata,
+                'raw_response': body,
+            },
+            'label_color': label_color,
+            'upstream_node_id': node_id,
+        }
+
+    def _handle_external_api_async_submit(self, node_id: str, payload: Dict[str, Any]):
+        try:
+            response_payload = self._submit_external_api_request(node_id, payload)
+            logger.info(
+                f"[Workflow-{self.workflow_id}] 外部 API 节点 {node_id} 异步提交完成: "
+                f"status={response_payload.get('status_code')}"
+            )
+        except Exception as exc:
+            logger.error(
+                f"[Workflow-{self.workflow_id}] 外部 API 节点 {node_id} 异步提交失败: {exc}",
+                exc_info=True,
+            )
+
+    def _handle_external_api_node(self, node_id, context):
+        frame = context.get('frame')
+        frame_timestamp = context.get('frame_timestamp')
+        frame_bgr = context.get('frame_bgr')
+        log_collector = context.get('log_collector')
+
+        if frame is None:
+            if log_collector:
+                log_collector.add_warning(node_id, "输入帧为空")
+            return None
+
+        upstream_results = self._get_upstream_results(node_id)
+
+        try:
+            api_meta = self.external_api_datamap.get(node_id, {})
+            if not api_meta.get('enabled', True):
+                raise RuntimeError('外部 API 已禁用')
+
+            payload = self._build_external_api_payload(node_id, frame_timestamp, frame_bgr, upstream_results)
+            node_config = self.external_api_configs.get(node_id, {})
+            execution_mode = node_config.get('execution_mode') or 'sync'
+
+            if execution_mode == 'async_submit':
+                if self._async_submit_executor is not None:
+                    self._async_submit_executor.submit(self._handle_external_api_async_submit, node_id, payload)
+
+                result = {
+                    'node_id': node_id,
+                    'has_detection': False,
+                    'result': {
+                        'detections': [],
+                        'metadata': {
+                            'execution_mode': 'async_submit',
+                            'submitted': True,
+                            'external_api_name': self.external_api_datamap.get(node_id, {}).get('name'),
+                        },
+                    },
+                    'label_color': node_config.get('label_color') or '#1677ff',
+                    'upstream_node_id': node_id,
+                }
+            else:
+                response_payload = self._submit_external_api_request(node_id, payload)
+                result = self._normalize_external_api_result(node_id, response_payload)
+
+            with self._state_lock:
+                self.node_results_cache[node_id] = result
+
+            if log_collector:
+                detection_count = len(result.get('result', {}).get('detections', []))
+                log_collector.add_info(
+                    node_id,
+                    f"外部 API 调用完成，检测到 {detection_count} 个目标",
+                    metadata={
+                        'execution_mode': execution_mode,
+                        'detection_count': detection_count,
+                    },
+                )
+
+            return result
+        except Exception as exc:
+            if log_collector:
+                log_collector.add_error(node_id, f"外部 API 调用失败: {str(exc)}")
+            logger.error(f"[Workflow-{self.workflow_id}] 外部 API 节点 {node_id} 执行异常: {exc}", exc_info=True)
+            raise
 
     def _handle_algorithm_node(self, node_id, context):
         frame = context.get('frame')
@@ -1466,7 +1786,7 @@ class WorkflowExecutor:
 
         if not self._should_execute_node(node_id):
             # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
-            if (isinstance(node, (AlgorithmNodeData, FunctionNodeData))
+            if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData))
                 and node_id in self.node_results_cache):
                 logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
                 with self._state_lock:
@@ -1669,8 +1989,8 @@ class WorkflowExecutor:
                     logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
                     # 传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
                     self._execute_branch(next_id, context.copy())
-        elif isinstance(node, AlgorithmNodeData):
-            # 算法节点：执行并继续执行下游（形成完整分支）
+        elif isinstance(node, (AlgorithmNodeData, ExternalApiNodeData)):
+            # 算法型节点：执行并继续执行下游（形成完整分支）
             self._execute_branch(node_id, context)
         else:
             # 其他节点（roi_draw, condition, output, alert）：直接执行单个节点
@@ -2650,6 +2970,35 @@ class WorkflowExecutor:
                 return result_data
             else:
                 return {'message': '算法未产生结果'}
+
+        # 外部 API 节点
+        elif node_type == 'external_api':
+            with self._state_lock:
+                cached = self.node_results_cache.get(node_id)
+            if cached:
+                result_payload = cached.get('result', {})
+                detections = result_payload.get('detections', [])
+                metadata = result_payload.get('metadata', {})
+                execution_mode = metadata.get('execution_mode', 'sync')
+                submitted = metadata.get('submitted', False)
+
+                if execution_mode == 'async_submit':
+                    return {
+                        'message': '异步提交成功，当前帧不等待外部 API 返回',
+                        'detection_count': 0,
+                        'execution_mode': execution_mode,
+                        'submitted': submitted,
+                        'debug_info': metadata,
+                    }
+
+                return {
+                    'message': f"外部 API 调用完成，检测到 {len(detections)} 个目标",
+                    'detections': detections,
+                    'detection_count': len(detections),
+                    'execution_mode': execution_mode,
+                    'debug_info': metadata,
+                }
+            return {'message': '外部 API 未产生结果'}
 
         # 函数节点
         elif node_type == 'function':

@@ -92,6 +92,12 @@ export default defineConfig({
       icon: 'CodeOutlined',
     },
     {
+      name: '外部 API',
+      path: '/external-apis',
+      component: './external-apis',
+      icon: 'ApiOutlined',
+    },
+    {
       name: '用户管理',
       path: '/users',
       component: './users',

@@ -9,6 +9,7 @@ import {
   PlusOutlined,
   AppstoreOutlined,
   FunctionOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
@@ -147,6 +148,55 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               暂无可用组件
             </div>
           )}
+        </div>
+      ),
+    },
+    {
+      key: 'external-api',
+      label: (
+        <div className="collapse-item-label">
+          <ApiOutlined />
+          <span className="category-title">外部 API</span>
+        </div>
+      ),
+      children: (
+        <div className="component-list">
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'externalApi',
+              nodeType: 'externalApi',
+              label: '外部 API',
+              description: '调用外部算法接口',
+              icon: <ApiOutlined />,
+              color: '#1677ff',
+              config: {
+                execution_mode: 'sync',
+                interval_seconds: 1,
+                timeout_seconds: 30,
+                include_image: true,
+                include_upstream_results: true,
+                payload_template: {},
+                output_mapping: {
+                  has_detection_path: 'has_detection',
+                  detections_path: 'detections',
+                  metadata_path: 'metadata',
+                },
+              },
+            })}
+            style={{ borderColor: '#1677ff' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#1677ff' }}>
+                <ApiOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">外部 API</div>
+                <div className="component-description">调用外部算法接口</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
         </div>
       ),
     },

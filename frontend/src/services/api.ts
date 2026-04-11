@@ -157,6 +157,35 @@ export async function deleteAlgorithm(id: number) {
   });
 }
 
+// 外部 API
+export async function getExternalApis() {
+  return request('/api/external-apis');
+}
+
+export async function getExternalApi(id: number) {
+  return request(`/api/external-apis/${id}`);
+}
+
+export async function createExternalApi(data: any) {
+  return request('/api/external-apis', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function updateExternalApi(id: number, data: any) {
+  return request(`/api/external-apis/${id}`, {
+    method: 'PUT',
+    data,
+  });
+}
+
+export async function deleteExternalApi(id: number) {
+  return request(`/api/external-apis/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function testAlgorithm(algorithmId: number, file: File) {
   const formData = new FormData();
   formData.append('algorithm_id', algorithmId.toString());

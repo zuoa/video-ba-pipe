@@ -1591,6 +1591,14 @@ try:
 except ImportError as e:
     app.logger.warning(f"检测器模板API注册失败: {e}")
 
+# ========== 注册外部 API 管理API ==========
+try:
+    from app.web.api.external_apis import register_external_apis_api
+    register_external_apis_api(app)
+    app.logger.info("外部 API 管理API已注册")
+except ImportError as e:
+    app.logger.warning(f"外部 API 管理API注册失败: {e}")
+
 # ========== 注册工作流管理API ==========
 try:
     from app.web.api.workflows import register_workflows_api

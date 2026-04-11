@@ -56,6 +56,12 @@ def _build_runtime_comparable_workflow_data(workflow_data: dict) -> dict:
         return comparable
 
     for node in nodes:
+        if get_node_type(node) == 'external_api':
+            node.pop('externalApiName', None)
+            data = node.get('data')
+            if isinstance(data, dict):
+                data.pop('externalApiName', None)
+
         if not is_source_node(node):
             continue
 
