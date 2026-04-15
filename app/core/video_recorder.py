@@ -11,7 +11,11 @@ import numpy as np
 
 from app import logger
 from app.core.cv2_compat import cv2, require_cv2
-from app.core.frame_utils import infer_frame_dimensions, nv12_to_bgr, normalize_pixel_format
+from app.core.frame_utils import (
+    detect_frame_pixel_format,
+    frame_to_bgr,
+    infer_frame_dimensions,
+)
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -251,9 +255,10 @@ class VideoRecorder:
     def _open_video_writer(self, first_frame: np.ndarray, output_path: str):
         """基于首帧创建视频写入器。"""
         require_cv2()
+        pixel_format = self._get_frame_pixel_format(first_frame)
         width, height = infer_frame_dimensions(
             first_frame,
-            pixel_format=getattr(self.buffer, 'pixel_format', 'nv12'),
+            pixel_format=pixel_format,
         )
 
         fourcc_options = [
@@ -288,17 +293,13 @@ class VideoRecorder:
 
         try:
             require_cv2()
-            pixel_format = normalize_pixel_format(getattr(self.buffer, 'pixel_format', 'nv12'))
-            if pixel_format == 'nv12':
-                bgr_frame = nv12_to_bgr(
-                    frame,
-                    width=getattr(self.buffer, 'width', None),
-                    height=getattr(self.buffer, 'height', None),
-                )
-            elif len(frame.shape) == 3 and frame.shape[2] == 3:
-                bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            else:
-                bgr_frame = frame
+            pixel_format = self._get_frame_pixel_format(frame)
+            bgr_frame = frame_to_bgr(
+                frame,
+                pixel_format=pixel_format,
+                width=getattr(self.buffer, 'width', None) if pixel_format in {'nv12', 'yuv420p'} else None,
+                height=getattr(self.buffer, 'height', None) if pixel_format in {'nv12', 'yuv420p'} else None,
+            )
             video_writer.write(bgr_frame)
             return True
         except Exception as exc:
@@ -324,9 +325,10 @@ class VideoRecorder:
             require_cv2()
             # 获取视频尺寸（从第一帧）
             first_frame = frames[0][0]
+            pixel_format = self._get_frame_pixel_format(first_frame)
             width, height = infer_frame_dimensions(
                 first_frame,
-                pixel_format=getattr(self.buffer, 'pixel_format', 'nv12'),
+                pixel_format=pixel_format,
             )
             
             # 创建VideoWriter - 使用H.264编码器以确保浏览器兼容性
@@ -364,18 +366,13 @@ class VideoRecorder:
             
             # 写入所有帧
             for frame, timestamp in frames:
-                pixel_format = normalize_pixel_format(getattr(self.buffer, 'pixel_format', 'nv12'))
-                if pixel_format == 'nv12':
-                    bgr_frame = nv12_to_bgr(
-                        frame,
-                        width=getattr(self.buffer, 'width', None),
-                        height=getattr(self.buffer, 'height', None),
-                    )
-                elif len(frame.shape) == 3 and frame.shape[2] == 3:
-                    bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                else:
-                    bgr_frame = frame
-                
+                pixel_format = self._get_frame_pixel_format(frame)
+                bgr_frame = frame_to_bgr(
+                    frame,
+                    pixel_format=pixel_format,
+                    width=getattr(self.buffer, 'width', None) if pixel_format in {'nv12', 'yuv420p'} else None,
+                    height=getattr(self.buffer, 'height', None) if pixel_format in {'nv12', 'yuv420p'} else None,
+                )
                 video_writer.write(bgr_frame)
             
             # 释放资源
@@ -387,6 +384,16 @@ class VideoRecorder:
         except Exception as e:
             logger.error(f"编码视频时出错: {e}", exc_info=True)
             return False
+
+    def _get_frame_pixel_format(self, frame: np.ndarray) -> str:
+        frame = np.asarray(frame)
+        if frame.ndim == 3 and frame.shape[2] == 3:
+            # 压缩录制缓冲区解码后的帧统一是 RGB，不能再按底层 buffer 像素格式解释。
+            return 'rgb24'
+        return detect_frame_pixel_format(
+            frame,
+            pixel_format=getattr(self.buffer, 'pixel_format', 'nv12'),
+        )
     
     def get_recording_status(self, alert_id: int) -> Optional[dict]:
         """

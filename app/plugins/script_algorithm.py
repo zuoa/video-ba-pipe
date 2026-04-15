@@ -8,9 +8,15 @@ import uuid
 import numpy as np
 
 from app import logger
+from app.config import VIDEO_FRAME_PIXEL_FORMAT
 from app.core.algorithm import BaseAlgorithm
 from app.core.cv2_compat import cv2, require_cv2
-from app.core.frame_utils import infer_frame_dimensions, nv12_to_rgb, rgb_to_nv12
+from app.core.frame_utils import (
+    detect_frame_pixel_format,
+    frame_to_rgb,
+    infer_frame_dimensions,
+    rgb_to_frame_format,
+)
 from app.core.script_loader import get_script_loader, ScriptLoadError
 from app.core.resource_limiter import get_script_executor
 from app.core.hook_manager import get_hook_manager
@@ -190,7 +196,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         处理帧（执行脚本）
 
         Args:
-            frame: NV12 格式的视频帧
+            frame: 主链路像素格式的视频帧；默认是 NV12，也支持 RGB 直调入口
             roi_regions: ROI热区配置
             upstream_results: 上游节点的执行结果
 
@@ -202,14 +208,23 @@ class ScriptAlgorithm(BaseAlgorithm):
             logger.error(f"[{self.name}] 脚本未正确加载，请检查 script_path 配置")
             return {'detections': []}
 
-        frame_width, frame_height = infer_frame_dimensions(frame, pixel_format='nv12')
+        input_pixel_format = detect_frame_pixel_format(
+            frame,
+            pixel_format=self.config.get('pixel_format', VIDEO_FRAME_PIXEL_FORMAT),
+        )
+        frame_width, frame_height = infer_frame_dimensions(frame, pixel_format=input_pixel_format)
         frame_for_script = frame
         frame_rgb = None
 
         # 1. 执行pre_detect Hooks（Hook 边界仍使用 RGB，主链路保持 NV12）
         if self.algorithm_id:
             if self.hook_manager.has_hooks_for_algorithm(self.algorithm_id, 'pre_detect'):
-                frame_rgb = nv12_to_rgb(frame, width=frame_width, height=frame_height)
+                frame_rgb = frame_to_rgb(
+                    frame,
+                    pixel_format=input_pixel_format,
+                    width=frame_width,
+                    height=frame_height,
+                )
                 modified_frame_rgb, should_skip = self.hook_manager.execute_pre_detect_hooks(
                     self.algorithm_id,
                     frame_rgb.copy(),
@@ -221,14 +236,19 @@ class ScriptAlgorithm(BaseAlgorithm):
                     return {'detections': []}
 
                 frame_rgb = modified_frame_rgb
-                frame_for_script = rgb_to_nv12(modified_frame_rgb)
+                frame_for_script = rgb_to_frame_format(modified_frame_rgb, input_pixel_format)
 
         # 2. 执行脚本
         try:
             sig = inspect.signature(self.process_func)
             if 'frame_rgb' in sig.parameters or 'frame_bgr' in sig.parameters:
                 if frame_rgb is None:
-                    frame_rgb = nv12_to_rgb(frame_for_script, width=frame_width, height=frame_height)
+                    frame_rgb = frame_to_rgb(
+                        frame_for_script,
+                        pixel_format=input_pixel_format,
+                        width=frame_width,
+                        height=frame_height,
+                    )
 
             all_args = {
                 'frame': frame_for_script,
@@ -238,7 +258,7 @@ class ScriptAlgorithm(BaseAlgorithm):
                 'upstream_results': upstream_results,
                 'frame_width': frame_width,
                 'frame_height': frame_height,
-                'pixel_format': 'nv12',
+                'pixel_format': input_pixel_format,
             }
             if 'frame_rgb' in sig.parameters:
                 all_args['frame_rgb'] = frame_rgb
@@ -292,7 +312,12 @@ class ScriptAlgorithm(BaseAlgorithm):
             # 4. 执行post_detect Hooks
             if self.algorithm_id:
                 if frame_rgb is None:
-                    frame_rgb = nv12_to_rgb(frame_for_script, width=frame_width, height=frame_height)
+                    frame_rgb = frame_to_rgb(
+                        frame_for_script,
+                        pixel_format=input_pixel_format,
+                        width=frame_width,
+                        height=frame_height,
+                    )
                 filtered_detections, should_skip = self.hook_manager.execute_post_detect_hooks(
                     self.algorithm_id, detections, frame_rgb, self.config.get('source_id', 0)
                 )

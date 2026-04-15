@@ -38,7 +38,14 @@ from app.config import (
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.algorithm import BaseAlgorithm
-from app.core.frame_utils import infer_frame_dimensions, nv12_to_bgr, nv12_to_rgb, rgb_to_nv12
+from app.core.frame_utils import (
+    detect_frame_pixel_format,
+    frame_to_bgr,
+    frame_to_rgb,
+    infer_frame_dimensions,
+    normalize_pixel_format,
+    rgb_to_frame_format,
+)
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
@@ -69,7 +76,7 @@ DETECTION_JSONL_LOG_LOCK = threading.Lock()
 
 
 class FrameExecutionContext(dict):
-    """按需从 NV12 主帧派生 RGB/BGR 视图，避免实时链路无条件转换。"""
+    """按需从主帧派生 RGB/BGR 视图，避免实时链路无条件转换。"""
 
     def get(self, key, default=None):
         if key in {'frame', 'frame_rgb'}:
@@ -114,14 +121,27 @@ class FrameExecutionContext(dict):
     def copy(self):
         return FrameExecutionContext(super().copy())
 
+    def _get_native_frame(self):
+        return super().get('frame_nv12')
+
+    def _get_frame_pixel_format(self) -> str:
+        frame = self._get_native_frame()
+        declared = super().get('frame_pixel_format', VIDEO_FRAME_PIXEL_FORMAT)
+        if frame is None:
+            return normalize_pixel_format(declared)
+        return detect_frame_pixel_format(frame, pixel_format=declared)
+
     def _get_frame_width(self, default=None):
         width = super().get('frame_width')
         if width is not None:
             return width
 
-        frame_nv12 = super().get('frame_nv12')
-        if frame_nv12 is not None:
-            width, height = infer_frame_dimensions(frame_nv12, pixel_format='nv12')
+        frame_native = self._get_native_frame()
+        if frame_native is not None:
+            width, height = infer_frame_dimensions(
+                frame_native,
+                pixel_format=self._get_frame_pixel_format(),
+            )
             super().__setitem__('frame_width', width)
             super().__setitem__('frame_height', height)
             return width
@@ -138,9 +158,12 @@ class FrameExecutionContext(dict):
         if height is not None:
             return height
 
-        frame_nv12 = super().get('frame_nv12')
-        if frame_nv12 is not None:
-            width, height = infer_frame_dimensions(frame_nv12, pixel_format='nv12')
+        frame_native = self._get_native_frame()
+        if frame_native is not None:
+            width, height = infer_frame_dimensions(
+                frame_native,
+                pixel_format=self._get_frame_pixel_format(),
+            )
             super().__setitem__('frame_width', width)
             super().__setitem__('frame_height', height)
             return height
@@ -157,13 +180,18 @@ class FrameExecutionContext(dict):
         if frame_rgb is not None:
             return frame_rgb
 
-        frame_nv12 = super().get('frame_nv12')
-        if frame_nv12 is None:
+        frame_native = self._get_native_frame()
+        if frame_native is None:
             return default
 
         width = self._get_frame_width()
         height = self._get_frame_height()
-        frame_rgb = nv12_to_rgb(frame_nv12, width=width, height=height)
+        frame_rgb = frame_to_rgb(
+            frame_native,
+            pixel_format=self._get_frame_pixel_format(),
+            width=width,
+            height=height,
+        )
         super().__setitem__('frame_rgb', frame_rgb)
         return frame_rgb
 
@@ -172,11 +200,16 @@ class FrameExecutionContext(dict):
         if frame_bgr is not None:
             return frame_bgr
 
-        frame_nv12 = super().get('frame_nv12')
-        if frame_nv12 is not None:
+        frame_native = self._get_native_frame()
+        if frame_native is not None:
             width = self._get_frame_width()
             height = self._get_frame_height()
-            frame_bgr = nv12_to_bgr(frame_nv12, width=width, height=height)
+            frame_bgr = frame_to_bgr(
+                frame_native,
+                pixel_format=self._get_frame_pixel_format(),
+                width=width,
+                height=height,
+            )
             super().__setitem__('frame_bgr', frame_bgr)
             return frame_bgr
 
@@ -2790,16 +2823,18 @@ class WorkflowExecutor:
         if test_image_bgr is None:
             test_image_bgr = cv2.cvtColor(test_frame, cv2.COLOR_RGB2BGR)
 
-        test_frame_nv12 = rgb_to_nv12(test_frame)
-        readonly_frame_nv12 = test_frame_nv12.view()
-        readonly_frame_nv12.setflags(write=False)
+        frame_pixel_format = normalize_pixel_format(VIDEO_FRAME_PIXEL_FORMAT)
+        test_frame_native = rgb_to_frame_format(test_frame, frame_pixel_format)
+        readonly_frame_native = test_frame_native.view()
+        readonly_frame_native.setflags(write=False)
 
         # 创建日志收集器
         log_collector = ExecutionLogCollector()
 
         # 创建初始 context（与运行模式保持一致）
         context = FrameExecutionContext({
-            'frame_nv12': readonly_frame_nv12,
+            'frame_nv12': readonly_frame_native,
+            'frame_pixel_format': frame_pixel_format,
             'frame_rgb': test_frame,
             'frame_bgr': test_image_bgr,
             'frame_width': test_frame.shape[1],
@@ -2833,13 +2868,18 @@ class WorkflowExecutor:
         if not self.running:
             return
 
+        frame_pixel_format = normalize_pixel_format(VIDEO_FRAME_PIXEL_FORMAT)
         readonly_frame = frame_nv12.view()
         readonly_frame.setflags(write=False)
-        frame_width, frame_height = infer_frame_dimensions(readonly_frame, pixel_format='nv12')
+        frame_width, frame_height = infer_frame_dimensions(
+            readonly_frame,
+            pixel_format=frame_pixel_format,
+        )
 
         log_collector = ExecutionLogCollector()
         context = FrameExecutionContext({
             'frame_nv12': readonly_frame,
+            'frame_pixel_format': frame_pixel_format,
             'frame_width': frame_width,
             'frame_height': frame_height,
             'frame_timestamp': frame_timestamp,

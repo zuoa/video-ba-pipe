@@ -357,6 +357,7 @@ def test_algorithm():
                 "label_color": getattr(algorithm, 'label_color', None) or script_config.get('label_color', '#FF0000'),
                 "interval_seconds": getattr(algorithm, 'interval_seconds', None) or script_config.get('interval_seconds', 1),
                 "source_id": 0,  # 测试模式，使用虚拟视频源ID
+                "pixel_format": "rgb24",  # 上传图片直调入口保持 RGB 输入
 
                 # 脚本执行相关配置
                 "script_path": algorithm.script_path,

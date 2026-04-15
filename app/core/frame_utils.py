@@ -20,6 +20,22 @@ def normalize_pixel_format(pixel_format: Optional[str]) -> str:
     return aliases.get(normalized, normalized)
 
 
+def detect_frame_pixel_format(frame: np.ndarray, pixel_format: Optional[str] = None) -> str:
+    """基于数组形状解析实际帧格式；3通道帧优先按 RGB/BGR 处理。"""
+    declared = normalize_pixel_format(pixel_format)
+    frame = np.asarray(frame)
+
+    if frame.ndim == 3:
+        if frame.shape[2] != 3:
+            raise ValueError(f"Unsupported 3D frame shape: {frame.shape}")
+        return declared if declared in {"rgb24", "bgr24"} else "rgb24"
+
+    if frame.ndim == 2:
+        return declared
+
+    raise ValueError(f"Unsupported frame shape: {frame.shape}")
+
+
 def get_frame_size_bytes(width: int, height: int, pixel_format: str) -> int:
     pixel_format = normalize_pixel_format(pixel_format)
     width = int(width)
@@ -146,6 +162,21 @@ def rgb_to_nv12(frame_rgb: np.ndarray) -> np.ndarray:
     return bgr_to_nv12(frame_bgr)
 
 
+def bgr_to_yuv420p(frame_bgr: np.ndarray) -> np.ndarray:
+    require_cv2()
+    height, width = frame_bgr.shape[:2]
+    if height % 2 != 0 or width % 2 != 0:
+        raise ValueError(f"YUV420P requires even dimensions, got {width}x{height}")
+    yuv_i420 = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2YUV_I420)
+    return yuv_i420.reshape((height * 3 // 2, width))
+
+
+def rgb_to_yuv420p(frame_rgb: np.ndarray) -> np.ndarray:
+    require_cv2()
+    frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+    return bgr_to_yuv420p(frame_bgr)
+
+
 def nv12_to_bgr(
     frame_nv12: np.ndarray | bytes | bytearray | memoryview,
     width: Optional[int] = None,
@@ -172,3 +203,110 @@ def nv12_to_rgb(
     require_cv2()
     frame_bgr = nv12_to_bgr(frame_nv12, width=width, height=height)
     return cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+
+def yuv420p_to_bgr(
+    frame_yuv420p: np.ndarray | bytes | bytearray | memoryview,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> np.ndarray:
+    require_cv2()
+    if isinstance(frame_yuv420p, np.ndarray):
+        if width is None or height is None:
+            width, height = infer_frame_dimensions(frame_yuv420p, pixel_format="yuv420p")
+        frame_yuv420p = ensure_frame_array(frame_yuv420p, width, height, "yuv420p")
+    else:
+        if width is None or height is None:
+            raise ValueError("width and height are required for YUV420P byte buffers")
+        frame_yuv420p = reshape_frame(frame_yuv420p, width, height, "yuv420p")
+
+    return cv2.cvtColor(frame_yuv420p, cv2.COLOR_YUV2BGR_I420)
+
+
+def yuv420p_to_rgb(
+    frame_yuv420p: np.ndarray | bytes | bytearray | memoryview,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> np.ndarray:
+    require_cv2()
+    frame_bgr = yuv420p_to_bgr(frame_yuv420p, width=width, height=height)
+    return cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+
+def frame_to_bgr(
+    frame: np.ndarray | bytes | bytearray | memoryview,
+    pixel_format: str,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> np.ndarray:
+    pixel_format = normalize_pixel_format(pixel_format)
+
+    if pixel_format == "nv12":
+        return nv12_to_bgr(frame, width=width, height=height)
+    if pixel_format == "yuv420p":
+        return yuv420p_to_bgr(frame, width=width, height=height)
+    if pixel_format == "rgb24":
+        require_cv2()
+        if isinstance(frame, np.ndarray):
+            if width is None or height is None:
+                width, height = infer_frame_dimensions(frame, pixel_format="rgb24")
+            frame = ensure_frame_array(frame, width, height, "rgb24")
+        elif width is None or height is None:
+            raise ValueError("width and height are required for RGB byte buffers")
+        else:
+            frame = reshape_frame(frame, width, height, "rgb24")
+        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    if pixel_format == "bgr24":
+        if isinstance(frame, np.ndarray):
+            if width is None or height is None:
+                width, height = infer_frame_dimensions(frame, pixel_format="bgr24")
+            return ensure_frame_array(frame, width, height, "bgr24")
+        if width is None or height is None:
+            raise ValueError("width and height are required for BGR byte buffers")
+        return reshape_frame(frame, width, height, "bgr24")
+
+    raise ValueError(f"Unsupported pixel format: {pixel_format}")
+
+
+def frame_to_rgb(
+    frame: np.ndarray | bytes | bytearray | memoryview,
+    pixel_format: str,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> np.ndarray:
+    pixel_format = normalize_pixel_format(pixel_format)
+
+    if pixel_format == "nv12":
+        return nv12_to_rgb(frame, width=width, height=height)
+    if pixel_format == "yuv420p":
+        return yuv420p_to_rgb(frame, width=width, height=height)
+    if pixel_format == "rgb24":
+        if isinstance(frame, np.ndarray):
+            if width is None or height is None:
+                width, height = infer_frame_dimensions(frame, pixel_format="rgb24")
+            return ensure_frame_array(frame, width, height, "rgb24")
+        if width is None or height is None:
+            raise ValueError("width and height are required for RGB byte buffers")
+        return reshape_frame(frame, width, height, "rgb24")
+    if pixel_format == "bgr24":
+        require_cv2()
+        frame_bgr = frame_to_bgr(frame, pixel_format="bgr24", width=width, height=height)
+        return cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+    raise ValueError(f"Unsupported pixel format: {pixel_format}")
+
+
+def rgb_to_frame_format(frame_rgb: np.ndarray, pixel_format: str) -> np.ndarray:
+    pixel_format = normalize_pixel_format(pixel_format)
+
+    if pixel_format == "rgb24":
+        return np.ascontiguousarray(frame_rgb, dtype=np.uint8)
+    if pixel_format == "bgr24":
+        require_cv2()
+        return cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+    if pixel_format == "nv12":
+        return rgb_to_nv12(frame_rgb)
+    if pixel_format == "yuv420p":
+        return rgb_to_yuv420p(frame_rgb)
+
+    raise ValueError(f"Unsupported pixel format: {pixel_format}")
