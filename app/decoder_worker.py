@@ -15,6 +15,7 @@ from app.config import (
     ANALYSIS_TARGET_FPS,
     IS_EXTREME_DECODE_MODE,
     VIDEO_DECODER_TYPE,
+    VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_SW_DECODER_THREADS,
     DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
@@ -106,23 +107,32 @@ class DecoderWorker:
         try:
             # 如果提供了source参数，使用source的参数，否则使用默认配置
             if source:
-                frame_shape = (source.source_decode_height, source.source_decode_width, 3)
-                logger.info(f"使用视频源参数: frame_shape={frame_shape}")
+                width = int(source.source_decode_width)
+                height = int(source.source_decode_height)
+                logger.info(
+                    f"使用视频源参数: width={width}, height={height}, pixel_format={VIDEO_FRAME_PIXEL_FORMAT}"
+                )
             else:
-                frame_shape = (1080, 1920, 3)  # 默认形状
-                logger.info(f"使用默认配置: frame_shape={frame_shape}")
+                width = 1920
+                height = 1080
+                logger.info(
+                    f"使用默认配置: width={width}, height={height}, pixel_format={VIDEO_FRAME_PIXEL_FORMAT}"
+                )
 
             self.analysis_buffer = VideoRingBuffer(
                 name=self.analysis_buffer_name,
                 create=False,
-                frame_shape=frame_shape,
+                width=width,
+                height=height,
+                pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                 fps=self.analysis_target_fps,
                 duration_seconds=ANALYSIS_BUFFER_SECONDS
             )
             logger.info(
                 f"已连接分析缓冲区: {self.analysis_buffer_name} "
                 f"(fps={self.analysis_target_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
-                f"capacity={self.analysis_buffer.capacity}, frame_shape={self.analysis_buffer.frame_shape})"
+                f"capacity={self.analysis_buffer.capacity}, frame_shape={self.analysis_buffer.frame_shape}, "
+                f"pixel_format={self.analysis_buffer.pixel_format})"
             )
 
             # 注销资源跟踪器(避免进程退出时的警告)
@@ -133,7 +143,9 @@ class DecoderWorker:
                 self.recording_buffer = CompressedVideoRingBuffer(
                     name=self.recording_buffer_name,
                     create=False,
-                    frame_shape=frame_shape,
+                    width=width,
+                    height=height,
+                    pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                     fps=self.recording_target_fps,
                     duration_seconds=RECORDING_BUFFER_DURATION,
                     max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
@@ -142,7 +154,8 @@ class DecoderWorker:
                 logger.info(
                     f"已连接录制缓冲区: {self.recording_buffer_name} "
                     f"(compressed jpeg, fps={self.recording_target_fps}, duration={RECORDING_BUFFER_DURATION}s, "
-                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape})"
+                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape}, "
+                    f"pixel_format={self.recording_buffer.pixel_format})"
                 )
                 shm_name = self.recording_buffer_name if os.name == 'nt' else f"/{self.recording_buffer_name}"
                 resource_tracker.unregister(shm_name, 'shared_memory')
@@ -174,7 +187,7 @@ class DecoderWorker:
                 logger.info(f"使用配置解码参数: width={width}, height={height}")
             
             input_format = self.decoder_config.get('input_format', 'h264')
-            output_format = self.decoder_config.get('output_format', 'rgb24')
+            output_format = self.decoder_config.get('output_format', VIDEO_FRAME_PIXEL_FORMAT)
 
             self.decoder = DecoderFactory.create_decoder(
                 decoder_type,
@@ -605,9 +618,9 @@ if __name__ == '__main__':
     decoder_group.add_argument('--input-format', default='h264',
                                choices=['h264', 'h265', 'mjpeg'],
                                help='输入格式 (默认: h264)')
-    decoder_group.add_argument('--output-format', default='rgb24',
-                               choices=['rgb24', 'bgr24', 'yuv420p'],
-                               help='输出格式 (默认: rgb24)')
+    decoder_group.add_argument('--output-format', default=VIDEO_FRAME_PIXEL_FORMAT,
+                               choices=['nv12', 'rgb24', 'bgr24', 'yuv420p'],
+                               help='输出格式 (默认读取 VIDEO_FRAME_PIXEL_FORMAT)')
     decoder_group.add_argument('--decoder-threads', type=int, default=FFMPEG_SW_DECODER_THREADS,
                                help='软解 ffmpeg 线程数 (默认读取 FFMPEG_SW_DECODER_THREADS)')
     decoder_group.add_argument('--decoder-output-queue-size', type=int, default=DECODER_OUTPUT_QUEUE_SIZE,

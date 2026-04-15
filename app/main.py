@@ -26,7 +26,7 @@ from app.setup_database import setup_database
 #         width=1920,
 #         height=1080,
 #         input_format='h264',
-#         output_format='rgb24'
+#         output_format='nv12'
 #     )
 #
 #     # --- 2. 连接 ---
@@ -64,8 +64,8 @@ from app.setup_database import setup_database
 #                       f"尺寸: {frame.shape}, "
 #                       f"队列积压: {decoder.output_queue.qsize()}")
 #
-#                 # 1. 将帧从 RGB 转换为 BGR
-#                 bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+#                 # 1. 将 NV12 主帧转换为 BGR，供 OpenCV 保存/显示
+#                 bgr_frame = nv12_to_bgr(frame, width=1920, height=1080)
 #
 #                 # 2. 创建文件名 (例如：frame_00010.jpg)
 #                 filename = os.path.join(SAVE_DIR, f"frame_{frame_count:05d}.jpg")

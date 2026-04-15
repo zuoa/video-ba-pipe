@@ -40,7 +40,7 @@ class FFmpegRKMPPDecoder(AsyncFFmpegDecoder):
             '-c:v', decoder,
             '-i', 'pipe:0',
             '-f', 'rawvideo',
-            '-pix_fmt', self.config.get('output_format', 'rgb24'),
+            '-pix_fmt', self.config.get('output_format', 'nv12'),
             '-s', f'{self.width}x{self.height}',
             'pipe:1'
         ]

@@ -8,6 +8,7 @@ from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
     VIDEO_DECODER_TYPE,
+    VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_SW_DECODER_THREADS,
     DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
@@ -261,7 +262,9 @@ class Orchestrator:
         analysis_buffer = VideoRingBuffer(
             name=source.analysis_buffer_name,
             create=True,
-            frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+            width=source.source_decode_width,
+            height=source.source_decode_height,
+            pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
             fps=analysis_fps,
             duration_seconds=ANALYSIS_BUFFER_SECONDS
         )
@@ -269,14 +272,17 @@ class Orchestrator:
 
         logger.debug(
             f"创建分析RingBuffer: fps={analysis_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
-            f"capacity={analysis_buffer.capacity}帧, frame_shape={analysis_buffer.frame_shape}"
+            f"capacity={analysis_buffer.capacity}帧, frame_shape={analysis_buffer.frame_shape}, "
+            f"pixel_format={analysis_buffer.pixel_format}"
         )
 
         if RECORDING_ENABLED:
             recording_buffer = CompressedVideoRingBuffer(
                 name=source.recording_buffer_name,
                 create=True,
-                frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+                width=source.source_decode_width,
+                height=source.source_decode_height,
+                pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                 fps=RECORDING_FPS,
                 duration_seconds=RECORDING_BUFFER_DURATION,
                 max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
@@ -285,7 +291,8 @@ class Orchestrator:
             self.recording_buffers[source.id] = recording_buffer
             logger.debug(
                 f"创建录制CompressedRingBuffer: fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
-                f"capacity={recording_buffer.capacity}帧, frame_shape={recording_buffer.frame_shape}"
+                f"capacity={recording_buffer.capacity}帧, frame_shape={recording_buffer.frame_shape}, "
+                f"pixel_format={recording_buffer.pixel_format}"
             )
 
         # 启动解码器进程
@@ -301,7 +308,8 @@ class Orchestrator:
             '--analysis-fps', str(analysis_fps),
             '--recording-fps', str(RECORDING_FPS),
             '--width', str(source.source_decode_width),
-            '--height', str(source.source_decode_height)
+            '--height', str(source.source_decode_height),
+            '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
         ]
         logger.debug(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args)

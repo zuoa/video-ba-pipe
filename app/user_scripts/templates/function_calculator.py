@@ -115,7 +115,9 @@ def init(config: dict) -> Dict[str, Any]:
 
 
 def process(frame: np.ndarray, config: dict, roi_regions: list = None,
-            state: dict = None, upstream_results: dict = None) -> dict:
+            state: dict = None, upstream_results: dict = None,
+            frame_width: int = None, frame_height: int = None,
+            pixel_format: str = 'nv12') -> dict:
     from app import logger
 
     def _empty_result():
@@ -158,7 +160,8 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None,
 
     if is_single_input:
         # 单输入函数：只需要 detections_a，并传递 frame 尺寸
-        frame_height, frame_width = frame.shape[:2]
+        if frame_height is None or frame_width is None:
+            frame_height, frame_width = frame.shape[:2]
 
         function_config = {
             'threshold': config.get('threshold', 0.3),

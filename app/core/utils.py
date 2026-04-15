@@ -2,12 +2,30 @@ import os
 
 from collections import defaultdict
 
+from app.core.frame_utils import infer_frame_dimensions, normalize_pixel_format, nv12_to_bgr
+
 def save_frame(frame_data, save_path: str):
     import cv2
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     frame_data = frame_data.copy()
-    frame_data = cv2.cvtColor(frame_data, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(save_path, frame_data)
+
+    pixel_format = 'rgb24'
+    if getattr(frame_data, 'ndim', 0) == 2:
+        try:
+            infer_frame_dimensions(frame_data, pixel_format='nv12')
+            pixel_format = 'nv12'
+        except Exception:
+            pixel_format = 'gray'
+
+    pixel_format = normalize_pixel_format(pixel_format)
+    if pixel_format == 'nv12':
+        image = nv12_to_bgr(frame_data)
+    elif pixel_format == 'gray':
+        image = frame_data
+    else:
+        image = cv2.cvtColor(frame_data, cv2.COLOR_RGB2BGR)
+
+    cv2.imwrite(save_path, image)
 
 
 
@@ -180,4 +198,3 @@ def find_multimodel_groups(stages_results):
             valid_groups.append(cluster)
 
     return valid_groups
-

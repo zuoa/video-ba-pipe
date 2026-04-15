@@ -9,6 +9,7 @@ import numpy as np
 
 from app import logger
 from app.config import DECODER_OUTPUT_QUEUE_SIZE
+from app.core.frame_utils import get_frame_size_bytes, normalize_pixel_format, reshape_frame
 
 
 class DecoderStatus(Enum):
@@ -168,7 +169,7 @@ class FFmpegBaseDecoder(BaseDecoder):
             self,
             decoder_id: int,
             input_format: str = 'h264',
-            output_format: str = 'rgb24',
+            output_format: str = 'nv12',
             device_id: int = 0,
             width: int = 1920,
             height: int = 1080,
@@ -179,12 +180,12 @@ class FFmpegBaseDecoder(BaseDecoder):
 
         Args:
             input_format: 输入编码格式 (h264, hevc, vp9等)
-            output_format: 输出像素格式 (nv12, yuv420p, rgb24等)
+            output_format: 输出像素格式，主路径默认使用 nv12；也支持 yuv420p/rgb24 等格式
         """
         super().__init__(decoder_id, device_id, width, height, **kwargs)
 
         self.input_format = input_format
-        self.output_format = output_format
+        self.output_format = normalize_pixel_format(output_format)
 
         # FFmpeg进程相关
         self.ffmpeg_process = None
@@ -197,14 +198,7 @@ class FFmpegBaseDecoder(BaseDecoder):
 
     def _calculate_frame_size(self) -> int:
         """计算输出帧大小"""
-        if self.output_format == 'nv12':
-            return self.width * self.height * 3 // 2
-        elif self.output_format == 'rgb24':
-            return self.width * self.height * 3
-        elif self.output_format == 'yuv420p':
-            return self.width * self.height * 3 // 2
-        else:
-            return self.width * self.height * 3
+        return get_frame_size_bytes(self.width, self.height, self.output_format)
 
     @abstractmethod
     def _build_ffmpeg_command(self) -> list:
@@ -276,8 +270,9 @@ class FFmpegBaseDecoder(BaseDecoder):
             frame = np.frombuffer(raw_data, dtype=np.uint8)
             return frame.reshape((self.height, self.width, 3))
         elif self.output_format == 'nv12':
-            # NV12格式处理
-            return self._nv12_to_rgb(raw_data)
+            return reshape_frame(raw_data, self.width, self.height, 'nv12')
+        elif self.output_format == 'yuv420p':
+            return reshape_frame(raw_data, self.width, self.height, 'yuv420p')
         else:
             return np.frombuffer(raw_data, dtype=np.uint8)
 
@@ -559,7 +554,7 @@ class FFmpegSoftwareDecoder(FFmpegBaseDecoder):
             self,
             decoder_id: int,
             input_format: str = 'h264',
-            output_format: str = 'rgb24',
+            output_format: str = 'nv12',
             device_id: int = 0,  # 软解不使用，保留参数统一
             width: int = 1920,
             height: int = 1080,

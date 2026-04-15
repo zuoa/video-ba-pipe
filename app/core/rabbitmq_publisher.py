@@ -6,10 +6,19 @@ RabbitMQ预警发布器模块
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-import pika
-from pika.exceptions import AMQPConnectionError, AMQPChannelError
+try:
+    import pika
+    from pika.exceptions import AMQPChannelError, AMQPConnectionError
+except ImportError:  # pragma: no cover - optional dependency in test/runtime subsets
+    pika = None
+
+    class AMQPConnectionError(Exception):
+        pass
+
+    class AMQPChannelError(Exception):
+        pass
 
 from app.config import (
     RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD, 
@@ -25,8 +34,8 @@ class RabbitMQPublisher:
     """RabbitMQ预警发布器"""
     
     def __init__(self):
-        self.connection: Optional[pika.BlockingConnection] = None
-        self.channel: Optional[pika.channel.Channel] = None
+        self.connection = None
+        self.channel = None
         self.connected = False
         
     def connect(self) -> bool:
@@ -38,6 +47,10 @@ class RabbitMQPublisher:
         """
         if not RABBITMQ_ENABLED:
             logger.info("RabbitMQ功能未启用，跳过连接")
+            return False
+
+        if pika is None:
+            logger.warning("pika 未安装，无法连接 RabbitMQ")
             return False
             
         try:
@@ -132,6 +145,10 @@ class RabbitMQPublisher:
         """
         if not RABBITMQ_ENABLED:
             logger.debug("RabbitMQ功能未启用，跳过预警发布")
+            return False
+
+        if pika is None:
+            logger.warning("pika 未安装，跳过 RabbitMQ 预警发布")
             return False
             
         # 检查连接状态，如果断开则尝试重连

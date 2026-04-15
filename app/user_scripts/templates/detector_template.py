@@ -187,15 +187,17 @@ def init(config: dict) -> Dict[str, Any]:
 def process(frame: np.ndarray, 
             config: dict, 
             roi_regions: Optional[List[dict]] = None,
-            state: Optional[dict] = None) -> dict:
+            state: Optional[dict] = None,
+            frame_width: Optional[int] = None,
+            frame_height: Optional[int] = None,
+            pixel_format: str = 'nv12') -> dict:
     """
     处理函数（必需）
     
     在每一帧上执行，这是核心检测逻辑。
     
     Args:
-        frame: np.ndarray, RGB格式的图像 (height, width, 3)
-               注意：系统传入的是RGB格式，不是BGR！
+        frame: np.ndarray, 系统默认传入 NV12 主帧
                
         config: dict, 配置字典，包含所有配置项
         
@@ -238,8 +240,11 @@ def process(frame: np.ndarray,
     4. 处理异常要妥善，不要让异常中断整个流程
     """
     from app import logger
+    from app.core.frame_utils import nv12_to_rgb
     
     # ===== 在这里实现你的检测逻辑 =====
+    if pixel_format == 'nv12':
+        frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
     
     # 1. 颜色空间转换（如果需要）
     # OpenCV函数需要BGR格式

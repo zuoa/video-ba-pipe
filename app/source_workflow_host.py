@@ -15,7 +15,7 @@ from multiprocessing import resource_tracker
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import logger
-from app.config import ANALYSIS_BUFFER_SECONDS, ANALYSIS_TARGET_FPS
+from app.config import ANALYSIS_BUFFER_SECONDS, ANALYSIS_TARGET_FPS, VIDEO_FRAME_PIXEL_FORMAT
 from app.core.database_models import VideoSource, Workflow
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.workflow_executor import WorkflowExecutor
@@ -55,11 +55,11 @@ class WorkflowRunner:
     def start(self):
         self._thread.start()
 
-    def submit_frame(self, frame_rgb, frame_timestamp: float):
+    def submit_frame(self, frame_nv12, frame_timestamp: float):
         with self._condition:
             if not self._running:
                 return
-            self._pending_frame = frame_rgb
+            self._pending_frame = frame_nv12
             self._pending_timestamp = frame_timestamp
             self._condition.notify()
 
@@ -107,13 +107,13 @@ class WorkflowRunner:
                 if not self._running:
                     return
 
-                frame_rgb = self._pending_frame
+                frame_nv12 = self._pending_frame
                 frame_timestamp = self._pending_timestamp
                 self._pending_frame = None
                 self._pending_timestamp = None
 
             try:
-                self.executor.run_once(frame_rgb, frame_timestamp)
+                self.executor.run_once(frame_nv12, frame_timestamp)
                 self._consecutive_errors = 0
             except Exception as exc:
                 self._consecutive_errors += 1
@@ -204,7 +204,9 @@ class SourceWorkflowHost:
                 self.buffer = VideoRingBuffer(
                     name=self.source.analysis_buffer_name,
                     create=False,
-                    frame_shape=(self.source.source_decode_height, self.source.source_decode_width, 3),
+                    width=self.source.source_decode_width,
+                    height=self.source.source_decode_height,
+                    pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                     fps=analysis_fps,
                     duration_seconds=ANALYSIS_BUFFER_SECONDS,
                 )
@@ -296,7 +298,7 @@ class SourceWorkflowHost:
                     time.sleep(0.01)
                     continue
 
-                frame_rgb, frame_timestamp = peek_result
+                frame_nv12, frame_timestamp = peek_result
                 if self.last_frame_timestamp == frame_timestamp:
                     time.sleep(0.001)
                     continue
@@ -306,7 +308,7 @@ class SourceWorkflowHost:
                 for workflow_id, runner in list(self.runners.items()):
                     if not self.running:
                         break
-                    runner.submit_frame(frame_rgb, frame_timestamp)
+                    runner.submit_frame(frame_nv12, frame_timestamp)
 
             except KeyboardInterrupt:
                 logger.info(f"[SourceHost:{self.source_id}] 收到中断信号，准备退出")

@@ -1,6 +1,10 @@
 import os
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency in lightweight test envs
+    def load_dotenv(*args, **kwargs):
+        return False
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -92,11 +96,14 @@ IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in
 # RK3588 推荐使用 rk_mpp，其他环境默认 ffmpeg_sw。
 VIDEO_DECODER_TYPE = (os.getenv('VIDEO_DECODER_TYPE') or 'ffmpeg_sw').strip().lower() or 'ffmpeg_sw'
 
+# 运行时主帧格式。当前全链路默认使用 NV12，以降低共享内存与队列占用。
+VIDEO_FRAME_PIXEL_FORMAT = (os.getenv('VIDEO_FRAME_PIXEL_FORMAT') or 'nv12').strip().lower() or 'nv12'
+
 # 软件解码性能调优
 # ffmpeg 软解默认限制为单线程，避免多路并发时每路自动拉满 CPU。
 FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1')))
 
-# 解码输出队列大小（原始 RGB 帧）。队列越大，解码抖动越小，但内存占用会线性增加。
+# 解码输出队列大小（运行时主帧格式，默认 NV12）。队列越大，解码抖动越小，但内存占用会线性增加。
 DECODER_OUTPUT_QUEUE_SIZE = max(1, int(os.getenv('DECODER_OUTPUT_QUEUE_SIZE', '5')))
 
 

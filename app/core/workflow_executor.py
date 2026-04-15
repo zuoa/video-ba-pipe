@@ -8,7 +8,6 @@ import logging
 import os
 import time
 import numpy as np
-import cv2
 import requests
 import threading
 from collections import defaultdict
@@ -34,10 +33,12 @@ from app.config import (
     ALERT_SUPPRESSION_DURATION,
     LOG_SAVE_PATH,
     DETECTION_JSONL_LOG_ENABLED,
+    VIDEO_FRAME_PIXEL_FORMAT,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
-from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi
+from app.core.cv2_compat import cv2, require_cv2
 from app.core.algorithm import BaseAlgorithm
+from app.core.frame_utils import infer_frame_dimensions, nv12_to_bgr, nv12_to_rgb, rgb_to_nv12
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
@@ -48,29 +49,144 @@ from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData
 from app.core.execution_log_collector import ExecutionLogCollector
 
+try:
+    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi
+except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
+    _WORKFLOW_EXECUTOR_IMPORT_ERROR = exc
+
+    class _MissingDatabaseModel:
+        @classmethod
+        def get_by_id(cls, *args, **kwargs):
+            raise ImportError("WorkflowExecutor requires peewee/database dependencies") from _WORKFLOW_EXECUTOR_IMPORT_ERROR
+
+        @classmethod
+        def create(cls, *args, **kwargs):
+            raise ImportError("WorkflowExecutor requires peewee/database dependencies") from _WORKFLOW_EXECUTOR_IMPORT_ERROR
+
+    Workflow = VideoSource = Algorithm = Alert = ExternalApi = _MissingDatabaseModel
+
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
 
 
 class FrameExecutionContext(dict):
-    """按需提供 BGR 视图，避免实时链路每帧无条件做色彩空间转换。"""
+    """按需从 NV12 主帧派生 RGB/BGR 视图，避免实时链路无条件转换。"""
 
     def get(self, key, default=None):
+        if key in {'frame', 'frame_rgb'}:
+            return self._get_frame_rgb(default)
         if key == 'frame_bgr':
             return self._get_frame_bgr(default)
+        if key == 'frame_width':
+            return self._get_frame_width(default)
+        if key == 'frame_height':
+            return self._get_frame_height(default)
         return super().get(key, default)
 
     def __getitem__(self, key):
+        if key in {'frame', 'frame_rgb'}:
+            return self._get_frame_rgb()
         if key == 'frame_bgr':
             return self._get_frame_bgr()
+        if key == 'frame_width':
+            return self._get_frame_width()
+        if key == 'frame_height':
+            return self._get_frame_height()
         return super().__getitem__(key)
 
+    def __contains__(self, key):
+        if key in {'frame', 'frame_rgb'}:
+            return super().__contains__('frame_rgb') or super().__contains__('frame_nv12')
+        if key == 'frame_bgr':
+            return (
+                super().__contains__('frame_bgr')
+                or super().__contains__('frame_rgb')
+                or super().__contains__('frame_nv12')
+            )
+        if key in {'frame_width', 'frame_height'}:
+            return (
+                super().__contains__(key)
+                or super().__contains__('frame_nv12')
+                or super().__contains__('frame_rgb')
+                or super().__contains__('frame')
+            )
+        return super().__contains__(key)
+
+    def copy(self):
+        return FrameExecutionContext(super().copy())
+
+    def _get_frame_width(self, default=None):
+        width = super().get('frame_width')
+        if width is not None:
+            return width
+
+        frame_nv12 = super().get('frame_nv12')
+        if frame_nv12 is not None:
+            width, height = infer_frame_dimensions(frame_nv12, pixel_format='nv12')
+            super().__setitem__('frame_width', width)
+            super().__setitem__('frame_height', height)
+            return width
+
+        frame_rgb = super().get('frame_rgb')
+        if frame_rgb is not None:
+            width = frame_rgb.shape[1]
+            super().__setitem__('frame_width', width)
+            return width
+        return default
+
+    def _get_frame_height(self, default=None):
+        height = super().get('frame_height')
+        if height is not None:
+            return height
+
+        frame_nv12 = super().get('frame_nv12')
+        if frame_nv12 is not None:
+            width, height = infer_frame_dimensions(frame_nv12, pixel_format='nv12')
+            super().__setitem__('frame_width', width)
+            super().__setitem__('frame_height', height)
+            return height
+
+        frame_rgb = super().get('frame_rgb')
+        if frame_rgb is not None:
+            height = frame_rgb.shape[0]
+            super().__setitem__('frame_height', height)
+            return height
+        return default
+
+    def _get_frame_rgb(self, default=None):
+        frame_rgb = super().get('frame_rgb')
+        if frame_rgb is not None:
+            return frame_rgb
+
+        frame_nv12 = super().get('frame_nv12')
+        if frame_nv12 is None:
+            return default
+
+        width = self._get_frame_width()
+        height = self._get_frame_height()
+        frame_rgb = nv12_to_rgb(frame_nv12, width=width, height=height)
+        super().__setitem__('frame_rgb', frame_rgb)
+        return frame_rgb
+
     def _get_frame_bgr(self, default=None):
-        if 'frame_bgr' not in self:
-            frame_rgb = super().get('frame')
-            if frame_rgb is None:
-                return default
-            super().__setitem__('frame_bgr', cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
-        return super().get('frame_bgr', default)
+        frame_bgr = super().get('frame_bgr')
+        if frame_bgr is not None:
+            return frame_bgr
+
+        frame_nv12 = super().get('frame_nv12')
+        if frame_nv12 is not None:
+            width = self._get_frame_width()
+            height = self._get_frame_height()
+            frame_bgr = nv12_to_bgr(frame_nv12, width=width, height=height)
+            super().__setitem__('frame_bgr', frame_bgr)
+            return frame_bgr
+
+        frame_rgb = self._get_frame_rgb(default=None)
+        if frame_rgb is None:
+            return default
+        require_cv2()
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        super().__setitem__('frame_bgr', frame_bgr)
+        return frame_bgr
 
 
 class WorkflowExecutor:
@@ -583,14 +699,17 @@ class WorkflowExecutor:
                 self.buffer = VideoRingBuffer(
                     name=analysis_buffer_name,
                     create=False,
-                    frame_shape=(self.video_source.source_decode_height, self.video_source.source_decode_width, 3),
+                    width=self.video_source.source_decode_width,
+                    height=self.video_source.source_decode_height,
+                    pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                     fps=analysis_fps,
                     duration_seconds=ANALYSIS_BUFFER_SECONDS
                 )
                 logger.info(
                     f"已连接分析缓冲区: {analysis_buffer_name} "
                     f"(fps={analysis_fps}, duration={ANALYSIS_BUFFER_SECONDS}s, "
-                    f"capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape})"
+                    f"capacity={self.buffer.capacity}, frame_shape={self.buffer.frame_shape}, "
+                    f"pixel_format={self.buffer.pixel_format})"
                 )
                 break  # 成功连接，退出重试循环
 
@@ -620,7 +739,9 @@ class WorkflowExecutor:
                 self.recording_buffer = CompressedVideoRingBuffer(
                     name=recording_buffer_name,
                     create=False,
-                    frame_shape=(self.video_source.source_decode_height, self.video_source.source_decode_width, 3),
+                    width=self.video_source.source_decode_width,
+                    height=self.video_source.source_decode_height,
+                    pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                     fps=RECORDING_FPS,
                     duration_seconds=RECORDING_BUFFER_DURATION,
                     max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
@@ -631,7 +752,8 @@ class WorkflowExecutor:
                 logger.info(
                     f"已连接录制缓冲区: {recording_buffer_name} "
                     f"(compressed jpeg, fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
-                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape})"
+                    f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape}, "
+                    f"pixel_format={self.recording_buffer.pixel_format})"
                 )
             except FileNotFoundError:
                 logger.warning(
@@ -951,7 +1073,7 @@ class WorkflowExecutor:
         logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
         return False
     
-    def _process_algorithm(self, node_id, frame, frame_timestamp, roi_regions=None, upstream_results=None):
+    def _process_algorithm(self, node_id, frame_nv12, frame_timestamp, roi_regions=None, upstream_results=None):
         algo = self.algorithms.get(node_id)
         if not algo:
             logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不在 self.algorithms 中，已加载的算法节点: {list(self.algorithms.keys())}")
@@ -972,8 +1094,7 @@ class WorkflowExecutor:
 
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
-            # 保持脚本算法兼容性：历史上 frame 参数一直是可写副本，用户脚本可能会原地修改。
-            result = algo.process(frame.copy(), effective_roi_regions, upstream_results=upstream_results)
+            result = algo.process(frame_nv12, effective_roi_regions, upstream_results=upstream_results)
             result = self._apply_algorithm_confidence_filter(node_id, result)
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
             if result is None:
@@ -1347,12 +1468,11 @@ class WorkflowExecutor:
             )
 
     def _handle_external_api_node(self, node_id, context):
-        frame = context.get('frame')
+        frame_nv12 = context.get('frame_nv12')
         frame_timestamp = context.get('frame_timestamp')
-        frame_bgr = context.get('frame_bgr')
         log_collector = context.get('log_collector')
 
-        if frame is None:
+        if frame_nv12 is None:
             if log_collector:
                 log_collector.add_warning(node_id, "输入帧为空")
             return None
@@ -1364,8 +1484,9 @@ class WorkflowExecutor:
             if not api_meta.get('enabled', True):
                 raise RuntimeError('外部 API 已禁用')
 
-            payload = self._build_external_api_payload(node_id, frame_timestamp, frame_bgr, upstream_results)
             node_config = self.external_api_configs.get(node_id, {})
+            frame_bgr = context.get('frame_bgr') if node_config.get('include_image', True) else None
+            payload = self._build_external_api_payload(node_id, frame_timestamp, frame_bgr, upstream_results)
             execution_mode = node_config.get('execution_mode') or 'sync'
 
             if execution_mode == 'async_submit':
@@ -1412,11 +1533,11 @@ class WorkflowExecutor:
             raise
 
     def _handle_algorithm_node(self, node_id, context):
-        frame = context.get('frame')
+        frame_nv12 = context.get('frame_nv12')
         frame_timestamp = context.get('frame_timestamp')
         log_collector = context.get('log_collector')  # 获取日志收集器
 
-        if frame is None:
+        if frame_nv12 is None:
             if log_collector:
                 log_collector.add_warning(node_id, "输入帧为空")
             return None
@@ -1435,15 +1556,16 @@ class WorkflowExecutor:
         upstream_results = self._get_upstream_results(node_id)
 
         try:
-            result = self._process_algorithm(node_id, frame, frame_timestamp, roi_regions, upstream_results)
+            result = self._process_algorithm(node_id, frame_nv12, frame_timestamp, roi_regions, upstream_results)
             if result:
                 self._append_detection_result_jsonl(node_id, result, frame_timestamp)
 
                 if self.test_mode:
+                    frame_rgb = context.get('frame')
                     detections = result.get('result', {}).get('detections', [])
                     result_image = self._save_test_result_image(
                         node_id=node_id,
-                        frame_rgb=frame,
+                        frame_rgb=frame_rgb,
                         detections=detections,
                         label_color=result.get('label_color', '#FF0000'),
                         roi_mask=result.get('roi_mask'),
@@ -2656,8 +2778,8 @@ class WorkflowExecutor:
         唯一区别：test_mode=True 会拦截副作用操作
 
         Args:
-            test_frame: RGB格式的测试图片
-            test_image_bgr: BGR格式的测试图片（可选）
+            test_frame: RGB 格式的测试图片；入口会立即转换为 NV12 主帧
+            test_image_bgr: BGR 格式的测试图片（可选）
 
         Returns:
             测试结果字典，包含每个节点的执行结果
@@ -2668,16 +2790,20 @@ class WorkflowExecutor:
         if test_image_bgr is None:
             test_image_bgr = cv2.cvtColor(test_frame, cv2.COLOR_RGB2BGR)
 
-        readonly_frame = test_frame.view()
-        readonly_frame.setflags(write=False)
+        test_frame_nv12 = rgb_to_nv12(test_frame)
+        readonly_frame_nv12 = test_frame_nv12.view()
+        readonly_frame_nv12.setflags(write=False)
 
         # 创建日志收集器
         log_collector = ExecutionLogCollector()
 
         # 创建初始 context（与运行模式保持一致）
         context = FrameExecutionContext({
-            'frame': readonly_frame,
+            'frame_nv12': readonly_frame_nv12,
+            'frame_rgb': test_frame,
             'frame_bgr': test_image_bgr,
+            'frame_width': test_frame.shape[1],
+            'frame_height': test_frame.shape[0],
             'frame_timestamp': time.time(),
             'log_collector': log_collector,
             'roi_regions': [],
@@ -2702,17 +2828,20 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
-    def run_once(self, frame_rgb: np.ndarray, frame_timestamp: float):
+    def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float):
         """执行单帧工作流，用于 source host 统一驱动多个工作流。"""
         if not self.running:
             return
 
-        readonly_frame = frame_rgb.view()
+        readonly_frame = frame_nv12.view()
         readonly_frame.setflags(write=False)
+        frame_width, frame_height = infer_frame_dimensions(readonly_frame, pixel_format='nv12')
 
         log_collector = ExecutionLogCollector()
         context = FrameExecutionContext({
-            'frame': readonly_frame,
+            'frame_nv12': readonly_frame,
+            'frame_width': frame_width,
+            'frame_height': frame_height,
             'frame_timestamp': frame_timestamp,
             'log_collector': log_collector,
             'roi_regions': [],
@@ -2753,8 +2882,7 @@ class WorkflowExecutor:
                         time.sleep(0.01)
                         continue
 
-                    # Decoder 输出 rgb24 格式，实际是 RGB
-                    frame_rgb, frame_timestamp = peek_result
+                    frame_nv12, frame_timestamp = peek_result
 
                     # 检查是否为新的帧（避免重复处理同一帧）
                     if self.last_frame_timestamp is not None and frame_timestamp == self.last_frame_timestamp:
@@ -2768,7 +2896,7 @@ class WorkflowExecutor:
                     frame_count += 1
                     error_count = 0  # 重置错误计数
 
-                    self.run_once(frame_rgb, frame_timestamp)
+                    self.run_once(frame_nv12, frame_timestamp)
 
                     # 定期输出日志
                     if frame_count % 100 == 0:

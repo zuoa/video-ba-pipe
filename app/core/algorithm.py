@@ -1,10 +1,10 @@
 import os
 from abc import ABC, abstractmethod
 
-import cv2
 import numpy as np
 
 from app import logger
+from app.core.cv2_compat import cv2, require_cv2
 
 
 class BaseAlgorithm(ABC):
@@ -47,7 +47,7 @@ class BaseAlgorithm(ABC):
         处理单帧图像的核心方法。
 
         Args:
-            frame (np.ndarray): 从环形缓冲区读取的原始视频帧 (RGB格式)。
+            frame (np.ndarray): 从环形缓冲区读取的原始视频帧（主格式为 NV12）。
             roi_regions (list): ROI热区配置，格式为 [{"points": [[x1,y1], [x2,y2], ...], "name": "区域1"}]
                                如果为None或空列表，则使用全画面检测。
 
@@ -73,6 +73,7 @@ class BaseAlgorithm(ABC):
         if not roi_regions:
             # 如果没有ROI配置，返回全白掩码（全画面检测）
             return np.ones((frame_shape[0], frame_shape[1]), dtype=np.uint8) * 255
+        require_cv2()
 
         # 创建黑色掩码
         mask = np.zeros((frame_shape[0], frame_shape[1]), dtype=np.uint8)
@@ -114,6 +115,7 @@ class BaseAlgorithm(ABC):
         Returns:
             masked_frame: 应用掩码后的图像
         """
+        require_cv2()
         # 将掩码应用到每个通道
         masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
         return masked_frame
@@ -236,15 +238,15 @@ class BaseAlgorithm(ABC):
     def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
-        :param img: 原始图像（RGB格式）
+        :param img: 用于可视化的 RGB 图像视图（通常由 NV12 主帧按需转换而来）
         :param results: 检测结果列表
         :param save_path: 保存路径
         :param label_color: 标签颜色（十六进制格式）
         :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域（已弃用，建议使用roi_regions）
         :param roi_regions: ROI热区配置列表，格式为 [{"polygon": [[x1,y1], [x2,y2], ...], ...}]
         """
-        import cv2
-        # RGB -> BGR 转换（OpenCV 绘图函数期望 BGR 格式）
+        require_cv2()
+        # OpenCV 绘图函数期望 BGR 格式
         img_vis = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         # 如果有roi_regions配置，优先使用roi_regions绘制热区（支持多边形）

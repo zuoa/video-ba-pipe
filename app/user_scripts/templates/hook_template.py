@@ -3,6 +3,7 @@ Hook脚本开发模板
 
 Hook在特定时机执行，可以修改帧、过滤检测结果、触发自定义操作等。
 适用于需要在检测流程中插入自定义逻辑的场景。
+运行时主链以 NV12 为主格式；Hook 收到的图像帧是系统按需转换后的 RGB 视图。
 
 Hook执行点：
 - pre_detect: 检测前，可以修改输入帧
@@ -95,15 +96,15 @@ def execute(context: dict) -> dict:
             - config: dict, Hook配置
             
             【pre_detect】
-            - frame: np.ndarray, RGB格式输入帧
+            - frame: np.ndarray, RGB格式输入帧（Hook 当前运行在转换后的可写 RGB 视图上）
             
             【post_detect】
-            - frame: np.ndarray, RGB格式原始帧
+            - frame: np.ndarray, RGB格式原始帧（由 NV12 主帧按需转换）
             - detections: list, 检测结果列表
             - detection_count: int, 检测数量
             
             【pre_alert】
-            - frame: np.ndarray, RGB格式原始帧
+            - frame: np.ndarray, RGB格式原始帧（由 NV12 主帧按需转换）
             - detections: list, 检测结果列表
             - alert_type: str, 告警类型
             - alert_message: str, 告警消息

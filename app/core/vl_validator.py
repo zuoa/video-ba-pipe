@@ -6,8 +6,6 @@ from typing import Any, Dict, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import cv2
-
 from app import logging
 from app.config import (
     VL_MODEL_BASE_URL,
@@ -15,7 +13,25 @@ from app.config import (
     VL_MODEL_NAME,
     VL_MODEL_TIMEOUT_SECONDS,
 )
-from app.core.database_models import SystemSetting
+from app.core.cv2_compat import cv2, require_cv2
+
+try:
+    from app.core.database_models import SystemSetting
+except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
+    _VL_IMPORT_ERROR = exc
+
+    class _MissingSystemSetting:
+        key = None
+
+        @classmethod
+        def get_or_none(cls, *args, **kwargs):
+            raise ImportError("SystemSetting requires peewee/database dependencies") from _VL_IMPORT_ERROR
+
+        @classmethod
+        def get_or_create(cls, *args, **kwargs):
+            raise ImportError("SystemSetting requires peewee/database dependencies") from _VL_IMPORT_ERROR
+
+    SystemSetting = _MissingSystemSetting
 
 logger = logging.getLogger("vl_validator")
 
@@ -211,6 +227,7 @@ def _build_endpoint(base_url: str) -> str:
 
 
 def _frame_to_data_url(frame_rgb) -> str:
+    require_cv2()
     frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
     ok, encoded = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     if not ok:

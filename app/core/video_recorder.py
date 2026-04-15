@@ -7,10 +7,11 @@ import os
 import threading
 import time
 from typing import List, Tuple, Optional
-import cv2
 import numpy as np
 
 from app import logger
+from app.core.cv2_compat import cv2, require_cv2
+from app.core.frame_utils import infer_frame_dimensions, nv12_to_bgr, normalize_pixel_format
 from app.core.ringbuffer import VideoRingBuffer
 
 
@@ -115,6 +116,8 @@ class VideoRecorder:
             pre_seconds = recording_info['pre_seconds']
             post_seconds = recording_info['post_seconds']
             output_path = recording_info['output_path']
+            video_writer = None
+            written_frame_count = 0
             
             # 检查buffer状态
             buffer_stats = self.buffer.get_stats()
@@ -126,40 +129,46 @@ class VideoRecorder:
             start_time = trigger_time - pre_seconds
             end_time_historical = trigger_time + 1.0  # 多留1秒余量
 
-            # 获取历史帧（放宽结束时间边界）
-            historical_frames = self.buffer.get_frames_in_time_range(
-                start_time=start_time,
-                end_time=end_time_historical
-            )
-
-            logger.info(f"[录制 {alert_id}] 提取到 {len(historical_frames)} 个历史帧 (范围: {start_time:.2f} - {end_time_historical:.2f})")
-
-            # 如果没有历史帧，尝试获取最近的所有帧
-            if not historical_frames and buffer_stats['count'] > 0:
-                logger.warning(f"[录制 {alert_id}] 时间范围内无历史帧，尝试获取最近 {pre_seconds} 秒的所有帧")
-                historical_frames = self.buffer.get_recent_frames(pre_seconds)
-                logger.info(f"[录制 {alert_id}] 重新提取到 {len(historical_frames)} 个历史帧")
-
             # 第二步：等待并收集未来M秒的帧
             logger.info(f"[录制 {alert_id}] 正在等待并收集未来 {post_seconds} 秒的帧...")
 
             with self.lock:
                 self.recording_tasks[alert_id]['status'] = 'collecting'
 
-            future_frames = []
             end_time = trigger_time + post_seconds
             real_end_time = time.time() + post_seconds
 
-            # 关键修复：从历史帧的最新时间戳继续收集，避免重复收集
-            # 如果历史帧为空，从 trigger_time 开始
-            if historical_frames:
-                # 从历史帧的最新时间戳继续（加0.001避免重复收集最后一帧）
-                last_collected_timestamp = historical_frames[-1][1] + 0.001
-                logger.info(f"[录制 {alert_id}] 从历史帧最新时间戳继续: {last_collected_timestamp - 0.001:.3f}")
-            else:
-                # 没有历史帧，从当前开始
-                last_collected_timestamp = trigger_time
-                logger.info(f"[录制 {alert_id}] 无历史帧，从trigger_time开始收集")
+            last_collected_timestamp = start_time - 0.001
+
+            def write_frame(frame: np.ndarray, timestamp: float) -> bool:
+                nonlocal video_writer, written_frame_count, last_collected_timestamp
+                if timestamp <= last_collected_timestamp:
+                    return True
+                if timestamp > end_time:
+                    return True
+
+                if video_writer is None:
+                    video_writer = self._open_video_writer(frame, output_path)
+                    if video_writer is None:
+                        return False
+
+                if not self._write_frame(video_writer, frame):
+                    return False
+
+                written_frame_count += 1
+                last_collected_timestamp = timestamp
+                return True
+
+            historical_written_count = 0
+            for frame, timestamp in self.buffer.iter_frames_in_time_range(start_time, end_time_historical):
+                if not write_frame(frame, timestamp):
+                    raise RuntimeError("初始化视频写入器失败")
+                historical_written_count += 1
+
+            logger.info(
+                f"[录制 {alert_id}] 历史帧写入完成: {historical_written_count} 帧 "
+                f"(范围: {start_time:.2f} - {end_time_historical:.2f})"
+            )
 
             logger.info(f"[录制 {alert_id}] 等待时间范围: {trigger_time:.2f} - {end_time:.2f} (实际等到 {real_end_time:.2f})")
 
@@ -168,37 +177,32 @@ class VideoRecorder:
             while time.time() < real_end_time:
                 check_count += 1
 
-                # 获取buffer中所有在时间范围内的新帧
                 current_time = time.time()
-                buffer_frames = self.buffer.get_frames_in_time_range(
-                    start_time=last_collected_timestamp,
-                    end_time=current_time
-                )
-                
-                # 添加新帧到列表
-                for frame, timestamp in buffer_frames:
-                    if timestamp > last_collected_timestamp and timestamp <= end_time:
-                        future_frames.append((frame, timestamp))
-                        last_collected_timestamp = timestamp
+                next_start_time = max(start_time, last_collected_timestamp + 0.001)
+                future_written = 0
+                for frame, timestamp in self.buffer.iter_frames_in_time_range(next_start_time, current_time):
+                    if not write_frame(frame, timestamp):
+                        raise RuntimeError("写入未来帧失败")
+                    future_written += 1
                 
                 # 每秒记录一次进度
                 if check_count % 20 == 0:
-                    logger.debug(f"[录制 {alert_id}] 已收集 {len(future_frames)} 帧，继续等待...")
+                    logger.debug(
+                        f"[录制 {alert_id}] 已写入 {written_frame_count} 帧 "
+                        f"(本轮新增 {future_written} 帧)，继续等待..."
+                    )
                 
                 time.sleep(0.05)  # 短暂休眠，避免CPU占用过高
-            
-            logger.info(f"[录制 {alert_id}] 收集到 {len(future_frames)} 个未来帧 (检查了 {check_count} 次)")
-            
-            # 第三步：合并所有帧并编码为视频
-            all_frames = historical_frames + future_frames
-            
-            if not all_frames:
+
+            logger.info(f"[录制 {alert_id}] 收集未来帧完成，累计写入 {written_frame_count} 帧 (检查了 {check_count} 次)")
+
+            if written_frame_count <= 0:
                 # 提供详细的诊断信息
                 logger.error(f"[录制 {alert_id}] 没有收集到任何帧，取消录制")
                 logger.error(f"[录制 {alert_id}] 诊断信息:")
                 logger.error(f"  - Buffer状态: {buffer_stats}")
-                logger.error(f"  - 历史帧数: {len(historical_frames)}")
-                logger.error(f"  - 未来帧数: {len(future_frames)}")
+                logger.error(f"  - 历史写入帧数: {historical_written_count}")
+                logger.error(f"  - 总写入帧数: {written_frame_count}")
                 logger.error(f"  - 触发时间: {trigger_time:.2f}")
                 logger.error(f"  - 时间范围: [{start_time:.2f}, {end_time:.2f}]")
                 
@@ -210,33 +214,96 @@ class VideoRecorder:
                         logger.error(f"  - Buffer最旧帧时间戳: {oldest[1]:.2f}")
                         logger.error(f"  - Buffer最新帧时间戳: {newest[1]:.2f}")
                         logger.error(f"  - Buffer时间跨度: {newest[1] - oldest[1]:.2f}秒")
+
+                if video_writer is not None:
+                    video_writer.release()
                 
                 with self.lock:
                     self.recording_tasks[alert_id]['status'] = 'failed'
                 return
             
-            logger.info(f"[录制 {alert_id}] 开始编码视频，共 {len(all_frames)} 帧")
-            
             with self.lock:
                 self.recording_tasks[alert_id]['status'] = 'encoding'
-            
-            # 编码视频
-            success = self._encode_video(all_frames, output_path)
-            
-            if success:
-                logger.info(f"[录制 {alert_id}] 视频录制完成: {output_path}")
-                with self.lock:
-                    self.recording_tasks[alert_id]['status'] = 'completed'
-            else:
-                logger.error(f"[录制 {alert_id}] 视频编码失败")
-                with self.lock:
-                    self.recording_tasks[alert_id]['status'] = 'failed'
+
+            if video_writer is not None:
+                video_writer.release()
+
+            logger.info(f"[录制 {alert_id}] 视频录制完成: {output_path}, 共写入 {written_frame_count} 帧")
+            with self.lock:
+                self.recording_tasks[alert_id]['status'] = 'completed'
                     
         except Exception as e:
             logger.error(f"[录制 {alert_id}] 录制过程出错: {e}", exc_info=True)
             with self.lock:
                 if alert_id in self.recording_tasks:
                     self.recording_tasks[alert_id]['status'] = 'failed'
+            try:
+                if video_writer is not None:
+                    video_writer.release()
+            except Exception:
+                pass
+            try:
+                if video_writer is not None:
+                    video_writer.release()
+            except Exception:
+                pass
+
+    def _open_video_writer(self, first_frame: np.ndarray, output_path: str):
+        """基于首帧创建视频写入器。"""
+        require_cv2()
+        width, height = infer_frame_dimensions(
+            first_frame,
+            pixel_format=getattr(self.buffer, 'pixel_format', 'nv12'),
+        )
+
+        fourcc_options = [
+            'avc1',
+            'H264',
+            'X264',
+            'mp4v',
+        ]
+
+        for fourcc_str in fourcc_options:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
+                video_writer = cv2.VideoWriter(
+                    output_path,
+                    fourcc,
+                    self.fps,
+                    (width, height)
+                )
+                if video_writer.isOpened():
+                    logger.info(f"使用编码器: {fourcc_str}")
+                    return video_writer
+                video_writer.release()
+            except Exception as exc:
+                logger.debug(f"编码器 {fourcc_str} 不可用: {exc}")
+
+        logger.error(f"无法创建视频写入器: {output_path} (尝试了所有编码器)")
+        return None
+
+    def _write_frame(self, video_writer, frame: np.ndarray) -> bool:
+        if video_writer is None:
+            return False
+
+        try:
+            require_cv2()
+            pixel_format = normalize_pixel_format(getattr(self.buffer, 'pixel_format', 'nv12'))
+            if pixel_format == 'nv12':
+                bgr_frame = nv12_to_bgr(
+                    frame,
+                    width=getattr(self.buffer, 'width', None),
+                    height=getattr(self.buffer, 'height', None),
+                )
+            elif len(frame.shape) == 3 and frame.shape[2] == 3:
+                bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            else:
+                bgr_frame = frame
+            video_writer.write(bgr_frame)
+            return True
+        except Exception as exc:
+            logger.error(f"写入视频帧失败: {exc}", exc_info=True)
+            return False
     
     def _encode_video(self, frames: List[Tuple[np.ndarray, float]], output_path: str) -> bool:
         """
@@ -254,9 +321,13 @@ class VideoRecorder:
             return False
         
         try:
+            require_cv2()
             # 获取视频尺寸（从第一帧）
             first_frame = frames[0][0]
-            height, width = first_frame.shape[:2]
+            width, height = infer_frame_dimensions(
+                first_frame,
+                pixel_format=getattr(self.buffer, 'pixel_format', 'nv12'),
+            )
             
             # 创建VideoWriter - 使用H.264编码器以确保浏览器兼容性
             # 尝试多个H.264编码器，按优先级顺序
@@ -293,9 +364,14 @@ class VideoRecorder:
             
             # 写入所有帧
             for frame, timestamp in frames:
-                # 确保帧格式正确（RGB转BGR）
-                if len(frame.shape) == 3 and frame.shape[2] == 3:
-                    # 假设输入是RGB格式，转换为BGR
+                pixel_format = normalize_pixel_format(getattr(self.buffer, 'pixel_format', 'nv12'))
+                if pixel_format == 'nv12':
+                    bgr_frame = nv12_to_bgr(
+                        frame,
+                        width=getattr(self.buffer, 'width', None),
+                        height=getattr(self.buffer, 'height', None),
+                    )
+                elif len(frame.shape) == 3 and frame.shape[2] == 3:
                     bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 else:
                     bgr_frame = frame

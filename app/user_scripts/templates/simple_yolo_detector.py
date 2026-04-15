@@ -238,14 +238,22 @@ def init(config: dict) -> Dict[str, Any]:
     }
 
 
-def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: dict = None) -> dict:
+def process(
+    frame: np.ndarray,
+    config: dict,
+    roi_regions: list = None,
+    state: dict = None,
+    frame_width: int = None,
+    frame_height: int = None,
+    pixel_format: str = 'nv12',
+) -> dict:
     """
     处理函数 - 执行检测
 
     这个函数会在每一帧上执行，进行目标检测。
 
     Args:
-        frame: np.ndarray, RGB格式的图像 (height, width, 3)
+        frame: np.ndarray, 系统默认传入 NV12 主帧
         config: dict, 配置字典
             - confidence: 置信度阈值
             - class_filter: 类别过滤列表
@@ -296,6 +304,10 @@ def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: di
             }
     """
     from app import logger
+    from app.core.frame_utils import nv12_to_rgb
+
+    if pixel_format == 'nv12':
+        frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
     import time
 
     start_time = time.time()

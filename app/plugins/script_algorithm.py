@@ -9,6 +9,8 @@ import numpy as np
 
 from app import logger
 from app.core.algorithm import BaseAlgorithm
+from app.core.cv2_compat import cv2, require_cv2
+from app.core.frame_utils import infer_frame_dimensions, nv12_to_rgb, rgb_to_nv12
 from app.core.script_loader import get_script_loader, ScriptLoadError
 from app.core.resource_limiter import get_script_executor
 from app.core.hook_manager import get_hook_manager
@@ -188,7 +190,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         处理帧（执行脚本）
 
         Args:
-            frame: RGB格式的视频帧
+            frame: NV12 格式的视频帧
             roi_regions: ROI热区配置
             upstream_results: 上游节点的执行结果
 
@@ -200,34 +202,49 @@ class ScriptAlgorithm(BaseAlgorithm):
             logger.error(f"[{self.name}] 脚本未正确加载，请检查 script_path 配置")
             return {'detections': []}
 
-        # 1. 执行pre_detect Hooks
+        frame_width, frame_height = infer_frame_dimensions(frame, pixel_format='nv12')
+        frame_for_script = frame
+        frame_rgb = None
+
+        # 1. 执行pre_detect Hooks（Hook 边界仍使用 RGB，主链路保持 NV12）
         if self.algorithm_id:
-            hook_frame = frame
             if self.hook_manager.has_hooks_for_algorithm(self.algorithm_id, 'pre_detect'):
-                # pre_detect hook 允许修改输入帧，单独复制，避免为每个算法都做防御式整帧 copy。
-                hook_frame = frame.copy()
+                frame_rgb = nv12_to_rgb(frame, width=frame_width, height=frame_height)
+                modified_frame_rgb, should_skip = self.hook_manager.execute_pre_detect_hooks(
+                    self.algorithm_id,
+                    frame_rgb.copy(),
+                    self.config.get('source_id', 0),
+                )
 
-            modified_frame, should_skip = self.hook_manager.execute_pre_detect_hooks(
-                self.algorithm_id, hook_frame, self.config.get('source_id', 0)
-            )
+                if should_skip:
+                    logger.info(f"[{self.name}] pre_detect Hook要求跳过处理")
+                    return {'detections': []}
 
-            if should_skip:
-                logger.info(f"[{self.name}] pre_detect Hook要求跳过处理")
-                return {'detections': []}
-
-            frame = modified_frame
+                frame_rgb = modified_frame_rgb
+                frame_for_script = rgb_to_nv12(modified_frame_rgb)
 
         # 2. 执行脚本
         try:
+            sig = inspect.signature(self.process_func)
+            if 'frame_rgb' in sig.parameters or 'frame_bgr' in sig.parameters:
+                if frame_rgb is None:
+                    frame_rgb = nv12_to_rgb(frame_for_script, width=frame_width, height=frame_height)
+
             all_args = {
-                'frame': frame,
+                'frame': frame_for_script,
                 'config': self.config,
                 'roi_regions': roi_regions,
                 'state': self.script_state,
-                'upstream_results': upstream_results
+                'upstream_results': upstream_results,
+                'frame_width': frame_width,
+                'frame_height': frame_height,
+                'pixel_format': 'nv12',
             }
-
-            sig = inspect.signature(self.process_func)
+            if 'frame_rgb' in sig.parameters:
+                all_args['frame_rgb'] = frame_rgb
+            if 'frame_bgr' in sig.parameters and frame_rgb is not None:
+                require_cv2()
+                all_args['frame_bgr'] = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
             script_args = {}
             for param_name in sig.parameters:
                 if param_name in all_args:
@@ -244,7 +261,7 @@ class ScriptAlgorithm(BaseAlgorithm):
             if not success:
                 logger.error(
                     f"[{self.name}] 脚本执行失败: script_path={self.script_path}, "
-                    f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame, 'shape', None)}, "
+                    f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame_for_script, 'shape', None)}, "
                     f"roi_count={len(roi_regions or [])}, upstream={list((upstream_results or {}).keys())}, "
                     f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, error={error}"
                 )
@@ -274,8 +291,10 @@ class ScriptAlgorithm(BaseAlgorithm):
 
             # 4. 执行post_detect Hooks
             if self.algorithm_id:
+                if frame_rgb is None:
+                    frame_rgb = nv12_to_rgb(frame_for_script, width=frame_width, height=frame_height)
                 filtered_detections, should_skip = self.hook_manager.execute_post_detect_hooks(
-                    self.algorithm_id, detections, frame, self.config.get('source_id', 0)
+                    self.algorithm_id, detections, frame_rgb, self.config.get('source_id', 0)
                 )
 
                 if should_skip:
@@ -302,7 +321,7 @@ class ScriptAlgorithm(BaseAlgorithm):
                     logger.warning(
                         f"[{self.name}] 推理完成但未检测到目标: empty_count={self._empty_detection_count}, "
                         f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
-                        f"frame_shape={getattr(frame, 'shape', None)}, roi_count={len(roi_regions or [])}, "
+                        f"frame_shape={getattr(frame_for_script, 'shape', None)}, roi_count={len(roi_regions or [])}, "
                         f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, "
                         f"metadata={self._metadata_summary(metadata)}"
                     )
@@ -317,7 +336,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         except Exception as e:
             logger.error(
                 f"[{self.name}] 处理过程异常: script_path={self.script_path}, "
-                f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame, 'shape', None)}, "
+                f"source_id={self.config.get('source_id')}, frame_shape={getattr(frame_for_script, 'shape', None)}, "
                 f"roi_count={len(roi_regions or [])}, upstream={list((upstream_results or {}).keys())}, "
                 f"models={self._summarize_models(getattr(self, 'resolved_config', self.config))}, error={e}"
             )

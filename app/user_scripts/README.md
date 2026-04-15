@@ -18,9 +18,11 @@ app/user_scripts/
 
 ## 脚本接口规范
 
+运行时主帧格式统一为 `NV12`。检测脚本默认接收 NV12 主帧；Hook、可视化、测试入口等边界场景可能拿到按需转换后的 RGB/BGR 视图。
+
 ### 检测脚本 (detectors/)
 
-检测脚本必须实现 `process(frame, config, roi_regions=None, state=None, upstream_results=None)` 函数：
+检测脚本必须实现 `process(frame, config, roi_regions=None, state=None, upstream_results=None, pixel_format='nv12')` 函数：
 
 ```python
 import cv2
@@ -52,16 +54,17 @@ def init(config):
     model = load_your_model(config['model_path'])
     return {'model': model}
 
-def process(frame, config, roi_regions=None, state=None, upstream_results=None):
+def process(frame, config, roi_regions=None, state=None, upstream_results=None, pixel_format='nv12'):
     """
     处理函数（必须）
 
     Args:
-        frame: numpy.ndarray, RGB格式图像 (height, width, 3)
+        frame: numpy.ndarray, NV12格式图像 (height * 3 / 2, width)
         config: dict, 算法配置
         roi_regions: list, ROI配置（可选）
         state: init函数的返回值（可选）
         upstream_results: dict, 上游节点结果（可选）
+        pixel_format: str, 当前固定为 'nv12'
 
     Returns:
         dict: {
@@ -83,8 +86,8 @@ def process(frame, config, roi_regions=None, state=None, upstream_results=None):
     model = state['model']
 
     # 转换为BGR（如果需要）
-    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-#
+    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_NV12)
+
     # 执行检测
     results = model.detect(frame_bgr)
 
@@ -155,6 +158,7 @@ def execute(context):
 
     Args:
         context: dict, 包含 frame, task_id, algorithm_id 等
+            其中 `context['frame']` 在 Hook 场景下通常是按需转换后的 RGB 视图
 
     Returns:
         dict: {

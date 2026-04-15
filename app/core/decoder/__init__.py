@@ -67,7 +67,7 @@ if __name__ == "__main__":
                 'ffmpeg_nvdec',
                 decoder_id=0,
                 input_format='h264',
-                output_format='rgb24',
+                output_format='nv12',
                 width=1920,
                 height=1080
         ) as decoder:
@@ -85,7 +85,7 @@ if __name__ == "__main__":
                 'ffmpeg_sw',
                 decoder_id=1,
                 input_format='h264',
-                output_format='rgb24',
+                output_format='nv12',
                 width=1920,
                 height=1080,
                 threads=4

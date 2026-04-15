@@ -49,6 +49,7 @@ def setup_database():
         # 系统设置表
         SystemSetting
     ], safe=True)
+    _ensure_ownership_columns()
     _normalize_existing_records()
 
     ensure_default_admin_user()
@@ -287,6 +288,35 @@ def _normalize_existing_records():
         WHERE created_by IS NULL OR created_by = '';
         """
     )
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    return any(column.name == column_name for column in db.get_columns(table_name))
+
+
+def _ensure_text_column(table_name: str, column_name: str, default_value: str):
+    if _column_exists(table_name, column_name):
+        return
+
+    escaped_default = default_value.replace("'", "''")
+    db.execute_sql(
+        f"ALTER TABLE {table_name} "
+        f"ADD COLUMN {column_name} VARCHAR(255) DEFAULT '{escaped_default}'"
+    )
+
+
+def _ensure_ownership_columns():
+    # 历史库缺少这些列时，先补齐再做归一化，避免 worker 在 setup_database() 直接退出。
+    for table_name, column_name, default_value in (
+        (Algorithm._meta.table_name, 'created_by', 'admin'),
+        (VideoSource._meta.table_name, 'created_by', 'admin'),
+        (ExternalApi._meta.table_name, 'created_by', 'admin'),
+        (Workflow._meta.table_name, 'created_by', 'admin'),
+        (Alert._meta.table_name, 'created_by', 'admin'),
+        (WorkflowTestResult._meta.table_name, 'created_by', 'admin'),
+        (ScriptVersion._meta.table_name, 'created_by', 'system'),
+        (MLModel._meta.table_name, 'uploaded_by', 'admin'),
+    ):
+        _ensure_text_column(table_name, column_name, default_value)
 
 
 if __name__ == "__main__":

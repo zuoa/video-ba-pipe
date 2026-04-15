@@ -368,12 +368,24 @@ def init(config: dict) -> Dict[str, Any]:
     }
 
 
-def process(frame: np.ndarray, config: dict, roi_regions: list = None, state: dict = None) -> dict:
+def process(
+    frame: np.ndarray,
+    config: dict,
+    roi_regions: list = None,
+    state: dict = None,
+    frame_width: int = None,
+    frame_height: int = None,
+    pixel_format: str = 'nv12',
+) -> dict:
     from app import logger
+    from app.core.frame_utils import nv12_to_rgb
 
     start_time = time.time()
     if not state or "backend" not in state:
         return build_result([], metadata={"error": "Model not initialized"})
+
+    if pixel_format == 'nv12':
+        frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
 
     backend = state["backend"]
     roi_regions_effective = _prepare_roi_regions(config, roi_regions)

@@ -6,7 +6,25 @@ import os
 from typing import Dict, Any, Union
 
 from app import logger
-from app.core.database_models import MLModel
+
+try:
+    from app.core.database_models import MLModel
+except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
+    _MODEL_RESOLVER_IMPORT_ERROR = exc
+
+    class _MissingMLModel:
+        class DoesNotExist(Exception):
+            pass
+
+        @classmethod
+        def get_by_id(cls, *args, **kwargs):
+            raise ImportError("MLModel requires peewee/database dependencies") from _MODEL_RESOLVER_IMPORT_ERROR
+
+        @classmethod
+        def get(cls, *args, **kwargs):
+            raise ImportError("MLModel requires peewee/database dependencies") from _MODEL_RESOLVER_IMPORT_ERROR
+
+    MLModel = _MissingMLModel
 
 
 class ModelResolver:

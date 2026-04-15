@@ -428,7 +428,10 @@ def init(config: dict) -> Dict[str, Any]:
 def process(frame: np.ndarray, 
             config: dict, 
             roi_regions: list = None,
-            state: dict = None) -> dict:
+            state: dict = None,
+            frame_width: int = None,
+            frame_height: int = None,
+            pixel_format: str = 'nv12') -> dict:
     """
     处理函数 - 执行多模型检测和IOU合并
     
@@ -441,7 +444,7 @@ def process(frame: np.ndarray,
     6. 应用ROI过滤（post_filter模式）
     
     Args:
-        frame: RGB图像
+        frame: 系统默认传入 NV12 主帧
         config: 配置字典
         roi_regions: ROI区域列表
         state: init()返回的状态
@@ -473,8 +476,11 @@ def process(frame: np.ndarray,
     """
     from app import logger
     import time
+    from app.core.frame_utils import nv12_to_rgb
     
     start_time = time.time()
+    if pixel_format == 'nv12':
+        frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
     
     # 1. 检查状态
     if state is None or not state.get('models'):

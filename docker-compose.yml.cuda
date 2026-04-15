@@ -97,6 +97,7 @@ services:
     networks:
       video-ba-network:
         aliases:
+          - api
           - app
     
     # GPU资源限制（可选）

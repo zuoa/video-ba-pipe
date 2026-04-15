@@ -7,8 +7,16 @@ from multiprocessing.context import BaseContext
 from threading import Lock
 from typing import List, Optional, Tuple
 
-import cv2
 import numpy as np
+
+from app.core.cv2_compat import cv2, require_cv2
+from app.core.frame_utils import (
+    ensure_frame_array,
+    get_storage_shape,
+    infer_frame_dimensions,
+    normalize_pixel_format,
+    nv12_to_bgr,
+)
 
 try:
     import fcntl
@@ -31,16 +39,21 @@ class CompressedVideoRingBuffer:
     def __init__(
         self,
         name: str,
-        frame_shape: Tuple[int, int, int] = (1080, 1920, 3),
+        frame_shape: Optional[Tuple[int, ...]] = None,
         fps: int = 10,
         duration_seconds: int = 10,
         create: bool = True,
         max_frame_bytes: int = 1024 * 1024,
         jpeg_quality: int = 85,
         mp_context: Optional[BaseContext] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        pixel_format: str = 'nv12',
     ):
         self.name = name
-        self.frame_shape = frame_shape
+        self.pixel_format = normalize_pixel_format(pixel_format)
+        self.width, self.height = self._resolve_dimensions(frame_shape, width, height, self.pixel_format)
+        self.frame_shape = get_storage_shape(self.width, self.height, self.pixel_format)
         self.fps = fps
         self.capacity = fps * duration_seconds
         self.max_frame_bytes = max_frame_bytes
@@ -79,6 +92,28 @@ class CompressedVideoRingBuffer:
         safe_lock_name = self.name.replace('/', '_')
         self._lock_file_path = os.path.join(lock_dir, f'{safe_lock_name}.lock')
         self._lock_file = open(self._lock_file_path, 'a+b')
+
+    @staticmethod
+    def _resolve_dimensions(
+        frame_shape: Optional[Tuple[int, ...]],
+        width: Optional[int],
+        height: Optional[int],
+        pixel_format: str,
+    ) -> Tuple[int, int]:
+        if width is not None and height is not None:
+            return int(width), int(height)
+
+        if frame_shape is None:
+            raise ValueError("width/height or frame_shape must be provided")
+
+        shape = tuple(int(value) for value in frame_shape)
+        if len(shape) == 3:
+            return int(shape[1]), int(shape[0])
+
+        if len(shape) == 2 and pixel_format in {'nv12', 'nv21', 'yuv420p'}:
+            return infer_frame_dimensions(np.empty(shape, dtype=np.uint8), pixel_format=pixel_format)
+
+        raise ValueError(f"Cannot infer dimensions from frame_shape={frame_shape}, pixel_format={pixel_format}")
 
     @contextmanager
     def _guard(self):
@@ -142,10 +177,17 @@ class CompressedVideoRingBuffer:
         return struct.unpack_from(self.LENGTH_FORMAT, self.shm.buf, self._get_length_offset(index))[0]
 
     def _encode_frame(self, frame: np.ndarray) -> bytes:
-        if frame.shape != self.frame_shape:
-            raise ValueError(f"Frame shape {frame.shape} doesn't match expected {self.frame_shape}")
+        require_cv2()
+        frame_array = ensure_frame_array(frame, self.width, self.height, self.pixel_format)
+        if self.pixel_format == 'nv12':
+            bgr_frame = nv12_to_bgr(frame_array, self.width, self.height)
+        elif self.pixel_format == 'rgb24':
+            bgr_frame = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+        elif self.pixel_format == 'bgr24':
+            bgr_frame = frame_array
+        else:
+            raise ValueError(f'Unsupported compressed input pixel format: {self.pixel_format}')
 
-        bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         ok, encoded = cv2.imencode(
             '.jpg',
             bgr_frame,
@@ -162,6 +204,7 @@ class CompressedVideoRingBuffer:
         return payload
 
     def _decode_frame(self, payload: bytes) -> np.ndarray:
+        require_cv2()
         arr = np.frombuffer(payload, dtype=np.uint8)
         frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame_bgr is None:
@@ -234,18 +277,30 @@ class CompressedVideoRingBuffer:
             return frames
 
     def get_frames_in_time_range(self, start_time: float, end_time: float) -> List[Tuple[np.ndarray, float]]:
-        with self._guard():
-            write_idx, read_idx, count, _, _, _ = self._read_metadata()
-            if count == 0:
-                return []
+        return list(self.iter_frames_in_time_range(start_time, end_time))
 
-            frames: List[Tuple[np.ndarray, float]] = []
+    def iter_frames_in_time_range(self, start_time: float, end_time: float):
+        payloads: List[Tuple[bytes, float]] = []
+        with self._guard():
+            _, read_idx, count, _, _, _ = self._read_metadata()
+            if count == 0:
+                return iter(())
+
             for i in range(count):
                 actual_idx = (read_idx + i) % self.capacity
                 timestamp = self._read_timestamp(actual_idx)
                 if start_time <= timestamp <= end_time:
-                    frames.append((self._read_frame_at(actual_idx), timestamp))
-            return frames
+                    length = self._read_length(actual_idx)
+                    if length <= 0:
+                        continue
+                    offset = self._get_frame_offset(actual_idx)
+                    payloads.append((bytes(self.shm.buf[offset:offset + length]), timestamp))
+
+        def _generator():
+            for payload, timestamp in payloads:
+                yield self._decode_frame(payload), timestamp
+
+        return _generator()
 
     def get_stats(self) -> dict:
         with self._guard():
@@ -263,6 +318,9 @@ class CompressedVideoRingBuffer:
                 'consecutive_errors': errors,
                 'max_frame_bytes': self.max_frame_bytes,
                 'jpeg_quality': self.jpeg_quality,
+                'width': self.width,
+                'height': self.height,
+                'pixel_format': self.pixel_format,
             }
 
     def update_last_write_time(self, timestamp: float = None):

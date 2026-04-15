@@ -21,6 +21,7 @@ from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
     FRAME_SAVE_PATH,
+    VIDEO_FRAME_PIXEL_FORMAT,
     SNAPSHOT_SAVE_PATH,
     VIDEO_SAVE_PATH,
     MODEL_SAVE_PATH,
@@ -527,7 +528,9 @@ def get_source_health(source_id):
             buffer = VideoRingBuffer(
                 name=buffer_name,
                 create=False,
-                frame_shape=(source.source_decode_height, source.source_decode_width, 3),
+                width=source.source_decode_width,
+                height=source.source_decode_height,
+                pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
                 fps=analysis_fps,
                 duration_seconds=ANALYSIS_BUFFER_SECONDS
             )

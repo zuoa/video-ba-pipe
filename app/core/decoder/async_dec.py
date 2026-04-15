@@ -9,6 +9,12 @@ import numpy as np
 from app import logger
 from app.config import FFMPEG_SW_DECODER_THREADS
 from app.core.decoder.base import BaseDecoder
+from app.core.frame_utils import (
+    get_frame_size_bytes,
+    get_storage_shape,
+    normalize_pixel_format,
+    reshape_frame,
+)
 
 
 class AsyncFFmpegDecoder(BaseDecoder):
@@ -21,6 +27,9 @@ class AsyncFFmpegDecoder(BaseDecoder):
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
         self._ffmpeg_process = None
+        self.output_format = normalize_pixel_format(kwargs.get('output_format', 'nv12'))
+        self.frame_size = get_frame_size_bytes(width, height, self.output_format)
+        self.storage_shape = get_storage_shape(width, height, self.output_format)
 
         super().__init__(decoder_id=decoder_id, width=width, height=height, **kwargs)
 
@@ -57,14 +66,13 @@ class AsyncFFmpegDecoder(BaseDecoder):
         logger.info("FFmpeg帧读取线程已启动。")
         while self._running:
             try:
-                frame_size = self.width * self.height * 3  # 假设为rgb24
-                raw_frame = self._ffmpeg_process.stdout.read(frame_size)
+                raw_frame = self._ffmpeg_process.stdout.read(self.frame_size)
 
-                if len(raw_frame) != frame_size:
+                if len(raw_frame) != self.frame_size:
                     logger.warning("从FFmpeg读取到的数据不完整，可能已结束。")
                     break
 
-                frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.height, self.width, 3))
+                frame = reshape_frame(raw_frame, self.width, self.height, self.output_format)
 
                 try:
                     self.output_queue.put_nowait(frame)
@@ -146,7 +154,7 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
         # 将输出参数放在 -i pipe:0 之后
         output_args = [
             '-f', 'rawvideo',
-            '-pix_fmt', self.config.get('output_format', 'rgb24'),
+            '-pix_fmt', self.config.get('output_format', 'nv12'),
             '-s', f'{self.width}x{self.height}',
         ]
 
