@@ -9,6 +9,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from app import logger
+from app.config import RESOURCE_PROFILING_ENABLED, RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import (
     ensure_frame_array,
@@ -92,6 +94,11 @@ class CompressedVideoRingBuffer:
         safe_lock_name = self.name.replace('/', '_')
         self._lock_file_path = os.path.join(lock_dir, f'{safe_lock_name}.lock')
         self._lock_file = open(self._lock_file_path, 'a+b')
+        self._profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_encode_count = 0
+        self._profile_convert_total_ms = 0.0
+        self._profile_encode_total_ms = 0.0
+        self._profile_total_payload_bytes = 0
 
     @staticmethod
     def _resolve_dimensions(
@@ -178,6 +185,7 @@ class CompressedVideoRingBuffer:
 
     def _encode_frame(self, frame: np.ndarray) -> bytes:
         require_cv2()
+        convert_started_at = time.perf_counter()
         frame_array = ensure_frame_array(frame, self.width, self.height, self.pixel_format)
         if self.pixel_format == 'nv12':
             bgr_frame = nv12_to_bgr(frame_array, self.width, self.height)
@@ -188,11 +196,14 @@ class CompressedVideoRingBuffer:
         else:
             raise ValueError(f'Unsupported compressed input pixel format: {self.pixel_format}')
 
+        convert_ms = (time.perf_counter() - convert_started_at) * 1000
+        encode_started_at = time.perf_counter()
         ok, encoded = cv2.imencode(
             '.jpg',
             bgr_frame,
             [int(cv2.IMWRITE_JPEG_QUALITY), int(self.jpeg_quality)],
         )
+        encode_ms = (time.perf_counter() - encode_started_at) * 1000
         if not ok:
             raise RuntimeError('JPEG 编码失败')
 
@@ -201,7 +212,36 @@ class CompressedVideoRingBuffer:
             raise ValueError(
                 f"Encoded frame size {len(payload)} exceeds max_frame_bytes={self.max_frame_bytes}"
             )
+        self._record_encode_profile(convert_ms, encode_ms, len(payload))
         return payload
+
+    def _record_encode_profile(self, convert_ms: float, encode_ms: float, payload_bytes: int):
+        if not RESOURCE_PROFILING_ENABLED:
+            return
+
+        self._profile_encode_count += 1
+        self._profile_convert_total_ms += convert_ms
+        self._profile_encode_total_ms += encode_ms
+        self._profile_total_payload_bytes += payload_bytes
+
+        now = time.monotonic()
+        if now < self._profile_next_log_at:
+            return
+
+        count = self._profile_encode_count
+        avg_convert_ms = self._profile_convert_total_ms / count if count else 0.0
+        avg_encode_ms = self._profile_encode_total_ms / count if count else 0.0
+        avg_payload_kb = self._profile_total_payload_bytes / count / 1024 if count else 0.0
+        logger.info(
+            f"[CompressedRingBuffer:{self.name}] encode profile: "
+            f"count={count}, avg_convert_ms={avg_convert_ms:.2f}, "
+            f"avg_jpeg_ms={avg_encode_ms:.2f}, avg_payload_kb={avg_payload_kb:.1f}"
+        )
+        self._profile_next_log_at = now + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_encode_count = 0
+        self._profile_convert_total_ms = 0.0
+        self._profile_encode_total_ms = 0.0
+        self._profile_total_payload_bytes = 0
 
     def _decode_frame(self, payload: bytes) -> np.ndarray:
         require_cv2()

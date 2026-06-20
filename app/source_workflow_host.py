@@ -10,12 +10,19 @@ import signal
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import resource_tracker
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import logger
-from app.config import ANALYSIS_BUFFER_SECONDS, ANALYSIS_TARGET_FPS, VIDEO_FRAME_PIXEL_FORMAT
+from app.config import (
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
+    SOURCE_HOST_WORKFLOW_NODE_WORKERS,
+    VIDEO_FRAME_PIXEL_FORMAT,
+    WORKFLOW_ZERO_COPY_FRAMES,
+)
 from app.core.database_models import VideoSource, Workflow
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.workflow_executor import WorkflowExecutor
@@ -34,11 +41,13 @@ class WorkflowRunner:
         self,
         workflow,
         executor: WorkflowExecutor,
+        node_executor=None,
         max_consecutive_errors: int = WORKFLOW_MAX_CONSECUTIVE_ERRORS,
     ):
         self.workflow = workflow
         self.workflow_id = workflow.id
         self.executor = executor
+        self.node_executor = node_executor
         self.max_consecutive_errors = max_consecutive_errors
         self._condition = threading.Condition()
         self._pending_frame = None
@@ -113,7 +122,11 @@ class WorkflowRunner:
                 self._pending_timestamp = None
 
             try:
-                self.executor.run_once(frame_nv12, frame_timestamp)
+                self.executor.run_once(
+                    frame_nv12,
+                    frame_timestamp,
+                    executor=self.node_executor,
+                )
                 self._consecutive_errors = 0
             except Exception as exc:
                 self._consecutive_errors += 1
@@ -142,6 +155,12 @@ class SourceWorkflowHost:
         self.workflows = {}
         self.failed_workflows = {}
         self.last_frame_timestamp = None
+        self.node_executor = None
+        if SOURCE_HOST_WORKFLOW_NODE_WORKERS > 0:
+            self.node_executor = ThreadPoolExecutor(
+                max_workers=SOURCE_HOST_WORKFLOW_NODE_WORKERS,
+                thread_name_prefix=f"source-{self.source_id}-node",
+            )
 
     def _load_workflows(self):
         workflows = []
@@ -173,7 +192,7 @@ class SourceWorkflowHost:
             self._schedule_workflow_retry(workflow, exc)
             return False
 
-        runner = WorkflowRunner(workflow, executor)
+        runner = WorkflowRunner(workflow, executor, node_executor=self.node_executor)
         runner.start()
         self.runners[workflow_id] = runner
         self.failed_workflows.pop(workflow_id, None)
@@ -293,7 +312,10 @@ class SourceWorkflowHost:
                     logger.warning(f"[SourceHost:{self.source_id}] 无可运行工作流，宿主进程退出")
                     break
 
-                peek_result = self.buffer.peek_with_timestamp(-1)
+                if WORKFLOW_ZERO_COPY_FRAMES:
+                    peek_result = self.buffer.peek_view_with_timestamp(-1)
+                else:
+                    peek_result = self.buffer.peek_with_timestamp(-1)
                 if peek_result is None:
                     time.sleep(0.01)
                     continue
@@ -344,6 +366,16 @@ class SourceWorkflowHost:
                     exc_info=True,
                 )
             self.buffer = None
+
+        if self.node_executor is not None:
+            try:
+                self.node_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as exc:
+                logger.error(
+                    f"[SourceHost:{self.source_id}] 关闭节点并行线程池失败: {exc}",
+                    exc_info=True,
+                )
+            self.node_executor = None
 
     def signal_handler(self, signum, frame):
         logger.info(f"[SourceHost:{self.source_id}] 收到信号 {signum}，准备停止")

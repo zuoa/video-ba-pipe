@@ -7,6 +7,8 @@ from typing import Iterator, List, Optional, Tuple
 
 import numpy as np
 
+from app import logger
+from app.config import RESOURCE_PROFILING_ENABLED, RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
 from app.core.frame_utils import (
     ensure_frame_array,
     get_frame_size_bytes,
@@ -70,6 +72,11 @@ class VideoRingBuffer:
             self.shm = shared_memory.SharedMemory(name=name)
 
         self._lock = mp_context.Lock() if mp_context else Lock()
+        self._profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_peek_count = 0
+        self._profile_peek_total_ms = 0.0
+        self._profile_peek_max_ms = 0.0
+        self._profile_peek_bytes = 0
 
     @staticmethod
     def _resolve_dimensions(
@@ -136,6 +143,43 @@ class VideoRingBuffer:
         frame_bytes = bytes(self.shm.buf[offset:offset + self.frame_size])
         return reshape_frame(frame_bytes, self.width, self.height, self.pixel_format).copy()
 
+    def _frame_view_from_shm(self, offset: int) -> np.ndarray:
+        frame = np.ndarray(
+            shape=self.frame_shape,
+            dtype=np.uint8,
+            buffer=self.shm.buf,
+            offset=offset,
+        )
+        frame.setflags(write=False)
+        return frame
+
+    def _record_peek_profile(self, elapsed_ms: float, copied: bool):
+        if not RESOURCE_PROFILING_ENABLED:
+            return
+
+        self._profile_peek_count += 1
+        self._profile_peek_total_ms += elapsed_ms
+        self._profile_peek_max_ms = max(self._profile_peek_max_ms, elapsed_ms)
+        if copied:
+            self._profile_peek_bytes += self.frame_size
+
+        now = time.monotonic()
+        if now < self._profile_next_log_at:
+            return
+
+        avg_ms = self._profile_peek_total_ms / self._profile_peek_count if self._profile_peek_count else 0.0
+        logger.info(
+            f"[RingBuffer:{self.name}] peek profile: "
+            f"count={self._profile_peek_count}, avg_ms={avg_ms:.3f}, "
+            f"max_ms={self._profile_peek_max_ms:.3f}, "
+            f"copied_mb={self._profile_peek_bytes / 1024 / 1024:.2f}"
+        )
+        self._profile_next_log_at = now + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_peek_count = 0
+        self._profile_peek_total_ms = 0.0
+        self._profile_peek_max_ms = 0.0
+        self._profile_peek_bytes = 0
+
     def write(self, frame: np.ndarray | bytes | bytearray | memoryview, timestamp: Optional[float] = None) -> bool:
         if timestamp is None:
             timestamp = time.time()
@@ -182,6 +226,7 @@ class VideoRingBuffer:
         return result[0]
 
     def peek_with_timestamp(self, index: int = 0) -> Optional[Tuple[np.ndarray, float]]:
+        started_at = time.perf_counter()
         with self._lock:
             write_idx, read_idx, count, _, _, _ = self._read_metadata()
             if count == 0 or abs(index) >= count:
@@ -190,7 +235,31 @@ class VideoRingBuffer:
             actual_idx = (write_idx + index) % self.capacity if index < 0 else (read_idx + index) % self.capacity
             offset = self._get_frame_offset(actual_idx)
             timestamp = self._read_timestamp(actual_idx)
-            return self._frame_from_shm(offset), timestamp
+            frame = self._frame_from_shm(offset)
+
+        self._record_peek_profile((time.perf_counter() - started_at) * 1000, copied=True)
+        return frame, timestamp
+
+    def peek_view_with_timestamp(self, index: int = 0) -> Optional[Tuple[np.ndarray, float]]:
+        """Return a read-only shared-memory view without copying frame bytes.
+
+        The returned frame is only stable until the ring buffer slot is overwritten.
+        Use this for latest-frame real-time consumers, not for historical reads or
+        long-lived frame ownership.
+        """
+        started_at = time.perf_counter()
+        with self._lock:
+            write_idx, read_idx, count, _, _, _ = self._read_metadata()
+            if count == 0 or abs(index) >= count:
+                return None
+
+            actual_idx = (write_idx + index) % self.capacity if index < 0 else (read_idx + index) % self.capacity
+            offset = self._get_frame_offset(actual_idx)
+            timestamp = self._read_timestamp(actual_idx)
+            frame = self._frame_view_from_shm(offset)
+
+        self._record_peek_profile((time.perf_counter() - started_at) * 1000, copied=False)
+        return frame, timestamp
 
     def iter_frames_in_time_range(self, start_time: float, end_time: float) -> Iterator[Tuple[np.ndarray, float]]:
         matching_slots: List[Tuple[bytes, float]] = []

@@ -30,14 +30,15 @@ services:
   # 需要宿主机安装 NVIDIA Docker Runtime
   # ============================================
   app:
-    image: ghcr.io/zuoa/video-ba-pipe:cuda
-    container_name: video-ba-pipe-cuda
+    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda}
+    pull_policy: always
+    container_name: video-ba-pipe-api-cuda
     restart: unless-stopped
     shm_size: '8gb'
     entrypoint: ["gunicorn", "-w", "4", "--bind", "0.0.0.0:5002", "web.webapp:app"]
     
     # GPU配置 - 使用所有可用GPU
-    runtime: nvidia
+    gpus: all
     environment:
       # GPU相关环境变量
       - NVIDIA_VISIBLE_DEVICES=all
@@ -100,15 +101,6 @@ services:
           - api
           - app
     
-    # GPU资源限制（可选）
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all  # 使用所有GPU，或指定数量如 count: 1
-              capabilities: [gpu]
-    
     # 日志配置
     logging:
       driver: "json-file"
@@ -132,12 +124,13 @@ services:
         condition: service_healthy
 
   worker:
-    image: ghcr.io/zuoa/video-ba-pipe:cuda
-    container_name: video-ba-pipe-worker
+    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda}
+    pull_policy: always
+    container_name: video-ba-pipe-worker-cuda
     restart: unless-stopped
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
-    runtime: nvidia
+    gpus: all
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
@@ -177,13 +170,6 @@ services:
       - ./data:/data
     networks:
       - video-ba-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     logging:
       driver: "json-file"
       options:
@@ -205,8 +191,9 @@ services:
   # 前端 (Nginx)
   # ============================================
   frontend:
-    image: ghcr.io/zuoa/video-ba-pipe-frontend:main
-    container_name: video-ba-pipe-frontend
+    image: ${VIDEO_BA_PIPE_FRONTEND_IMAGE:-ghcr.io/zuoa/video-ba-pipe-frontend:main}
+    pull_policy: always
+    container_name: video-ba-pipe-frontend-cuda
     restart: unless-stopped
     depends_on:
       - app
@@ -220,7 +207,7 @@ services:
   # ============================================
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
-    container_name: video-ba-rabbitmq
+    container_name: video-ba-rabbitmq-cuda
     restart: unless-stopped
     
     environment:

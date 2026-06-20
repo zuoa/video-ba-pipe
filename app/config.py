@@ -106,6 +106,17 @@ FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1
 # 解码输出队列大小（运行时主帧格式，默认 NV12）。队列越大，解码抖动越小，但内存占用会线性增加。
 DECODER_OUTPUT_QUEUE_SIZE = max(1, int(os.getenv('DECODER_OUTPUT_QUEUE_SIZE', '5')))
 
+# 资源剖析日志。默认关闭；打开后会周期性输出关键帧拷贝、编码、workflow耗时。
+RESOURCE_PROFILING_ENABLED = os.getenv('RESOURCE_PROFILING_ENABLED', 'false').lower() in ('true', '1', 'yes')
+RESOURCE_PROFILE_LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv('RESOURCE_PROFILE_LOG_INTERVAL_SECONDS', '30')))
+
+# Source host 读取分析缓冲区时是否使用共享内存只读视图，避免复制最新帧。
+# 注意：只读视图可能在 buffer 环绕后被新帧覆盖，只有在 workflow 处理耗时稳定小于 buffer 时长时才建议开启。
+WORKFLOW_ZERO_COPY_FRAMES = os.getenv('WORKFLOW_ZERO_COPY_FRAMES', 'false').lower() in ('true', '1', 'yes')
+
+# 实时 workflow 内同层节点并行 worker 数。0 表示保持当前串行行为。
+SOURCE_HOST_WORKFLOW_NODE_WORKERS = max(0, int(os.getenv('SOURCE_HOST_WORKFLOW_NODE_WORKERS', '0')))
+
 
 # ============ 视频录制配置 ============
 # 预警录制功能开关

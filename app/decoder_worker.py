@@ -28,7 +28,9 @@ from app.config import (
     FPS_CHECK_INTERVAL,
     MAX_CONSECUTIVE_ERRORS,
     MONITOR_UPDATE_INTERVAL,
-    HEALTH_MONITOR_ENABLED
+    HEALTH_MONITOR_ENABLED,
+    RESOURCE_PROFILING_ENABLED,
+    RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
@@ -325,14 +327,29 @@ class DecoderWorker:
             start_time = time.time()
             last_fps_check_time = start_time
             last_fps_check_frame_count = 0
+            profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+            profile_counts = {
+                'get_frame': 0,
+                'analysis_write': 0,
+                'recording_write': 0,
+            }
+            profile_totals_ms = {
+                'get_frame': 0.0,
+                'analysis_write': 0.0,
+                'recording_write': 0.0,
+            }
 
             while self.running:
                 try:
                     # 获取解码后的帧
+                    get_frame_started_at = time.perf_counter()
                     if IS_EXTREME_DECODE_MODE:
                         frame = self.decoder.get_latest_frame()
                     else:
                         frame = self.decoder.get_frame(timeout=0.5)
+                    if RESOURCE_PROFILING_ENABLED:
+                        profile_counts['get_frame'] += 1
+                        profile_totals_ms['get_frame'] += (time.perf_counter() - get_frame_started_at) * 1000
 
                     if frame is not None:
                         frame_count += 1
@@ -344,7 +361,13 @@ class DecoderWorker:
 
                         wrote_analysis = False
                         if self._should_write_analysis_frame(current_time):
+                            write_started_at = time.perf_counter()
                             self.analysis_buffer.write(frame, timestamp=frame_timestamp)
+                            if RESOURCE_PROFILING_ENABLED:
+                                profile_counts['analysis_write'] += 1
+                                profile_totals_ms['analysis_write'] += (
+                                    time.perf_counter() - write_started_at
+                                ) * 1000
                             analysis_written_count += 1
                             wrote_analysis = True
                             error_count = 0  # 重置错误计数
@@ -360,7 +383,13 @@ class DecoderWorker:
 
                         if self._should_write_recording_frame(current_time):
                             try:
+                                recording_started_at = time.perf_counter()
                                 self.recording_buffer.write(frame, timestamp=frame_timestamp)
+                                if RESOURCE_PROFILING_ENABLED:
+                                    profile_counts['recording_write'] += 1
+                                    profile_totals_ms['recording_write'] += (
+                                        time.perf_counter() - recording_started_at
+                                    ) * 1000
                                 recording_written_count += 1
                             except Exception as recording_error:
                                 logger.warning(
@@ -407,6 +436,25 @@ class DecoderWorker:
                                 f"最近10秒 {recent_fps:.2f} fps, "
                                 f"整体平均 {overall_fps:.2f} fps"
                             )
+
+                        if RESOURCE_PROFILING_ENABLED and time.monotonic() >= profile_next_log_at:
+                            def _avg_ms(name):
+                                count = profile_counts[name]
+                                return profile_totals_ms[name] / count if count else 0.0
+
+                            logger.info(
+                                "Decoder profile: "
+                                f"get_frame_count={profile_counts['get_frame']}, "
+                                f"avg_get_frame_ms={_avg_ms('get_frame'):.2f}, "
+                                f"analysis_writes={profile_counts['analysis_write']}, "
+                                f"avg_analysis_write_ms={_avg_ms('analysis_write'):.2f}, "
+                                f"recording_writes={profile_counts['recording_write']}, "
+                                f"avg_recording_write_ms={_avg_ms('recording_write'):.2f}"
+                            )
+                            profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+                            for key in profile_counts:
+                                profile_counts[key] = 0
+                                profile_totals_ms[key] = 0.0
 
                     else:
                         # 检查流是否仍在运行

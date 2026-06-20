@@ -37,10 +37,19 @@ def test_video_ringbuffer_roundtrips_nv12_frame():
     try:
         buffer.write(frame, timestamp=123.456)
         loaded_frame, timestamp = buffer.peek_with_timestamp(-1)
+        view_frame, view_timestamp = buffer.peek_view_with_timestamp(-1)
 
         assert timestamp == 123.456
         assert loaded_frame.shape == frame.shape
         assert np.array_equal(loaded_frame, frame)
+        assert loaded_frame.flags.writeable is True
+        assert view_timestamp == 123.456
+        assert view_frame.shape == frame.shape
+        assert view_frame.flags.writeable is False
+        assert np.array_equal(view_frame, frame)
+
+        loaded_frame[0, 0] = 255
+        assert view_frame[0, 0] == frame[0, 0]
     finally:
         buffer.close()
         buffer.unlink()

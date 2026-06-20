@@ -34,6 +34,8 @@ from app.config import (
     LOG_SAVE_PATH,
     DETECTION_JSONL_LOG_ENABLED,
     VIDEO_FRAME_PIXEL_FORMAT,
+    RESOURCE_PROFILING_ENABLED,
+    RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.cv2_compat import cv2, require_cv2
@@ -321,6 +323,10 @@ class WorkflowExecutor:
         for node_id in self.nodes.keys():
             self.node_last_exec_time[node_id] = 0
         self._state_lock = threading.Lock()
+        self._profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_run_once_count = 0
+        self._profile_run_once_total_ms = 0.0
+        self._profile_run_once_max_ms = 0.0
 
     def stop(self):
         self.running = False
@@ -2863,11 +2869,12 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
-    def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float):
+    def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float, executor=None):
         """执行单帧工作流，用于 source host 统一驱动多个工作流。"""
         if not self.running:
             return
 
+        started_at = time.perf_counter()
         frame_pixel_format = normalize_pixel_format(VIDEO_FRAME_PIXEL_FORMAT)
         readonly_frame = frame_nv12.view()
         readonly_frame.setflags(write=False)
@@ -2891,8 +2898,36 @@ class WorkflowExecutor:
             self.execution_results.clear()
             self.executed_nodes.clear()
 
-        self._execute_by_topology_levels(executor=None, context=context)
+        self._execute_by_topology_levels(executor=executor, context=context)
         self._record_to_window_detector_for_all_alerts(context)
+        self._record_run_once_profile((time.perf_counter() - started_at) * 1000)
+
+    def _record_run_once_profile(self, elapsed_ms: float):
+        if not RESOURCE_PROFILING_ENABLED:
+            return
+
+        self._profile_run_once_count += 1
+        self._profile_run_once_total_ms += elapsed_ms
+        self._profile_run_once_max_ms = max(self._profile_run_once_max_ms, elapsed_ms)
+
+        now = time.monotonic()
+        if now < self._profile_next_log_at:
+            return
+
+        avg_ms = (
+            self._profile_run_once_total_ms / self._profile_run_once_count
+            if self._profile_run_once_count
+            else 0.0
+        )
+        logger.info(
+            f"[Workflow-{self.workflow_id}] run_once profile: "
+            f"count={self._profile_run_once_count}, avg_ms={avg_ms:.2f}, "
+            f"max_ms={self._profile_run_once_max_ms:.2f}"
+        )
+        self._profile_next_log_at = now + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
+        self._profile_run_once_count = 0
+        self._profile_run_once_total_ms = 0.0
+        self._profile_run_once_max_ms = 0.0
 
     def run(self):
         """

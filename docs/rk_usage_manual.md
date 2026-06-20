@@ -56,6 +56,8 @@ docker compose -p video-analysis -f docker-compose.yml.rknn ps
 - `docker-compose.yml.rknn` 已内置 PostgreSQL，仅在 compose 网络内提供服务；如需执行迁移或排障，优先使用 `docker compose exec` / `docker compose run` 进入容器。
 - `worker` 默认透传 `/dev/dri`、`/dev/mpp_service`、`/dev/rga`、`/dev/video0`、`/dev/video-dec0`、`/dev/video-enc0`，用于 `ffmpeg+rkmpp` 硬解。
 - `VIDEO_DECODER_TYPE=rk_mpp` 目前仅在 `worker` 中启用；`api` 保持默认软解，避免在未使用测试解码能力时额外占用 RK 设备。
+- RK compose 默认使用资源受限档：`ANALYSIS_TARGET_FPS=2`、`ANALYSIS_BUFFER_SECONDS=3`、`RECORDING_FPS=3`、`PRE_ALERT_DURATION=15`、`POST_ALERT_DURATION=15`、`RECORDING_BUFFER_DURATION=32`，避免多路场景下录制共享内存和 JPEG 编码持续放大。
+- 如果需要估算当前配置下的多路内存预算，可在项目目录执行：`python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16`。
 
 ## 5. 连通性验证
 

@@ -115,7 +115,20 @@ cp env.example .env
 - `PRE_ALERT_DURATION` / `POST_ALERT_DURATION` / `RECORDING_BUFFER_DURATION`：录制链路缓冲参数
 - `RECORDING_JPEG_QUALITY` / `RECORDING_COMPRESSED_MAX_BYTES`：录制压缩帧缓存参数
 - `IS_EXTREME_DECODE_MODE`：极速解码（仅保留最新帧）
+- `RESOURCE_PROFILING_ENABLED`：输出帧拷贝、录制编码、工作流执行等性能埋点
+- `WORKFLOW_ZERO_COPY_FRAMES`：source host 使用共享内存只读视图读取最新帧，减少复制（需确保处理耗时小于缓冲窗口）
+- `SOURCE_HOST_WORKFLOW_NODE_WORKERS`：实时工作流同层节点并行 worker 数，`0` 表示关闭
 - `RABBITMQ_ENABLED`：是否启用 RabbitMQ 发布
+
+## 资源估算
+
+在没有目标硬件时，可先用静态估算脚本评估多路视频的 buffer 内存压力：
+
+```bash
+python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
+```
+
+默认会读取当前环境变量；也可以不连数据库，直接传 `--source` / `--count` 估算 analysis 共享内存、recording 共享内存和 decoder 队列占用。
 
 ## 目录结构
 
