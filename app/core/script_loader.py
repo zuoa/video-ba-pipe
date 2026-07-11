@@ -166,7 +166,15 @@ class ScriptLoader:
     @staticmethod
     def _normalize_script_path(script_path: str) -> str:
         """标准化脚本相对路径。"""
-        return os.path.normpath(script_path.lstrip('/').lstrip('.'))
+        raw_path = str(script_path or '').replace("\\", "/")
+        normalized_path = os.path.normpath(raw_path.lstrip('/'))
+
+        if normalized_path in ('', '.'):
+            raise ScriptValidationError("脚本路径不能为空")
+        if os.path.isabs(normalized_path) or normalized_path == '..' or normalized_path.startswith('../'):
+            raise ScriptValidationError("脚本路径不能跳出脚本根目录")
+
+        return normalized_path
 
     def resolve_path(self, script_path: str, writable: bool = False) -> str:
         """

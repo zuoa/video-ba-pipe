@@ -1112,7 +1112,18 @@ class WorkflowExecutor:
         logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 未到执行间隔 ({interval}秒)，跳过")
         return False
     
-    def _process_algorithm(self, node_id, frame_nv12, frame_timestamp, roi_regions=None, upstream_results=None):
+    def _process_algorithm(
+        self,
+        node_id,
+        frame_nv12=None,
+        frame_timestamp=None,
+        roi_regions=None,
+        upstream_results=None,
+        frame=None,
+    ):
+        if frame_nv12 is None:
+            frame_nv12 = frame
+
         algo = self.algorithms.get(node_id)
         if not algo:
             logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不在 self.algorithms 中，已加载的算法节点: {list(self.algorithms.keys())}")
@@ -1508,6 +1519,8 @@ class WorkflowExecutor:
 
     def _handle_external_api_node(self, node_id, context):
         frame_nv12 = context.get('frame_nv12')
+        if frame_nv12 is None:
+            frame_nv12 = context.get('frame')
         frame_timestamp = context.get('frame_timestamp')
         log_collector = context.get('log_collector')
 
@@ -1866,7 +1879,7 @@ class WorkflowExecutor:
 
         # 如果连线中没有结果，回退到 input_nodes 配置（向后兼容）
         if not upstream_results:
-            node = self.nodes.get(node_id)
+            node = getattr(self, 'nodes', {}).get(node_id)
             if isinstance(node, FunctionNodeData) and node.input_nodes:
                 for input_node_id in node.input_nodes:
                     if input_node_id in cache_snapshot:

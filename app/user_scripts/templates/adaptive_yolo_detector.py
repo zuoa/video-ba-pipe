@@ -384,7 +384,12 @@ def process(
     if not state or "backend" not in state:
         return build_result([], metadata={"error": "Model not initialized"})
 
-    if pixel_format == 'nv12':
+    frame_looks_rgb = (
+        isinstance(frame, np.ndarray)
+        and frame.ndim == 3
+        and frame.shape[2] in (3, 4)
+    )
+    if pixel_format == 'nv12' and not frame_looks_rgb:
         frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
 
     backend = state["backend"]

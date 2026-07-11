@@ -36,6 +36,15 @@ def register_workflows_api(app):
             'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
             'created_by': workflow.created_by,
         }
+
+    def get_algorithm_label_name(algorithm):
+        ext_config = algorithm.ext_config if hasattr(algorithm, 'ext_config') else {}
+        script_config = algorithm.config_dict if hasattr(algorithm, 'config_dict') else {}
+        return (
+            ext_config.get('label_name')
+            or script_config.get('label_name')
+            or algorithm.name
+        )
     
     @app.route('/api/workflows', methods=['GET'])
     @require_auth
@@ -272,7 +281,7 @@ def register_workflows_api(app):
                 'algorithms': [{
                     'id': a.id,
                     'name': a.name,
-                    'label_name': a.label_name,
+                    'label_name': get_algorithm_label_name(a),
                     'script_path': a.script_path,
                     'created_by': a.created_by,
                 } for a in algorithms]

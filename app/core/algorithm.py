@@ -73,33 +73,25 @@ class BaseAlgorithm(ABC):
         if not roi_regions:
             # 如果没有ROI配置，返回全白掩码（全画面检测）
             return np.ones((frame_shape[0], frame_shape[1]), dtype=np.uint8) * 255
-        require_cv2()
 
         # 创建黑色掩码
         mask = np.zeros((frame_shape[0], frame_shape[1]), dtype=np.uint8)
         height, width = frame_shape[0], frame_shape[1]
+        try:
+            cv2_impl = require_cv2()
+        except ImportError:
+            cv2_impl = None
 
         # 在每个ROI区域绘制白色多边形
         for region in roi_regions:
-            # 支持两种字段名：'polygon'（新格式）和 'points'（旧格式）
-            points = region.get('polygon', region.get('points', []))
-
-            if not points or len(points) < 3:
+            pts = BaseAlgorithm._resolve_roi_points(region, width, height)
+            if pts is None:
                 continue
 
-            # 检查坐标格式
-            # 如果是相对坐标格式 [{"x": 0.1, "y": 0.2}, ...]，转换为绝对坐标
-            if isinstance(points[0], dict):
-                # 相对坐标格式，需要转换为绝对坐标
-                pts = [[int(p['x'] * width), int(p['y'] * height)] for p in points]
+            if cv2_impl is not None:
+                cv2_impl.fillPoly(mask, [pts.astype(np.int32)], 255)
             else:
-                # 已经是绝对坐标格式 [[x1, y1], [x2, y2], ...]
-                pts = points
-
-            # 转换为numpy数组
-            pts_array = np.array(pts, dtype=np.int32)
-            # 填充多边形
-            cv2.fillPoly(mask, [pts_array], 255)
+                BaseAlgorithm._fill_polygon_numpy(mask, pts, 255)
 
         return mask
     
@@ -115,9 +107,14 @@ class BaseAlgorithm(ABC):
         Returns:
             masked_frame: 应用掩码后的图像
         """
-        require_cv2()
+        try:
+            cv2_impl = require_cv2()
+        except ImportError:
+            masked_frame = frame.copy()
+            masked_frame[mask == 0] = 0
+            return masked_frame
         # 将掩码应用到每个通道
-        masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
+        masked_frame = cv2_impl.bitwise_and(frame, frame, mask=mask)
         return masked_frame
     
     @staticmethod
@@ -235,6 +232,106 @@ class BaseAlgorithm(ABC):
         return x1, y1, x2, y2
 
     @staticmethod
+    def _resolve_roi_points(region, width: int, height: int):
+        points = region.get('polygon', region.get('points', []))
+        if not points or len(points) < 3:
+            return None
+
+        if isinstance(points[0], dict):
+            pts = [[float(p['x']) * width, float(p['y']) * height] for p in points]
+        else:
+            pts = points
+
+        try:
+            pts_array = np.array(pts, dtype=np.float32)
+        except Exception:
+            return None
+        if pts_array.ndim != 2 or pts_array.shape[1] < 2:
+            return None
+        return pts_array[:, :2]
+
+    @staticmethod
+    def _fill_polygon_numpy(mask: np.ndarray, pts: np.ndarray, value: int = 255):
+        if pts is None or len(pts) < 3:
+            return
+
+        height, width = mask.shape[:2]
+        min_x = max(0, int(np.floor(np.min(pts[:, 0]))))
+        max_x = min(width - 1, int(np.ceil(np.max(pts[:, 0]))))
+        min_y = max(0, int(np.floor(np.min(pts[:, 1]))))
+        max_y = min(height - 1, int(np.ceil(np.max(pts[:, 1]))))
+        if min_x > max_x or min_y > max_y:
+            return
+
+        yy, xx = np.mgrid[min_y:max_y + 1, min_x:max_x + 1]
+        x = xx.astype(np.float32) + 0.5
+        y = yy.astype(np.float32) + 0.5
+        inside = np.zeros(x.shape, dtype=bool)
+
+        j = len(pts) - 1
+        for i in range(len(pts)):
+            xi, yi = pts[i]
+            xj, yj = pts[j]
+            intersects = ((yi > y) != (yj > y)) & (
+                x < ((xj - xi) * (y - yi) / ((yj - yi) + 1e-12) + xi)
+            )
+            inside ^= intersects
+            j = i
+
+        mask[min_y:max_y + 1, min_x:max_x + 1][inside] = value
+
+    @staticmethod
+    def _draw_rectangle_numpy(img: np.ndarray, box, color, thickness: int = 1):
+        x1, y1, x2, y2 = box
+        thickness = max(1, int(thickness))
+        img[y1:min(y1 + thickness, y2 + 1), x1:x2 + 1] = color
+        img[max(y2 - thickness + 1, y1):y2 + 1, x1:x2 + 1] = color
+        img[y1:y2 + 1, x1:min(x1 + thickness, x2 + 1)] = color
+        img[y1:y2 + 1, max(x2 - thickness + 1, x1):x2 + 1] = color
+
+    @staticmethod
+    def _visualize_numpy(img, results, label_color='#FF0000', roi_regions=None):
+        if img is None:
+            return None
+
+        # Match the OpenCV path's return convention: BGR image.
+        if img.ndim == 3 and img.shape[2] >= 3:
+            img_vis = img[:, :, :3][:, :, ::-1].copy()
+        else:
+            img_vis = img.copy()
+
+        height, width = img_vis.shape[:2]
+        if roi_regions:
+            overlay_mask = np.zeros((height, width), dtype=np.uint8)
+            for region in roi_regions:
+                pts = BaseAlgorithm._resolve_roi_points(region, width, height)
+                BaseAlgorithm._fill_polygon_numpy(overlay_mask, pts, 255)
+            if np.any(overlay_mask):
+                img_vis[overlay_mask > 0] = (
+                    img_vis[overlay_mask > 0].astype(np.float32) * 0.85
+                    + np.array([144, 238, 144], dtype=np.float32) * 0.15
+                ).astype(np.uint8)
+
+        main_color = BaseAlgorithm.hex_to_bgr(label_color)
+        for result in results or []:
+            box = BaseAlgorithm._get_detection_box(result)
+            canvas_box = BaseAlgorithm._normalize_box_for_canvas(box, width, height)
+            if canvas_box is None:
+                continue
+
+            BaseAlgorithm._draw_rectangle_numpy(img_vis, canvas_box, main_color, 3)
+
+            for stage in result.get('stages', []) or []:
+                stage_box = BaseAlgorithm._get_detection_box(stage)
+                stage_canvas_box = BaseAlgorithm._normalize_box_for_canvas(stage_box, width, height)
+                if stage_canvas_box is None:
+                    continue
+                stage_color = BaseAlgorithm.hex_to_bgr(stage.get('label_color', label_color))
+                BaseAlgorithm._draw_rectangle_numpy(img_vis, stage_canvas_box, stage_color, 1)
+
+        return img_vis
+
+    @staticmethod
     def visualize(img, results, save_path=None, label_color='#FF0000', roi_mask=None, roi_regions=None):
         """
         可视化检测结果
@@ -245,7 +342,13 @@ class BaseAlgorithm(ABC):
         :param roi_mask: ROI掩码，如果提供则在图像上显示ROI区域（已弃用，建议使用roi_regions）
         :param roi_regions: ROI热区配置列表，格式为 [{"polygon": [[x1,y1], [x2,y2], ...], ...}]
         """
-        require_cv2()
+        try:
+            require_cv2()
+        except ImportError:
+            if save_path:
+                logger.warning("OpenCV 不可用，跳过可视化图片保存")
+            return BaseAlgorithm._visualize_numpy(img, results, label_color=label_color, roi_regions=roi_regions)
+
         # OpenCV 绘图函数期望 BGR 格式
         img_vis = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 

@@ -680,11 +680,17 @@ def get_model_algorithms(model_id):
 
         result = []
         for algo in algorithms:
+            ext_config = algo.ext_config if hasattr(algo, 'ext_config') else {}
+            script_config = algo.config_dict if hasattr(algo, 'config_dict') else {}
             result.append({
                 'id': algo.id,
                 'name': algo.name,
-                'plugin_module': algo.plugin_module,
-                'label_name': algo.label_name
+                'plugin_module': ext_config.get('plugin_module') or 'script_algorithm',
+                'label_name': (
+                    ext_config.get('label_name')
+                    or script_config.get('label_name')
+                    or algo.name
+                )
             })
 
         return jsonify({

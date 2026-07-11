@@ -1,10 +1,13 @@
 import signal
+import os
 import subprocess
+import sys
 import threading
 import time
 
 from app import logger
 from app.config import (
+    APP_DIR,
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
     VIDEO_DECODER_TYPE,
@@ -296,9 +299,9 @@ class Orchestrator:
             )
 
         # 启动解码器进程
-        import sys
+        decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
         decoder_args = [
-            sys.executable, 'decoder_worker.py',
+            sys.executable, decoder_entry,
             '--url', source.source_url,
             '--source-id', str(source.id),
             '--decoder-type', VIDEO_DECODER_TYPE,
@@ -312,7 +315,7 @@ class Orchestrator:
             '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
         ]
         logger.debug(' '.join(decoder_args))
-        decoder_p = subprocess.Popen(decoder_args)
+        decoder_p = subprocess.Popen(decoder_args, cwd=APP_DIR)
 
         source.status = 'RUNNING'
         source.decoder_pid = decoder_p.pid
@@ -439,9 +442,9 @@ class Orchestrator:
             f"workflows={[workflow.id for workflow in workflows]}"
         )
 
-        import sys
+        workflow_entry = os.path.join(APP_DIR, 'source_workflow_host.py')
         workflow_args = [
-            sys.executable, '-u', 'source_workflow_host.py',
+            sys.executable, '-u', workflow_entry,
             '--source-id', str(source_id)
         ]
         logger.debug(f"启动命令: {' '.join(workflow_args)}")
@@ -452,7 +455,8 @@ class Orchestrator:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
-                bufsize=1
+                bufsize=1,
+                cwd=APP_DIR,
             )
 
             # 启动输出读取线程

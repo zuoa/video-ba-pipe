@@ -16,6 +16,18 @@ class ScriptLoaderSecurityTests(unittest.TestCase):
 
         self.assertEqual(loader.user_scripts_root, USER_SCRIPTS_ROOT)
 
+    def test_resolve_path_rejects_parent_directory_traversal(self):
+        loader = ScriptLoader()
+
+        with self.assertRaises(ScriptValidationError):
+            loader.resolve_path("../outside.py", writable=True)
+
+    def test_resolve_path_rejects_empty_script_path(self):
+        loader = ScriptLoader()
+
+        with self.assertRaises(ScriptValidationError):
+            loader.resolve_path("", writable=True)
+
     def _write_script(self, content: str) -> str:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

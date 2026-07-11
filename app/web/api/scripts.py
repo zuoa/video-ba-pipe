@@ -2,6 +2,7 @@
 脚本管理API
 """
 import ast
+import json
 import os
 import sys
 from datetime import datetime
@@ -43,6 +44,34 @@ def serialize_script_version(sv):
         'created_at': sv.created_at.isoformat() if sv.created_at else None,
         'created_by': sv.created_by
     }
+
+
+def extract_script_metadata(content: str) -> dict:
+    """从 SCRIPT_METADATA 字面量中读取元数据，不执行用户脚本。"""
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return {}
+
+    for node in tree.body:
+        value_node = None
+        if isinstance(node, ast.Assign):
+            if any(isinstance(target, ast.Name) and target.id == 'SCRIPT_METADATA' for target in node.targets):
+                value_node = node.value
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == 'SCRIPT_METADATA':
+                value_node = node.value
+
+        if value_node is None:
+            continue
+
+        try:
+            metadata = ast.literal_eval(value_node)
+        except (ValueError, SyntaxError):
+            return {}
+        return metadata if isinstance(metadata, dict) else {}
+
+    return {}
 
 
 @scripts_bp.route('/', methods=['GET'])
@@ -219,27 +248,38 @@ def upload_script():
                 'error': f'语法错误: {e}'
             }), 400
 
+        try:
+            loader.validate_security(abs_path)
+        except ScriptValidationError as e:
+            os.remove(abs_path)
+            return jsonify({
+                'success': False,
+                'error': f'安全检查失败: {e}'
+            }), 400
+
         # 如果需要，创建算法记录
         algorithm_id = None
         if create_algorithm:
-            # 尝试从SCRIPT_METADATA提取信息
-            metadata = {}
-            try:
-                exec(content, {'__name__': '__metadata__'}, {'SCRIPT_METADATA': metadata})
-            except:
-                pass
+            metadata = extract_script_metadata(content)
+            ext_config = {
+                'plugin_module': 'script_algorithm',
+                'script_type': 'script',
+                'entry_function': 'process',
+                'script_version': metadata.get('version', 'v1.0'),
+                'runtime_timeout': metadata.get('timeout', 30),
+                'memory_limit_mb': metadata.get('memory_limit', 512),
+                'label_name': metadata.get('name', 'Custom'),
+                'interval_seconds': 1,
+            }
 
             algorithm = Algorithm.create(
                 name=metadata.get('name', path[:-3]),
-                plugin_module='script_algorithm',
-                script_type='script',
+                description=metadata.get('description'),
                 script_path=path,
-                entry_function='process',
-                script_version=metadata.get('version', 'v1.0'),
-                runtime_timeout=metadata.get('timeout', 30),
-                memory_limit_mb=metadata.get('memory_limit', 512),
-                label_name=metadata.get('name', 'Custom'),
-                interval_seconds=1,
+                script_config=json.dumps(metadata.get('config', {}), ensure_ascii=False),
+                ext_config_json=json.dumps(ext_config, ensure_ascii=False),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
                 created_by=current_username('admin'),
             )
 
