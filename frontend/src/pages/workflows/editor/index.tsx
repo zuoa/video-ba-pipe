@@ -120,9 +120,18 @@ export default function WorkflowEditorPage() {
 
             // 如果已经是 ReactFlow 格式，只更新类型
             if (node.position && node.data) {
+              const currentAlgorithm = nodeType === 'algorithm'
+                ? algorithms.find((algo: any) => String(algo.id) === String(node.data?.dataId ?? node.data?.algorithmId))
+                : null;
               return {
                 ...node,
                 type: nodeType,
+                data: nodeType === 'algorithm'
+                  ? {
+                      ...node.data,
+                      algorithmType: node.data.algorithmType || currentAlgorithm?.algorithm_type || 'script',
+                    }
+                  : node.data,
               };
             }
 
@@ -141,6 +150,7 @@ export default function WorkflowEditorPage() {
             if (nodeType === 'algorithm') {
               const runtimeAlgorithmId = nodeData.dataId || nodeData.algorithmId;
               const currentAlgorithm = algorithms.find((algo: any) => String(algo.id) === String(runtimeAlgorithmId));
+              nodeData.algorithmType = currentAlgorithm?.algorithm_type || node.data?.algorithmType || 'script';
               nodeData.defaultConfidence = getAlgorithmDefaultConfidence(currentAlgorithm) ?? node.data?.defaultConfidence;
               nodeData.confidence = node.config?.confidence ?? node.data?.confidence ?? nodeData.defaultConfidence;
             }
@@ -916,6 +926,7 @@ export default function WorkflowEditorPage() {
               <PropertyPanel
                 node={selectedNode}
                 videoSources={videoSources}
+                algorithms={algorithms}
                 externalApis={externalApis}
                 vlConfig={vlConfig}
                 edges={edges}

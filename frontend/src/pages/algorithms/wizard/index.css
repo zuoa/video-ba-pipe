@@ -88,6 +88,121 @@
   gap: 10px;
 }
 
+.section-title.compact {
+  margin-bottom: 16px;
+  font-size: 15px;
+}
+
+.algorithm-type-grid {
+  margin-bottom: 24px;
+}
+
+.algorithm-type-card {
+  height: 100%;
+  min-height: 118px;
+  cursor: pointer;
+  position: relative;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.algorithm-type-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #94a3b8;
+}
+
+.algorithm-type-card .ant-card-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.algorithm-type-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.algorithm-type-card.selected.script {
+  border-color: #52c41a;
+  background: #f6ffed;
+  box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.1);
+}
+
+.algorithm-type-card.selected.script::before {
+  background: #52c41a;
+}
+
+.algorithm-type-card.selected.vl {
+  border-color: #13c2c2;
+  background: #e6fffb;
+  box-shadow: 0 0 0 2px rgba(19, 194, 194, 0.12);
+}
+
+.algorithm-type-card.selected.vl::before {
+  background: #13c2c2;
+}
+
+.algorithm-type-icon {
+  padding: 10px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 25px;
+}
+
+.algorithm-type-card.selected.script .algorithm-type-icon {
+  color: #389e0d;
+  background: #d9f7be;
+}
+
+.algorithm-type-card.selected.vl .algorithm-type-icon {
+  color: #08979c;
+  background: #b5f5ec;
+}
+
+.algorithm-type-card h4 {
+  margin: 0 0 6px;
+  color: #1f2937;
+  font-size: 16px;
+}
+
+.algorithm-type-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.algorithm-type-detail {
+  padding-top: 24px;
+  border-top: 1px solid #eef2f6;
+}
+
+.vl-contract-callout {
+  border-color: #87e8de;
+  background: #f0fffe;
+}
+
+.vl-config-form {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.vl-prompt-card {
+  border-top: 3px solid #13c2c2;
+}
+
+.json-editor textarea,
+.json-editor {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
 .title-icon {
   color: #1890ff;
   font-size: 20px;
@@ -307,5 +422,8 @@
   .detector-section, .config-form, .algorithm-wizard-page > form {
     padding: 16px;
   }
-}
 
+  .algorithm-type-card {
+    min-height: auto;
+  }
+}

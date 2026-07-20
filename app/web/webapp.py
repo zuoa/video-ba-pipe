@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
-from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog
+from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, Workflow
 from app.core.database_models import db
 from app.config import (
     ANALYSIS_BUFFER_SECONDS,
@@ -29,6 +29,8 @@ from app.config import (
 )
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.vl_validator import get_vl_service_config, save_vl_service_config
+from app.core.vl_algorithm_config import normalize_vl_algorithm_config
+from app.core.workflow_runtime import workflow_references_algorithm
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
 from app.version import get_app_version
@@ -72,7 +74,13 @@ app.register_blueprint(auth_bp)
 
 
 def serialize_algorithm(algorithm):
-    ext_config = algorithm.ext_config if hasattr(algorithm, 'ext_config') else {}
+    ext_config = dict(algorithm.ext_config if hasattr(algorithm, 'ext_config') else {})
+    algorithm_type = ext_config.get('algorithm_type') or 'script'
+    if algorithm_type == 'vl':
+        vl_config = dict(ext_config.get('vl_config') or {})
+        api_key = vl_config.pop('api_key', '')
+        vl_config['api_key_configured'] = bool(api_key)
+        ext_config['vl_config'] = vl_config
     return {
         'id': algorithm.id,
         'name': algorithm.name,
@@ -83,8 +91,24 @@ def serialize_algorithm(algorithm):
         'created_at': algorithm.created_at.isoformat() if algorithm.created_at else None,
         'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
         'created_by': getattr(algorithm, 'created_by', 'admin'),
+        'algorithm_type': algorithm_type,
         **ext_config,
     }
+
+
+def _bump_active_workflows_for_algorithm(algorithm_id):
+    """让 orchestrator 发现算法依赖变化并重启对应的活动 source host。"""
+    affected_ids = []
+    now = datetime.now()
+    query = Workflow.select().where(Workflow.is_active == True)
+    for workflow in query:
+        if not workflow_references_algorithm(workflow.data_dict, algorithm_id):
+            continue
+        workflow.config_version = int(workflow.config_version or 0) + 1
+        workflow.updated_at = now
+        workflow.save(only=[Workflow.config_version, Workflow.updated_at])
+        affected_ids.append(workflow.id)
+    return affected_ids
 
 
 def serialize_video_source(source):
@@ -176,14 +200,17 @@ def get_algorithm(id):
 @app.route('/api/algorithms', methods=['POST'])
 @require_auth
 def create_algorithm():
-    data = request.json
+    data = request.json or {}
     try:
         from datetime import datetime
 
         # 验证必填字段
         if not data.get('name'):
             return jsonify({'error': '缺少必填字段: name'}), 400
-        if not data.get('script_path'):
+        algorithm_type = str(data.get('algorithm_type') or 'script').strip().lower()
+        if algorithm_type not in ('script', 'vl'):
+            return jsonify({'error': 'algorithm_type 仅支持 script 或 vl'}), 400
+        if algorithm_type == 'script' and not data.get('script_path'):
             return jsonify({'error': '缺少必填字段: script_path'}), 400
 
         # 构建扩展配置（执行配置）
@@ -198,12 +225,17 @@ def create_algorithm():
         for field in exec_config_fields:
             if field in data:
                 ext_config[field] = data[field]
+        ext_config['algorithm_type'] = algorithm_type
+        if algorithm_type == 'vl':
+            ext_config['plugin_module'] = 'vl_algorithm'
+            ext_config['vl_config'] = normalize_vl_algorithm_config(data.get('vl_config'))
+            ext_config.setdefault('runtime_timeout', ext_config['vl_config']['timeout_seconds'])
 
         # 创建算法
         algorithm = Algorithm.create(
             name=data['name'],
             description=data.get('description'),
-            script_path=data['script_path'],
+            script_path=data.get('script_path') or '',
             script_config=data.get('script_config', '{}'),
             ext_config_json=json.dumps(ext_config),
             enabled_hooks=data.get('enabled_hooks'),
@@ -226,7 +258,16 @@ def update_algorithm(id):
         owner_response = require_resource_owner(algorithm)
         if owner_response:
             return owner_response
-        data = request.json
+        data = request.json or {}
+
+        try:
+            ext_config = json.loads(algorithm.ext_config_json) if algorithm.ext_config_json else {}
+        except Exception:
+            ext_config = {}
+        current_type = ext_config.get('algorithm_type') or 'script'
+        algorithm_type = str(data.get('algorithm_type') or current_type).strip().lower()
+        if algorithm_type not in ('script', 'vl'):
+            return jsonify({'error': 'algorithm_type 仅支持 script 或 vl'}), 400
 
         # 更新基本字段
         if 'name' in data:
@@ -249,24 +290,40 @@ def update_algorithm(id):
             'model_json', 'model_ids'
         ]
 
-        # 获取当前的扩展配置
-        try:
-            ext_config = json.loads(algorithm.ext_config_json) if algorithm.ext_config_json else {}
-        except:
-            ext_config = {}
-
         # 更新执行配置字段
         for field in exec_config_fields:
             if field in data:
                 ext_config[field] = data[field]
 
+        ext_config['algorithm_type'] = algorithm_type
+        if algorithm_type == 'script':
+            if not str(algorithm.script_path or '').strip():
+                return jsonify({'error': '脚本算法缺少必填字段: script_path'}), 400
+            ext_config['plugin_module'] = data.get('plugin_module') or 'script_algorithm'
+            ext_config.pop('vl_config', None)
+        else:
+            current_vl_config = ext_config.get('vl_config') if current_type == 'vl' else None
+            ext_config['plugin_module'] = 'vl_algorithm'
+            ext_config['vl_config'] = normalize_vl_algorithm_config(
+                data.get('vl_config'),
+                current=current_vl_config,
+            )
+            algorithm.script_path = ''
+
         algorithm.ext_config_json = json.dumps(ext_config)
         algorithm.updated_at = datetime.now()
-        algorithm.save()
+        with db.atomic():
+            algorithm.save()
+            reloaded_workflow_ids = _bump_active_workflows_for_algorithm(algorithm.id)
 
-        return jsonify({'message': 'Algorithm updated'})
+        return jsonify({
+            'message': 'Algorithm updated',
+            'reloaded_workflow_ids': reloaded_workflow_ids,
+        })
     except Algorithm.DoesNotExist:
         return jsonify({'error': 'Algorithm not found'}), 404
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         app.logger.error(f"更新算法失败 (ID={id}): {e}")
         return jsonify({'error': str(e)}), 500
@@ -344,11 +401,10 @@ def test_algorithm():
                 app.logger.info(f"已调整图片大小为: {new_w}x{new_h}")
 
 
-            # 使用统一的脚本算法类
-            from app.plugins.script_algorithm import ScriptAlgorithm
-
             # 准备算法配置
             script_config = algorithm.config_dict  # 从 script_config 字段解析
+            ext_config = algorithm.ext_config
+            algorithm_type = ext_config.get('algorithm_type') or 'script'
 
             full_config = {
                 "id": algorithm.id,
@@ -364,18 +420,27 @@ def test_algorithm():
                 "entry_function": 'process',
                 "runtime_timeout": getattr(algorithm, 'runtime_timeout', None) or script_config.get('runtime_timeout', 30),
                 "memory_limit_mb": getattr(algorithm, 'memory_limit_mb', None) or script_config.get('memory_limit_mb', 512),
+                "algorithm_type": algorithm_type,
             }
 
             # 合并脚本配置
             full_config.update(script_config)
+            full_config.update(ext_config)
+
+            if algorithm_type == 'vl':
+                from app.plugins.vl_algorithm import VLAlgorithm
+                algo_instance = VLAlgorithm(full_config)
+            else:
+                from app.plugins.script_algorithm import ScriptAlgorithm
+                algo_instance = ScriptAlgorithm(full_config)
             
             # 创建算法实例并处理图片
-            algo_instance = ScriptAlgorithm(full_config)
             results = algo_instance.process(image)
 
             # 处理结果
             detections = results.get('detections', [])
             metadata = results.get('metadata', {})
+            algorithm_error = metadata.get('error') if isinstance(metadata, dict) else None
             
             # 生成可视化结果（无论是否有检测结果都生成）
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_result:
@@ -391,11 +456,13 @@ def test_algorithm():
             
             # 准备返回结果
             response_data = {
-                'success': True,
+                'success': not bool(algorithm_error),
                 'detections': detections,
                 'detection_count': len(detections),
                 'metadata': metadata  # 包含调试信息
             }
+            if algorithm_error:
+                response_data['error'] = algorithm_error
             
             # 转换结果图片为base64
             if result_image_path and os.path.exists(result_image_path):

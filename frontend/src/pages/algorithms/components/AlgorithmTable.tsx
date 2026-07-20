@@ -6,6 +6,7 @@ import {
   PlayCircleOutlined,
   ExperimentOutlined,
   ApiOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import './AlgorithmTable.css';
@@ -13,6 +14,7 @@ import './AlgorithmTable.css';
 export interface Algorithm {
   id: number;
   name: string;
+  algorithm_type?: 'script' | 'vl';
   description?: string;
   script_path: string;
   script_config?: string;
@@ -28,6 +30,11 @@ export interface Algorithm {
   window_threshold?: number;
   created_at?: string;
   updated_at?: string;
+  vl_config?: {
+    base_url?: string;
+    model_name?: string;
+    api_key_configured?: boolean;
+  };
 }
 
 export interface AlgorithmTableProps {
@@ -63,19 +70,26 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       width: 360,
       render: (_: any, record: Algorithm) => (
         <div className="algorithm-info-cell">
-          <div className="algorithm-icon">
-            <ExperimentOutlined />
+          <div className={`algorithm-icon ${record.algorithm_type === 'vl' ? 'algorithm-icon-vl' : ''}`}>
+            {record.algorithm_type === 'vl' ? <RobotOutlined /> : <ExperimentOutlined />}
           </div>
           <div className="algorithm-content">
-            <div className="algorithm-name">{record.name}</div>
+            <div className="algorithm-name">
+              {record.name}
+              <Tag color={record.algorithm_type === 'vl' ? 'cyan' : 'purple'} className="algorithm-type-tag">
+                {record.algorithm_type === 'vl' ? 'VL' : '脚本'}
+              </Tag>
+            </div>
             {record.description && (
               <div className="algorithm-description">{record.description}</div>
             )}
             <div className="algorithm-meta">
-              <Tooltip title={record.script_path}>
+              <Tooltip title={record.algorithm_type === 'vl' ? record.vl_config?.base_url : record.script_path}>
                 <code className="algorithm-code">
                   <ApiOutlined />
-                  {record.script_path}
+                  {record.algorithm_type === 'vl'
+                    ? `${record.vl_config?.model_name || '未配置模型'} · ${record.vl_config?.base_url || '未配置接口'}`
+                    : record.script_path}
                 </code>
               </Tooltip>
             </div>

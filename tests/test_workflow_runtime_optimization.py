@@ -7,6 +7,7 @@ from app.core.workflow_runtime import (
     normalize_source_node_fields,
     validate_single_source_node,
     workflow_configs_equivalent,
+    workflow_references_algorithm,
 )
 
 
@@ -52,6 +53,22 @@ def test_extract_source_id_from_workflow_data_supports_legacy_source_shapes():
     }
 
     assert extract_source_id_from_workflow_data(workflow_data) == 7
+
+
+def test_workflow_references_algorithm_supports_runtime_and_nested_shapes():
+    workflow_data = {
+        "nodes": [
+            {"id": "algo_1", "type": "algorithm", "dataId": "12"},
+            {
+                "id": "algo_2",
+                "data": {"type": "algorithm", "algorithmId": 19},
+            },
+        ]
+    }
+
+    assert workflow_references_algorithm(workflow_data, 12) is True
+    assert workflow_references_algorithm(workflow_data, 19) is True
+    assert workflow_references_algorithm(workflow_data, 99) is False
 
 
 def test_validate_single_source_node_rejects_multiple_sources():

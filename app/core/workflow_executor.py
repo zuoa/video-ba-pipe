@@ -490,6 +490,9 @@ class WorkflowExecutor:
                             "id": algo_id,
                             "name": algo.name,
                             "source_id": getattr(self.video_source, 'id', 0),  # 测试模式下为 0
+                            "source_name": getattr(self.video_source, 'name', ''),
+                            "source_code": getattr(self.video_source, 'source_code', ''),
+                            "workflow_name": getattr(self.workflow, 'name', ''),
                             "script_path": algo.script_path,
                             "entry_function": 'process',
                             # 运行时配置
@@ -504,18 +507,32 @@ class WorkflowExecutor:
                         # 合并算法固有配置（script_config）
                         full_config.update(algo.config_dict)
 
+                        algorithm_type = algo.ext_config.get('algorithm_type') or 'script'
+                        if algorithm_type == 'vl':
+                            full_config.update(algo.ext_config)
+
                         # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
                         full_config.update(node_config)
+                        if (
+                            algorithm_type == 'vl'
+                            and node_config.get('runtime_timeout_override_enabled') is True
+                        ):
+                            full_config['vl_timeout_override_seconds'] = node_config.get('runtime_timeout')
                         full_config, effective_confidence_threshold = self._sync_single_model_confidence(full_config)
 
                         logger.info(f"[Workflow-{self.workflow_id}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")
 
-                        self.algorithms[node_id] = ScriptAlgorithm(full_config)
+                        if algorithm_type == 'vl':
+                            from app.plugins.vl_algorithm import VLAlgorithm
+                            self.algorithms[node_id] = VLAlgorithm(full_config)
+                        else:
+                            self.algorithms[node_id] = ScriptAlgorithm(full_config)
 
                         # 存储算法元数据（用于后续访问）
                         self.algorithm_datamap[node_id] = {
                             'id': algo_id,
                             'name': algo.name,
+                            'algorithm_type': algorithm_type,
                             'interval_seconds': interval_seconds,
                             'label_name': label_config['name'],
                             'label_color': label_config['color']
@@ -528,7 +545,10 @@ class WorkflowExecutor:
                             'effective_confidence_threshold': effective_confidence_threshold,
                         }
 
-                        logger.info(f"[Workflow-{self.workflow_id}] 成功加载算法: {algo.name}, 脚本路径: {algo.script_path}, 节点ID: {node_id}")
+                        logger.info(
+                            f"[Workflow-{self.workflow_id}] 成功加载算法: {algo.name}, "
+                            f"类型: {algorithm_type}, 节点ID: {node_id}"
+                        )
                     except Exception as e:
                         logger.error(f"[Workflow-{self.workflow_id}] 加载算法节点 {node_id} 失败: {e}")
                         import traceback
@@ -1633,12 +1653,21 @@ class WorkflowExecutor:
                 # 记录检测日志
                 detection_count = len(result.get('result', {}).get('detections', []))
                 if log_collector:
-                    log_collector.add_info(
-                        node_id,
-                        f"检测到 {detection_count} 个目标",
-                        metadata={'detection_count': detection_count}
-                    )
-                    logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
+                    result_metadata = result.get('result', {}).get('metadata', {})
+                    algorithm_error = result_metadata.get('error') if isinstance(result_metadata, dict) else None
+                    if algorithm_error:
+                        log_collector.add_error(
+                            node_id,
+                            f"算法调用失败，本帧按无命中处理: {algorithm_error}",
+                            metadata={'detection_count': 0, **result_metadata},
+                        )
+                    else:
+                        log_collector.add_info(
+                            node_id,
+                            f"检测到 {detection_count} 个目标",
+                            metadata={'detection_count': detection_count}
+                        )
+                        logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
             return result
         except Exception as e:
             if log_collector:

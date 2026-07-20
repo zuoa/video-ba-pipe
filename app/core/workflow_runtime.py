@@ -4,6 +4,7 @@ from typing import Iterable, Optional, Tuple
 
 SOURCE_NODE_TYPES = {'source', 'videosource', 'video_source'}
 SOURCE_ID_KEYS = ('dataId', 'data_id', 'videoSourceId', 'video_source_id')
+ALGORITHM_ID_KEYS = ('dataId', 'data_id', 'algorithmId', 'algorithm_id')
 
 
 def get_node_type(node: dict) -> str:
@@ -105,6 +106,37 @@ def extract_source_id_from_workflow_data(workflow_data: dict) -> Optional[int]:
         return extract_source_id_from_node(node)
 
     return None
+
+
+def workflow_references_algorithm(workflow_data: dict, algorithm_id: int) -> bool:
+    """判断工作流是否通过 algorithm 节点引用指定算法。"""
+    if not isinstance(workflow_data, dict):
+        return False
+
+    try:
+        target_id = int(algorithm_id)
+    except (TypeError, ValueError):
+        return False
+
+    for node in workflow_data.get('nodes', []):
+        if get_node_type(node) != 'algorithm':
+            continue
+
+        data = node.get('data') if isinstance(node, dict) else None
+        values = [node.get(key) for key in ALGORITHM_ID_KEYS]
+        if isinstance(data, dict):
+            values.extend(data.get(key) for key in ALGORITHM_ID_KEYS)
+
+        for value in values:
+            if value in (None, ''):
+                continue
+            try:
+                if int(value) == target_id:
+                    return True
+            except (TypeError, ValueError):
+                continue
+
+    return False
 
 
 def validate_single_source_node(workflow_data: dict) -> tuple[bool, str]:

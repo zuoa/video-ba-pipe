@@ -102,6 +102,15 @@
   color: #52c41a;
 }
 
+.algorithm-node.vl-algorithm-node {
+  border-color: #13c2c2;
+  background: linear-gradient(135deg, #f0fffe 0%, #ffffff 72%);
+}
+
+.algorithm-node.vl-algorithm-node .node-icon {
+  color: #08979c;
+}
+
 .condition-node {
   border-color: #faad14;
 }

@@ -104,6 +104,12 @@ interface TestResponse {
       detection_groups: number;
       model_names: string[];
     };
+    vl_checked?: boolean;
+    vl_reason?: string;
+    vl_model?: string;
+    latency_ms?: number;
+    usage?: Record<string, number>;
+    error?: string;
   };
 }
 
@@ -383,10 +389,16 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
             }>
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="算法名称">{algorithm.name}</Descriptions.Item>
+                <Descriptions.Item label="算法类型">{algorithm.algorithm_type === 'vl' ? 'VL 语义算法' : '脚本算法'}</Descriptions.Item>
+                {algorithm.algorithm_type === 'vl' ? (
+                  <Descriptions.Item label="VL 模型">{algorithm.vl_config?.model_name || '-'}</Descriptions.Item>
+                ) : null}
                 <Descriptions.Item label="标签名称">{algorithm.label_name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="检测间隔">{algorithm.interval_seconds} 秒</Descriptions.Item>
                 <Descriptions.Item label="运行超时">{algorithm.runtime_timeout || 30} 秒</Descriptions.Item>
-                <Descriptions.Item label="内存限制">{algorithm.memory_limit_mb || 512} MB</Descriptions.Item>
+                {algorithm.algorithm_type === 'vl' ? null : (
+                  <Descriptions.Item label="内存限制">{algorithm.memory_limit_mb || 512} MB</Descriptions.Item>
+                )}
               </Descriptions>
             </Card>
           )}
@@ -456,6 +468,23 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                         />
                       </Col>
                     </Row>
+
+                    {algorithm?.algorithm_type === 'vl' && testResult.metadata ? (
+                      <Alert
+                        type={testResult.metadata.error ? 'error' : (testResult.detection_count > 0 ? 'success' : 'info')}
+                        showIcon
+                        message={testResult.metadata.error ? 'VL 调用未完成' : 'VL 判断结果'}
+                        description={(
+                          <Space direction="vertical" size={2}>
+                            <span>{testResult.metadata.error || testResult.metadata.vl_reason || '模型未提供判断原因'}</span>
+                            <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                              {testResult.metadata.vl_model || algorithm.vl_config?.model_name || 'VL'}
+                              {testResult.metadata.latency_ms ? ` · ${testResult.metadata.latency_ms.toFixed(0)} ms` : ''}
+                            </span>
+                          </Space>
+                        )}
+                      />
+                    ) : null}
 
                     <Divider />
 

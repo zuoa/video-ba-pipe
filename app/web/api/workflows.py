@@ -281,6 +281,7 @@ def register_workflows_api(app):
                 'algorithms': [{
                     'id': a.id,
                     'name': a.name,
+                    'algorithm_type': a.ext_config.get('algorithm_type') or 'script',
                     'label_name': get_algorithm_label_name(a),
                     'script_path': a.script_path,
                     'created_by': a.created_by,

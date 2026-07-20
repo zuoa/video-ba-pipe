@@ -70,6 +70,11 @@
   flex-shrink: 0;
 }
 
+.algorithm-icon.algorithm-icon-vl {
+  background: linear-gradient(135deg, #13c2c2 0%, #08979c 100%);
+  box-shadow: 0 2px 8px rgba(19, 194, 194, 0.3);
+}
+
 .algorithm-content {
   flex: 1;
   min-width: 0;
@@ -83,6 +88,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.algorithm-type-tag {
+  margin-left: 8px;
+  vertical-align: 1px;
+  font-size: 10px;
+  line-height: 18px;
 }
 
 .algorithm-meta {

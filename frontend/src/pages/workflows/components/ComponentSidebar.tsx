@@ -10,6 +10,7 @@ import {
   AppstoreOutlined,
   FunctionOutlined,
   ApiOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
@@ -112,12 +113,15 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                     color: '#52c41a',
                     algorithmId: algo.id,
                     dataId: algo.id,
+                    algorithmType: algo.algorithm_type || 'script',
                     defaultConfidence: defaultConfidence,
                     // 从算法的 ext_config_json 中读取执行配置作为默认值
                     config: {
                       interval_seconds: algo.interval_seconds || 1,
-                      runtime_timeout: algo.runtime_timeout || 30,
-                      memory_limit_mb: algo.memory_limit_mb || 512,
+                      ...(algo.algorithm_type === 'vl' ? {} : {
+                        runtime_timeout: algo.runtime_timeout || 30,
+                        memory_limit_mb: algo.memory_limit_mb || 512,
+                      }),
                       label_name: algo.label_name || 'Object',
                       label_color: algo.label_color || '#FF0000',
                       window_detection: {
@@ -129,15 +133,17 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                     },
                   });
                 }}
-                style={{ borderColor: '#52c41a' }}
+                style={{ borderColor: algo.algorithm_type === 'vl' ? '#13c2c2' : '#52c41a' }}
               >
                 <div className="component-item-inner">
-                  <span className="component-icon" style={{ color: '#52c41a' }}>
-                    <BugOutlined />
+                  <span className="component-icon" style={{ color: algo.algorithm_type === 'vl' ? '#08979c' : '#52c41a' }}>
+                    {algo.algorithm_type === 'vl' ? <RobotOutlined /> : <BugOutlined />}
                   </span>
                   <div className="component-content">
                     <div className="component-label">{algo.name}</div>
-                    <div className="component-description">{algo.description || '算法检测'}</div>
+                    <div className="component-description">
+                      {algo.algorithm_type === 'vl' ? `VL · ${algo.vl_config?.model_name || '视觉语言模型'}` : (algo.description || '算法检测')}
+                    </div>
                   </div>
                   <PlusOutlined className="component-add" />
                 </div>

@@ -30,6 +30,7 @@ import {
   ThunderboltOutlined,
   DeleteOutlined,
   PlusOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import {
   getScripts,
@@ -44,6 +45,24 @@ import './index.css';
 
 const { TextArea } = Input;
 const { Option } = Select;
+
+type AlgorithmType = 'script' | 'vl';
+
+const DEFAULT_VL_PROMPT = `请判断画面中是否存在需要关注的目标或事件。
+如果命中，请为每个目标或事件返回一个检测项；无法可靠定位时 bbox 返回 null。
+请在 reason 中简要说明判断依据。`;
+
+const validateJsonObject = (_: unknown, value: string) => {
+  if (!value) return Promise.resolve();
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? Promise.resolve()
+      : Promise.reject(new Error('请输入 JSON 对象'));
+  } catch {
+    return Promise.reject(new Error('JSON 格式不正确'));
+  }
+};
 
 interface ConfigSchema {
   [key: string]: {
@@ -89,21 +108,22 @@ export default function AlgorithmWizard() {
   const [configSchema, setConfigSchema] = useState<ConfigSchema>({});
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
   const [editingAlgorithm, setEditingAlgorithm] = useState<any>(null);
+  const [algorithmType, setAlgorithmType] = useState<AlgorithmType>('script');
   const [form] = Form.useForm();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [scriptsData, modelsData] = await Promise.all([
-        getScripts(),
-        getModels(),
+      const [scriptsData, modelsData, algorithmsData] = await Promise.all([
+        getScripts().catch(() => ({ scripts: [] })),
+        getModels().catch(() => ({ models: [] })),
+        editId ? getAlgorithms() : Promise.resolve([]),
       ]);
       setScripts(scriptsData?.scripts || []);
       setModels(modelsData?.models || []);
 
       if (editId) {
-        const algorithms = await getAlgorithms();
-        const algorithm = algorithms.find((a: any) => a.id === parseInt(editId));
+        const algorithm = algorithmsData.find((a: any) => a.id === parseInt(editId));
         if (algorithm) {
           setEditingAlgorithm(algorithm);
           await loadEditData(algorithm);
@@ -120,6 +140,44 @@ export default function AlgorithmWizard() {
   }, [editId, navigate]);
 
   const loadEditData = async (algorithm: any) => {
+    const currentType: AlgorithmType = algorithm.algorithm_type === 'vl' ? 'vl' : 'script';
+    setAlgorithmType(currentType);
+
+    if (currentType === 'vl') {
+      const vlConfig = algorithm.vl_config || {};
+      setSelectedDetector({
+        type: 'template',
+        id: null,
+        name: '视觉语言模型',
+        description: 'OpenAI 兼容 VL API',
+        scriptPath: '',
+      });
+      setConfigSchema({});
+      form.setFieldsValue({
+        algorithmName: algorithm.name,
+        algorithmDescription: algorithm.description || '',
+        intervalSeconds: algorithm.interval_seconds || 1,
+        runtimeTimeout: algorithm.runtime_timeout || vlConfig.timeout_seconds || 30,
+        enableWindowCheck: algorithm.enable_window_check || false,
+        windowSize: algorithm.window_size || 30,
+        windowMode: algorithm.window_mode || 'ratio',
+        windowThreshold: algorithm.window_threshold || 0.3,
+        labelName: algorithm.label_name || 'VL Result',
+        labelColor: algorithm.label_color || '#13c2c2',
+        vlBaseUrl: vlConfig.base_url,
+        vlApiKey: '',
+        vlModelName: vlConfig.model_name,
+        vlPromptTemplate: vlConfig.prompt_template || DEFAULT_VL_PROMPT,
+        vlTemperature: vlConfig.temperature ?? 0,
+        vlMaxTokens: vlConfig.max_tokens || 512,
+        vlTimeoutSeconds: vlConfig.timeout_seconds || 30,
+        vlImageDetail: vlConfig.image_detail || 'auto',
+        vlExtraHeaders: JSON.stringify(vlConfig.extra_headers || {}, null, 2),
+        vlExtraBody: JSON.stringify(vlConfig.extra_body || {}, null, 2),
+      });
+      return;
+    }
+
     const detector = {
       type: 'script' as const,
       id: null,
@@ -139,6 +197,7 @@ export default function AlgorithmWizard() {
           
           form.setFieldsValue({
             algorithmName: algorithm.name,
+            algorithmDescription: algorithm.description || '',
             intervalSeconds: algorithm.interval_seconds || 1,
             runtimeTimeout: algorithm.runtime_timeout || 30,
             memoryLimitMb: algorithm.memory_limit_mb || 512,
@@ -186,6 +245,7 @@ export default function AlgorithmWizard() {
   }, [loadData]);
 
   const handleSelectDetector = async (detector: SelectedDetector) => {
+    setAlgorithmType('script');
     setSelectedDetector(detector);
 
     if (detector.scriptPath) {
@@ -199,6 +259,29 @@ export default function AlgorithmWizard() {
         setConfigSchema({});
       }
     }
+  };
+
+  const handleSelectVl = () => {
+    setAlgorithmType('vl');
+    setSelectedDetector({
+      type: 'template',
+      id: null,
+      name: '视觉语言模型',
+      description: 'OpenAI 兼容 VL API',
+      scriptPath: '',
+    });
+    setConfigSchema({});
+    form.setFieldsValue({
+      vlPromptTemplate: form.getFieldValue('vlPromptTemplate') || DEFAULT_VL_PROMPT,
+      vlTemperature: form.getFieldValue('vlTemperature') ?? 0,
+      vlMaxTokens: form.getFieldValue('vlMaxTokens') || 512,
+      vlTimeoutSeconds: form.getFieldValue('vlTimeoutSeconds') || 30,
+      vlImageDetail: form.getFieldValue('vlImageDetail') || 'auto',
+      vlExtraHeaders: form.getFieldValue('vlExtraHeaders') || '{}',
+      vlExtraBody: form.getFieldValue('vlExtraBody') || '{}',
+      labelName: form.getFieldValue('labelName') || 'VL Result',
+      labelColor: form.getFieldValue('labelColor') || '#13c2c2',
+    });
   };
 
   const handleNext = async () => {
@@ -263,6 +346,46 @@ export default function AlgorithmWizard() {
     try {
       const values = await form.validateFields();
 
+      if (algorithmType === 'vl') {
+        const data = {
+          name: values.algorithmName,
+          description: values.algorithmDescription,
+          algorithm_type: 'vl',
+          script_path: '',
+          script_config: '{}',
+          plugin_module: 'vl_algorithm',
+          interval_seconds: values.intervalSeconds,
+          enable_window_check: values.enableWindowCheck,
+          window_size: values.windowSize,
+          window_mode: values.windowMode,
+          window_threshold: values.windowThreshold,
+          label_name: values.labelName,
+          label_color: values.labelColor,
+          vl_config: {
+            base_url: values.vlBaseUrl,
+            api_key: values.vlApiKey || '',
+            model_name: values.vlModelName,
+            prompt_template: values.vlPromptTemplate,
+            temperature: values.vlTemperature,
+            max_tokens: values.vlMaxTokens,
+            timeout_seconds: values.vlTimeoutSeconds,
+            image_detail: values.vlImageDetail,
+            extra_headers: JSON.parse(values.vlExtraHeaders || '{}'),
+            extra_body: JSON.parse(values.vlExtraBody || '{}'),
+          },
+        };
+
+        if (editingAlgorithm) {
+          await updateAlgorithm(editingAlgorithm.id, data);
+          message.success('VL 算法更新成功！');
+        } else {
+          await createAlgorithm(data);
+          message.success('VL 算法创建成功！');
+        }
+        navigate('/algorithms');
+        return;
+      }
+
       const scriptConfig = collectConfigData();
 
       // 验证模型选择
@@ -277,6 +400,8 @@ export default function AlgorithmWizard() {
 
       const data = {
         name: values.algorithmName,
+        description: values.algorithmDescription,
+        algorithm_type: 'script',
         script_path: selectedDetector!.scriptPath,
         plugin_module: 'script_algorithm',
         script_type: 'script',
@@ -384,32 +509,60 @@ export default function AlgorithmWizard() {
 
   const renderStep1 = () => {
     return (
-      <>
-        <div className="detector-section">
-          <h3 className="section-title">
-            <CodeOutlined className="title-icon" />
-            选择检测脚本
-          </h3>
-          <Row gutter={[12, 12]}>
-            {scripts.length === 0 ? (
-              <Col span={24}>
-                <Alert
-                  message="暂无检测脚本"
-                  description={
-                    <div>
-                      <p>请先上传检测脚本。脚本需要包含：</p>
-                      <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                        <li>SCRIPT_METADATA 元数据（name、description、config_schema等）</li>
-                        <li>process(frame, config) 函数</li>
-                      </ul>
-                    </div>
-                  }
-                  type="warning"
-                  showIcon
-                />
-              </Col>
-            ) : (
-              scripts.map(script => (
+      <div className="detector-section">
+        <h3 className="section-title">
+          <ApiOutlined className="title-icon" />
+          选择算法类型
+        </h3>
+        <Row gutter={[16, 16]} className="algorithm-type-grid">
+          <Col xs={24} md={12}>
+            <Card
+              hoverable
+              className={`algorithm-type-card ${algorithmType === 'script' ? 'selected script' : ''}`}
+              onClick={() => {
+                setAlgorithmType('script');
+                if (selectedDetector?.type !== 'script') setSelectedDetector(null);
+              }}
+            >
+              <CodeOutlined className="algorithm-type-icon" />
+              <div>
+                <h4>脚本算法</h4>
+                <p>执行本地检测脚本和模型，适合目标检测与规则计算。</p>
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={12}>
+            <Card
+              hoverable
+              className={`algorithm-type-card ${algorithmType === 'vl' ? 'selected vl' : ''}`}
+              onClick={handleSelectVl}
+            >
+              <RobotOutlined className="algorithm-type-icon" />
+              <div>
+                <h4>VL 算法</h4>
+                <p>调用 OpenAI 兼容视觉语言模型，输出可编排的语义检测结果。</p>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+
+        {algorithmType === 'script' ? (
+          <div className="algorithm-type-detail">
+            <h3 className="section-title compact">
+              <CodeOutlined className="title-icon" />
+              选择检测脚本
+            </h3>
+            <Row gutter={[12, 12]}>
+              {scripts.length === 0 ? (
+                <Col span={24}>
+                  <Alert
+                    message="暂无检测脚本"
+                    description="请先上传包含 SCRIPT_METADATA 和 process(frame, config) 的检测脚本。"
+                    type="warning"
+                    showIcon
+                  />
+                </Col>
+              ) : scripts.map(script => (
                 <Col key={script.path} xs={24} sm={12} lg={8} xl={6}>
                   <Card
                     hoverable
@@ -429,25 +582,142 @@ export default function AlgorithmWizard() {
                     </div>
                   </Card>
                 </Col>
-              ))
-            )}
-          </Row>
-
-          <div className="upload-script-section">
-            <Button
-              icon={<UploadOutlined />}
-              onClick={() => window.open('/scripts', '_blank')}
-              className="upload-script-btn"
-            >
-              管理脚本
-            </Button>
+              ))}
+            </Row>
+            <div className="upload-script-section">
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => window.open('/scripts', '_blank')}
+                className="upload-script-btn"
+              >
+                管理脚本
+              </Button>
+            </div>
           </div>
-        </div>
-      </>
+        ) : (
+          <Alert
+            className="vl-contract-callout"
+            type="info"
+            showIcon
+            message="统一算法输出"
+            description="VL 会把模型回答校验为 detections 和 metadata。语义结果可以不带检测框，但仍能参与条件计数和告警。"
+          />
+        )}
+      </div>
     );
   };
 
   const renderStep2 = () => {
+    if (algorithmType === 'vl') {
+      return (
+        <div className="config-form vl-config-form">
+          <Form form={form} layout="vertical">
+            <Card title={<Space><ApiOutlined />接口与认证</Space>} className="config-card">
+              <Row gutter={16}>
+                <Col xs={24} lg={12}>
+                  <Form.Item
+                    label="Base URL"
+                    name="vlBaseUrl"
+                    rules={[
+                      { required: true, message: '请输入 VL API Base URL' },
+                      { type: 'url', message: '请输入完整的 HTTP(S) 地址' },
+                    ]}
+                    extra="可填写到 /v1，系统会自动补全 /chat/completions"
+                  >
+                    <Input placeholder="https://api.example.com/v1" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Form.Item
+                    label="API Key"
+                    name="vlApiKey"
+                    rules={editingAlgorithm?.vl_config?.api_key_configured
+                      ? []
+                      : [{ required: true, message: '请输入 API Key' }]}
+                    extra={editingAlgorithm?.vl_config?.api_key_configured
+                      ? '密钥已保存；留空将保留原值'
+                      : '密钥只写保存，保存后不会再回传明文'}
+                  >
+                    <Input.Password autoComplete="new-password" placeholder="sk-..." />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                label="附加请求 Headers"
+                name="vlExtraHeaders"
+                rules={[{ validator: validateJsonObject }]}
+                extra="用于租户标识等额外认证信息；Authorization 默认使用 API Key"
+              >
+                <TextArea rows={4} className="json-editor" placeholder='{"X-Tenant":"demo"}' />
+              </Form.Item>
+            </Card>
+
+            <Card title={<Space><RobotOutlined />模型参数</Space>} className="config-card">
+              <Row gutter={16}>
+                <Col xs={24} lg={12}>
+                  <Form.Item label="模型名称" name="vlModelName" rules={[{ required: true, message: '请输入模型名称' }]}>
+                    <Input placeholder="例如：qwen-vl-max" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8} lg={4}>
+                  <Form.Item label="温度" name="vlTemperature">
+                    <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8} lg={4}>
+                  <Form.Item label="最大 Token" name="vlMaxTokens">
+                    <InputNumber min={1} max={32768} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8} lg={4}>
+                  <Form.Item label="图片精度" name="vlImageDetail">
+                    <Select>
+                      <Option value="auto">自动</Option>
+                      <Option value="low">低</Option>
+                      <Option value="high">高</Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col xs={24} lg={8}>
+                  <Form.Item label="接口超时（秒）" name="vlTimeoutSeconds">
+                    <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} lg={16}>
+                  <Form.Item
+                    label="附加请求参数"
+                    name="vlExtraBody"
+                    rules={[{ validator: validateJsonObject }]}
+                    extra="会合并到请求体顶层，可用于 seed 等供应商扩展参数"
+                  >
+                    <TextArea rows={3} className="json-editor" placeholder='{"seed":7}' />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card title={<Space><SettingOutlined />判断提示词</Space>} className="config-card vl-prompt-card">
+              <Form.Item
+                name="vlPromptTemplate"
+                rules={[{ required: true, message: '请输入判断提示词' }]}
+                extra="可用变量：{workflow_name}、{source_name}、{source_code}、{frame_width}、{frame_height}、{upstream_results_json}、{roi_regions_json}"
+              >
+                <TextArea rows={10} placeholder={DEFAULT_VL_PROMPT} />
+              </Form.Item>
+              <Alert
+                type="success"
+                showIcon
+                message="返回格式由系统约束"
+                description="模型必须返回 has_detection、detections 和 reason。每个检测项包含名称、置信度和可为空的 bbox。"
+              />
+            </Card>
+          </Form>
+        </div>
+      );
+    }
+
     return (
       <>
         <Alert
@@ -692,30 +962,35 @@ export default function AlgorithmWizard() {
                 </Form.Item>
               </Col>
             </Row>
+            <Form.Item label="算法描述" name="algorithmDescription">
+              <TextArea rows={3} placeholder="说明这个算法识别什么场景，便于在工作流中选择" />
+            </Form.Item>
           </Card>
 
-          <Card title={<Space><ThunderboltOutlined />性能配置</Space>} className="config-card">
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="运行超时（秒）"
-                  name="runtimeTimeout"
-                  initialValue={30}
-                >
-                  <InputNumber min={1} max={300} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label="内存限制（MB）"
-                  name="memoryLimitMb"
-                  initialValue={512}
-                >
-                  <InputNumber min={64} max={4096} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-            </Row>
-          </Card>
+          {algorithmType === 'script' ? (
+            <Card title={<Space><ThunderboltOutlined />性能配置</Space>} className="config-card">
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="运行超时（秒）"
+                    name="runtimeTimeout"
+                    initialValue={30}
+                  >
+                    <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label="内存限制（MB）"
+                    name="memoryLimitMb"
+                    initialValue={512}
+                  >
+                    <InputNumber min={64} max={4096} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+          ) : null}
 
           <Card title={<Space><ClockCircleOutlined />时间窗口检测（误报抑制）</Space>} className="config-card">
             <Form.Item
@@ -826,14 +1101,14 @@ export default function AlgorithmWizard() {
 
   const steps = [
     {
-      title: '选择检测器',
+      title: '选择类型',
       icon: <ApiOutlined />,
-      description: '选择系统模板或自定义脚本',
+      description: '选择脚本或视觉语言算法',
     },
     {
       title: '配置参数',
       icon: <SettingOutlined />,
-      description: '配置检测器参数',
+      description: algorithmType === 'vl' ? '配置接口、模型与提示词' : '配置检测器参数',
     },
     {
       title: '执行配置',

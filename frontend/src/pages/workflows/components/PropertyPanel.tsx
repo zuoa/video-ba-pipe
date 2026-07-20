@@ -21,6 +21,7 @@ export interface PropertyPanelProps {
   node: any;
   videoSources: any[];
   externalApis?: any[];
+  algorithms?: any[];
   vlConfig?: any;
   edges?: any[];
   nodes?: any[];
@@ -32,6 +33,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   node,
   videoSources,
   externalApis = [],
+  algorithms = [],
   vlConfig,
   edges = [],
   nodes = [],
@@ -43,6 +45,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [roiDrawerVisible, setRoiDrawerVisible] = useState(false);
   const vlConfigReady = Boolean(vlConfig?.has_required_fields);
+  const selectedAlgorithm = algorithms.find((item) => String(item.id) === String(node?.data?.dataId ?? node?.data?.algorithmId));
+  const selectedAlgorithmType = node?.data?.algorithmType || selectedAlgorithm?.algorithm_type || 'script';
+  const isVlAlgorithm = selectedAlgorithmType === 'vl';
+  const vlDefaultTimeout = Number(selectedAlgorithm?.vl_config?.timeout_seconds || 30);
 
   // 使用 useRef 而不是 useState，确保同步更新
   const isUpdatingVideoSourceRef = useRef(false);
@@ -119,10 +125,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
         // 执行配置
         formValues.intervalSeconds = nodeConfig.interval_seconds || 1;
-        formValues.runtimeTimeout = nodeConfig.runtime_timeout || 30;
+        formValues.vlTimeoutOverrideEnabled = isVlAlgorithm && nodeConfig.runtime_timeout_override_enabled === true;
+        formValues.runtimeTimeout = formValues.vlTimeoutOverrideEnabled
+          ? (nodeConfig.runtime_timeout || vlDefaultTimeout)
+          : (isVlAlgorithm ? vlDefaultTimeout : (nodeConfig.runtime_timeout || 30));
         formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
-        formValues.labelName = nodeConfig.label_name || 'Object';
-        formValues.labelColor = nodeConfig.label_color || '#FF0000';
+        formValues.labelName = nodeConfig.label_name || (isVlAlgorithm ? 'VL Result' : 'Object');
+        formValues.labelColor = nodeConfig.label_color || (isVlAlgorithm ? '#13c2c2' : '#FF0000');
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         formValues.externalApiId = node.data.dataId ?? node.data.externalApiId;
         formValues.executionMode = nodeConfig.execution_mode || node.data.executionMode || 'sync';
@@ -218,7 +227,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
       }, 100);
     }
-  }, [node, node?.data, node?.id, form, vlConfigReady]); // 移除 videoSources 依赖，避免不必要的重渲染
+  }, [node, node?.data, node?.id, form, vlConfigReady, isVlAlgorithm, vlDefaultTimeout]); // 移除 videoSources 依赖，避免不必要的重渲染
 
   if (!node) {
     return (
@@ -279,11 +288,22 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         }
         // 保存执行配置
         config.interval_seconds = values.intervalSeconds;
-        config.runtime_timeout = values.runtimeTimeout;
-        config.memory_limit_mb = values.memoryLimitMb;
+        if (isVlAlgorithm) {
+          config.runtime_timeout_override_enabled = values.vlTimeoutOverrideEnabled === true;
+          if (config.runtime_timeout_override_enabled) {
+            config.runtime_timeout = values.runtimeTimeout;
+          } else {
+            delete config.runtime_timeout;
+          }
+          delete config.memory_limit_mb;
+        } else {
+          config.runtime_timeout = values.runtimeTimeout;
+          config.memory_limit_mb = values.memoryLimitMb;
+        }
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
 
+        updatedData.algorithmType = selectedAlgorithmType;
         updatedData.confidence = config.confidence ?? node.data.defaultConfidence;
         updatedData.config = config;
 
@@ -549,6 +569,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       case 'algorithm':
         return (
           <>
+            {isVlAlgorithm ? (
+              <div className="info-box" style={{ marginBottom: 16, background: '#f0fffe', borderColor: '#87e8de', color: '#006d75' }}>
+                <InfoCircleOutlined />
+                <span>此节点调用 VL 语义算法；提示词和模型参数在算法管理中统一维护。</span>
+              </div>
+            ) : null}
             <Form.Item
               label="置信度阈值"
               name="confidence"
@@ -576,21 +602,48 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 <InputNumber min={0.1} max={60} step={0.1} style={{ width: '100%' }} />
               </Form.Item>
 
-              <Form.Item
-                label="运行超时（秒）"
-                name="runtimeTimeout"
-                extra="单次检测最大执行时间"
-              >
-                <InputNumber min={1} max={300} style={{ width: '100%' }} />
-              </Form.Item>
+              {isVlAlgorithm ? (
+                <>
+                  <Form.Item
+                    label="覆盖算法超时"
+                    name="vlTimeoutOverrideEnabled"
+                    valuePropName="checked"
+                    extra={`关闭时使用算法配置中的 ${vlDefaultTimeout} 秒`}
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(previous, current) => previous.vlTimeoutOverrideEnabled !== current.vlTimeoutOverrideEnabled}>
+                    {({ getFieldValue }) => getFieldValue('vlTimeoutOverrideEnabled') ? (
+                      <Form.Item
+                        label="节点调用超时（秒）"
+                        name="runtimeTimeout"
+                        rules={[{ required: true, message: '请输入节点调用超时' }]}
+                        extra="仅覆盖当前 workflow 节点"
+                      >
+                        <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                      </Form.Item>
+                    ) : null}
+                  </Form.Item>
+                </>
+              ) : (
+                <Form.Item
+                  label="运行超时（秒）"
+                  name="runtimeTimeout"
+                  extra="单次检测最大执行时间"
+                >
+                  <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                </Form.Item>
+              )}
 
-              <Form.Item
-                label="内存限制（MB）"
-                name="memoryLimitMb"
-                extra="算法运行最大内存使用"
-              >
-                <InputNumber min={64} max={4096} step={64} style={{ width: '100%' }} />
-              </Form.Item>
+              {isVlAlgorithm ? null : (
+                <Form.Item
+                  label="内存限制（MB）"
+                  name="memoryLimitMb"
+                  extra="算法运行最大内存使用"
+                >
+                  <InputNumber min={64} max={4096} step={64} style={{ width: '100%' }} />
+                </Form.Item>
+              )}
 
               <Form.Item
                 label="标签名称"
