@@ -438,7 +438,7 @@ class VideoRecorder:
                 del self.recording_tasks[alert_id]
                 logger.debug(f"清理录制任务 {alert_id}")
 
-    def shutdown(self):
+    def shutdown(self, wait_timeout: float = 10.0):
         """关闭录制器，优先等待活跃录制线程退出。"""
         active_threads = []
         with self.lock:
@@ -447,8 +447,10 @@ class VideoRecorder:
                 if thread is not None and thread.is_alive():
                     active_threads.append(thread)
 
+        deadline = time.monotonic() + max(0.0, float(wait_timeout))
         for thread in active_threads:
-            thread.join(timeout=10)
+            remaining = max(0.0, deadline - time.monotonic())
+            thread.join(timeout=remaining)
 
         still_running = any(thread.is_alive() for thread in active_threads)
         if still_running:
@@ -506,10 +508,10 @@ class VideoRecorderManager:
         
         return self.recorders[key]
     
-    def cleanup_recorder(self, recorder_key):
+    def cleanup_recorder(self, recorder_key, wait_timeout: float = 10.0):
         """清理指定视频源的录制器"""
         if recorder_key in self.recorders:
-            if self.recorders[recorder_key].shutdown():
+            if self.recorders[recorder_key].shutdown(wait_timeout=wait_timeout):
                 del self.recorders[recorder_key]
                 return True
             return False

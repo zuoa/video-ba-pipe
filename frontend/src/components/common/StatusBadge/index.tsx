@@ -1,6 +1,16 @@
 import React from 'react';
 import './index.css';
 
+const STATUS_LABELS: Record<string, string> = {
+  STARTING: '启动中',
+  RUNNING: '检测中',
+  DRAINING: '排空中',
+  STOPPED: '等待中',
+  ERROR: '异常',
+};
+
+const ANIMATED_STATUSES = new Set(['STARTING', 'RUNNING', 'DRAINING', 'ERROR']);
+
 export interface StatusBadgeProps {
   status: string;
   text?: string;
@@ -23,6 +33,18 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
         color: '#389e0d',
         bgColor: '#f6ffed',
         borderColor: '#b7eb8f',
+        icon: '●',
+      },
+      STARTING: {
+        color: '#0958d9',
+        bgColor: '#e6f4ff',
+        borderColor: '#91caff',
+        icon: '●',
+      },
+      DRAINING: {
+        color: '#d46b08',
+        bgColor: '#fff7e6',
+        borderColor: '#ffd591',
         icon: '●',
       },
       STOPPED: {
@@ -67,11 +89,11 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
   };
 
   const config = getStatusConfig(status);
-  const displayText = text || status;
+  const displayText = text || STATUS_LABELS[status] || status;
 
   return (
     <span
-      className={`status-badge status-badge-${size} ${status === 'RUNNING' || status === 'ERROR' ? 'status-animated' : ''}`}
+      className={`status-badge status-badge-${size} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
       style={{
         color: config.color,
         backgroundColor: config.bgColor,

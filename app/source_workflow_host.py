@@ -22,6 +22,7 @@ from app.config import (
     SOURCE_HOST_WORKFLOW_NODE_WORKERS,
     VIDEO_FRAME_PIXEL_FORMAT,
     WORKFLOW_ZERO_COPY_FRAMES,
+    SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS,
 )
 from app.core.database_models import VideoSource, Workflow
 from app.core.ringbuffer import VideoRingBuffer
@@ -154,6 +155,7 @@ class SourceWorkflowHost:
         self.runners = {}
         self.workflows = {}
         self.failed_workflows = {}
+        self.ready_announced = False
         self.last_frame_timestamp = None
         self.node_executor = None
         if SOURCE_HOST_WORKFLOW_NODE_WORKERS > 0:
@@ -289,7 +291,28 @@ class SourceWorkflowHost:
 
     def setup(self):
         self._setup_buffer()
+        self._wait_for_first_frame()
         self._setup_executors()
+        self._announce_ready_if_runnable()
+
+    def _announce_ready_if_runnable(self):
+        if self.ready_announced or not self.running or not self.runners:
+            return False
+        print(f"SOURCE_HOST_READY:{self.source_id}", flush=True)
+        self.ready_announced = True
+        return True
+
+    def _wait_for_first_frame(self):
+        deadline = time.monotonic() + SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS
+        while self.running and time.monotonic() < deadline:
+            if self.buffer.peek_with_timestamp(-1) is not None:
+                return
+            time.sleep(0.05)
+        if not self.running:
+            raise RuntimeError("source host 在检测就绪前收到停止信号")
+        raise TimeoutError(
+            f"视频源 {self.source_id} 在 {SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS}s 内没有首帧"
+        )
 
     def run(self):
         if not self.running:
@@ -304,6 +327,7 @@ class SourceWorkflowHost:
             try:
                 self._retry_failed_workflows()
                 self._collect_runner_failures()
+                self._announce_ready_if_runnable()
 
                 if not self.runners:
                     if self.failed_workflows:
@@ -344,9 +368,18 @@ class SourceWorkflowHost:
                 break
 
     def cleanup(self):
+        # 先同时停止全部 runner，避免清理第一个工作流时其他工作流继续产生告警。
+        for runner in self.runners.values():
+            runner.stop()
+        for runner in self.runners.values():
+            runner.join(timeout=RUNNER_CLEANUP_WAIT_TIMEOUT_SECONDS)
+        for runner in self.runners.values():
+            if not runner.is_alive():
+                runner.executor.begin_drain()
+
         for workflow_id, runner in list(self.runners.items()):
             try:
-                runner.cleanup()
+                runner.cleanup(stop_first=False)
             except Exception as exc:
                 logger.error(
                     f"[SourceHost:{self.source_id}] 清理工作流 {workflow_id} 失败: {exc}",

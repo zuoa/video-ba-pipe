@@ -117,6 +117,20 @@ WORKFLOW_ZERO_COPY_FRAMES = os.getenv('WORKFLOW_ZERO_COPY_FRAMES', 'false').lowe
 # 实时 workflow 内同层节点并行 worker 数。0 表示保持当前串行行为。
 SOURCE_HOST_WORKFLOW_NODE_WORKERS = max(0, int(os.getenv('SOURCE_HOST_WORKFLOW_NODE_WORKERS', '0')))
 
+# 视频源轮转运行时保护参数。开关、路数和单批时长存储在 SystemSetting，支持在线修改。
+SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS = max(
+    10,
+    int(os.getenv('SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS', '60')),
+)
+SOURCE_ROTATION_DRAIN_GRACE_SECONDS = max(
+    5,
+    int(os.getenv('SOURCE_ROTATION_DRAIN_GRACE_SECONDS', '15')),
+)
+SOURCE_ROTATION_CONFIG_REFRESH_SECONDS = max(
+    1,
+    int(os.getenv('SOURCE_ROTATION_CONFIG_REFRESH_SECONDS', '5')),
+)
+
 
 # ============ 视频录制配置 ============
 # 预警录制功能开关

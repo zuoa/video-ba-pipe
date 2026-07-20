@@ -36,6 +36,7 @@ from app.config import (
     VIDEO_FRAME_PIXEL_FORMAT,
     RESOURCE_PROFILING_ENABLED,
     RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
+    SOURCE_ROTATION_DRAIN_GRACE_SECONDS,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.cv2_compat import cv2, require_cv2
@@ -331,6 +332,11 @@ class WorkflowExecutor:
     def stop(self):
         self.running = False
 
+    def begin_drain(self):
+        """停止检测并尽早释放模型；录像线程仍可继续读取录制缓冲区。"""
+        self.running = False
+        self._cleanup_algorithms()
+
     def _cleanup_algorithms(self):
         for node_id, algorithm in list(getattr(self, 'algorithms', {}).items()):
             cleanup = getattr(algorithm, 'cleanup', None)
@@ -401,7 +407,13 @@ class WorkflowExecutor:
         if self.video_source is not None and self.video_recorder is not None:
             try:
                 recorder_manager = VideoRecorderManager()
-                recorder_cleaned = recorder_manager.cleanup_recorder(self.recorder_key)
+                recorder_cleaned = recorder_manager.cleanup_recorder(
+                    self.recorder_key,
+                    wait_timeout=(
+                        float(POST_ALERT_DURATION)
+                        + float(SOURCE_ROTATION_DRAIN_GRACE_SECONDS)
+                    ),
+                )
                 if not recorder_cleaned:
                     should_close_recording_buffer = False
             except Exception as exc:

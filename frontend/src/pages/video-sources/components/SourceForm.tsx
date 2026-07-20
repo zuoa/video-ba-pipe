@@ -75,7 +75,6 @@ const SourceForm: React.FC<SourceFormProps> = ({
           source_decode_height: editingSource.source_decode_height,
           source_fps: editingSource.source_fps,
           enabled: editingSource.enabled !== undefined ? editingSource.enabled : true,
-          status: editingSource.status || 'STOPPED',
           source_type: type,
         });
       }, 0);
@@ -261,7 +260,6 @@ const SourceForm: React.FC<SourceFormProps> = ({
         layout="vertical"
         initialValues={{
           enabled: true,
-          status: 'STOPPED',
           source_decode_width: 960,
           source_decode_height: 540,
           source_fps: 10,
@@ -501,15 +499,12 @@ const SourceForm: React.FC<SourceFormProps> = ({
               </Form.Item>
 
               <Form.Item
-                label="状态"
-                name="status"
-                rules={[{ required: true, message: '请选择状态' }]}
+                label="运行状态"
+                extra="运行状态由轮转调度器自动维护；“启用”仅表示允许该视频源参与调度。"
               >
-                <Select>
-                  <Option value="STOPPED">停止</Option>
-                  <Option value="RUNNING">运行中</Option>
-                  <Option value="ERROR">错误</Option>
-                </Select>
+                <Tag color={editingSource?.status === 'RUNNING' ? 'green' : 'default'}>
+                  {editingSource?.status || 'STOPPED'}
+                </Tag>
               </Form.Item>
             </div>
           </div>

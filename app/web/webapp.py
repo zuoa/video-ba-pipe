@@ -10,6 +10,7 @@ import subprocess
 import json
 import threading
 import time
+import math
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
@@ -29,8 +30,15 @@ from app.config import (
 )
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
 from app.core.vl_validator import get_vl_service_config, save_vl_service_config
+from app.core.source_rotation import (
+    get_source_rotation_config,
+    save_source_rotation_config,
+)
 from app.core.vl_algorithm_config import normalize_vl_algorithm_config
-from app.core.workflow_runtime import workflow_references_algorithm
+from app.core.workflow_runtime import (
+    extract_source_id_from_workflow_data,
+    workflow_references_algorithm,
+)
 from app.core.window_detector import get_window_detector
 from app.setup_database import setup_database
 from app.version import get_app_version
@@ -174,6 +182,55 @@ def update_system_vl_config():
     except Exception as e:
         app.logger.error(f"更新 VL 配置失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/system/source-rotation-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_source_rotation_config():
+    config = get_source_rotation_config()
+    active_source_ids = {
+        extract_source_id_from_workflow_data(workflow.data_dict)
+        for workflow in Workflow.select().where(Workflow.is_active == True)
+    }
+    active_source_ids.discard(None)
+    eligible_source_count = VideoSource.select().where(
+        (VideoSource.enabled == True)
+        & (VideoSource.id.in_(active_source_ids))
+    ).count() if active_source_ids else 0
+    batch_count = (
+        math.ceil(eligible_source_count / config['batch_size'])
+        if eligible_source_count
+        else 0
+    )
+    return jsonify({
+        'success': True,
+        'config': config,
+        'eligible_source_count': eligible_source_count,
+        'estimated_cycle_seconds': batch_count * config['dwell_seconds'],
+    })
+
+
+@app.route('/api/system/source-rotation-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_source_rotation_config():
+    data = request.json or {}
+    try:
+        config = save_source_rotation_config(
+            data,
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config,
+            'message': '视频轮转配置已更新',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新视频轮转配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
@@ -519,8 +576,8 @@ def create_video_source():
             source_decode_width=data.get('source_decode_width', 960),
             source_decode_height=data.get('source_decode_height', 540),
             source_fps=data.get('source_fps', 10),
-            status=data.get('status', 'STOPPED'),
-            decoder_pid=data.get('decoder_pid'),
+            status='STOPPED',
+            decoder_pid=None,
             created_by=current_username('admin'),
         )
         return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
@@ -543,8 +600,6 @@ def update_video_source(id):
         source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
         source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
         source.source_fps = data.get('source_fps', source.source_fps)
-        source.status = data.get('status', source.status)
-        source.decoder_pid = data.get('decoder_pid', source.decoder_pid)
         source.save()
         
         return jsonify({'message': '视频源更新成功'})
@@ -705,6 +760,7 @@ def get_health_event_types():
         {'value': 'no_frame_warning', 'label': '无帧警告'},
         {'value': 'no_frame_critical', 'label': '无帧严重'},
         {'value': 'process_exit', 'label': '进程退出'},
+        {'value': 'rotation_drain_timeout', 'label': '轮转排空超时'},
         {'value': 'low_fps', 'label': '低帧率'},
         {'value': 'high_error_rate', 'label': '高错误率'}
     ]
@@ -722,6 +778,8 @@ def get_health_stats():
         source_query = apply_owner_scope(VideoSource.select(), VideoSource)
         total_sources = source_query.count()
         running_count = source_query.where(VideoSource.status == 'RUNNING').count()
+        starting_count = source_query.where(VideoSource.status == 'STARTING').count()
+        draining_count = source_query.where(VideoSource.status == 'DRAINING').count()
         stopped_count = source_query.where(VideoSource.status == 'STOPPED').count()
         error_count = source_query.where(VideoSource.status == 'ERROR').count()
 
@@ -749,6 +807,8 @@ def get_health_stats():
             'sources': {
                 'total': total_sources,
                 'running': running_count,
+                'starting': starting_count,
+                'draining': draining_count,
                 'stopped': stopped_count,
                 'error': error_count,
                 'enabled': source_query.where(VideoSource.enabled == True).count()

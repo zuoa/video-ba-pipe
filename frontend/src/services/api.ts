@@ -35,6 +35,17 @@ export async function updateVlConfig(data: any) {
   });
 }
 
+export async function getSourceRotationConfig() {
+  return request('/api/system/source-rotation-config');
+}
+
+export async function updateSourceRotationConfig(data: any) {
+  return request('/api/system/source-rotation-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }
