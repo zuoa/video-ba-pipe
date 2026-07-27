@@ -244,6 +244,9 @@ class DecoderWorker:
             else:
                 stream_type = 'file'
 
+        # 编码格式必须与 decoder 使用同一个探测结果，避免 streamer 重新猜测。
+        kwargs['input_format'] = self.decoder_config.get('input_format', 'h264')
+
         # 根据流类型添加相应参数
         if stream_type == 'rtsp':
             # RTSP 特定参数
@@ -463,8 +466,9 @@ class DecoderWorker:
                             break
 
                         # 检查是否长时间无帧
-                        if HEALTH_MONITOR_ENABLED and self.last_frame_time is not None:
-                            time_no_frame = time.time() - self.last_frame_time
+                        if HEALTH_MONITOR_ENABLED:
+                            last_frame_reference = self.last_frame_time or start_time
+                            time_no_frame = time.time() - last_frame_reference
                             if time_no_frame >= NO_FRAME_CRITICAL_THRESHOLD:
                                 logger.critical(
                                     f"已 {time_no_frame:.1f} 秒无有效帧输出，"
@@ -653,10 +657,11 @@ if __name__ == '__main__':
                                    'ffmpeg_sw', 'ffmpeg',
                                    'ffmpeg_nvdec', 'nvdec',
                                    'opencv', 'pynvcodec', 'gstreamer',
+                                   'jetson_gst', 'jetson', 'nvv4l2',
                                    'ffmpeg_videotoolbox', 'vtdec',
                                    'ffmpeg_rkmpp', 'rk_mpp', 'rkmpp'
                                ],
-                               help='解码器类型 (默认读取 VIDEO_DECODER_TYPE，RK3588 在 ffmpeg 含 rkmpp 时可设为 rk_mpp)')
+                               help='解码器类型 (RK3588 可设 rk_mpp；Jetson 可设 jetson_gst)')
     decoder_group.add_argument('--decoder-id', type=int, default=401,
                                help='解码器 ID (默认: 401)')
     decoder_group.add_argument('--width', type=int, default=1920,

@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 
 from app import logger
+from app.core.video_probe import elementary_stream_muxer, normalize_video_codec
 
 
 class BaseStreamer(ABC):
@@ -14,7 +15,7 @@ class BaseStreamer(ABC):
     定义了事件驱动的流处理框架，支持通过回调函数推送数据。
     """
 
-    def __init__(self, source: str):
+    def __init__(self, source: str, input_format: str = "h264"):
         """
         初始化流处理器。
 
@@ -22,6 +23,7 @@ class BaseStreamer(ABC):
             source: 流的源地址（URL、文件路径等）
         """
         self.source = source
+        self.input_format = normalize_video_codec(input_format)
         self.process: Optional[subprocess.Popen] = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -182,7 +184,7 @@ class BaseStreamer(ABC):
 class RTSPStreamer(BaseStreamer):
     """RTSP流处理器实现。"""
 
-    def __init__(self, rtsp_url: str, transport: str = 'tcp'):
+    def __init__(self, rtsp_url: str, transport: str = 'tcp', input_format: str = 'h264'):
         """
         初始化RTSP流处理器。
 
@@ -190,15 +192,12 @@ class RTSPStreamer(BaseStreamer):
             rtsp_url: RTSP流地址
             transport: 传输协议，'tcp'或'udp'，默认'tcp'
         """
-        super().__init__(rtsp_url)
+        super().__init__(rtsp_url, input_format=input_format)
         self.transport = transport
 
     def _build_command(self) -> list:
         """构建FFmpeg命令用于拉取RTSP流。"""
-        # 自动检测编码格式
-        output_format = 'h264'
-        if 'h265' in self.source.lower() or 'hevc' in self.source.lower():
-            output_format = 'hevc'
+        output_format = elementary_stream_muxer(self.input_format)
 
         logger.info(f"为RTSP流构建FFmpeg命令, 输出格式: {output_format}")
 
@@ -219,7 +218,7 @@ class RTSPStreamer(BaseStreamer):
 class FileStreamer(BaseStreamer):
     """文件流处理器实现，用于读取本地视频文件。"""
 
-    def __init__(self, file_path: str, loop: bool = True):
+    def __init__(self, file_path: str, loop: bool = True, input_format: str = 'h264'):
         """
         初始化文件流处理器。
 
@@ -227,7 +226,7 @@ class FileStreamer(BaseStreamer):
             file_path: 视频文件路径
             loop: 是否循环播放（默认True）
         """
-        super().__init__(file_path)
+        super().__init__(file_path, input_format=input_format)
         self.loop = loop
 
         # 验证文件是否存在
@@ -250,7 +249,7 @@ class FileStreamer(BaseStreamer):
             '-an',  # 禁用音频
             '-dn',  # 禁用数据流
             '-vcodec', 'copy',
-            '-f', 'h264',  # 默认输出h264格式
+            '-f', elementary_stream_muxer(self.input_format),
             'pipe:1'
         ])
 
@@ -260,14 +259,14 @@ class FileStreamer(BaseStreamer):
 class HTTPFLVStreamer(BaseStreamer):
     """HTTP-FLV流处理器实现。"""
 
-    def __init__(self, flv_url: str):
+    def __init__(self, flv_url: str, input_format: str = 'h264'):
         """
         初始化HTTP-FLV流处理器。
 
         Args:
             flv_url: HTTP-FLV流地址
         """
-        super().__init__(flv_url)
+        super().__init__(flv_url, input_format=input_format)
 
     def _build_command(self) -> list:
         """构建FFmpeg命令用于拉取HTTP-FLV流。"""
@@ -279,7 +278,7 @@ class HTTPFLVStreamer(BaseStreamer):
             '-an',  # 禁用音频
             '-dn',  # 禁用数据流
             '-vcodec', 'copy',
-            '-f', 'h264',
+            '-f', elementary_stream_muxer(self.input_format),
             'pipe:1'
         ]
 
@@ -287,14 +286,14 @@ class HTTPFLVStreamer(BaseStreamer):
 class HLSStreamer(BaseStreamer):
     """HLS (HTTP Live Streaming) 流处理器实现。"""
 
-    def __init__(self, m3u8_url: str):
+    def __init__(self, m3u8_url: str, input_format: str = 'h264'):
         """
         初始化HLS流处理器。
 
         Args:
             m3u8_url: HLS m3u8文件地址
         """
-        super().__init__(m3u8_url)
+        super().__init__(m3u8_url, input_format=input_format)
 
     def _build_command(self) -> list:
         """构建FFmpeg命令用于拉取HLS流。"""
@@ -306,7 +305,7 @@ class HLSStreamer(BaseStreamer):
             '-an',  # 禁用音频
             '-dn',  # 禁用数据流
             '-vcodec', 'copy',
-            '-f', 'h264',
+            '-f', elementary_stream_muxer(self.input_format),
             'pipe:1'
         ]
 

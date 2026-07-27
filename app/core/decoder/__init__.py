@@ -1,6 +1,7 @@
 from app.core.decoder.async_dec import AsyncSoftwareDecoder
 from app.core.decoder.base import FFmpegSoftwareDecoder, OpenCVDecoder, PyNvCodecDecoder, GStreamerNVDecoder, BaseDecoder, DecoderStatus
 from app.core.decoder.nv import FFmpegNVDECDecoder
+from app.core.decoder.jetson import JetsonGStreamerDecoder
 from app.core.decoder.rk import FFmpegRKMPPDecoder
 from app.core.decoder.vt import FFmpegVTDecoder
 
@@ -24,6 +25,7 @@ class DecoderFactory:
                 - 'opencv': OpenCV软件解码（图片）
                 - 'pynvcodec': PyNvCodec原生NVDEC
                 - 'gstreamer': GStreamer NVDEC
+                - 'jetson_gst' / 'jetson' / 'nvv4l2': Jetson nvv4l2decoder
             decoder_id: 解码器ID
             **kwargs: 其他参数
 
@@ -38,6 +40,9 @@ class DecoderFactory:
             'opencv': OpenCVDecoder,
             'pynvcodec': PyNvCodecDecoder,
             'gstreamer': GStreamerNVDecoder,
+            'jetson_gst': JetsonGStreamerDecoder,
+            'jetson': JetsonGStreamerDecoder,
+            'nvv4l2': JetsonGStreamerDecoder,
             'ffmpeg_videotoolbox': FFmpegVTDecoder,  # <--- 添加这一行
             'vtdec': FFmpegVTDecoder,  # <--- 添加这一行 (作为简称)
             'ffmpeg_rkmpp': FFmpegRKMPPDecoder,
@@ -53,7 +58,11 @@ class DecoderFactory:
             )
 
         decoder = decoder_class(decoder_id, **kwargs)
-        decoder.initialize()
+        initialized = decoder.initialize()
+        if not initialized and decoder_class is JetsonGStreamerDecoder:
+            raise RuntimeError(
+                f"Jetson hardware decoder initialization failed: {decoder_type}"
+            )
         return decoder
 
 

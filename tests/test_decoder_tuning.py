@@ -45,3 +45,18 @@ def test_async_software_decoder_builds_ffmpeg_command_with_thread_limit():
     assert command[:5] == ['ffmpeg', '-threads', '2', '-skip_frame', 'nokey']
     assert '-f' in command
     assert 'rawvideo' in command
+
+
+def test_async_software_decoder_uses_hevc_demuxer_for_h265():
+    decoder = AsyncSoftwareDecoder(
+        decoder_id=2,
+        width=960,
+        height=540,
+        input_format='h265',
+        output_format='nv12',
+    )
+
+    command = decoder._build_ffmpeg_command()
+
+    input_flag_index = command.index('-f')
+    assert command[input_flag_index + 1] == 'hevc'

@@ -107,6 +107,7 @@ class VideoSource(BaseModel):
     source_decode_width = pw.IntegerField(default=960)
     source_decode_height = pw.IntegerField(default=540)
     source_fps = pw.IntegerField(default=10)
+    source_codec = pw.CharField(max_length=16, default='unknown')
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
     created_by = pw.CharField(default='admin')

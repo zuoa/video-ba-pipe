@@ -1,5 +1,6 @@
 from flask import jsonify, request
 from app.core.database_models import VideoSource
+from app.core.video_probe import normalize_video_codec
 
 
 def register_video_sources_api(app):
@@ -17,6 +18,7 @@ def register_video_sources_api(app):
             'source_decode_width': s.source_decode_width,
             'source_decode_height': s.source_decode_height,
             'source_fps': s.source_fps,
+            'source_codec': getattr(s, 'source_codec', 'unknown'),
             'buffer_name': s.buffer_name,
             'status': s.status,
             'decoder_pid': s.decoder_pid
@@ -35,6 +37,7 @@ def register_video_sources_api(app):
                 'source_decode_width': source.source_decode_width,
                 'source_decode_height': source.source_decode_height,
                 'source_fps': source.source_fps,
+                'source_codec': getattr(source, 'source_codec', 'unknown'),
                 'buffer_name': source.buffer_name,
                 'status': source.status,
                 'decoder_pid': source.decoder_pid
@@ -54,6 +57,10 @@ def register_video_sources_api(app):
                 source_decode_width=data.get('source_decode_width', 960),
                 source_decode_height=data.get('source_decode_height', 540),
                 source_fps=data.get('source_fps', 10),
+                source_codec=normalize_video_codec(
+                    data.get('source_codec'),
+                    allow_unknown=True,
+                ),
                 status=data.get('status', 'STOPPED'),
                 decoder_pid=data.get('decoder_pid')
             )
@@ -69,10 +76,18 @@ def register_video_sources_api(app):
             source.name = data.get('name', source.name)
             source.enabled = data.get('enabled', source.enabled)
             source.source_code = data.get('source_code', source.source_code)
+            previous_source_url = source.source_url
             source.source_url = data.get('source_url', source.source_url)
             source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
             source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
             source.source_fps = data.get('source_fps', source.source_fps)
+            if 'source_codec' in data:
+                source.source_codec = normalize_video_codec(
+                    data.get('source_codec'),
+                    allow_unknown=True,
+                )
+            elif source.source_url != previous_source_url:
+                source.source_codec = 'unknown'
             source.status = data.get('status', source.status)
             source.decoder_pid = data.get('decoder_pid', source.decoder_pid)
             source.save()

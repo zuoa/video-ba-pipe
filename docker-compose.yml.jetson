@@ -1,0 +1,167 @@
+version: "3.8"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-jetson-environment: &jetson-environment
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: all
+  DB_BACKEND: ${DB_BACKEND:-postgres}
+  DB_HOST: ${DB_HOST:-postgres}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_NAME: ${DB_NAME:-video_ba_pipe}
+  DB_USER: ${DB_USER:-video_ba_pipe}
+  DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
+  DB_SSLMODE: ${DB_SSLMODE:-disable}
+  FRAME_SAVE_PATH: /data/frames
+  VIDEO_SAVE_PATH: /data/videos
+  VIDEO_SOURCE_PATH: /data/video_sources
+  MODEL_SAVE_PATH: /data/models
+  USER_SCRIPTS_ROOT: /data/user_scripts
+  SNAPSHOT_PATH: /data/snapshots
+  VIDEO_DECODER_TYPE: ${VIDEO_DECODER_TYPE:-jetson_gst}
+  VIDEO_FRAME_PIXEL_FORMAT: ${VIDEO_FRAME_PIXEL_FORMAT:-nv12}
+  IS_EXTREME_DECODE_MODE: ${IS_EXTREME_DECODE_MODE:-true}
+  DECODER_OUTPUT_QUEUE_SIZE: ${DECODER_OUTPUT_QUEUE_SIZE:-2}
+  ANALYSIS_TARGET_FPS: ${ANALYSIS_TARGET_FPS:-2}
+  ANALYSIS_BUFFER_SECONDS: ${ANALYSIS_BUFFER_SECONDS:-3}
+  RECORDING_ENABLED: ${RECORDING_ENABLED:-true}
+  PRE_ALERT_DURATION: ${PRE_ALERT_DURATION:-15}
+  POST_ALERT_DURATION: ${POST_ALERT_DURATION:-15}
+  RECORDING_FPS: ${RECORDING_FPS:-3}
+  RECORDING_BUFFER_DURATION: ${RECORDING_BUFFER_DURATION:-32}
+  RECORDING_JPEG_QUALITY: ${RECORDING_JPEG_QUALITY:-80}
+  WORKFLOW_ZERO_COPY_FRAMES: ${WORKFLOW_ZERO_COPY_FRAMES:-false}
+  SOURCE_HOST_WORKFLOW_NODE_WORKERS: ${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
+  RESOURCE_PROFILING_ENABLED: ${RESOURCE_PROFILING_ENABLED:-false}
+  ALERT_SUPPRESSION_DURATION: ${ALERT_SUPPRESSION_DURATION:-60}
+  ALERT_IMAGE_CLEANUP_ENABLED: ${ALERT_IMAGE_CLEANUP_ENABLED:-true}
+  ALERT_IMAGE_RETENTION_DAYS: ${ALERT_IMAGE_RETENTION_DAYS:-7}
+  WINDOW_DETECTION_RETENTION_HOURS: ${WINDOW_DETECTION_RETENTION_HOURS:-24}
+  ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-2}
+  MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-3600}
+  RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+  RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+  RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+  RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+  RABBITMQ_ALERT_QUEUE: ${RABBITMQ_ALERT_QUEUE:-video_alerts}
+  RABBITMQ_ALERT_EXCHANGE: ${RABBITMQ_ALERT_EXCHANGE:-video_alerts}
+  RABBITMQ_ALERT_ROUTING_KEY: ${RABBITMQ_ALERT_ROUTING_KEY:-alert}
+  TZ: Asia/Shanghai
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: video-ba-pipe-postgres-jetson
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-video_ba_pipe}
+      POSTGRES_USER: ${POSTGRES_USER:-video_ba_pipe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-video_ba_pipe}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_ba_pipe} -d ${POSTGRES_DB:-video_ba_pipe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    pull_policy: always
+    container_name: video-ba-pipe-api-jetson
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "4gb"
+    command: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
+    environment: *jetson-environment
+    volumes:
+      - ./data:/data
+    ports:
+      - "5002:5002"
+    networks:
+      video-ba-network:
+        aliases:
+          - api
+          - app
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    pull_policy: always
+    container_name: video-ba-pipe-worker-jetson
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "4gb"
+    command: ["python3", "main.py"]
+    environment: *jetson-environment
+    volumes:
+      - ./data:/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    image: ${VIDEO_BA_PIPE_FRONTEND_IMAGE:-ghcr.io/zuoa/video-ba-pipe-frontend:arm64}
+    pull_policy: always
+    container_name: video-ba-pipe-frontend-jetson
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    networks:
+      - video-ba-network
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: video-ba-rabbitmq-jetson
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  video-ba-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  rabbitmq-data:
+    driver: local

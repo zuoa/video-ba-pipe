@@ -47,6 +47,14 @@ docker compose -f docker-compose.yml.rknn up -d
 说明：RK 部署默认内置 PostgreSQL，并保持 `WEB_CONCURRENCY=1` 作为稳妥默认值，避免盒子上额外放大 API 侧并发压力。
 如需启用 RK 硬解，推荐先构建独立的 `ffmpeg+rkmpp` 基础镜像，再由 `Dockerfile.rk` 通过 `COPY --from` 复用；在 CI 中会自动按当前仓库 owner 选择对应的基础镜像，部署时 compose 仍可保持拉取远程镜像。
 
+### 4) Jetson Orin NX Super 16GB 部署
+
+```bash
+docker compose -f docker-compose.yml.jetson up -d
+```
+
+要求：目标设备运行 JetPack 6.2.1 / L4T 36.4.4，并已安装 Docker NVIDIA Runtime。后端使用独立的 `:jetson` ARM64 镜像，CUDA 推理由 NVIDIA PyTorch iGPU 运行时提供，H.264/H.265 默认使用 `nvv4l2decoder` 硬解；启动视频源时会用 `ffprobe` 探测并保存实际编码。前端复用通用 `:arm64` 镜像。Super 功耗模式需在宿主机刷机和 `nvpmodel` 配置中启用。
+
 ## 访问地址
 
 - 前端：`http://localhost:8080`
@@ -110,7 +118,7 @@ cp env.example .env
 - `DB_SSLMODE`：PostgreSQL SSL 模式
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
 - `RECORDING_ENABLED`：是否录制预警视频
-- `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 在镜像内 `ffmpeg` 已启用 `rkmpp` 时推荐设为 `rk_mpp`
+- `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 推荐 `rk_mpp`，Jetson 推荐 `jetson_gst`
 - `ANALYSIS_TARGET_FPS` / `ANALYSIS_BUFFER_SECONDS`：分析链路缓冲参数
 - `PRE_ALERT_DURATION` / `POST_ALERT_DURATION` / `RECORDING_BUFFER_DURATION`：录制链路缓冲参数
 - `RECORDING_JPEG_QUALITY` / `RECORDING_COMPRESSED_MAX_BYTES`：录制压缩帧缓存参数
@@ -139,6 +147,7 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 ├── docs/                 # 部署和集成文档
 ├── docker-compose.yml
 ├── docker-compose.yml.cuda
+├── docker-compose.yml.jetson
 ├── docker-compose.yml.rknn
 └── env.example
 ```
@@ -146,6 +155,7 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 ## 相关文档
 
 - Docker 镜像构建说明：`docs/docker_build_workflows.md`
+- Jetson Orin NX Super 镜像与部署：`docs/jetson_orin_nx_docker.md`
 - RK3588 镜像与构建说明：`docs/rk3588_docker.md`
 - RK3588 板端部署/排障：`docs/rk_usage_manual.md`
 - RabbitMQ 消息格式与接入：`docs/rabbitmq_integration.md`

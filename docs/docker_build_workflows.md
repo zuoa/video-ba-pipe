@@ -8,12 +8,13 @@
 
 1. 平台架构（platform）
    - `linux/amd64`：x86 服务器、普通云主机、NVIDIA GPU 服务器
-   - `linux/arm64`：RK3588 等 ARM64 设备
+   - `linux/arm64`：RK3588、Jetson Orin 等 ARM64 设备
 
 2. 后端运行时（runtime）
    - `cpu`：x86 CPU 推理，使用 `Dockerfile.cpu`
    - `cuda`：x86 NVIDIA GPU 推理，使用 `Dockerfile.cuda`
    - `rk`：RK3588 / NPU 推理，使用 `Dockerfile.rk`
+   - `jetson`：Jetson Orin / CUDA 推理与硬解，使用 `Dockerfile.jetson`
 
 注意：`amd64` 和 `cuda` 不是同一维度。`amd64` 是平台架构，`cuda` 是后端运行时。
 
@@ -30,7 +31,8 @@
 | `runtime=cpu` | 构建 x86 CPU 后端镜像 |
 | `runtime=cuda` | 构建 x86 CUDA 后端镜像 |
 | `runtime=rk` | 构建 RK3588 ARM64 后端镜像 |
-| `runtime=all` | 同时构建 CPU、CUDA、RK 后端镜像 |
+| `runtime=jetson` | 构建 Jetson Orin ARM64 后端镜像 |
+| `runtime=all` | 同时构建 CPU、CUDA、RK、Jetson 后端镜像 |
 
 产物：
 
@@ -39,10 +41,11 @@
 | `cpu` | `linux/amd64` | `Dockerfile.cpu` | `ghcr.io/<owner>/<repo>:cpu` |
 | `cuda` | `linux/amd64` | `Dockerfile.cuda` | `ghcr.io/<owner>/<repo>:cuda` |
 | `rk` | `linux/arm64` | `Dockerfile.rk` | `ghcr.io/<owner>/<repo>:rk` |
+| `jetson` | `linux/arm64` | `Dockerfile.jetson` | `ghcr.io/<owner>/<repo>:jetson` |
 
 每个镜像还会额外推送一个带 commit 的 tag，例如 `cpu-<commit>`。
 
-push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。CUDA 和 RK 镜像通过手动触发构建。
+push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。CUDA、RK 和 Jetson 镜像通过手动触发构建。
 
 ### 前端镜像
 
@@ -53,7 +56,7 @@ push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。CUDA
 | 参数 | 说明 |
 | --- | --- |
 | `platform=linux/amd64` | 构建 x86 前端镜像 |
-| `platform=linux/arm64` | 构建 ARM64 / RK 前端镜像 |
+| `platform=linux/arm64` | 构建通用 ARM64 前端镜像 |
 | `platform=all` | 同时构建两个平台的前端镜像 |
 
 产物：
@@ -61,7 +64,7 @@ push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。CUDA
 | platform | Dockerfile | 镜像 tag |
 | --- | --- | --- |
 | `linux/amd64` | `frontend/Dockerfile` | `ghcr.io/<owner>/<repo>-frontend:main` |
-| `linux/arm64` | `frontend/Dockerfile.rk` | `ghcr.io/<owner>/<repo>-frontend:rk` |
+| `linux/arm64` | `frontend/Dockerfile.rk` | `ghcr.io/<owner>/<repo>-frontend:arm64`、`:rk` |
 
 push 到 `main` 且前端相关文件变化时，会自动构建 x86 和 ARM64 前端镜像。
 
@@ -143,6 +146,29 @@ docker buildx build --platform=linux/amd64 \
 
 RK 的 wheel、FFmpeg 包、NPU runtime 挂载等细节见 `docs/rk3588_docker.md`。
 
+## Jetson Orin 构建
+
+目标基线为 JetPack 6.2.1 / L4T 36.4.4。
+
+### GitHub Actions
+
+```text
+Build backend images -> runtime=jetson
+Build frontend images -> platform=linux/arm64
+```
+
+### 本地构建
+
+```bash
+docker buildx build --platform=linux/arm64 \
+  -f Dockerfile.jetson \
+  -t video-ba-pipe:jetson \
+  --load \
+  .
+```
+
+镜像默认基于 `nvcr.io/nvidia/pytorch:25.05-py3-igpu`。如需从内部镜像仓库中转，可通过 `JETSON_PYTORCH_IMAGE` build arg 覆盖，但替代镜像仍须兼容 JetPack 6.2。
+
 ## 部署对应关系
 
 | 部署方式 | 后端镜像 | 前端镜像 | compose 文件 |
@@ -150,3 +176,4 @@ RK 的 wheel、FFmpeg 包、NPU runtime 挂载等细节见 `docs/rk3588_docker.m
 | x86 CPU | `ghcr.io/<owner>/<repo>:cpu` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml` |
 | x86 CUDA | `ghcr.io/<owner>/<repo>:cuda` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.cuda` |
 | RK3588 | `ghcr.io/<owner>/<repo>:rk` | `ghcr.io/<owner>/<repo>-frontend:rk` | `docker-compose.yml.rknn` |
+| Jetson Orin NX | `ghcr.io/<owner>/<repo>:jetson` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `docker-compose.yml.jetson` |

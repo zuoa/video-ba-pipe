@@ -93,7 +93,7 @@ os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in ('true', '1', 'yes')
 
 # 默认视频解码器类型
-# RK3588 推荐使用 rk_mpp，其他环境默认 ffmpeg_sw。
+# RK3588 推荐使用 rk_mpp；Jetson 推荐使用 jetson_gst；其他环境默认 ffmpeg_sw。
 VIDEO_DECODER_TYPE = (os.getenv('VIDEO_DECODER_TYPE') or 'ffmpeg_sw').strip().lower() or 'ffmpeg_sw'
 
 # 运行时主帧格式。当前全链路默认使用 NV12，以降低共享内存与队列占用。

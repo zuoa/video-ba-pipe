@@ -1,5 +1,6 @@
 from app import logger
 from app.core.decoder.base import FFmpegBaseDecoder
+from app.core.video_probe import ffmpeg_codec_name
 
 
 class FFmpegVTDecoder(FFmpegBaseDecoder):
@@ -16,7 +17,7 @@ class FFmpegVTDecoder(FFmpegBaseDecoder):
         return [
             'ffmpeg',
             # '-loglevel', 'error', # 在生产环境中可以打开，减少日志输出
-            '-c:v', f'{self.input_format}_videotoolbox',
+            '-c:v', f'{ffmpeg_codec_name(self.input_format)}_videotoolbox',
             '-i', 'pipe:0',
             '-f', 'rawvideo',
             '-pix_fmt', self.output_format,

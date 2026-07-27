@@ -1,0 +1,225 @@
+import logging
+
+import numpy as np
+import pytest
+
+from app.core.decoder import DecoderFactory
+from app.core.decoder.jetson import JetsonGStreamerDecoder
+
+
+def _decoder(codec="h264", output_format="nv12", width=16, height=8):
+    decoder = JetsonGStreamerDecoder(
+        decoder_id=7,
+        width=width,
+        height=height,
+        input_format=codec,
+        output_format=output_format,
+    )
+    decoder.logger = logging.getLogger("test.jetson_decoder")
+    return decoder
+
+
+@pytest.mark.parametrize(
+    ("codec", "caps", "parser"),
+    [
+        ("h264", "video/x-h264", "h264parse"),
+        ("h265", "video/x-h265", "h265parse"),
+        ("hevc", "video/x-h265", "h265parse"),
+    ],
+)
+def test_jetson_pipeline_uses_expected_hardware_decoder(codec, caps, parser):
+    pipeline = _decoder(codec=codec).build_pipeline_description()
+
+    assert caps in pipeline
+    assert parser in pipeline
+    assert "nvv4l2decoder" in pipeline
+    assert "nvvidconv" in pipeline
+    assert "video/x-raw,format=NV12,width=16,height=8" in pipeline
+    assert "appsink name=sink" in pipeline
+
+
+@pytest.mark.parametrize(
+    ("output_format", "gst_format", "shape"),
+    [
+        ("nv12", "NV12", (12, 16)),
+        ("yuv420p", "I420", (12, 16)),
+        ("rgb24", "RGB", (8, 16, 3)),
+        ("bgr24", "BGR", (8, 16, 3)),
+    ],
+)
+def test_jetson_pipeline_and_frame_shape_follow_output_format(
+    output_format, gst_format, shape
+):
+    decoder = _decoder(output_format=output_format)
+    pipeline = decoder.build_pipeline_description()
+    raw_frame = bytes(np.prod(shape))
+
+    assert f"format={gst_format}" in pipeline
+    assert decoder._frame_from_bytes(raw_frame, 16, 8).shape == shape
+
+
+def test_jetson_decoder_rejects_unsupported_codec():
+    with pytest.raises(ValueError, match="does not support codec"):
+        _decoder(codec="mjpeg")
+
+
+def test_jetson_decoder_rejects_wrong_frame_size():
+    decoder = _decoder()
+
+    with pytest.raises(ValueError, match="decoded frame size"):
+        decoder._frame_from_bytes(b"too short", 16, 8)
+
+
+def test_jetson_decoder_tracks_queue_backpressure():
+    decoder = JetsonGStreamerDecoder(
+        decoder_id=10,
+        width=16,
+        height=8,
+        input_format="h264",
+        output_format="nv12",
+        output_queue_size=1,
+    )
+    frame = np.zeros((12, 16), dtype=np.uint8)
+
+    decoder._enqueue_frame(frame)
+    decoder._enqueue_frame(frame)
+
+    assert decoder.frames_decoded == 1
+    assert decoder.frames_dropped == 1
+    assert decoder.output_queue.qsize() == 1
+
+
+def test_jetson_latest_frame_path_polls_pipeline_errors(monkeypatch):
+    decoder = _decoder()
+    calls = []
+    decoder._enqueue_frame(np.zeros((12, 16), dtype=np.uint8))
+    monkeypatch.setattr(
+        decoder,
+        "_raise_pipeline_error",
+        lambda: calls.append("polled"),
+    )
+
+    frame = decoder.get_latest_frame()
+
+    assert calls == ["polled"]
+    assert frame.shape == (12, 16)
+
+
+def test_jetson_latest_frame_propagates_pipeline_error(monkeypatch):
+    decoder = _decoder()
+
+    def raise_error():
+        raise RuntimeError("decoder failed")
+
+    monkeypatch.setattr(decoder, "_raise_pipeline_error", raise_error)
+
+    with pytest.raises(RuntimeError, match="decoder failed"):
+        decoder.get_latest_frame()
+
+
+def test_jetson_pipeline_error_remains_visible_after_writer_observes_it():
+    decoder = _decoder()
+    decoder._pipeline_error = RuntimeError("persistent decoder failure")
+
+    with pytest.raises(RuntimeError, match="persistent decoder failure"):
+        decoder._raise_pipeline_error()
+    with pytest.raises(RuntimeError, match="persistent decoder failure"):
+        decoder.get_latest_frame()
+
+
+def _padded_plane(rows, active_width, stride, start_value):
+    plane = bytearray(rows * stride)
+    active = bytearray()
+    value = start_value
+    for row in range(rows):
+        for column in range(active_width):
+            plane[row * stride + column] = value
+            active.append(value)
+            value = (value + 1) % 251
+        for column in range(active_width, stride):
+            plane[row * stride + column] = 255
+    return bytes(plane), bytes(active)
+
+
+def test_jetson_nv12_frame_extraction_removes_plane_padding():
+    decoder = _decoder(output_format="nv12", width=6, height=4)
+    y_plane, active_y = _padded_plane(4, 6, 8, 1)
+    uv_plane, active_uv = _padded_plane(2, 6, 8, 40)
+    raw_frame = y_plane + uv_plane
+
+    frame = decoder._frame_from_strided_bytes(
+        raw_frame,
+        6,
+        4,
+        strides=(8, 8),
+        offsets=(0, len(y_plane)),
+    )
+
+    assert frame.shape == (6, 6)
+    assert frame.tobytes() == active_y + active_uv
+
+
+def test_jetson_i420_frame_extraction_removes_each_plane_padding():
+    decoder = _decoder(output_format="yuv420p", width=6, height=4)
+    y_plane, active_y = _padded_plane(4, 6, 8, 1)
+    u_plane, active_u = _padded_plane(2, 3, 4, 50)
+    v_plane, active_v = _padded_plane(2, 3, 4, 80)
+    raw_frame = y_plane + u_plane + v_plane
+
+    frame = decoder._frame_from_strided_bytes(
+        raw_frame,
+        6,
+        4,
+        strides=(8, 4, 4),
+        offsets=(0, len(y_plane), len(y_plane) + len(u_plane)),
+    )
+
+    assert frame.shape == (6, 6)
+    assert frame.tobytes() == active_y + active_u + active_v
+
+
+@pytest.mark.parametrize("output_format", ["rgb24", "bgr24"])
+def test_jetson_rgb_frame_extraction_removes_row_padding(output_format):
+    decoder = _decoder(output_format=output_format, width=3, height=2)
+    raw_frame, active = _padded_plane(2, 9, 12, 1)
+
+    frame = decoder._frame_from_strided_bytes(
+        raw_frame,
+        3,
+        2,
+        strides=(12,),
+        offsets=(0,),
+    )
+
+    assert frame.shape == (2, 3, 3)
+    assert frame.tobytes() == active
+
+
+@pytest.mark.parametrize("alias", ["jetson_gst", "jetson", "nvv4l2"])
+def test_decoder_factory_registers_jetson_aliases(monkeypatch, alias):
+    monkeypatch.setattr(JetsonGStreamerDecoder, "initialize", lambda self: True)
+
+    decoder = DecoderFactory.create_decoder(
+        alias,
+        decoder_id=8,
+        width=16,
+        height=8,
+        input_format="h264",
+        output_format="nv12",
+    )
+
+    assert isinstance(decoder, JetsonGStreamerDecoder)
+
+
+def test_decoder_factory_fails_fast_when_jetson_initialization_fails(monkeypatch):
+    monkeypatch.setattr(JetsonGStreamerDecoder, "initialize", lambda self: False)
+
+    with pytest.raises(RuntimeError, match="initialization failed"):
+        DecoderFactory.create_decoder(
+            "jetson",
+            decoder_id=9,
+            width=16,
+            height=8,
+            input_format="h264",
+            output_format="nv12",
+        )

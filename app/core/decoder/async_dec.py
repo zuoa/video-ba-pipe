@@ -15,6 +15,7 @@ from app.core.frame_utils import (
     normalize_pixel_format,
     reshape_frame,
 )
+from app.core.video_probe import elementary_stream_muxer
 
 
 class AsyncFFmpegDecoder(BaseDecoder):
@@ -148,7 +149,9 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
             '-threads', str(threads),
             '-skip_frame', 'nokey',  # 跳过非关键帧
             '-fflags', '+genpts+discardcorrupt',
-            '-f', self.config.get('input_format', 'h264'),
+            '-f', elementary_stream_muxer(
+                self.config.get('input_format', 'h264')
+            ),
         ]
 
         # 将输出参数放在 -i pipe:0 之后

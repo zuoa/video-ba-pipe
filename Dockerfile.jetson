@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1.7
+
+# JetPack 6.2 compatible NVIDIA iGPU image.
+# Keep this image aligned with the L4T/JetPack version on the target Jetson.
+ARG JETSON_PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:25.05-py3-igpu
+FROM --platform=linux/arm64 ${JETSON_PYTORCH_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_CONSTRAINT=/etc/pip/constraint.txt \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=all \
+    TZ=Asia/Shanghai
+
+WORKDIR /app
+
+# Jetson multimedia plugins are exposed by the NVIDIA container runtime.
+# These packages provide GStreamer, Python bindings, software fallbacks, and
+# the application runtime dependencies used around nvv4l2decoder.
+RUN set -eux; \
+    apt-get -o Acquire::Retries=3 update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      ffmpeg \
+      gir1.2-gstreamer-1.0 \
+      gir1.2-gst-plugins-base-1.0 \
+      gstreamer1.0-libav \
+      gstreamer1.0-plugins-bad \
+      gstreamer1.0-plugins-base \
+      gstreamer1.0-plugins-good \
+      gstreamer1.0-plugins-ugly \
+      gstreamer1.0-tools \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
+      libgstreamer1.0-0 \
+      libsm6 \
+      libxext6 \
+      libxrender1 \
+      postgresql-client \
+      python3-gi; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN python3 -m pip install --upgrade pip setuptools wheel \
+    && python3 -m pip install --no-cache-dir -r requirements.txt \
+    && python3 -c "from importlib.metadata import version; print('torch=' + version('torch')); print('ultralytics=' + version('ultralytics'))"
+
+COPY app/ /app/app/
+COPY scripts/ /app/scripts/
+COPY env.example /app/.env.example
+
+RUN mkdir -p \
+      /data/db \
+      /data/frames \
+      /data/videos \
+      /data/video_sources \
+      /data/models \
+      /data/snapshots \
+      /data/logs \
+      /data/user_scripts \
+    && chmod +x /app/app/entrypoint.sh /app/scripts/verify_jetson_runtime.sh
+
+VOLUME ["/data"]
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import sys; sys.exit(0)" || exit 1
+
+WORKDIR /app/app
+ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages:${PYTHONPATH}"
+
+ENTRYPOINT ["/opt/nvidia/nvidia_entrypoint.sh"]
+CMD ["/app/app/entrypoint.sh"]
+
+LABEL maintainer="Codvision" \
+      version="1.0" \
+      description="Video Behavior Analysis Pipeline - Jetson Orin NX 16GB (JetPack 6.2)" \
+      com.nvidia.jetpack.version="6.2.1" \
+      com.nvidia.l4t.version="36.4.4" \
+      gpu.enabled="true" \
+      video.decoder="nvv4l2decoder"

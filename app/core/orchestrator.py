@@ -39,6 +39,11 @@ from app.core.source_rotation import (
     get_source_rotation_config,
     normalize_source_rotation_config,
 )
+from app.core.video_probe import (
+    VideoCodecProbeError,
+    normalize_video_codec,
+    probe_video_codec,
+)
 
 
 class OutputReader(threading.Thread):
@@ -92,6 +97,7 @@ class Orchestrator:
         self.recording_buffers = {}
         self.source_start_times = {}  # 记录视频源启动时间
         self.last_health_log_times = {}  # 记录上次健康日志时间
+        self.source_probe_retry_at = {}
         self.workflow_host_signatures = {}
         self.draining_sources = {}
         self.rotation_selector = RoundRobinBatchSelector()
@@ -613,6 +619,27 @@ class Orchestrator:
     def _start_source(self, source: VideoSource, starting: bool = False):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
+        retry_at = self.source_probe_retry_at.get(source.id, 0.0)
+        if time.monotonic() < retry_at:
+            return False
+
+        try:
+            input_format = self._resolve_source_codec(source)
+            if (
+                VIDEO_DECODER_TYPE in {'jetson_gst', 'jetson', 'nvv4l2'}
+                and input_format not in {'h264', 'h265'}
+            ):
+                raise VideoCodecProbeError(
+                    f"Jetson hardware decoding does not support {input_format}"
+                )
+        except (VideoCodecProbeError, ValueError) as exc:
+            self.source_probe_retry_at[source.id] = time.monotonic() + 30.0
+            logger.error(
+                f"视频源 {source.id} 编码探测失败，30 秒后重试: {exc}"
+            )
+            return False
+
+        self.source_probe_retry_at.pop(source.id, None)
         analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
         analysis_buffer = VideoRingBuffer(
             name=source.analysis_buffer_name,
@@ -651,21 +678,11 @@ class Orchestrator:
             )
 
         # 启动解码器进程
-        decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
-        decoder_args = [
-            sys.executable, decoder_entry,
-            '--url', source.source_url,
-            '--source-id', str(source.id),
-            '--decoder-type', VIDEO_DECODER_TYPE,
-            '--decoder-threads', str(FFMPEG_SW_DECODER_THREADS),
-            '--decoder-output-queue-size', str(DECODER_OUTPUT_QUEUE_SIZE),
-            '--sample-mode', 'fps',
-            '--analysis-fps', str(analysis_fps),
-            '--recording-fps', str(RECORDING_FPS),
-            '--width', str(source.source_decode_width),
-            '--height', str(source.source_decode_height),
-            '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
-        ]
+        decoder_args = self._build_decoder_args(
+            source,
+            analysis_fps=analysis_fps,
+            input_format=input_format,
+        )
         logger.debug(' '.join(decoder_args))
         decoder_p = subprocess.Popen(decoder_args, cwd=APP_DIR)
 
@@ -681,6 +698,52 @@ class Orchestrator:
         # 记录启动时间（用于健康检查宽限期）
         self.source_start_times[source.id] = time.time()
         logger.debug(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
+        return True
+
+    def _resolve_source_codec(self, source: VideoSource) -> str:
+        cached_codec = normalize_video_codec(
+            getattr(source, 'source_codec', 'unknown'),
+            allow_unknown=True,
+        )
+        try:
+            detected_codec = probe_video_codec(source.source_url)
+        except VideoCodecProbeError:
+            if cached_codec != 'unknown':
+                logger.warning(
+                    f"视频源 {source.id} 编码重新探测失败，使用上次结果: {cached_codec}"
+                )
+                return cached_codec
+            raise
+
+        if detected_codec != cached_codec:
+            source.source_codec = detected_codec
+            self._save_source(source, f'保存视频源编码探测结果:{source.id}')
+        logger.info(f"视频源 {source.id} 编码格式: {detected_codec}")
+        return detected_codec
+
+    @staticmethod
+    def _build_decoder_args(
+        source: VideoSource,
+        *,
+        analysis_fps: int,
+        input_format: str,
+    ):
+        decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
+        return [
+            sys.executable, decoder_entry,
+            '--url', source.source_url,
+            '--source-id', str(source.id),
+            '--decoder-type', VIDEO_DECODER_TYPE,
+            '--input-format', input_format,
+            '--decoder-threads', str(FFMPEG_SW_DECODER_THREADS),
+            '--decoder-output-queue-size', str(DECODER_OUTPUT_QUEUE_SIZE),
+            '--sample-mode', 'fps',
+            '--analysis-fps', str(analysis_fps),
+            '--recording-fps', str(RECORDING_FPS),
+            '--width', str(source.source_decode_width),
+            '--height', str(source.source_decode_height),
+            '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
+        ]
 
     def _finalize_source_stop(self, source: VideoSource):
         if source.id in self.running_processes:
@@ -698,6 +761,7 @@ class Orchestrator:
             del self.recording_buffers[source.id]
 
         self.source_start_times.pop(source.id, None)
+        self.source_probe_retry_at.pop(source.id, None)
         self.last_health_log_times.pop(source.id, None)
         source.status = 'STOPPED'
         source.decoder_pid = None

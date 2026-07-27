@@ -1,4 +1,5 @@
 from app.core.decoder.base import FFmpegBaseDecoder
+from app.core.video_probe import ffmpeg_codec_name
 
 
 class FFmpegNVDECDecoder(FFmpegBaseDecoder):
@@ -13,7 +14,7 @@ class FFmpegNVDECDecoder(FFmpegBaseDecoder):
             'ffmpeg',
             '-hwaccel', 'cuda',
             '-hwaccel_device', str(self.device_id),
-            '-c:v', f'{self.input_format}_cuvid',
+            '-c:v', f'{ffmpeg_codec_name(self.input_format)}_cuvid',
             '-i', 'pipe:0',
             '-f', 'rawvideo',
             '-pix_fmt', self.output_format,

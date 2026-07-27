@@ -40,6 +40,7 @@ from app.core.workflow_runtime import (
     workflow_references_algorithm,
 )
 from app.core.window_detector import get_window_detector
+from app.core.video_probe import normalize_video_codec
 from app.setup_database import setup_database
 from app.version import get_app_version
 
@@ -129,6 +130,7 @@ def serialize_video_source(source):
         'source_decode_width': source.source_decode_width,
         'source_decode_height': source.source_decode_height,
         'source_fps': source.source_fps,
+        'source_codec': getattr(source, 'source_codec', 'unknown'),
         'buffer_name': source.buffer_name,
         'status': source.status,
         'decoder_pid': source.decoder_pid,
@@ -576,6 +578,10 @@ def create_video_source():
             source_decode_width=data.get('source_decode_width', 960),
             source_decode_height=data.get('source_decode_height', 540),
             source_fps=data.get('source_fps', 10),
+            source_codec=normalize_video_codec(
+                data.get('source_codec'),
+                allow_unknown=True,
+            ),
             status='STOPPED',
             decoder_pid=None,
             created_by=current_username('admin'),
@@ -596,10 +602,18 @@ def update_video_source(id):
         source.name = data.get('name', source.name)
         source.enabled = data.get('enabled', source.enabled)
         source.source_code = data.get('source_code', source.source_code)
+        previous_source_url = source.source_url
         source.source_url = data.get('source_url', source.source_url)
         source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
         source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
         source.source_fps = data.get('source_fps', source.source_fps)
+        if 'source_codec' in data:
+            source.source_codec = normalize_video_codec(
+                data.get('source_codec'),
+                allow_unknown=True,
+            )
+        elif source.source_url != previous_source_url:
+            source.source_codec = 'unknown'
         source.save()
         
         return jsonify({'message': '视频源更新成功'})
