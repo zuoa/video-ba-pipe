@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Space, Button, Typography } from 'antd';
+import { Image, Space, Typography } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   LeftOutlined,
   RightOutlined,
@@ -243,6 +244,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
       footer={null}
       kind="detail"
       size="xl"
+      bodyMode="canvas"
       className="alertDetailModal"
       title={
         <div className="alertDetailModal__toolbar">

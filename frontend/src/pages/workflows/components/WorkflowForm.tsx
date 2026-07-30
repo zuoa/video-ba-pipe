@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button } from 'antd';
+import { Form, Input } from 'antd';
+import Button from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
 import './WorkflowForm.css';
 

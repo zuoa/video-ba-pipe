@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
   Upload,
-  Button,
   Alert,
   Space,
   Descriptions,
@@ -18,9 +17,10 @@ import {
   Progress,
   Divider,
   Tooltip,
-  Empty,
   Collapse,
 } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import {
   PlayCircleOutlined,
   UploadOutlined,
@@ -434,14 +434,10 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
             {!testing && !testResult && (
               <div className="test-empty-state">
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    <span>
-                      上传图片并点击"开始测试"<br />
-                      查看检测结果
-                    </span>
-                  }
+                <AppEmptyState
+                  compact
+                  title="等待测试结果"
+                  description="上传图片并点击“开始测试”查看检测结果"
                 />
               </div>
             )}
@@ -855,13 +851,9 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
   const renderHistoryTab = () => (
     <div className="test-history-content">
       {testHistory.length === 0 ? (
-        <Empty
-          description={
-            <span>
-              暂无测试历史<br />
-              完成测试后将自动记录
-            </span>
-          }
+        <AppEmptyState
+          title="暂无测试历史"
+          description="完成测试后将自动记录"
         />
       ) : (
         <>

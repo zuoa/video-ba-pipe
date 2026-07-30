@@ -25,10 +25,13 @@ const SwitchBadge: React.FC<SwitchBadgeProps> = ({
   };
 
   return (
-    <div
-      className={`switch-badge switch-badge-${size} ${disabled ? 'switch-disabled' : ''}`}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      className={`switch-badge switch-badge-${size} ${checked ? 'switch-checked' : ''} ${disabled ? 'switch-disabled' : ''}`}
       onClick={handleClick}
-      style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
     >
       <div className={`switch-track ${checked ? 'switch-checked' : ''}`}>
         <div className={`switch-thumb ${checked ? 'thumb-checked' : ''}`} />
@@ -38,7 +41,7 @@ const SwitchBadge: React.FC<SwitchBadgeProps> = ({
       >
         {checked ? checkedText : uncheckedText}
       </span>
-    </div>
+    </button>
   );
 };
 

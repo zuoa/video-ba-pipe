@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { message, Empty, Spin, Space, Button, Tooltip } from 'antd';
+import { message, Spin, Space, Tooltip } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import {
   FileTextOutlined,
   EyeOutlined,
@@ -106,14 +108,10 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
         <Spin spinning={loading}>
           <div className="templates-grid">
             {templates.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <div className="empty-templates">
-                    <FileTextOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
-                    <p style={{ marginTop: 16, color: '#8c8c8c' }}>暂无可用模板</p>
-                  </div>
-                }
+              <AppEmptyState
+                compact
+                image={<FileTextOutlined className="empty-templates__icon" />}
+                title="暂无可用模板"
               />
             ) : (
               templates.map((template, index) => (

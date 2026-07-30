@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Checkbox, Space, Button, message, Spin } from 'antd';
+import { Form, Input, Checkbox, Space, message, Spin } from 'antd';
+import Button from '@/components/common/AppButton';
 import { CheckOutlined, SaveOutlined } from '@ant-design/icons';
 import { getScript, updateScript, validateScript } from '@/services/api';
 import CodeEditor from './CodeEditor';

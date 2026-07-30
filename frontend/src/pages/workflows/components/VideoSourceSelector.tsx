@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Input, List, Tag, Empty, Space, Typography, Badge } from 'antd';
+import { Input, List, Tag, Space, Typography, Badge } from 'antd';
 import { SearchOutlined, VideoCameraOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import './VideoSourceSelector.css';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import AppModal from '@/components/common/AppModal';
 
 const { Search } = Input;
@@ -168,14 +169,10 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
         </div>
 
         {filteredSources.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              searchText
-                ? '未找到匹配的视频源'
-                : '暂无可用视频源，请先在视频源管理中添加'
-            }
-            style={{ marginTop: 40 }}
+          <AppEmptyState
+            compact
+            title={searchText ? '未找到匹配的视频源' : '暂无可用视频源'}
+            description={searchText ? '请尝试调整搜索关键词' : '请先在视频源管理中添加视频源'}
           />
         ) : (
           <List

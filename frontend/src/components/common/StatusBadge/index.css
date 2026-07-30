@@ -1,12 +1,49 @@
 .status-badge {
+  --status-color: var(--app-text-muted);
+  --status-bg: var(--app-surface-muted);
+  --status-border: var(--app-line);
   display: inline-flex;
   align-items: center;
   padding: 4px 12px;
-  border-radius: 6px;
+  border: 1px solid var(--status-border);
+  border-radius: 999px;
+  background: var(--status-bg);
+  color: var(--status-color);
   font-weight: 500;
-  border-width: 1px;
-  border-style: solid;
-  transition: all 0.3s;
+  transition:
+    color var(--app-motion-fast) ease,
+    border-color var(--app-motion-fast) ease,
+    background-color var(--app-motion-fast) ease;
+}
+
+.status-badge--info {
+  --status-color: var(--app-info);
+  --status-bg: var(--app-info-soft);
+  --status-border: rgba(53, 106, 146, 0.26);
+}
+
+.status-badge--success {
+  --status-color: var(--app-success);
+  --status-bg: var(--app-success-soft);
+  --status-border: rgba(47, 107, 79, 0.26);
+}
+
+.status-badge--warning {
+  --status-color: var(--app-warning);
+  --status-bg: var(--app-warning-soft);
+  --status-border: rgba(154, 104, 31, 0.28);
+}
+
+.status-badge--danger {
+  --status-color: var(--app-danger);
+  --status-bg: var(--app-danger-soft);
+  --status-border: rgba(181, 71, 67, 0.28);
+}
+
+.status-badge--neutral {
+  --status-color: var(--app-text);
+  --status-bg: var(--app-accent-soft);
+  --status-border: var(--app-line);
 }
 
 .status-badge-small {

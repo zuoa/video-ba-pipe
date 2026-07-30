@@ -1,5 +1,6 @@
 import React from 'react';
-import { Table, Button, Space, Image } from 'antd';
+import { Table, Space, Image } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   EditOutlined,
   DeleteOutlined,

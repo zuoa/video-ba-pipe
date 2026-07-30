@@ -1,44 +1,32 @@
 .script-table-wrapper {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f0f0f0;
+  background: var(--app-surface-strong);
+  border-radius: var(--app-radius-m);
+  box-shadow: var(--app-shadow-sm);
+  border: 1px solid var(--app-line-soft);
   overflow: hidden;
-  animation: fadeInUp 0.4s ease-out;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* 搜索栏 */
 .search-bar {
-  padding: 20px 24px;
-  border-bottom: 1px solid #f0f0f0;
-  background: linear-gradient(135deg, #fafafa 0%, #ffffff 100%);
+  min-height: 72px;
+  border: 0;
+  border-bottom: 1px solid var(--app-line-soft);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .search-input {
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  transition: all 0.3s;
+  max-width: 420px;
 }
 
 .search-input:hover {
-  border-color: #000000;
+  border-color: #b8c0cc;
 }
 
 .search-input:focus,
 .search-input.ant-input-affix-wrapper-focused {
-  border-color: #000000;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  border-color: #b8c0cc;
+  box-shadow: 0 0 0 3px rgba(53, 106, 146, 0.1);
 }
 
 .search-input .ant-input {
@@ -46,7 +34,12 @@
 }
 
 .search-input .ant-input-prefix {
-  color: #8c8c8c;
+  color: var(--app-text-muted);
+}
+
+.script-empty-icon {
+  color: var(--app-line);
+  font-size: 48px;
 }
 
 /* 表格容器 */
@@ -129,80 +122,6 @@
 }
 
 /* 操作按钮 */
-.script-table-wrapper .action-btn {
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.3s;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-}
-
-.script-table-wrapper .action-btn-edit {
-  background: #e6f7ff;
-  color: #1890ff;
-  border-color: #91d5ff;
-}
-
-.script-table-wrapper .action-btn-edit:hover {
-  background: #bae7ff;
-  border-color: #69c0ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
-}
-
-.script-table-wrapper .action-btn-config {
-  background: #f0f5ff;
-  color: #597ef7;
-  border-color: #adc6ff;
-}
-
-.script-table-wrapper .action-btn-config:hover {
-  background: #d6e4ff;
-  border-color: #85a5ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(89, 126, 247, 0.3);
-}
-
-.script-table-wrapper .action-btn-register {
-  background: #f6ffed;
-  color: #52c41a;
-  border-color: #b7eb8f;
-}
-
-.script-table-wrapper .action-btn-register:hover {
-  background: #d9f7be;
-  border-color: #95de64;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(82, 196, 26, 0.3);
-}
-
-.script-table-wrapper .action-btn-delete {
-  background: #fff1f0;
-  color: #cf1322;
-  border-color: #ffa39e;
-}
-
-.script-table-wrapper .action-btn-delete:hover {
-  background: #ffccc7;
-  border-color: #ff7875;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(255, 77, 79, 0.3);
-}
-
-.script-table-wrapper .action-btn-upload {
-  background: #f0f5ff;
-  color: #597ef7;
-  border-color: #adc6ff;
-}
-
-.script-table-wrapper .action-btn-upload:hover {
-  background: #d6e4ff;
-  border-color: #85a5ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(89, 126, 247, 0.3);
-}
-
 /* 分页 */
 .script-table .ant-pagination {
   margin: 24px;

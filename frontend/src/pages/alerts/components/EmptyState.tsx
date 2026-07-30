@@ -1,6 +1,7 @@
 import React from 'react';
-import { Empty, Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import AppButton from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 
 interface EmptyStateProps {
   type?: 'alerts' | 'search';
@@ -22,22 +23,15 @@ const EmptyState: React.FC<EmptyStateProps> = ({ type = 'alerts', onRefresh }) =
   const currentConfig = config[type];
 
   return (
-    <Empty
-      description={
-        <div>
-          <div>{currentConfig.description}</div>
-          <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
-            {currentConfig.message}
-          </div>
-        </div>
-      }
-    >
-      {onRefresh && (
-        <Button type="primary" icon={<ReloadOutlined />} onClick={onRefresh}>
+    <AppEmptyState
+      title={currentConfig.description}
+      description={currentConfig.message}
+      action={onRefresh ? (
+        <AppButton variant="solid" icon={<ReloadOutlined />} onClick={onRefresh}>
           刷新数据
-        </Button>
-      )}
-    </Empty>
+        </AppButton>
+      ) : undefined}
+    />
   );
 };
 

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Button,
   Form,
   Input,
   InputNumber,
@@ -11,6 +10,7 @@ import {
   Tag,
   message,
 } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   ApiOutlined,
   CloudDownloadOutlined,

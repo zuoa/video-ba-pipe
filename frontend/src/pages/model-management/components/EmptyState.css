@@ -1,10 +1,10 @@
 .models-page .empty-state {
-  padding: 80px 20px;
-  text-align: center;
   min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+}
+
+.models-page .empty-state__icon {
+  color: var(--app-line);
+  font-size: 56px;
 }
 
 /* 响应式 */

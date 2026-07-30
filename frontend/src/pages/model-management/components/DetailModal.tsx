@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Descriptions, Button, Space, Tag, message } from 'antd';
+import { Descriptions, Space, Tag, message } from 'antd';
+import Button from '@/components/common/AppButton';
 import { DownloadOutlined, CopyOutlined } from '@ant-design/icons';
 import { downloadModelFile } from '@/services/api';
 import AppModal from '@/components/common/AppModal';

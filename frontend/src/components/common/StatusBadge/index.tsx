@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SemanticTone } from '../AppButton';
 import './index.css';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -10,87 +11,41 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const ANIMATED_STATUSES = new Set(['STARTING', 'RUNNING', 'DRAINING', 'ERROR']);
+const STATUS_TONES: Record<string, SemanticTone | 'muted'> = {
+  RUNNING: 'success',
+  STARTING: 'info',
+  DRAINING: 'warning',
+  STOPPED: 'muted',
+  ERROR: 'danger',
+  ACTIVE: 'success',
+  INACTIVE: 'muted',
+  ENABLED: 'success',
+  DISABLED: 'muted',
+};
 
 export interface StatusBadgeProps {
   status: string;
   text?: string;
   size?: 'small' | 'default' | 'large';
+  tone?: SemanticTone | 'muted';
+  showIcon?: boolean;
 }
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({
   status,
   text,
   size = 'default',
+  tone,
+  showIcon = true,
 }) => {
-  const getStatusConfig = (status: string) => {
-    const statusMap: Record<string, {
-      color: string;
-      bgColor: string;
-      borderColor: string;
-    }> = {
-      RUNNING: {
-        color: '#389e0d',
-        bgColor: '#f6ffed',
-        borderColor: '#b7eb8f',
-      },
-      STARTING: {
-        color: '#0958d9',
-        bgColor: '#e6f4ff',
-        borderColor: '#91caff',
-      },
-      DRAINING: {
-        color: '#d46b08',
-        bgColor: '#fff7e6',
-        borderColor: '#ffd591',
-      },
-      STOPPED: {
-        color: '#595959',
-        bgColor: '#fafafa',
-        borderColor: '#d9d9d9',
-      },
-      ERROR: {
-        color: '#cf1322',
-        bgColor: '#fff1f0',
-        borderColor: '#ffa39e',
-      },
-      ACTIVE: {
-        color: '#389e0d',
-        bgColor: '#f6ffed',
-        borderColor: '#b7eb8f',
-      },
-      INACTIVE: {
-        color: '#8c8c8c',
-        bgColor: '#fafafa',
-        borderColor: '#d9d9d9',
-      },
-      ENABLED: {
-        color: '#389e0d',
-        bgColor: '#f6ffed',
-        borderColor: '#b7eb8f',
-      },
-      DISABLED: {
-        color: '#8c8c8c',
-        bgColor: '#fafafa',
-        borderColor: '#d9d9d9',
-      },
-    };
-
-    return statusMap[status] || statusMap.STOPPED;
-  };
-
-  const config = getStatusConfig(status);
   const displayText = text || STATUS_LABELS[status] || status;
+  const resolvedTone = tone ?? STATUS_TONES[status] ?? 'muted';
 
   return (
     <span
-      className={`status-badge status-badge-${size} status-badge-${status.toLowerCase()} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
-      style={{
-        color: config.color,
-        backgroundColor: config.bgColor,
-        borderColor: config.borderColor,
-      }}
+      className={`status-badge status-badge-${size} status-badge--${resolvedTone} status-badge-${status.toLowerCase()} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
     >
-      <span className="status-icon" aria-hidden="true" />
+      {showIcon ? <span className="status-icon" aria-hidden="true" /> : null}
       {displayText}
     </span>
   );

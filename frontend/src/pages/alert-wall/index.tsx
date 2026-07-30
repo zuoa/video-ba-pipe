@@ -26,6 +26,7 @@ import {
   TagOutlined,
   ApartmentOutlined,
 } from '@ant-design/icons';
+import AppButton from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
 import './index.css';
 
@@ -646,8 +647,10 @@ const AlertWallPage: React.FC = () => {
                         <div className="alert-item-info">
                           <div className="alert-item-header">
                             <span className="alert-task-name">{task?.name || `任务 #${alert.task_id}`}</span>
-                            <button
-                              type="button"
+                            <AppButton
+                              size="small"
+                              tone="info"
+                              variant="text"
                               className="detail-button"
                               aria-label={`查看 ${task?.name || `任务 #${alert.task_id}`} 的告警详情`}
                               onClick={(e) => viewAlertDetail(alert, e)}
@@ -655,7 +658,7 @@ const AlertWallPage: React.FC = () => {
                             >
                               <TagOutlined />
                               <span>详情</span>
-                            </button>
+                            </AppButton>
                           </div>
                           {alert.workflow_name && (
                             <div className="alert-workflow">

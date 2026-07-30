@@ -101,37 +101,6 @@
 
 .source-tabs .ant-btn {
   flex: 1;
-  height: 36px;
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.source-tabs .ant-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* 抓帧按钮 */
-.capture-frame-btn {
-  height: 48px;
-  font-size: 15px;
-  font-weight: 600;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.capture-frame-btn:hover {
-  background: linear-gradient(135deg, #40a9ff 0%, #69c0ff 100%);
-  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
-  transform: translateY(-2px);
-}
-
-.capture-frame-btn:active {
-  transform: translateY(0);
 }
 
 /* 上传区域 */
@@ -195,40 +164,7 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  font-size: 12px;
-  padding: 0 12px;
-  height: 28px;
-  border-radius: 4px;
   backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.clear-btn:hover {
-  background: rgba(255, 255, 255, 1);
-  transform: scale(1.05);
-}
-
-/* 运行测试按钮 */
-.run-test-btn {
-  height: 44px;
-  font-size: 15px;
-  font-weight: 600;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #000000 0%, #333333 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s ease;
-}
-
-.run-test-btn:hover {
-  background: linear-gradient(135deg, #333333 0%, #555555 100%);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-  transform: translateY(-1px);
-}
-
-.run-test-btn:active {
-  transform: translateY(0);
 }
 
 /* 测试结果 */

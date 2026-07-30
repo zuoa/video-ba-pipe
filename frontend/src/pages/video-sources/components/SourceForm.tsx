@@ -5,7 +5,6 @@ import {
   InputNumber,
   Switch,
   Select,
-  Button,
   Divider,
   Space,
   message,
@@ -14,6 +13,7 @@ import {
   Tag,
   Progress,
 } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   VideoCameraOutlined,
   ScanOutlined,

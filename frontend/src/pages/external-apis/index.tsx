@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, Input, InputNumber, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Form, Input, InputNumber, Select, Space, Switch, Table, Tag, message } from 'antd';
+import Button from '@/components/common/AppButton';
 import { ApiOutlined, PlusOutlined } from '@ant-design/icons';
 import { AppModal, PageHeader, useAppConfirm } from '@/components/common';
 import {

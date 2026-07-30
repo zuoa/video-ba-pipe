@@ -2,6 +2,10 @@
   padding: 24px;
 }
 
+.alerts-filter-toolbar {
+  margin-bottom: 16px;
+}
+
 /* 加载动画 */
 @keyframes fadeInUp {
   from {

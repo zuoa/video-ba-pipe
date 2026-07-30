@@ -1,18 +1,3 @@
-/* 测试结果弹窗 */
-.test-result-modal .ant-modal-content {
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.test-result-modal .ant-modal-header {
-  border-bottom: 1px solid #f0f0f0;
-  padding: 16px 24px;
-}
-
-.test-result-modal .ant-modal-body {
-  padding: 0;
-}
-
 /* 弹窗标题 */
 .test-result-modal .modal-title {
   display: flex;

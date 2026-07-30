@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Table, Button, Space, Tag, Select, Badge, Input, Alert } from 'antd';
+import { Table, Space, Tag, Select, Badge, Input, Alert } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppToolbar from '@/components/common/AppToolbar';
 import { useNavigate } from 'umi';
 import {
   EditOutlined,
@@ -264,7 +266,17 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   return (
     <div className="workflow-table-wrapper">
       {/* 筛选栏 */}
-      <div className="filter-bar">
+      <AppToolbar
+        className="filter-bar"
+        actions={(
+          <Search
+            placeholder="搜索名称或描述"
+            allowClear
+            className="workflow-search"
+            onChange={(e) => setSearchText(e.target.value)}
+          />
+        )}
+      >
         <div className="filter-left">
           <Space size="middle">
             <div className="filter-item">
@@ -291,15 +303,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
             )}
           </Space>
         </div>
-        <div className="filter-right">
-          <Search
-            placeholder="搜索名称或描述"
-            allowClear
-            style={{ width: 300 }}
-            onChange={(e) => setSearchText(e.target.value)}
-          />
-        </div>
-      </div>
+      </AppToolbar>
 
       {/* 批量操作栏 */}
       {selectedRowKeys.length > 0 && (

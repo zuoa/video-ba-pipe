@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from '@umijs/max';
 import {
   Steps,
-  Button,
   Form,
   Input,
   InputNumber,
@@ -17,6 +16,7 @@ import {
   Row,
   Col,
 } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   CheckOutlined,
   ArrowLeftOutlined,

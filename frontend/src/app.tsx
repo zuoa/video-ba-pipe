@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { history } from '@umijs/max';
 import { App as AntdApp, ConfigProvider, message } from 'antd';
+import { appTheme } from '@/theme';
 
 const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts'];
 
@@ -21,48 +22,6 @@ function getStoredUser() {
 function isAdminOnlyPath(pathname: string) {
   return ADMIN_ONLY_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
-
-const appTheme = {
-  token: {
-    colorPrimary: '#1f242b',
-    colorInfo: '#356a92',
-    colorSuccess: '#2f6b4f',
-    colorWarning: '#9a681f',
-    colorError: '#b54743',
-    colorText: '#1f242b',
-    colorTextSecondary: '#667085',
-    colorBorder: '#d7dbe2',
-    colorBorderSecondary: '#e5e7eb',
-    colorBgLayout: '#f3f4f6',
-    colorBgContainer: '#ffffff',
-    colorFillAlter: '#f7f8fa',
-    borderRadius: 14,
-    controlHeight: 40,
-    fontFamily:
-      '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif',
-    boxShadowSecondary: '0 18px 40px rgba(33, 29, 24, 0.08)',
-  },
-  components: {
-    Button: {
-      controlHeightLG: 44,
-      fontWeight: 600,
-      primaryShadow: 'none',
-    },
-    Card: {
-      bodyPadding: 20,
-    },
-    Modal: {
-      contentBg: '#ffffff',
-      headerBg: 'transparent',
-      titleFontSize: 17,
-    },
-    Table: {
-      headerBg: '#f7f8fa',
-      headerColor: '#6b7280',
-      borderColor: '#e5e7eb',
-    },
-  },
-};
 
 export async function getInitialState() {
   const token = localStorage.getItem('token');

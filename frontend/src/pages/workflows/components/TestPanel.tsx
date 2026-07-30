@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Upload, Button, Empty, Alert, Space, Image, message, Tag } from 'antd';
+import { Upload, Alert, Space, Image, message, Tag } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import {
   UploadOutlined,
   PlayCircleOutlined,
@@ -455,17 +457,13 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
 
         {!canRunTest && !testResult && (
           <div className="test-empty">
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            <AppEmptyState
+              compact
+              title="尚未准备测试素材"
               description={
-                <Space direction="vertical" size="small">
-                  <span>上传图片/视频或从视频源抓帧后开始测试</span>
-                  {canUseVideoSource && (
-                    <span style={{ fontSize: 12, color: '#1890ff' }}>
-                      点击“抓取当前帧”从工作流视频源获取测试图像
-                    </span>
-                  )}
-                </Space>
+                canUseVideoSource
+                  ? '上传图片或视频，或从工作流视频源抓取当前帧'
+                  : '上传图片或视频后开始测试'
               }
             />
           </div>

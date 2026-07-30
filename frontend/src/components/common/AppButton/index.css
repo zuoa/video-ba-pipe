@@ -1,0 +1,110 @@
+.app-button {
+  --app-button-color: var(--app-text);
+  --app-button-bg: var(--app-surface-strong);
+  --app-button-border: var(--app-line);
+  --app-button-hover-bg: var(--app-surface-muted);
+  --app-button-hover-border: var(--app-control-hover-line);
+  --app-button-solid-bg: var(--app-accent);
+  --app-button-solid-hover: var(--app-accent-hover);
+  --app-button-soft-bg: var(--app-accent-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--app-radius-control) !important;
+  font-weight: 600;
+  box-shadow: none !important;
+  white-space: nowrap;
+  transform: none !important;
+}
+
+.app-button--info {
+  --app-button-color: var(--app-info);
+  --app-button-hover-border: rgba(53, 106, 146, 0.46);
+  --app-button-solid-bg: var(--app-info);
+  --app-button-solid-hover: var(--app-info-hover);
+  --app-button-soft-bg: var(--app-info-soft);
+}
+
+.app-button--success {
+  --app-button-color: var(--app-success);
+  --app-button-hover-border: rgba(47, 107, 79, 0.46);
+  --app-button-solid-bg: var(--app-success);
+  --app-button-solid-hover: var(--app-success-hover);
+  --app-button-soft-bg: var(--app-success-soft);
+}
+
+.app-button--warning {
+  --app-button-color: var(--app-warning);
+  --app-button-hover-border: rgba(154, 104, 31, 0.48);
+  --app-button-solid-bg: var(--app-warning);
+  --app-button-solid-hover: var(--app-warning-hover);
+  --app-button-soft-bg: var(--app-warning-soft);
+}
+
+.app-button--danger {
+  --app-button-color: var(--app-danger);
+  --app-button-hover-border: rgba(181, 71, 67, 0.48);
+  --app-button-solid-bg: var(--app-danger);
+  --app-button-solid-hover: var(--app-danger-hover);
+  --app-button-soft-bg: var(--app-danger-soft);
+}
+
+body .app-button.app-button--outline {
+  border-color: var(--app-button-border) !important;
+  background: var(--app-button-bg) !important;
+  color: var(--app-button-color) !important;
+}
+
+body .app-button.app-button--outline:not(:disabled):hover {
+  border-color: var(--app-button-hover-border) !important;
+  background: var(--app-button-soft-bg) !important;
+  color: var(--app-button-color) !important;
+}
+
+body .app-button.app-button--solid {
+  border-color: var(--app-button-solid-bg) !important;
+  background: var(--app-button-solid-bg) !important;
+  color: var(--app-on-solid) !important;
+}
+
+body .app-button.app-button--solid:not(:disabled):hover {
+  border-color: var(--app-button-solid-hover) !important;
+  background: var(--app-button-solid-hover) !important;
+  color: var(--app-on-solid) !important;
+}
+
+body .app-button.app-button--text {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--app-button-color) !important;
+}
+
+body .app-button.app-button--text:not(:disabled):hover {
+  border-color: transparent !important;
+  background: var(--app-button-soft-bg) !important;
+  color: var(--app-button-color) !important;
+}
+
+.app-button--icon-only {
+  width: 40px;
+  min-width: 40px;
+  padding-inline: 0 !important;
+}
+
+.app-button--icon-only.ant-btn-sm {
+  width: 32px;
+  min-width: 32px;
+}
+
+.app-button--icon-only.ant-btn-lg {
+  width: 44px;
+  min-width: 44px;
+}
+
+.app-button:disabled {
+  color: var(--app-control-disabled-text) !important;
+  border-color: var(--app-line-soft) !important;
+  background: var(--app-control-disabled-bg) !important;
+  box-shadow: none !important;
+}

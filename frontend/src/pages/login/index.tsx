@@ -1,5 +1,6 @@
 import { LockOutlined, UserOutlined, VideoCameraOutlined, SafetyOutlined } from '@ant-design/icons';
-import { Button, Form, Input, message } from 'antd';
+import { Form, Input, message } from 'antd';
+import Button from '@/components/common/AppButton';
 import { useState } from 'react';
 import { history } from '@umijs/max';
 import { login } from '@/services/api';

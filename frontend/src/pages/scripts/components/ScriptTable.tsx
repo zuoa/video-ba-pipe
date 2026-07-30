@@ -1,5 +1,8 @@
 import React from 'react';
-import { Table, Button, Space, Tag, Empty, Input, message } from 'antd';
+import { Table, Space, Tag, Input, message } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
+import AppToolbar from '@/components/common/AppToolbar';
 import {
   EditOutlined,
   DeleteOutlined,
@@ -161,7 +164,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
   return (
     <div className="script-table-wrapper">
       {/* 搜索栏 */}
-      <div className="search-bar">
+      <AppToolbar className="search-bar">
         <Input
           placeholder="搜索脚本名称或路径..."
           value={searchText}
@@ -171,7 +174,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
           size="large"
           className="search-input"
         />
-      </div>
+      </AppToolbar>
 
       {/* 表格 */}
       <div className="table-container">
@@ -189,14 +192,10 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
           className="script-table"
           locale={{
             emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <div className="empty-state">
-                    <CodeOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
-                    <p style={{ marginTop: 16, color: '#8c8c8c' }}>暂无脚本</p>
-                  </div>
-                }
+              <AppEmptyState
+                compact
+                image={<CodeOutlined className="script-empty-icon" />}
+                title="暂无脚本"
               />
             ),
           }}

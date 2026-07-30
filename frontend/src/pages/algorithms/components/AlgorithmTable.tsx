@@ -10,6 +10,7 @@ import {
   FileSearchOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import AppButton from '@/components/common/AppButton';
 import './AlgorithmTable.css';
 
 export interface Algorithm {
@@ -136,34 +137,37 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       render: (_: any, record: Algorithm) => (
         <Space size="small">
           <Tooltip title="测试算法">
-            <button
-              type="button"
+            <AppButton
+              size="small"
+              tone="info"
               className="action-btn action-btn-test"
               onClick={() => onTest(record)}
             >
               <PlayCircleOutlined />
               <span>测试</span>
-            </button>
+            </AppButton>
           </Tooltip>
           <Tooltip title="编辑算法">
-            <button
-              type="button"
+            <AppButton
+              size="small"
+              tone="info"
               className="action-btn action-btn-edit"
               onClick={() => onEdit(record)}
             >
               <EditOutlined />
               <span>编辑</span>
-            </button>
+            </AppButton>
           </Tooltip>
           <Tooltip title="删除算法">
-            <button
-              type="button"
+            <AppButton
+              size="small"
+              tone="danger"
               className="action-btn action-btn-delete"
               onClick={() => onDelete(record.id)}
             >
               <DeleteOutlined />
               <span>删除</span>
-            </button>
+            </AppButton>
           </Tooltip>
         </Space>
       ),

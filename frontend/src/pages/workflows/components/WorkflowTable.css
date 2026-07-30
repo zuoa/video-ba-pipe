@@ -1,18 +1,17 @@
 .workflow-table-wrapper {
-  background: white;
-  border-radius: 12px;
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-line-soft);
+  border-radius: var(--app-radius-m);
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--app-shadow-sm);
 }
 
 /* 筛选栏 */
 .workflow-table-wrapper .filter-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  border: 0;
+  border-bottom: 1px solid var(--app-line-soft);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .filter-left,
@@ -29,42 +28,47 @@
 }
 
 .filter-icon {
-  color: #8c8c8c;
+  color: var(--app-text-muted);
   font-size: 14px;
 }
 
 .filter-label {
   font-size: 14px;
   font-weight: 500;
-  color: #262626;
+  color: var(--app-text);
 }
 
 .filter-info {
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--app-text-muted);
 }
 
 .filter-count {
   font-weight: 600;
-  color: #1890ff;
+  color: var(--app-info);
   margin: 0 4px;
+}
+
+.workflow-search {
+  width: 300px;
+  max-width: 100%;
 }
 
 /* 批量操作栏 */
 .batch-actions-alert {
   margin: 16px 24px;
-  border-radius: 8px;
-  background: #e6f7ff;
-  border-color: #91d5ff;
+  border-radius: var(--app-radius-s);
+  background: var(--app-info-soft);
+  border-color: rgba(53, 106, 146, 0.26);
 }
 
 .batch-actions-alert .ant-alert-icon {
-  color: #1890ff;
+  color: var(--app-info);
 }
 
 .batch-actions-alert .ant-alert-message {
   font-size: 14px;
-  color: #262626;
+  color: var(--app-text);
 }
 
 /* 表格样式 */
@@ -77,11 +81,11 @@
 }
 
 .workflow-table .ant-table-thead > tr > th {
-  background: #fafafa;
+  background: var(--app-surface-muted);
   font-weight: 600;
-  color: #262626;
+  color: var(--app-text-muted);
   padding: 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--app-line-soft);
 }
 
 .workflow-table .ant-table-tbody > tr > td {
@@ -89,16 +93,16 @@
 }
 
 .workflow-table .ant-table-tbody > tr:hover > td {
-  background: #fafafa;
+  background: #fafbfc;
 }
 
 /* 选中行的样式 */
 .workflow-table .ant-table-tbody > tr.ant-table-row-selected > td {
-  background: #e6f7ff !important;
+  background: var(--app-info-soft) !important;
 }
 
 .workflow-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
-  background: #bae7ff !important;
+  background: #e4eff6 !important;
 }
 
 .workflow-table .ant-table-selection-column {
@@ -177,49 +181,6 @@
 .status-inactive {
   color: #8c8c8c;
   font-weight: 400;
-}
-
-/* 操作按钮 */
-.workflow-table-wrapper .action-btn {
-  font-size: 13px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  font-weight: 500;
-}
-
-.workflow-table-wrapper .action-btn-edit {
-  color: #1890ff;
-  border-color: #d9d9d9;
-}
-
-.workflow-table-wrapper .action-btn-edit:hover {
-  color: #40a9ff;
-  border-color: #40a9ff;
-  background: #e6f7ff;
-}
-
-.workflow-table-wrapper .action-btn-warning {
-  color: #faad14;
-  border-color: #d9d9d9;
-}
-
-.workflow-table-wrapper .action-btn-warning:hover {
-  color: #ffc53d;
-  border-color: #ffc53d;
-  background: #fffbe6;
-}
-
-.workflow-table-wrapper .action-btn-delete {
-  color: #f5222d;
-  border-color: #d9d9d9;
-}
-
-.workflow-table-wrapper .action-btn-delete:hover {
-  color: #ff4d4f;
-  border-color: #ff4d4f;
-  background: #fff1f0;
 }
 
 /* 复选框样式 - 增强可见度 */

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'umi';
-import { Button, Space, message, Spin, Empty } from 'antd';
+import { Space, message, Spin } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import {
   CloseOutlined,
   SaveOutlined,
@@ -966,18 +968,10 @@ export default function WorkflowEditorPage() {
               />
             ) : (
               <div className="property-panel-empty">
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    <Space direction="vertical" size="small">
-                      <span style={{ fontSize: 14, color: '#262626', fontWeight: 500 }}>
-                        点击节点查看属性
-                      </span>
-                      <span style={{ fontSize: 12, color: '#8c8c8c' }}>
-                        点击画布中的节点以编辑其属性
-                      </span>
-                    </Space>
-                  }
+                <AppEmptyState
+                  compact
+                  title="点击节点查看属性"
+                  description="点击画布中的节点以编辑其属性"
                 />
               </div>
             )

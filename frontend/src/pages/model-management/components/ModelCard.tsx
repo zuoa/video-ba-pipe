@@ -7,7 +7,8 @@ import {
   ApiOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons';
-import { StatusBadge } from '@/components/common';
+import AppButton from '@/components/common/AppButton';
+import StatusBadge from '@/components/common/StatusBadge';
 import { getModel } from '@/services/api';
 import './ModelCard.css';
 
@@ -129,35 +130,39 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
         </Space>
         <Space size="small">
           <Tooltip title="查看详情">
-            <button
-              type="button"
+            <AppButton
+              size="small"
+              tone="info"
               className="action-btn action-btn-view"
               onClick={() => onView(model)}
             >
               <EyeOutlined />
               <span>详情</span>
-            </button>
+            </AppButton>
           </Tooltip>
           <Tooltip title="复制路径">
-            <button
-              type="button"
+            <AppButton
+              size="small"
+              iconOnly
               className="action-btn action-btn-copy"
               aria-label={`复制模型 ${model.name} 的路径`}
               onClick={handleCopyPath}
             >
               <CopyOutlined />
-            </button>
+            </AppButton>
           </Tooltip>
           {model.usage_count === 0 && (
             <Tooltip title="删除模型">
-              <button
-                type="button"
+              <AppButton
+                size="small"
+                tone="danger"
+                iconOnly
                 className="action-btn action-btn-delete"
                 aria-label={`删除模型 ${model.name}`}
                 onClick={() => onDelete(model.id)}
               >
                 <DeleteOutlined />
-              </button>
+              </AppButton>
             </Tooltip>
           )}
         </Space>

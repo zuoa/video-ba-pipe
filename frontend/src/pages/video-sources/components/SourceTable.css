@@ -132,57 +132,6 @@
 
 .preview-btn {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 6px;
-  background: #e6f7ff;
-  color: #1890ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s;
-}
-
-.preview-btn:hover {
-  background: #bae7ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
-}
-
-/* Action Buttons */
-.source-table-wrapper .action-btn {
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.3s;
-  height: 32px;
-  padding: 0 12px;
-}
-
-.source-table-wrapper .action-btn-edit {
-  background: #e6f7ff;
-  color: #1890ff;
-  border-color: #91d5ff;
-}
-
-.source-table-wrapper .action-btn-edit:hover {
-  background: #bae7ff;
-  border-color: #69c0ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
-}
-
-.source-table-wrapper .action-btn-delete {
-  background: #fff1f0;
-  color: #cf1322;
-  border-color: #ffa39e;
-}
-
-.source-table-wrapper .action-btn-delete:hover {
-  background: #ffccc7;
-  border-color: #ff7875;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(255, 77, 79, 0.3);
 }
 
 /* Pagination */

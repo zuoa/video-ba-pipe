@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Card, Form, Input, InputNumber, Switch, message, Spin } from 'antd';
+import { Alert, Card, Form, Input, InputNumber, Switch, message, Spin } from 'antd';
+import Button from '@/components/common/AppButton';
 import { SettingOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import {

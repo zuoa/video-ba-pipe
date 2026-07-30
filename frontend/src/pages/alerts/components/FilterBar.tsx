@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Select, Button, Space, Tag, Card, DatePicker } from 'antd';
+import { Select, Space, Tag, DatePicker } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppToolbar from '@/components/common/AppToolbar';
 import {
   SyncOutlined,
   CloseCircleOutlined,
@@ -8,7 +10,6 @@ import {
   VideoCameraOutlined,
   BugOutlined,
 } from '@ant-design/icons';
-import dayjs, { Dayjs } from 'dayjs';
 import type { RangePickerProps } from 'antd/es/date-picker';
 import { Task, Workflow } from '../types';
 
@@ -39,7 +40,6 @@ const FilterBar: React.FC<FilterBarProps> = ({
   selectedWorkflow,
   selectedAlertType,
   selectedTimeRange,
-  customTimeRange,
   onTaskChange,
   onWorkflowChange,
   onAlertTypeChange,
@@ -93,9 +93,20 @@ const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   return (
-    <Card style={{ marginBottom: 16 }}>
-      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Space size="middle" wrap>
+    <AppToolbar
+      className="alerts-filter-toolbar"
+      actions={(
+        <Button
+          type="primary"
+          icon={<SyncOutlined spin={loading} />}
+          onClick={onRefresh}
+          loading={loading}
+        >
+          刷新
+        </Button>
+      )}
+    >
+      <Space size="middle" wrap>
           {/* 视频源筛选 */}
           <Select
             placeholder={<span><VideoCameraOutlined /> 选择视频源</span>}
@@ -207,18 +218,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
               )}
             </Space>
           )}
-        </Space>
-
-        <Button
-          type="primary"
-          icon={<SyncOutlined spin={loading} />}
-          onClick={onRefresh}
-          loading={loading}
-        >
-          刷新
-        </Button>
       </Space>
-    </Card>
+    </AppToolbar>
   );
 };
 

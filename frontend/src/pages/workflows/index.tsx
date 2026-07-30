@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { message, Button } from 'antd';
+import { message } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   PlusOutlined,
   ApartmentOutlined,

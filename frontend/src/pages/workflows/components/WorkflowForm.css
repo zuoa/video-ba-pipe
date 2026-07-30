@@ -1,15 +1,3 @@
-/* WorkflowForm Modal 样式 */
-.workflow-form-modal .ant-modal-header {
-  border-bottom: 1px solid #f0f0f0;
-  padding: 16px 24px;
-}
-
-.workflow-form-modal .ant-modal-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-}
-
 .workflow-form-modal .modal-title {
   display: flex;
   align-items: center;
@@ -21,51 +9,10 @@
   color: #000000;
 }
 
-.workflow-form-modal .ant-modal-close-x {
-  width: 48px;
-  height: 48px;
-  line-height: 48px;
-  font-size: 16px;
-  color: #8c8c8c;
-  transition: all 0.2s ease;
-}
-
-.workflow-form-modal .ant-modal-close-x:hover {
-  color: #262626;
-  background: #fafafa;
-}
-
-.workflow-form-modal .ant-modal-body {
-  padding: 24px;
-}
-
-.workflow-form-modal .ant-modal-footer {
-  border-top: 1px solid #f0f0f0;
-  padding: 16px 24px;
-}
-
 .workflow-form-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-}
-
-.workflow-form-footer .ant-btn {
-  height: 38px;
-  padding: 0 20px;
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 6px;
-}
-
-.workflow-form-footer .ant-btn-primary {
-  background: #000000;
-  border-color: #000000;
-}
-
-.workflow-form-footer .ant-btn-primary:hover {
-  background: #333333;
-  border-color: #333333;
 }
 
 /* 表单样式 */

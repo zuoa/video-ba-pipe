@@ -10,21 +10,41 @@
   --app-line: #d7dbe2;
   --app-line-soft: #e5e7eb;
   --app-accent: #1f242b;
+  --app-accent-hover: #343b45;
+  --app-accent-active: #161a20;
   --app-accent-soft: #eceff3;
   --app-info: #356a92;
+  --app-info-hover: #2d5a7d;
   --app-info-soft: #edf5fa;
   --app-success: #2f6b4f;
+  --app-success-hover: #285c44;
   --app-success-soft: #edf6f1;
   --app-warning: #9a681f;
+  --app-warning-hover: #835819;
   --app-warning-soft: #fbf5e8;
   --app-danger: #b54743;
+  --app-danger-hover: #9d3d3a;
   --app-danger-soft: #fbefee;
+  --app-on-solid: #ffffff;
+  --app-control-hover-line: #b8c0cc;
+  --app-control-disabled-text: #9aa1ab;
+  --app-control-disabled-bg: #f2f3f5;
+  --app-switch-off: #c9ced6;
   --app-shadow-sm: 0 10px 24px rgba(15, 23, 42, 0.05);
   --app-shadow-md: 0 18px 40px rgba(15, 23, 42, 0.08);
   --app-shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.14);
   --app-radius-s: 12px;
   --app-radius-m: 18px;
   --app-radius-l: 26px;
+  --app-radius-control: 10px;
+  --app-control-sm: 32px;
+  --app-control-md: 40px;
+  --app-control-lg: 44px;
+  --app-space-1: 4px;
+  --app-space-2: 8px;
+  --app-space-3: 12px;
+  --app-space-4: 16px;
+  --app-space-6: 24px;
   --app-z-header: 20;
   --app-z-overlay: 1000;
   --app-motion-fast: 160ms;
@@ -93,9 +113,9 @@ button,
 
 .app-primary-button.ant-btn,
 .app-primary-button {
-  height: 42px;
+  height: var(--app-control-md);
   padding: 0 18px;
-  border-radius: 999px !important;
+  border-radius: var(--app-radius-control) !important;
   border-color: var(--app-accent) !important;
   background: var(--app-accent) !important;
   color: #fff !important;
@@ -104,22 +124,22 @@ button,
 
 .app-primary-button.ant-btn:hover,
 .app-primary-button:hover {
-  border-color: #333a43 !important;
-  background: #333a43 !important;
+  border-color: var(--app-accent-hover) !important;
+  background: var(--app-accent-hover) !important;
   color: #fff !important;
 }
 
 .app-primary-button.ant-btn:active,
 .app-primary-button:active {
-  border-color: #161a20 !important;
-  background: #161a20 !important;
+  border-color: var(--app-accent-active) !important;
+  background: var(--app-accent-active) !important;
 }
 
 .app-secondary-button.ant-btn,
 .app-secondary-button {
-  height: 42px;
+  height: var(--app-control-md);
   padding: 0 18px;
-  border-radius: 999px !important;
+  border-radius: var(--app-radius-control) !important;
   border: 1px solid var(--app-line) !important;
   background: var(--app-surface-strong) !important;
   color: var(--app-text) !important;
@@ -128,8 +148,8 @@ button,
 
 .app-secondary-button.ant-btn:hover,
 .app-secondary-button:hover {
-  border-color: #c5ccd6 !important;
-  background: #f8fafc !important;
+  border-color: var(--app-control-hover-line) !important;
+  background: var(--app-surface-muted) !important;
   color: var(--app-text) !important;
 }
 
@@ -139,7 +159,7 @@ button,
 .ant-picker,
 .ant-input-number,
 .ant-input-number-affix-wrapper {
-  border-radius: 12px !important;
+  border-radius: var(--app-radius-control) !important;
 }
 
 .ant-input-affix-wrapper,
@@ -169,7 +189,7 @@ button,
 .ant-select-focused .ant-select-selector,
 .ant-picker-focused,
 .ant-input-number-focused {
-  border-color: #b8c0cc !important;
+  border-color: var(--app-control-hover-line) !important;
   box-shadow: 0 0 0 3px rgba(53, 106, 146, 0.1) !important;
 }
 
@@ -215,7 +235,7 @@ button,
 
 .ant-btn {
   min-height: 40px;
-  border-radius: 10px;
+  border-radius: var(--app-radius-control);
   box-shadow: none;
   transition:
     color var(--app-motion-fast) ease,
@@ -225,7 +245,7 @@ button,
 }
 
 .ant-btn-sm {
-  min-height: 32px;
+  min-height: var(--app-control-sm);
 }
 
 .ant-btn-primary {
@@ -234,8 +254,8 @@ button,
 }
 
 .ant-btn-primary:not(:disabled):hover {
-  border-color: #343b45 !important;
-  background: #343b45 !important;
+  border-color: var(--app-accent-hover) !important;
+  background: var(--app-accent-hover) !important;
 }
 
 .ant-btn-dangerous.ant-btn-primary {
@@ -256,6 +276,68 @@ button,
 
 .ant-form-item-explain-error {
   color: var(--app-danger) !important;
+}
+
+.ant-checkbox-inner {
+  border-radius: 4px !important;
+}
+
+.ant-radio-button-wrapper {
+  min-height: var(--app-control-md);
+  line-height: calc(var(--app-control-md) - 2px);
+}
+
+.ant-switch {
+  box-shadow: none !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background: var(--app-success);
+}
+
+.ant-tag {
+  margin-inline-end: 0;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev,
+.ant-pagination .ant-pagination-next,
+.ant-pagination .ant-pagination-options-quick-jumper input {
+  border-radius: 8px;
+}
+
+.ant-alert {
+  border-radius: var(--app-radius-s);
+}
+
+.ant-spin .ant-spin-dot-item {
+  background: var(--app-accent);
+}
+
+.ant-upload-wrapper .ant-upload-drag {
+  border-color: var(--app-line);
+  border-radius: var(--app-radius-s);
+  background: var(--app-surface-muted);
+}
+
+.ant-upload-wrapper .ant-upload-drag:not(.ant-upload-disabled):hover {
+  border-color: #b8c0cc;
+}
+
+.ant-dropdown .ant-dropdown-menu-item,
+.ant-dropdown .ant-dropdown-menu-submenu-title {
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+.ant-tooltip .ant-tooltip-inner {
+  border-radius: 8px;
+}
+
+.ant-empty-description {
+  line-height: 1.55;
 }
 
 .app-page,

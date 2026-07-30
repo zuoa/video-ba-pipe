@@ -1,12 +1,3 @@
-.import-sources-modal .ant-modal-content {
-  overflow: hidden;
-  border-radius: 20px;
-}
-
-.import-sources-modal .ant-modal-header {
-  margin-bottom: 20px;
-}
-
 .import-modal-layout {
   display: flex;
   flex-direction: column;

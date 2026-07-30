@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Form, Input, Select, Button, Empty, Tabs, Space, Tag, Switch, InputNumber, Typography, List } from 'antd';
+import { Form, Input, Select, Tabs, Space, Tag, Switch, InputNumber, Typography, List } from 'antd';
+import Button from '@/components/common/AppButton';
+import AppEmptyState from '@/components/common/AppEmptyState';
 import {
   SettingOutlined,
   DeleteOutlined,
@@ -241,18 +243,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   if (!node) {
     return (
       <div className="property-panel-empty">
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <Space direction="vertical" size="small">
-              <span style={{ fontSize: 14, color: '#262626', fontWeight: 500 }}>
-                点击节点查看属性
-              </span>
-              <span style={{ fontSize: 12, color: '#8c8c8c' }}>
-                点击画布中的节点以编辑其属性
-              </span>
-            </Space>
-          }
+        <AppEmptyState
+          compact
+          title="点击节点查看属性"
+          description="点击画布中的节点以编辑其属性"
         />
       </div>
     );

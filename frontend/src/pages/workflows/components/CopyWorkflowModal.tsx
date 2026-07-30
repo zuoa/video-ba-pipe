@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Checkbox, Button, Space, Typography, Alert, Divider } from 'antd';
+import { Checkbox, Space, Typography, Alert, Divider } from 'antd';
+import Button from '@/components/common/AppButton';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import './CopyWorkflowModal.css';
 import AppModal from '@/components/common/AppModal';

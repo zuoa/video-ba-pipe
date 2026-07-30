@@ -200,57 +200,8 @@
   color: #374151;
 }
 
-/* Action Buttons - simplified to use Ant Design styles */
-.algorithm-table-wrapper .action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.3s;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid;
-  background: transparent;
-}
-
 .algorithm-table-wrapper .action-btn span {
   line-height: 1;
-}
-
-.algorithm-table-wrapper .action-btn-test {
-  color: #52c41a;
-  border-color: #b7eb8f;
-}
-
-.algorithm-table-wrapper .action-btn-test:hover {
-  color: #389e0d;
-  border-color: #95de64;
-  background: #f6ffed;
-}
-
-.algorithm-table-wrapper .action-btn-edit {
-  color: #1890ff;
-  border-color: #91d5ff;
-}
-
-.algorithm-table-wrapper .action-btn-edit:hover {
-  color: #096dd9;
-  border-color: #69c0ff;
-  background: #e6f7ff;
-}
-
-.algorithm-table-wrapper .action-btn-delete {
-  color: #ff4d4f;
-  border-color: #ffa39e;
-}
-
-.algorithm-table-wrapper .action-btn-delete:hover {
-  color: #d9363e;
-  border-color: #ff7875;
-  background: #fff1f0;
 }
 
 /* Pagination */

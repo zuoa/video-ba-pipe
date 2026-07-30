@@ -1,6 +1,7 @@
 import React from 'react';
 import { Input, Select, Checkbox, Space } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
+import AppToolbar from '@/components/common/AppToolbar';
 import './FilterBar.css';
 
 interface ModelFilter {
@@ -24,7 +25,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onFilterChange,
 }) => {
   return (
-    <div className="filter-bar">
+    <AppToolbar className="filter-bar">
       <Space size="middle" wrap>
         <Input
           className="filter-search"
@@ -67,7 +68,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
           仅显示启用
         </Checkbox>
       </Space>
-    </div>
+    </AppToolbar>
   );
 };
 

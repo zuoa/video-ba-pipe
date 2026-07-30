@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Badge, Tag, Space, Descriptions, Image, Button } from 'antd';
+import { Badge, Tag, Space, Descriptions, Image } from 'antd';
+import Button from '@/components/common/AppButton';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,

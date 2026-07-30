@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, history } from '@umijs/max';
-import { Dropdown, Button, message } from 'antd';
+import { Dropdown, message } from 'antd';
+import Button from '@/components/common/AppButton';
 import { getSystemInfo } from '@/services/api';
 import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import './Header.css';

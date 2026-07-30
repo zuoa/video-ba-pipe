@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import {Alert, Task} from '../types';
 import RelativeTime from './RelativeTime';
+import { appPalette } from '@/theme';
 
 const {Text, Title} = Typography;
 
@@ -35,45 +36,37 @@ const ALERT_ICONS: Record<string, React.ReactNode> = {
     phone_detection_2stage: <MobileOutlined/>,
 };
 
-// 告警类型颜色映射 - 使用渐变色
-const ALERT_COLORS: Record<string, { primary: string; gradient: string; bg: string }> = {
+const ALERT_COLORS: Record<string, { primary: string; bg: string }> = {
     warning: {
-        primary: '#faad14',
-        gradient: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)',
-        bg: '#fff7e6',
+        primary: appPalette.warning,
+        bg: appPalette.warningSoft,
     },
     error: {
-        primary: '#ff4d4f',
-        gradient: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
-        bg: '#fff1f0',
+        primary: appPalette.danger,
+        bg: appPalette.dangerSoft,
     },
     info: {
-        primary: '#1677ff',
-        gradient: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
-        bg: '#e6f4ff',
+        primary: appPalette.info,
+        bg: appPalette.infoSoft,
     },
     critical: {
-        primary: '#722ed1',
-        gradient: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
-        bg: '#f9f0ff',
+        primary: appPalette.danger,
+        bg: appPalette.dangerSoft,
     },
     person_detection: {
-        primary: '#1677ff',
-        gradient: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
-        bg: '#e6f4ff',
+        primary: appPalette.info,
+        bg: appPalette.infoSoft,
     },
     phone_detection_2stage: {
-        primary: '#faad14',
-        gradient: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)',
-        bg: '#fff7e6',
+        primary: appPalette.warning,
+        bg: appPalette.warningSoft,
     },
 };
 
 // 获取默认颜色
 const DEFAULT_COLOR = {
-    primary: '#1677ff',
-    gradient: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
-    bg: '#e6f4ff',
+    primary: appPalette.info,
+    bg: appPalette.infoSoft,
 };
 
 const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
@@ -119,7 +112,7 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: colorScheme.gradient,
+                        background: colorScheme.primary,
                             opacity: 0.05,
                         }}
                     />
@@ -174,7 +167,7 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                                 gap: 6,
                                 padding: '4px 12px',
                                 borderRadius: 20,
-                                background: colorScheme.gradient,
+                                background: colorScheme.primary,
                                 color: '#fff',
                                 fontSize: 12,
                                 fontWeight: 600,
@@ -229,7 +222,7 @@ const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
                                     width: 32,
                                     height: 32,
                                     borderRadius: '50%',
-                                    background: colorScheme.gradient,
+                                    background: colorScheme.primary,
                                     color: '#fff',
                                     fontSize: 13,
                                     fontWeight: 'bold',

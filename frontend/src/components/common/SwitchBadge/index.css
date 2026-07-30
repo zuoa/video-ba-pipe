@@ -1,8 +1,14 @@
 .switch-badge {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.3s;
+  cursor: pointer;
+  transition: opacity var(--app-motion-fast) ease;
 }
 
 .switch-badge-small .switch-track {
@@ -64,18 +70,18 @@
 
 .switch-track {
   position: relative;
-  background: linear-gradient(135deg, #d9d9d9 0%, #bfbfbf 100%);
+  background: var(--app-switch-off);
   border-radius: 11px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color var(--app-motion-base) cubic-bezier(0.4, 0, 0.2, 1);
   padding: 2px;
 }
 
 .switch-track.switch-checked {
-  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+  background: var(--app-success);
 }
 
 .switch-thumb {
-  background: #ffffff;
+  background: var(--app-surface-strong);
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -83,16 +89,16 @@
 
 .switch-text {
   font-weight: 500;
-  transition: color 0.3s;
+  transition: color var(--app-motion-fast) ease;
   user-select: none;
 }
 
 .switch-text.text-checked {
-  color: #52c41a;
+  color: var(--app-success);
 }
 
 .switch-text.text-unchecked {
-  color: #8c8c8c;
+  color: var(--app-text-muted);
 }
 
 .switch-disabled {
@@ -101,7 +107,7 @@
 }
 
 .switch-disabled .switch-track {
-  background: #f0f0f0;
+  background: var(--app-line-soft);
 }
 
 .switch-disabled .switch-thumb {

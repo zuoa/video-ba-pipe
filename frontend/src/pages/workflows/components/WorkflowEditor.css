@@ -1,13 +1,3 @@
-/* 编辑器 Modal 样式 */
-.workflow-editor-modal .ant-modal-content {
-  height: 100vh;
-  border-radius: 0;
-}
-
-.workflow-editor-modal .ant-modal-close {
-  display: none;
-}
-
 /* 编辑器头部 - 使用黑色主题 */
 .workflow-editor-page .editor-header {
   display: flex;
