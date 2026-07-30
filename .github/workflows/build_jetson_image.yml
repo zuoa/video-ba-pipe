@@ -1,0 +1,66 @@
+name: Build Jetson image
+
+on:
+  workflow_dispatch:
+    inputs:
+      jetson_pytorch_image:
+        description: NVIDIA PyTorch iGPU base image
+        required: true
+        default: nvcr.io/nvidia/pytorch:25.05-py3-igpu
+        type: string
+
+concurrency:
+  group: build-jetson-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Jetson Orin (linux/arm64)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Jetson image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.jetson
+          platforms: linux/arm64
+          pull: true
+          push: true
+          build-args: |
+            JETSON_PYTORCH_IMAGE=${{ inputs.jetson_pytorch_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:jetson
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:jetson-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.nvidia.jetpack.version=6.2.1
+            com.nvidia.l4t.version=36.4.4
+          cache-from: type=gha,scope=jetson
+          cache-to: type=gha,mode=max,scope=jetson
