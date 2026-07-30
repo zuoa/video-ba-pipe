@@ -45,14 +45,20 @@ class AlgorithmNodeData(NodeContext):
 @dataclass
 class ConditionNodeData(NodeContext):
     node_type: str = "condition"
+    condition_kind: str = "count"
     target_count: int = 1
     """数量阈值，默认为1"""
 
     comparison_type: str = ">="
     """比较类型: '>=' (至少N个) 或 '==' (正好N个)"""
 
-
-
+    source_node_id: Optional[str] = None
+    text_operator: str = "contains"
+    pattern_type: str = "keywords"
+    keywords: List[str] = field(default_factory=list)
+    keyword_logic: str = "any"
+    regex_pattern: str = ""
+    case_sensitive: bool = False
 
 @dataclass
 class RoiDrawNodeData(NodeContext):
@@ -219,12 +225,21 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         # Condition 节点读取配置（支持驼峰和蛇形两种命名）
         target_count = data.get('targetCount') or data.get('target_count', 1)
         comparison_type = data.get('comparisonType') or data.get('comparison_type', '>=')
+        condition_kind = data.get('conditionKind') or data.get('condition_kind', 'count')
 
         return node_class(
             node_type=node_type,
             node_id=node_id,
+            condition_kind=condition_kind,
             target_count=target_count,
-            comparison_type=comparison_type
+            comparison_type=comparison_type,
+            source_node_id=data.get('sourceNodeId') or data.get('source_node_id'),
+            text_operator=data.get('textOperator') or data.get('text_operator', 'contains'),
+            pattern_type=data.get('patternType') or data.get('pattern_type', 'keywords'),
+            keywords=data.get('keywords') if isinstance(data.get('keywords'), list) else [],
+            keyword_logic=data.get('keywordLogic') or data.get('keyword_logic', 'any'),
+            regex_pattern=data.get('regexPattern') or data.get('regex_pattern', ''),
+            case_sensitive=bool(data.get('caseSensitive') if 'caseSensitive' in data else data.get('case_sensitive', False)),
         )
     elif node_type in ('roi_draw', 'roi'):  # 支持前后端两种类型名称
         # 从 data 读取新的数据格式（支持驼峰和蛇形两种命名）

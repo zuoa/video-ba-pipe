@@ -168,6 +168,10 @@ export async function deleteAlgorithm(id: number) {
   });
 }
 
+export async function getPluginModules() {
+  return request('/api/plugins/modules');
+}
+
 // 外部 API
 export async function getExternalApis() {
   return request('/api/external-apis');
@@ -389,6 +393,7 @@ export async function deleteModel(id: number) {
 export async function uploadModel(file: File, metadata?: {
   name: string;
   model_type: string;
+  model_role?: string;
   framework: string;
   version?: string;
   input_shape?: string;
@@ -416,6 +421,7 @@ export async function uploadModel(file: File, metadata?: {
   if (metadata) {
     formData.append('name', metadata.name);
     formData.append('model_type', metadata.model_type);
+    if (metadata.model_role) formData.append('model_role', metadata.model_role);
     formData.append('framework', metadata.framework);
     if (metadata.version) formData.append('version', metadata.version);
     if (metadata.input_shape) formData.append('input_shape', metadata.input_shape);
@@ -456,6 +462,7 @@ export async function importModelFromSource(data: {
   source_type: 'url' | 'huggingface';
   name?: string;
   model_type: string;
+  model_role?: string;
   framework: string;
   version?: string;
   input_shape?: string;

@@ -184,6 +184,7 @@ class ModelResolver:
             model_info = {
                 'path': model.file_path,
                 'model_type': model.model_type,
+                'model_role': model.model_role,
                 'framework': model.framework,
                 'input_shape': model.input_shape,
                 'classes': model.classes_dict,
@@ -193,7 +194,6 @@ class ModelResolver:
             self._log_model_path_status(model_ref, model_info)
             
             self._cache[cache_key] = model_info
-            model.increment_usage()
             
             return model_info
             

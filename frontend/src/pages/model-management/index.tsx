@@ -18,6 +18,7 @@ interface Model {
   name: string;
   version: string;
   model_type: string;
+  model_role?: string;
   framework: string;
   filename: string;
   file_path: string;

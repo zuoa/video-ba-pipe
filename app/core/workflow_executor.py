@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 import numpy as np
 import requests
@@ -520,7 +521,7 @@ class WorkflowExecutor:
                         full_config.update(algo.config_dict)
 
                         algorithm_type = algo.ext_config.get('algorithm_type') or 'script'
-                        if algorithm_type == 'vl':
+                        if algorithm_type in ('vl', 'ocr'):
                             full_config.update(algo.ext_config)
 
                         # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
@@ -537,6 +538,9 @@ class WorkflowExecutor:
                         if algorithm_type == 'vl':
                             from app.plugins.vl_algorithm import VLAlgorithm
                             self.algorithms[node_id] = VLAlgorithm(full_config)
+                        elif algorithm_type == 'ocr':
+                            from app.plugins.ocr_algorithm import OCRAlgorithm
+                            self.algorithms[node_id] = OCRAlgorithm(full_config)
                         else:
                             self.algorithms[node_id] = ScriptAlgorithm(full_config)
 
@@ -1114,6 +1118,13 @@ class WorkflowExecutor:
                 len(det.get('stages', [])) for det in detections if isinstance(det.get('stages'), list)
             )
             metadata['stage_confidence_filtered_count'] = stage_filtered_count
+        if metadata.get('ocr_checked') is True:
+            metadata['full_text'] = '\n'.join(
+                str(detection.get('text') or detection.get('label_name') or '')
+                for detection in filtered
+                if isinstance(detection, dict)
+            )
+            metadata['text_count'] = len(filtered)
 
         filtered_result = dict(result)
         filtered_result['detections'] = filtered
@@ -1287,6 +1298,12 @@ class WorkflowExecutor:
 
         # 向后兼容：处理旧的字符串类型条件
         if isinstance(condition, str):
+            if context.get('condition_error'):
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 条件节点执行失败，阻止分支 {condition}: "
+                    f"{context.get('condition_error')}"
+                )
+                return False
             has_detection = context.get('has_detection', False)
             logger.debug(f"[Workflow-{self.workflow_id}] 条件判断(字符串): condition={condition}, has_detection={has_detection}")
 
@@ -1702,6 +1719,28 @@ class WorkflowExecutor:
 
         # 获取上游检测结果
         upstream_results = self._get_upstream_results(node_id)
+        log_collector = context.get('log_collector')
+
+        if node.condition_kind == 'ocr_text':
+            condition_passed, metadata, error = self._evaluate_ocr_text_condition(node, upstream_results)
+            context['has_detection'] = condition_passed
+            context['condition_error'] = error
+            if log_collector:
+                if error:
+                    log_collector.add_error(node_id, f"OCR 文字条件失败: {error}", metadata=metadata)
+                else:
+                    log_collector.add_info(
+                        node_id,
+                        f"OCR 文字条件{'通过' if condition_passed else '未通过'}",
+                        metadata=metadata,
+                    )
+            logger.info(
+                f"[Workflow-{self.workflow_id}] OCR 文字条件 {node_id}: "
+                f"passed={condition_passed}, error={error}, metadata={metadata}"
+            )
+            return context
+
+        context['condition_error'] = None
 
         # 计算总的检测数量
         detection_count = 0
@@ -1729,7 +1768,6 @@ class WorkflowExecutor:
         context['has_detection'] = condition_passed
 
         # 记录日志
-        log_collector = context.get('log_collector')
         if log_collector:
             log_collector.add_info(
                 node_id,
@@ -1748,6 +1786,67 @@ class WorkflowExecutor:
         )
 
         return context
+
+    @staticmethod
+    def _evaluate_ocr_text_condition(node, upstream_results):
+        source_node_id = node.source_node_id
+        result = upstream_results.get(source_node_id) if source_node_id else None
+        base_metadata = {
+            'condition_kind': 'ocr_text',
+            'source_node_id': source_node_id,
+            'text_operator': node.text_operator,
+            'pattern_type': node.pattern_type,
+        }
+        if not source_node_id:
+            return False, base_metadata, '未指定 OCR 来源节点'
+        if not isinstance(result, dict):
+            return False, base_metadata, f'OCR 来源节点 {source_node_id} 本帧没有结果'
+
+        result_metadata = result.get('metadata') or {}
+        if result_metadata.get('ocr_checked') is not True:
+            error = result_metadata.get('error') or 'OCR 未成功执行'
+            return False, {**base_metadata, 'ocr_checked': False}, error
+
+        full_text = result_metadata.get('full_text')
+        if full_text is None:
+            full_text = '\n'.join(
+                str(item.get('text') or item.get('label_name') or '')
+                for item in result.get('detections') or []
+                if isinstance(item, dict)
+            )
+        full_text = str(full_text)
+        matched = False
+        matched_terms = []
+        try:
+            if node.pattern_type == 'regex':
+                flags = 0 if node.case_sensitive else re.IGNORECASE
+                matched = re.search(node.regex_pattern, full_text, flags=flags) is not None
+            else:
+                keywords = [str(keyword).strip() for keyword in node.keywords if str(keyword).strip()]
+                haystack = full_text if node.case_sensitive else full_text.lower()
+                evaluations = []
+                for keyword in keywords:
+                    needle = keyword if node.case_sensitive else keyword.lower()
+                    hit = needle in haystack
+                    evaluations.append(hit)
+                    if hit:
+                        matched_terms.append(keyword)
+                matched = all(evaluations) if node.keyword_logic == 'all' else any(evaluations)
+        except re.error as exc:
+            return False, {**base_metadata, 'full_text': full_text}, f'正则表达式无效: {exc}'
+
+        condition_passed = not matched if node.text_operator == 'not_contains' else matched
+        metadata = {
+            **base_metadata,
+            'ocr_checked': True,
+            'full_text': full_text,
+            'matched': matched,
+            'matched_terms': matched_terms,
+            'keyword_logic': node.keyword_logic,
+            'case_sensitive': node.case_sensitive,
+            'condition_passed': condition_passed,
+        }
+        return condition_passed, metadata, None
     
     def _handle_output_node(self, node_id, context):
         self._execute_output(node_id, context)
@@ -3277,6 +3376,24 @@ class WorkflowExecutor:
 
         # 条件节点
         elif node_type == 'condition':
+            if getattr(node, 'condition_kind', 'count') == 'ocr_text':
+                upstream_results = self._get_upstream_results(node_id)
+                condition_passed, metadata, error = self._evaluate_ocr_text_condition(node, upstream_results)
+                if error:
+                    return {
+                        'message': f'OCR 文字条件失败: {error}',
+                        'condition_passed': False,
+                        'error': error,
+                        'debug_info': metadata,
+                    }
+                return {
+                    'message': f"OCR 文字条件 - {'✓ 通过' if condition_passed else '✗ 未通过'}",
+                    'condition_passed': condition_passed,
+                    'full_text': metadata.get('full_text', ''),
+                    'matched_terms': metadata.get('matched_terms', []),
+                    'debug_info': metadata,
+                }
+
             target_count = getattr(node, 'target_count', 1)
             comparison_type = getattr(node, 'comparison_type', '>=')
 

@@ -6,8 +6,12 @@ import sys
 import json
 import re
 import shutil
+import stat
+import tarfile
+import tempfile
+import zipfile
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, send_file, current_app, after_this_request
 from werkzeug.utils import secure_filename
 from urllib.parse import urlparse, unquote, quote
 from urllib.request import Request, urlopen
@@ -39,6 +43,10 @@ MODELS_ROOT = MODEL_SAVE_PATH
 
 # 允许的模型文件扩展名
 ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
+OCR_ARCHIVE_EXTENSIONS = ('.zip', '.tar', '.tar.gz', '.tgz')
+OCR_MODEL_ROLES = {'detection', 'recognition'}
+OCR_MAX_ARCHIVE_ENTRIES = 10_000
+OCR_MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 
 
 EXTENSION_MODEL_HINTS = {
@@ -51,9 +59,108 @@ EXTENSION_MODEL_HINTS = {
 }
 
 
-def allowed_file(filename):
+def _is_ocr_archive(filename):
+    return str(filename or '').lower().endswith(OCR_ARCHIVE_EXTENSIONS)
+
+
+def allowed_file(filename, model_type=None):
     """检查文件扩展名是否允许"""
+    if str(model_type or '').strip().upper() == 'OCR' and _is_ocr_archive(filename):
+        return True
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _remove_model_artifact(path):
+    if not path or not os.path.exists(path):
+        return
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+
+
+def _safe_archive_target(root, member_name):
+    normalized = str(member_name or '').replace('\\', '/')
+    if not normalized or normalized.startswith('/') or re.match(r'^[A-Za-z]:', normalized):
+        raise ValueError(f'OCR 模型包包含非法路径: {member_name}')
+    target = os.path.realpath(os.path.join(root, normalized))
+    root_real = os.path.realpath(root)
+    if target != root_real and not target.startswith(root_real + os.sep):
+        raise ValueError(f'OCR 模型包包含目录穿越路径: {member_name}')
+    return target
+
+
+def _extract_ocr_archive(archive_path):
+    """安全解压 OCR 模型包并返回可直接交给 PaddleOCR 的模型目录。"""
+    extract_root = tempfile.mkdtemp(prefix='.ocr-extract-', dir=os.path.dirname(archive_path))
+    final_dir = None
+    entry_count = 0
+    extracted_bytes = 0
+    try:
+        if zipfile.is_zipfile(archive_path):
+            with zipfile.ZipFile(archive_path) as archive:
+                members = archive.infolist()
+                for member in members:
+                    entry_count += 1
+                    extracted_bytes += int(member.file_size or 0)
+                    _safe_archive_target(extract_root, member.filename)
+                    file_mode = (member.external_attr >> 16) & 0o170000
+                    if file_mode == stat.S_IFLNK:
+                        raise ValueError('OCR 模型包不允许包含符号链接')
+                if entry_count > OCR_MAX_ARCHIVE_ENTRIES or extracted_bytes > OCR_MAX_EXTRACTED_BYTES:
+                    raise ValueError('OCR 模型包解压后的条目数或总大小超出限制')
+                archive.extractall(extract_root)
+        elif tarfile.is_tarfile(archive_path):
+            with tarfile.open(archive_path) as archive:
+                members = archive.getmembers()
+                for member in members:
+                    entry_count += 1
+                    extracted_bytes += int(member.size or 0)
+                    _safe_archive_target(extract_root, member.name)
+                    if member.issym() or member.islnk() or member.isdev():
+                        raise ValueError('OCR 模型包不允许包含链接或设备文件')
+                if entry_count > OCR_MAX_ARCHIVE_ENTRIES or extracted_bytes > OCR_MAX_EXTRACTED_BYTES:
+                    raise ValueError('OCR 模型包解压后的条目数或总大小超出限制')
+                archive.extractall(extract_root)
+        else:
+            raise ValueError('OCR 模型必须是 ZIP、TAR、TAR.GZ 或 TGZ 压缩包')
+
+        config_markers = {'inference.json', 'inference.yml', 'model.yml', 'inference.pdmodel'}
+        model_directories = []
+        for directory, subdirectories, filenames in os.walk(extract_root):
+            subdirectories[:] = [
+                name for name in subdirectories
+                if name != '__MACOSX' and not name.startswith('.')
+            ]
+            direct_files = set(filenames)
+            has_config = bool(direct_files.intersection(config_markers))
+            has_parameters = any(name.endswith(('.pdiparams', '.pdparams')) for name in direct_files)
+            if has_config and has_parameters:
+                model_directories.append(directory)
+
+        if not model_directories:
+            raise ValueError('压缩包不是有效的 PaddleOCR 推理模型目录')
+        if len(model_directories) > 1:
+            raise ValueError('OCR 模型包包含多个推理模型目录，请每个压缩包只放一个模型')
+        source_dir = model_directories[0]
+
+        archive_name = os.path.basename(archive_path)
+        base_name = re.sub(r'(?i)(\.tar\.gz|\.tgz|\.tar|\.zip)$', '', archive_name)
+        final_dir = os.path.join(os.path.dirname(archive_path), base_name)
+        counter = 0
+        while os.path.exists(final_dir):
+            counter += 1
+            final_dir = os.path.join(os.path.dirname(archive_path), f'{base_name}_{counter}')
+        shutil.move(source_dir, final_dir)
+        if os.path.exists(extract_root):
+            shutil.rmtree(extract_root)
+        os.remove(archive_path)
+        return final_dir, extracted_bytes
+    except Exception:
+        shutil.rmtree(extract_root, ignore_errors=True)
+        if final_dir and os.path.exists(final_dir):
+            shutil.rmtree(final_dir, ignore_errors=True)
+        raise
 
 
 def _infer_model_meta(filename, model_type=None, framework=None):
@@ -116,6 +223,7 @@ def _upsert_model_record(
     file_path,
     file_size,
     model_type,
+    model_role,
     framework,
     input_shape,
     classes,
@@ -128,13 +236,14 @@ def _upsert_model_record(
     existing = MLModel.select().where((MLModel.name == name) & (MLModel.version == version)).first()
     if existing:
         # 删除旧文件
-        if os.path.exists(existing.file_path):
-            os.remove(existing.file_path)
+        if existing.file_path != file_path:
+            _remove_model_artifact(existing.file_path)
         # 更新记录
         existing.filename = filename
         existing.file_path = file_path
         existing.file_size = file_size
         existing.model_type = model_type
+        existing.model_role = model_role or None
         existing.framework = framework
         existing.input_shape = input_shape or None
         existing.classes = classes or None
@@ -153,6 +262,7 @@ def _upsert_model_record(
         file_path=file_path,
         file_size=file_size,
         model_type=model_type,
+        model_role=model_role or None,
         framework=framework,
         input_shape=input_shape or None,
         classes=classes or None,
@@ -199,6 +309,72 @@ def _parse_json_object_field(value, field_name):
     return json.dumps(value, ensure_ascii=False)
 
 
+def _model_reference_matches(reference, target_model):
+    if isinstance(reference, str):
+        return reference == target_model.name
+    if not isinstance(reference, dict):
+        return False
+    try:
+        if int(reference.get('model_id')) == target_model.id:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(reference.get('name') or '') == target_model.name
+
+
+def _algorithm_references_model(algorithm, model_id, target_model=None):
+    target_id = int(model_id)
+    if target_model is None:
+        try:
+            target_model = MLModel.get_by_id(target_id)
+        except MLModel.DoesNotExist:
+            return False
+    ext_config = algorithm.ext_config
+    ocr_config = ext_config.get('ocr_config') or {}
+    for key in ('detection_model_id', 'recognition_model_id'):
+        try:
+            if int(ocr_config.get(key)) == target_id:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    config = algorithm.config_dict
+    models = config.get('models') or []
+    if isinstance(models, dict):
+        if any(_model_reference_matches(reference, target_model) for reference in models.values()):
+            return True
+    elif isinstance(models, list):
+        if any(_model_reference_matches(reference, target_model) for reference in models):
+            return True
+
+    raw_model_ids = ext_config.get('model_ids')
+    if isinstance(raw_model_ids, str):
+        try:
+            raw_model_ids = json.loads(raw_model_ids)
+        except json.JSONDecodeError:
+            raw_model_ids = []
+    if isinstance(raw_model_ids, list):
+        for reference_id in raw_model_ids:
+            try:
+                if int(reference_id) == target_id:
+                    return True
+            except (TypeError, ValueError):
+                continue
+    return False
+
+
+def _algorithms_referencing_model(model_id):
+    try:
+        target_model = MLModel.get_by_id(int(model_id))
+    except (MLModel.DoesNotExist, TypeError, ValueError):
+        return []
+    return [
+        algorithm
+        for algorithm in Algorithm.select()
+        if _algorithm_references_model(algorithm, target_model.id, target_model=target_model)
+    ]
+
+
 def serialize_model(model):
     """序列化模型对象"""
     return {
@@ -209,6 +385,7 @@ def serialize_model(model):
         'file_size': model.file_size,
         'file_size_mb': round(model.file_size / (1024 * 1024), 2),
         'model_type': model.model_type,
+        'model_role': model.model_role or None,
         'framework': model.framework,
         'input_shape': model.input_shape,
         'classes': model.classes_dict,
@@ -220,7 +397,7 @@ def serialize_model(model):
         'updated_at': model.updated_at.isoformat() if model.updated_at else None,
         'uploaded_by': model.uploaded_by,
         'download_count': model.download_count,
-        'usage_count': model.usage_count,
+        'usage_count': len(_algorithms_referencing_model(model.id)),
         'enabled': model.enabled
     }
 
@@ -296,9 +473,6 @@ def upload_model():
         if file.filename == '':
             return jsonify({'success': False, 'error': '未选择文件'}), 400
 
-        if not allowed_file(file.filename):
-            return jsonify({'success': False, 'error': f'不支持的文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
-
         # 获取表单数据
         name = request.form.get('name', '').strip()
         if not name:
@@ -306,12 +480,25 @@ def upload_model():
 
         description = request.form.get('description', '').strip()
         model_type = request.form.get('model_type', '').strip()
+        model_role = request.form.get('model_role', '').strip().lower()
         framework = request.form.get('framework', '').strip()
         input_shape = request.form.get('input_shape', '').strip()
         classes = request.form.get('classes', '{}').strip()
         model_postprocess = request.form.get('model_postprocess', '').strip()
         tags = request.form.get('tags', '[]').strip()
         version = request.form.get('version', 'v1.0').strip()
+
+        if not allowed_file(file.filename, model_type):
+            return jsonify({'success': False, 'error': '不支持的模型文件类型'}), 400
+        if model_type.upper() == 'OCR':
+            if model_role not in OCR_MODEL_ROLES:
+                return jsonify({'success': False, 'error': 'OCR 模型角色仅支持 detection 或 recognition'}), 400
+            if not _is_ocr_archive(file.filename):
+                return jsonify({'success': False, 'error': 'OCR 模型必须上传 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
+            model_type = 'OCR'
+            framework = 'paddleocr'
+        else:
+            model_role = ''
 
         # 验证JSON格式
         try:
@@ -328,7 +515,8 @@ def upload_model():
 
         # 安全文件名
         filename = secure_filename(file.filename)
-        model_type, framework = _infer_model_meta(filename, model_type, framework)
+        if model_type != 'OCR':
+            model_type, framework = _infer_model_meta(filename, model_type, framework)
 
         # 处理目录和重名
         try:
@@ -344,8 +532,16 @@ def upload_model():
             logger.error(f"保存文件失败: {file_path}, 错误: {e}")
             return jsonify({'success': False, 'error': f'保存文件失败: {e}'}), 500
 
-        # 获取文件大小
-        file_size = os.path.getsize(file_path)
+        # OCR 模型以目录形式保存；普通模型保持单文件。
+        if model_type == 'OCR':
+            try:
+                file_path, file_size = _extract_ocr_archive(file_path)
+                final_filename = f'{os.path.basename(file_path)}.zip'
+            except ValueError as e:
+                _remove_model_artifact(file_path)
+                return jsonify({'success': False, 'error': str(e)}), 400
+        else:
+            file_size = os.path.getsize(file_path)
 
         model = _upsert_model_record(
             name=name,
@@ -354,6 +550,7 @@ def upload_model():
             file_path=file_path,
             file_size=file_size,
             model_type=model_type,
+            model_role=model_role,
             framework=framework,
             input_shape=input_shape,
             classes=classes,
@@ -403,10 +600,18 @@ def import_model_from_url():
         source_type = (data.get('source_type') or 'url').strip().lower()
 
         model_type = (data.get('model_type') or '').strip()
+        model_role = (data.get('model_role') or '').strip().lower()
         framework = (data.get('framework') or '').strip()
         input_shape = (data.get('input_shape') or '').strip()
         description = (data.get('description') or '').strip()
         version = (data.get('version') or 'v1.0').strip()
+        if model_type.upper() == 'OCR':
+            if model_role not in OCR_MODEL_ROLES:
+                return jsonify({'success': False, 'error': 'OCR 模型角色仅支持 detection 或 recognition'}), 400
+            model_type = 'OCR'
+            framework = 'paddleocr'
+        else:
+            model_role = ''
 
         try:
             classes_data = _parse_json_field(data.get('classes'), 'classes', {})
@@ -453,7 +658,7 @@ def import_model_from_url():
         else:
             return jsonify({'success': False, 'error': 'source_type 仅支持 url 或 huggingface'}), 400
 
-        source_filename_valid = bool(source_filename and allowed_file(source_filename))
+        source_filename_valid = bool(source_filename and allowed_file(source_filename, model_type))
 
         if source_type == 'huggingface' and not source_filename_valid:
             return jsonify({'success': False, 'error': f'不支持的文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
@@ -469,7 +674,7 @@ def import_model_from_url():
                 download_filename = source_filename if source_filename_valid else ''
                 if response_filename:
                     response_filename = secure_filename(response_filename)
-                    if response_filename and allowed_file(response_filename):
+                    if response_filename and allowed_file(response_filename, model_type):
                         download_filename = response_filename
 
                 if not download_filename:
@@ -478,7 +683,8 @@ def import_model_from_url():
                         'error': f'无法识别模型文件名或文件类型，允许的类型: {", ".join(ALLOWED_EXTENSIONS)}'
                     }), 400
 
-                model_type, framework = _infer_model_meta(download_filename, model_type, framework)
+                if model_type != 'OCR':
+                    model_type, framework = _infer_model_meta(download_filename, model_type, framework)
 
                 try:
                     file_path, final_filename = _get_unique_file_path(model_type, download_filename)
@@ -503,7 +709,18 @@ def import_model_from_url():
         if not os.path.exists(file_path):
             return jsonify({'success': False, 'error': '模型下载失败，文件未生成'}), 500
 
-        file_size = os.path.getsize(file_path)
+        if model_type == 'OCR':
+            if not _is_ocr_archive(final_filename):
+                _remove_model_artifact(file_path)
+                return jsonify({'success': False, 'error': 'OCR 模型必须是 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
+            try:
+                file_path, file_size = _extract_ocr_archive(file_path)
+                final_filename = f'{os.path.basename(file_path)}.zip'
+            except ValueError as e:
+                _remove_model_artifact(file_path)
+                return jsonify({'success': False, 'error': str(e)}), 400
+        else:
+            file_size = os.path.getsize(file_path)
 
         model = _upsert_model_record(
             name=model_name,
@@ -512,6 +729,7 @@ def import_model_from_url():
             file_path=file_path,
             file_size=file_size,
             model_type=model_type,
+            model_role=model_role,
             framework=framework,
             input_shape=input_shape,
             classes=classes,
@@ -573,6 +791,11 @@ def update_model(model_id):
             model.name = data['name'].strip()
         if 'description' in data:
             model.description = data['description'].strip()
+        if 'model_role' in data:
+            model_role = str(data['model_role'] or '').strip().lower()
+            if model.model_type.upper() == 'OCR' and model_role not in OCR_MODEL_ROLES:
+                return jsonify({'success': False, 'error': 'OCR 模型角色仅支持 detection 或 recognition'}), 400
+            model.model_role = model_role or None
         if 'input_shape' in data:
             model.input_shape = data['input_shape'].strip() or None
         if 'classes' in data:
@@ -611,16 +834,15 @@ def delete_model(model_id):
         model = MLModel.get_by_id(model_id)
 
         # 检查是否被算法使用
-        if model.usage_count > 0:
+        referencing_algorithms = _algorithms_referencing_model(model_id)
+        if referencing_algorithms:
             return jsonify({
                 'success': False,
-                'error': f'该模型正在被 {model.usage_count} 个算法使用，无法删除'
+                'error': f'该模型正在被 {len(referencing_algorithms)} 个算法使用，无法删除'
             }), 400
 
-        # 删除文件
-        if os.path.exists(model.file_path):
-            os.remove(model.file_path)
-            logger.info(f"已删除模型文件: {model.file_path}")
+        _remove_model_artifact(model.file_path)
+        logger.info(f"已删除模型文件: {model.file_path}")
 
         # 删除数据库记录
         model_name = model.name
@@ -653,11 +875,27 @@ def download_model(model_id):
         model.download_count += 1
         model.save()
 
-        return send_file(
-            model.file_path,
-            as_attachment=True,
-            download_name=model.filename
-        )
+        if os.path.isdir(model.file_path):
+            archive_root = tempfile.mkdtemp(prefix='ocr-model-download-')
+            archive_path = shutil.make_archive(
+                os.path.join(archive_root, os.path.basename(model.file_path)),
+                'zip',
+                root_dir=os.path.dirname(model.file_path),
+                base_dir=os.path.basename(model.file_path),
+            )
+
+            @after_this_request
+            def cleanup_archive(response):
+                shutil.rmtree(archive_root, ignore_errors=True)
+                return response
+
+            return send_file(
+                archive_path,
+                as_attachment=True,
+                download_name=model.filename if model.filename.endswith('.zip') else f'{model.filename}.zip',
+            )
+
+        return send_file(model.file_path, as_attachment=True, download_name=model.filename)
 
     except MLModel.DoesNotExist:
         return jsonify({'success': False, 'error': '模型不存在'}), 404
@@ -672,11 +910,7 @@ def get_model_algorithms(model_id):
     try:
         model = MLModel.get_by_id(model_id)
 
-        # 查询使用该模型的算法
-        # 通过 ext_config_json 中包含模型路径的算法
-        algorithms = Algorithm.select().where(
-            Algorithm.ext_config_json.contains(model.file_path)
-        )
+        algorithms = _algorithms_referencing_model(model_id)
 
         result = []
         for algo in algorithms:

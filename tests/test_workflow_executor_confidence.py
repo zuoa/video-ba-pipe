@@ -149,6 +149,30 @@ def test_process_algorithm_filters_stage_boxes_by_config_confidence():
     assert metadata["stage_confidence_filtered_count"] == 1
 
 
+def test_process_algorithm_rebuilds_ocr_full_text_after_confidence_filter():
+    executor = _build_executor(
+        node_config={"confidence": 0.8},
+        result={
+            "detections": [
+                {"text": "保留", "confidence": 0.9},
+                {"text": "过滤", "confidence": 0.4},
+            ],
+            "metadata": {"ocr_checked": True, "full_text": "保留\n过滤", "text_count": 2},
+        },
+    )
+
+    result = executor._process_algorithm(
+        node_id="algo_1",
+        frame=np.zeros((32, 32, 3), dtype=np.uint8),
+        frame_timestamp=0.0,
+        roi_regions=None,
+        upstream_results={},
+    )
+
+    assert result["result"]["metadata"]["full_text"] == "保留"
+    assert result["result"]["metadata"]["text_count"] == 1
+
+
 def test_sync_single_model_confidence_uses_max_threshold_without_explicit_override():
     executor = WorkflowExecutor.__new__(WorkflowExecutor)
     executor.workflow_id = 1

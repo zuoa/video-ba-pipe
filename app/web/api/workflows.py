@@ -2,6 +2,7 @@
 工作流管理 API
 """
 import json
+import re
 from datetime import datetime
 from copy import deepcopy
 from flask import jsonify, request
@@ -14,12 +15,69 @@ from app.core.workflow_runtime import (
     workflow_configs_equivalent,
 )
 from app.config import SNAPSHOT_SAVE_PATH
+from app.core.ocr_runtime import is_ocr_runtime_available
 from app.web.api.auth import (
     require_auth,
     apply_owner_scope,
     require_resource_owner,
     current_username,
 )
+
+
+def _validate_ocr_text_conditions(workflow_data):
+    if not isinstance(workflow_data, dict):
+        return True, None
+    nodes = {node.get('id'): node for node in workflow_data.get('nodes', []) if isinstance(node, dict)}
+    connections = workflow_data.get('connections', []) or []
+    connected_pairs = {
+        (connection.get('from') or connection.get('from_node_id'), connection.get('to') or connection.get('to_node_id'))
+        for connection in connections
+        if isinstance(connection, dict)
+    }
+
+    for node in nodes.values():
+        if node.get('type') != 'condition':
+            continue
+        data = node.get('data') or {}
+        condition_kind = data.get('conditionKind') or data.get('condition_kind') or 'count'
+        if condition_kind != 'ocr_text':
+            continue
+
+        source_node_id = data.get('sourceNodeId') or data.get('source_node_id')
+        source_node = nodes.get(source_node_id)
+        if not source_node or (source_node_id, node.get('id')) not in connected_pairs:
+            return False, f"文字条件 {node.get('name') or node.get('id')} 必须选择已连接的 OCR 节点"
+        if source_node.get('type') != 'algorithm':
+            return False, '文字条件来源必须是算法节点'
+        try:
+            algorithm = Algorithm.get_by_id(source_node.get('dataId') or source_node.get('algorithmId'))
+        except (Algorithm.DoesNotExist, TypeError, ValueError):
+            return False, '文字条件来源算法不存在'
+        if (algorithm.ext_config.get('algorithm_type') or 'script') != 'ocr':
+            return False, '文字条件来源必须是 OCR 算法'
+
+        operator = data.get('textOperator') or data.get('text_operator') or 'contains'
+        pattern_type = data.get('patternType') or data.get('pattern_type') or 'keywords'
+        if operator not in ('contains', 'not_contains'):
+            return False, 'OCR 文字条件操作符无效'
+        if pattern_type == 'regex':
+            pattern = data.get('regexPattern') or data.get('regex_pattern') or ''
+            if not pattern:
+                return False, 'OCR 文字条件正则不能为空'
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                return False, f'OCR 文字条件正则无效: {exc}'
+        elif pattern_type == 'keywords':
+            keywords = data.get('keywords')
+            if not isinstance(keywords, list) or not any(str(item).strip() for item in keywords):
+                return False, 'OCR 文字条件至少需要一个关键词'
+            logic = data.get('keywordLogic') or data.get('keyword_logic') or 'any'
+            if logic not in ('any', 'all'):
+                return False, 'OCR 文字条件关键词逻辑无效'
+        else:
+            return False, 'OCR 文字条件匹配方式无效'
+    return True, None
 
 
 def register_workflows_api(app):
@@ -111,6 +169,9 @@ def register_workflows_api(app):
                 if owner_response:
                     return owner_response
                 workflow_data = normalize_source_node_fields(workflow_data, source)
+            is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
 
             workflow = Workflow.create(
                 name=data['name'],
@@ -168,6 +229,9 @@ def register_workflows_api(app):
                     return owner_response
 
                 workflow_data = normalize_source_node_fields(workflow_data, source)
+                is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
                 workflow_data_str = json.dumps(workflow_data)
                 app.logger.info(f"保存工作流 {id} 数据: nodes={len(workflow_data.get('nodes', []))}, connections={len(workflow_data.get('connections', []))}")
                 app.logger.debug(f"工作流数据内容: {workflow_data_str[:500]}")
@@ -282,6 +346,10 @@ def register_workflows_api(app):
                     'id': a.id,
                     'name': a.name,
                     'algorithm_type': a.ext_config.get('algorithm_type') or 'script',
+                    'runtime_available': (
+                        (a.ext_config.get('algorithm_type') or 'script') != 'ocr'
+                        or is_ocr_runtime_available()
+                    ),
                     'label_name': get_algorithm_label_name(a),
                     'script_path': a.script_path,
                     'created_by': a.created_by,

@@ -10,6 +10,10 @@ export const getAlgorithmDefaultConfidence = (algorithm?: any): number | undefin
     return undefined;
   }
 
+  if (algorithm.algorithm_type === 'ocr') {
+    return normalizeConfidence(algorithm?.ocr_config?.recognition_score_threshold);
+  }
+
   try {
     const scriptConfig = JSON.parse(algorithm?.script_config || '{}');
     const topLevelConfidence = normalizeConfidence(scriptConfig?.confidence);

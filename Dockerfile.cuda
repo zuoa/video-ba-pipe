@@ -52,9 +52,13 @@ RUN pip3 install torch torchvision torchaudio --index-url https://download.pytor
 
 # 复制依赖文件
 COPY requirements.txt .
+COPY requirements.ocr.txt .
 
 # 安装Python依赖
 RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.0.0 \
+      -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ \
+    && pip3 install --no-cache-dir -r requirements.ocr.txt
 
 # 复制应用代码
 COPY app/ /app/app/

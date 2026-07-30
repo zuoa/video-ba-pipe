@@ -19,6 +19,7 @@ interface ModelCardProps {
     name: string;
     version: string;
     model_type: string;
+    model_role?: string;
     framework: string;
     file_size_mb: number;
     input_shape?: string;
@@ -85,6 +86,12 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
           <span className="info-label">框架</span>
           <span className="info-value">{model.framework}</span>
         </div>
+        {model.model_type === 'OCR' ? (
+          <div className="info-item">
+            <span className="info-label">角色</span>
+            <span className="info-value">{model.model_role === 'detection' ? '文字检测' : '文字识别'}</span>
+          </div>
+        ) : null}
         <div className="info-item">
           <span className="info-label">大小</span>
           <span className="info-value">{model.file_size_mb} MB</span>

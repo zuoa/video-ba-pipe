@@ -7,6 +7,7 @@ import {
   ExperimentOutlined,
   ApiOutlined,
   RobotOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import './AlgorithmTable.css';
@@ -14,7 +15,7 @@ import './AlgorithmTable.css';
 export interface Algorithm {
   id: number;
   name: string;
-  algorithm_type?: 'script' | 'vl';
+  algorithm_type?: 'script' | 'vl' | 'ocr';
   description?: string;
   script_path: string;
   script_config?: string;
@@ -34,6 +35,11 @@ export interface Algorithm {
     base_url?: string;
     model_name?: string;
     api_key_configured?: boolean;
+  };
+  ocr_config?: {
+    detection_model_id?: number;
+    recognition_model_id?: number;
+    device?: string;
   };
 }
 
@@ -71,25 +77,40 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       render: (_: any, record: Algorithm) => (
         <div className="algorithm-info-cell">
           <div className={`algorithm-icon ${record.algorithm_type === 'vl' ? 'algorithm-icon-vl' : ''}`}>
-            {record.algorithm_type === 'vl' ? <RobotOutlined /> : <ExperimentOutlined />}
+            {record.algorithm_type === 'vl'
+              ? <RobotOutlined />
+              : record.algorithm_type === 'ocr'
+                ? <FileSearchOutlined />
+                : <ExperimentOutlined />}
           </div>
           <div className="algorithm-content">
             <div className="algorithm-name">
               {record.name}
-              <Tag color={record.algorithm_type === 'vl' ? 'cyan' : 'purple'} className="algorithm-type-tag">
-                {record.algorithm_type === 'vl' ? 'VL' : '脚本'}
+              <Tag
+                color={record.algorithm_type === 'vl' ? 'cyan' : record.algorithm_type === 'ocr' ? 'blue' : 'purple'}
+                className="algorithm-type-tag"
+              >
+                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : '脚本'}
               </Tag>
             </div>
             {record.description && (
               <div className="algorithm-description">{record.description}</div>
             )}
             <div className="algorithm-meta">
-              <Tooltip title={record.algorithm_type === 'vl' ? record.vl_config?.base_url : record.script_path}>
+              <Tooltip title={
+                record.algorithm_type === 'vl'
+                  ? record.vl_config?.base_url
+                  : record.algorithm_type === 'ocr'
+                    ? `运行设备：${record.ocr_config?.device || 'auto'}`
+                    : record.script_path
+              }>
                 <code className="algorithm-code">
                   <ApiOutlined />
                   {record.algorithm_type === 'vl'
                     ? `${record.vl_config?.model_name || '未配置模型'} · ${record.vl_config?.base_url || '未配置接口'}`
-                    : record.script_path}
+                    : record.algorithm_type === 'ocr'
+                      ? `检测模型 #${record.ocr_config?.detection_model_id || '-'} · 识别模型 #${record.ocr_config?.recognition_model_id || '-'}`
+                      : record.script_path}
                 </code>
               </Tooltip>
             </div>

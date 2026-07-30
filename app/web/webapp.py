@@ -35,6 +35,8 @@ from app.core.source_rotation import (
     save_source_rotation_config,
 )
 from app.core.vl_algorithm_config import normalize_vl_algorithm_config
+from app.core.ocr_algorithm_config import normalize_ocr_algorithm_config
+from app.core.ocr_runtime import get_ocr_runtime_status, is_ocr_runtime_available
 from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     workflow_references_algorithm,
@@ -101,6 +103,7 @@ def serialize_algorithm(algorithm):
         'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
         'created_by': getattr(algorithm, 'created_by', 'admin'),
         'algorithm_type': algorithm_type,
+        'runtime_available': algorithm_type != 'ocr' or is_ocr_runtime_available(),
         **ext_config,
     }
 
@@ -145,9 +148,21 @@ def serialize_video_source(source):
 def list_plugin_modules():
     """
     返回可用的插件模块列表
-    由于系统已迁移到统一脚本接口，始终返回 script_algorithm
+    返回当前内置算法插件。
     """
-    return jsonify({'modules': ['script_algorithm']})
+    ocr_available, ocr_error = get_ocr_runtime_status()
+    modules = ['script_algorithm', 'vl_algorithm']
+    if ocr_available:
+        modules.append('ocr_algorithm')
+    return jsonify({
+        'modules': modules,
+        'capabilities': {
+            'ocr': {
+                'available': ocr_available,
+                'error': ocr_error,
+            }
+        },
+    })
 
 
 @app.route('/api/system/info', methods=['GET'])
@@ -267,8 +282,11 @@ def create_algorithm():
         if not data.get('name'):
             return jsonify({'error': '缺少必填字段: name'}), 400
         algorithm_type = str(data.get('algorithm_type') or 'script').strip().lower()
-        if algorithm_type not in ('script', 'vl'):
-            return jsonify({'error': 'algorithm_type 仅支持 script 或 vl'}), 400
+        if algorithm_type not in ('script', 'vl', 'ocr'):
+            return jsonify({'error': 'algorithm_type 仅支持 script、vl 或 ocr'}), 400
+        if algorithm_type == 'ocr' and not is_ocr_runtime_available():
+            _, runtime_error = get_ocr_runtime_status()
+            return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
         if algorithm_type == 'script' and not data.get('script_path'):
             return jsonify({'error': '缺少必填字段: script_path'}), 400
 
@@ -289,6 +307,9 @@ def create_algorithm():
             ext_config['plugin_module'] = 'vl_algorithm'
             ext_config['vl_config'] = normalize_vl_algorithm_config(data.get('vl_config'))
             ext_config.setdefault('runtime_timeout', ext_config['vl_config']['timeout_seconds'])
+        elif algorithm_type == 'ocr':
+            ext_config['plugin_module'] = 'ocr_algorithm'
+            ext_config['ocr_config'] = normalize_ocr_algorithm_config(data.get('ocr_config'))
 
         # 创建算法
         algorithm = Algorithm.create(
@@ -325,8 +346,11 @@ def update_algorithm(id):
             ext_config = {}
         current_type = ext_config.get('algorithm_type') or 'script'
         algorithm_type = str(data.get('algorithm_type') or current_type).strip().lower()
-        if algorithm_type not in ('script', 'vl'):
-            return jsonify({'error': 'algorithm_type 仅支持 script 或 vl'}), 400
+        if algorithm_type not in ('script', 'vl', 'ocr'):
+            return jsonify({'error': 'algorithm_type 仅支持 script、vl 或 ocr'}), 400
+        if algorithm_type == 'ocr' and not is_ocr_runtime_available():
+            _, runtime_error = get_ocr_runtime_status()
+            return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
 
         # 更新基本字段
         if 'name' in data:
@@ -360,13 +384,24 @@ def update_algorithm(id):
                 return jsonify({'error': '脚本算法缺少必填字段: script_path'}), 400
             ext_config['plugin_module'] = data.get('plugin_module') or 'script_algorithm'
             ext_config.pop('vl_config', None)
-        else:
+            ext_config.pop('ocr_config', None)
+        elif algorithm_type == 'vl':
             current_vl_config = ext_config.get('vl_config') if current_type == 'vl' else None
             ext_config['plugin_module'] = 'vl_algorithm'
             ext_config['vl_config'] = normalize_vl_algorithm_config(
                 data.get('vl_config'),
                 current=current_vl_config,
             )
+            algorithm.script_path = ''
+            ext_config.pop('ocr_config', None)
+        else:
+            current_ocr_config = ext_config.get('ocr_config') if current_type == 'ocr' else None
+            ext_config['plugin_module'] = 'ocr_algorithm'
+            ext_config['ocr_config'] = normalize_ocr_algorithm_config(
+                data.get('ocr_config'),
+                current=current_ocr_config,
+            )
+            ext_config.pop('vl_config', None)
             algorithm.script_path = ''
 
         algorithm.ext_config_json = json.dumps(ext_config)
@@ -489,6 +524,9 @@ def test_algorithm():
             if algorithm_type == 'vl':
                 from app.plugins.vl_algorithm import VLAlgorithm
                 algo_instance = VLAlgorithm(full_config)
+            elif algorithm_type == 'ocr':
+                from app.plugins.ocr_algorithm import OCRAlgorithm
+                algo_instance = OCRAlgorithm(full_config)
             else:
                 from app.plugins.script_algorithm import ScriptAlgorithm
                 algo_instance = ScriptAlgorithm(full_config)

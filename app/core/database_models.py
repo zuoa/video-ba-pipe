@@ -399,6 +399,7 @@ class MLModel(BaseModel):
     file_path = pw.CharField()           # 完整路径
     file_size = pw.IntegerField()        # 文件大小（字节）
     model_type = pw.CharField()          # 类型：YOLO, ONNX, TensorRT等
+    model_role = pw.CharField(null=True) # 模型角色：OCR detection/recognition 等
     framework = pw.CharField()           # 框架：ultralytics, pytorch, onnx等
     input_shape = pw.CharField(null=True)# 输入尺寸，如 "640x640"
     classes = pw.TextField(null=True)    # 支持的类别JSON，如 {"0": "person", "1": "car"}

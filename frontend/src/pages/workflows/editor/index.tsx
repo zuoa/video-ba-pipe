@@ -182,8 +182,16 @@ export default function WorkflowEditorPage() {
               }
               // Condition 节点：读取 targetCount 和 comparisonType
               if (nodeType === 'condition') {
+                nodeData.conditionKind = node.data.conditionKind || node.data.condition_kind || 'count';
                 nodeData.targetCount = node.data.targetCount || node.data.target_count || 1;
                 nodeData.comparisonType = node.data.comparisonType || node.data.comparison_type || '>=';
+                nodeData.sourceNodeId = node.data.sourceNodeId || node.data.source_node_id;
+                nodeData.textOperator = node.data.textOperator || node.data.text_operator || 'contains';
+                nodeData.patternType = node.data.patternType || node.data.pattern_type || 'keywords';
+                nodeData.keywords = node.data.keywords || [];
+                nodeData.keywordLogic = node.data.keywordLogic || node.data.keyword_logic || 'any';
+                nodeData.regexPattern = node.data.regexPattern || node.data.regex_pattern || '';
+                nodeData.caseSensitive = node.data.caseSensitive ?? node.data.case_sensitive ?? false;
                 console.log('🔀 [EDITOR] Condition 节点加载配置:', {
                   id: node.id,
                   targetCount: nodeData.targetCount,
@@ -593,8 +601,16 @@ export default function WorkflowEditorPage() {
         } else if (nodeType === 'condition') {
           // Condition 节点：保存 targetCount 和 comparisonType 到 data 字段
           saveData.data = {
+            conditionKind: node.data?.conditionKind || node.data?.condition_kind || 'count',
             targetCount: node.data?.targetCount || node.data?.target_count || 1,
             comparisonType: node.data?.comparisonType || node.data?.comparison_type || '>=',
+            sourceNodeId: node.data?.sourceNodeId || node.data?.source_node_id,
+            textOperator: node.data?.textOperator || node.data?.text_operator || 'contains',
+            patternType: node.data?.patternType || node.data?.pattern_type || 'keywords',
+            keywords: node.data?.keywords || [],
+            keywordLogic: node.data?.keywordLogic || node.data?.keyword_logic || 'any',
+            regexPattern: node.data?.regexPattern || node.data?.regex_pattern || '',
+            caseSensitive: node.data?.caseSensitive ?? node.data?.case_sensitive ?? false,
           };
           console.log('🔀 [EDITOR] Condition 节点保存数据:', {
             id: node.id,

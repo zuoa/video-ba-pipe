@@ -13,8 +13,8 @@ interface UploadModalProps {
   onSuccess: () => void;
 }
 
-const modelTypes = ['YOLO', 'RKNN', 'ONNX', 'TensorRT', 'PyTorch', 'TFLite', 'Custom'];
-const frameworks = ['ultralytics', 'rknn', 'onnx', 'tensorrt', 'pytorch', 'tflite', 'custom'];
+const modelTypes = ['YOLO', 'OCR', 'RKNN', 'ONNX', 'TensorRT', 'PyTorch', 'TFLite', 'Custom'];
+const frameworks = ['ultralytics', 'paddleocr', 'rknn', 'onnx', 'tensorrt', 'pytorch', 'tflite', 'custom'];
 
 const extensionModelHints: Record<string, { model_type: string; framework: string }> = {
   '.pt': { model_type: 'YOLO', framework: 'ultralytics' },
@@ -30,6 +30,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const sourceType = Form.useWatch('source_type', form) || 'local';
+  const modelType = Form.useWatch('model_type', form) || 'YOLO';
+  const isOcrModel = modelType === 'OCR';
 
   const handleOk = async () => {
     try {
@@ -53,6 +55,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
         await uploadModel(file as File, {
           name: values.name,
           model_type: values.model_type,
+          model_role: values.model_role,
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
@@ -66,6 +69,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           source_type: 'url',
           name: values.name,
           model_type: values.model_type,
+          model_role: values.model_role,
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
@@ -79,6 +83,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           source_type: 'huggingface',
           name: values.name,
           model_type: values.model_type,
+          model_role: values.model_role,
           framework: values.framework,
           version: values.version,
           input_shape: values.input_shape,
@@ -113,12 +118,16 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
     multiple: false,
     fileList,
     beforeUpload: (file: RcFile) => {
-      const validExtensions = ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
+      const validExtensions = isOcrModel
+        ? ['.zip', '.tar', '.tar.gz', '.tgz']
+        : ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
       const lowerFileName = file.name.toLowerCase();
       const isValid = validExtensions.some(ext => lowerFileName.endsWith(ext));
 
       if (!isValid) {
-        message.error('只支持 .pt, .onnx, .engine, .rknn 等模型文件格式');
+        message.error(isOcrModel
+          ? 'OCR 模型只支持 .zip、.tar、.tar.gz 或 .tgz 压缩包'
+          : '只支持 .pt、.onnx、.engine、.rknn 等模型文件格式');
         return Upload.LIST_IGNORE;
       }
 
@@ -129,7 +138,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
         originFileObj: file,
       }]);
       const matchedExt = Object.keys(extensionModelHints).find(ext => lowerFileName.endsWith(ext));
-      if (matchedExt) {
+      if (matchedExt && !isOcrModel) {
         form.setFieldsValue(extensionModelHints[matchedExt]);
       }
       return false;
@@ -183,6 +192,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           if (changedValues.source_type && changedValues.source_type !== 'local') {
             setFileList([]);
           }
+          if (changedValues.model_type === 'OCR') {
+            form.setFieldsValue({ framework: 'paddleocr' });
+            setFileList([]);
+          } else if (changedValues.model_type) {
+            form.setFieldValue('model_role', undefined);
+          }
         }}
       >
         <Form.Item label="导入方式" name="source_type">
@@ -232,7 +247,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
               name="framework"
               rules={[{ required: true, message: '请选择框架' }]}
             >
-              <Select placeholder="选择框架">
+              <Select placeholder="选择框架" disabled={isOcrModel}>
                 {frameworks.map((fw) => (
                   <Select.Option key={fw} value={fw}>
                     {fw}
@@ -242,6 +257,20 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
             </Form.Item>
           </Col>
         </Row>
+
+        {isOcrModel ? (
+          <Form.Item
+            label="OCR 模型角色"
+            name="model_role"
+            rules={[{ required: true, message: '请选择 OCR 模型角色' }]}
+            extra="检测模型负责定位文字区域，识别模型负责将区域转换为文字。"
+          >
+            <Radio.Group>
+              <Radio.Button value="detection">文字检测</Radio.Button>
+              <Radio.Button value="recognition">文字识别</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+        ) : null}
 
         <Form.Item label="输入尺寸" name="input_shape">
           <Input placeholder="例如: 640x640" />

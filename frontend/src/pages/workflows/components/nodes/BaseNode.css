@@ -111,6 +111,17 @@
   color: #08979c;
 }
 
+.algorithm-node.ocr-algorithm-node {
+  border-color: #1677ff;
+  background:
+    repeating-linear-gradient(0deg, rgba(22, 119, 255, 0.035) 0 1px, transparent 1px 9px),
+    #ffffff;
+}
+
+.algorithm-node.ocr-algorithm-node .node-icon {
+  color: #0958d9;
+}
+
 .condition-node {
   border-color: #faad14;
 }

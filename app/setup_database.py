@@ -51,6 +51,7 @@ def setup_database():
     ], safe=True)
     _ensure_ownership_columns()
     _ensure_video_source_columns()
+    _ensure_model_columns()
     _normalize_existing_records()
 
     ensure_default_admin_user()
@@ -325,6 +326,14 @@ def _ensure_video_source_columns():
         VideoSource._meta.table_name,
         'source_codec',
         'unknown',
+    )
+
+
+def _ensure_model_columns():
+    _ensure_text_column(
+        MLModel._meta.table_name,
+        'model_role',
+        '',
     )
 
 

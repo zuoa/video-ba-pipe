@@ -2,24 +2,23 @@
 
 - 测试日期：2026-07-30
 - 目标设备：`codvision@10.0.105.120`
-- 项目提交：`cb3e58a5131c9aec60ce1a5bcbce1f59766270d0`
+- 项目提交：`8a9a33a16315347d7e76bf33919563d27874e2be`
 - 应用版本：`1.0.0`
-- 报告状态：兼容性预检完成；容器部署等待 Docker 前置环境
+- 报告状态：部署与基础验收完成
 
 ## 结论
 
 目标设备的 Jetson 型号、CPU 架构、JetPack、CUDA、TensorRT、cuDNN 和
 GStreamer NVIDIA 硬件解码能力满足本项目 Jetson 镜像的主要运行要求。
-H.264、H.265 硬件解码和 CUDA Runtime 均已通过实机测试。
+H.264、H.265 硬件解码和 CUDA Runtime 均已通过宿主机及容器内实机测试。
 
 设备运行 JetPack 6.2.1，符合项目要求；L4T 为厂商镜像中的 36.4.7，
 比项目镜像标注的官方基线 36.4.4 更新，但同属 r36.4 / JetPack 6.2.1
-软件栈。基于现有实测判定为“有条件兼容”，仍需在最终容器内执行
-PyTorch CUDA、应用导入和端到端服务测试后关闭风险项。
+软件栈。容器内 PyTorch CUDA、应用导入、H.264/H.265 硬解和完整服务编排
+均已通过，判定与当前项目兼容。
 
-当前部署阻塞项是宿主机尚未安装 Docker Engine 和 Docker Compose。
-`nvidia-container-toolkit` 已安装，但 `codvision` 用户没有免密 sudo，
-因此无法在当前 SSH 会话中完成需要 root 权限的 Docker 安装和运行时配置。
+本次未配置真实 RTSP 视频源和业务模型，因此检测、告警、截图、录像的
+业务级验收不在本轮测试范围内。
 
 ## 硬件与系统信息
 
@@ -44,7 +43,9 @@ PyTorch CUDA、应用导入和端到端服务测试后关闭风险项。
 | CUDA Runtime | `cudaGetDeviceCount` 返回 0，检测到 1 个设备 | 通过 |
 | TensorRT | 10.3.0.30 | 通过 |
 | cuDNN | 9 | 通过 |
-| NVIDIA Container Toolkit | 1.16.2 | 已安装 |
+| Docker Engine | 29.1.3 | 通过 |
+| Docker Compose | 2.40.3 | 通过 |
+| NVIDIA Container Toolkit | 1.16.2 | 通过 |
 | GStreamer | 1.20.3 | 通过 |
 | `nvv4l2decoder` | 插件存在 | 通过 |
 | `nvvidconv` | 插件存在 | 通过 |
@@ -72,12 +73,17 @@ python3 -m pytest -q
 
 ## 版本匹配
 
-计划部署当前仓库提交 `cb3e58a5131c9aec60ce1a5bcbce1f59766270d0`，
+已部署当前仓库提交 `8a9a33a16315347d7e76bf33919563d27874e2be`，
 应用版本 `1.0.0`，使用：
 
 - 后端：`Dockerfile.jetson`
 - 基础镜像：`nvcr.io/nvidia/pytorch:25.05-py3-igpu`
+- 后端镜像 digest：`sha256:f513da62fb9ca48f8715f846cc30bfe4857ae1f22beaf2fd04431a14c0a7828d`
+- 后端镜像架构：`linux/arm64`
+- 容器 PyTorch：`2.8.0a0+5228986c39.nv25.05`
+- 容器 CUDA 设备：`Orin`
 - 前端：`frontend/Dockerfile.rk` 的 linux/arm64 构建
+- 前端镜像 digest：`sha256:a9ddaec8273105bb54bec862e9753771fe3b7d3be8f0e8b47bc4951540015dbc`
 - 编排：`docker-compose.yml.jetson`
 - 默认解码器：`jetson_gst`
 - 默认帧格式：`nv12`
@@ -85,20 +91,48 @@ python3 -m pytest -q
 NVIDIA 官方兼容矩阵将 PyTorch 25.05 容器列为 JetPack 6.2 对应版本，
 与设备的 JetPack 6.2.1 一致。
 
-## 待完成部署验收
+## 部署结果
 
-安装并配置 Docker 后执行以下验收：
+部署目录：`/home/codvision/video-ba-pipe`
 
-1. 构建或拉取当前提交对应的 Jetson 后端与 ARM64 前端镜像。
-2. 启动 PostgreSQL、RabbitMQ、API、worker 和 frontend。
-3. 在 worker 容器内执行 `scripts/verify_jetson_runtime.sh`。
-4. 检查 PyTorch CUDA 可用性和 GPU 名称。
-5. 检查 API、前端端口、容器健康状态和服务日志。
-6. 使用测试码流验证容器内 H.264/H.265 硬解。
-7. 如有真实 RTSP 源和模型，再执行检测、告警、截图与录像测试。
+| 服务 | 状态 | 对外端口 |
+| --- | --- | --- |
+| API | running / healthy | `5002` |
+| Worker | running / healthy | 无 |
+| Frontend | running | `8080` |
+| PostgreSQL | running / healthy | 仅容器网络 |
+| RabbitMQ | running / healthy | `5672`、`15672` |
 
-## 当前阻塞项
+验收结果：
 
-设备上未安装 `docker`、`dockerd` 和 Docker Compose。需要具有 sudo
-权限的操作者先安装 Docker，并用 `nvidia-ctk` 将 NVIDIA Runtime
-写入 Docker 配置。完成后即可继续部署和最终验收。
+1. API 默认鉴权行为正确：无令牌访问返回 HTTP 401。
+2. 默认管理员登录成功，`/api/system/info` 返回版本 `1.0.0`。
+3. 前端首页返回 HTTP 200，前端反向代理 API 正常。
+4. RabbitMQ 管理页面返回 HTTP 200。
+5. PostgreSQL 初始化出 16 张业务表。
+6. 完整 Compose 重启后 16 张表保持不变，持久化通过。
+7. 五个容器均保持运行，自动重启次数为 0。
+8. API 与 worker 最近日志未发现 Traceback、CRITICAL、CUDA unavailable
+   或 GStreamer error。
+9. 测试结束时宿主机约有 12 GiB available 内存和 74 GB 可用磁盘。
+
+访问地址：
+
+- 前端：`http://10.0.105.120:8080`
+- API：`http://10.0.105.120:5002`
+- RabbitMQ 管理台：`http://10.0.105.120:15672`
+
+## 已知事项
+
+1. Seeed 定制板型 `recomputer-orin-super-j401` 不在 NVIDIA 通用 BSP
+   更新脚本的已知板卡列表中，导致 `nvidia-l4t-bootloader` 和关联内核包
+   保持未配置状态。本次没有修改引导器、内核或重启宿主机；该问题不影响
+   当前 Docker、CUDA 和应用运行，但后续 BSP 升级应使用 Seeed 支持的流程。
+2. 设备访问 Docker Hub 超时，因此 PostgreSQL 和 RabbitMQ 使用
+   AWS Public ECR 的 Docker Official Images 镜像。Compose 已支持通过
+   `POSTGRES_IMAGE` 和 `RABBITMQ_IMAGE` 覆盖镜像源。
+3. 已按建议测试 `docker.nju.edu.cn/postgres:16-alpine`，该设备当前返回
+   HTTP 403，故未替换已验证可用的 Public ECR。
+4. 当前为测试部署，使用仓库默认管理员、数据库和 RabbitMQ 凭据。
+   转生产前必须更换密码及 `JWT_SECRET`。
+5. 真实 RTSP 视频源、模型推理、告警、截图和录像仍需结合现场数据验收。

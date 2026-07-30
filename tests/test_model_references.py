@@ -1,0 +1,32 @@
+import json
+from types import SimpleNamespace
+
+from app.web.api.models import _algorithm_references_model
+
+
+def _algorithm(models, ext_config=None):
+    return SimpleNamespace(
+        config_dict={"models": models},
+        ext_config=ext_config or {},
+    )
+
+
+def test_dictionary_model_name_reference_is_detected():
+    target = SimpleNamespace(id=7, name="PersonModel")
+    algorithm = _algorithm({"person": "PersonModel"})
+
+    assert _algorithm_references_model(algorithm, target.id, target_model=target) is True
+
+
+def test_dictionary_model_object_reference_is_detected():
+    target = SimpleNamespace(id=7, name="PersonModel")
+    algorithm = _algorithm({"person": {"name": "PersonModel", "confidence": 0.5}})
+
+    assert _algorithm_references_model(algorithm, target.id, target_model=target) is True
+
+
+def test_ext_config_model_ids_reference_is_detected():
+    target = SimpleNamespace(id=7, name="PersonModel")
+    algorithm = _algorithm([], {"model_ids": json.dumps([3, 7])})
+
+    assert _algorithm_references_model(algorithm, target.id, target_model=target) is True

@@ -48,6 +48,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const selectedAlgorithm = algorithms.find((item) => String(item.id) === String(node?.data?.dataId ?? node?.data?.algorithmId));
   const selectedAlgorithmType = node?.data?.algorithmType || selectedAlgorithm?.algorithm_type || 'script';
   const isVlAlgorithm = selectedAlgorithmType === 'vl';
+  const isOcrAlgorithm = selectedAlgorithmType === 'ocr';
   const vlDefaultTimeout = Number(selectedAlgorithm?.vl_config?.timeout_seconds || 30);
 
   // 使用 useRef 而不是 useState，确保同步更新
@@ -130,8 +131,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           ? (nodeConfig.runtime_timeout || vlDefaultTimeout)
           : (isVlAlgorithm ? vlDefaultTimeout : (nodeConfig.runtime_timeout || 30));
         formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
-        formValues.labelName = nodeConfig.label_name || (isVlAlgorithm ? 'VL Result' : 'Object');
-        formValues.labelColor = nodeConfig.label_color || (isVlAlgorithm ? '#13c2c2' : '#FF0000');
+        formValues.labelName = nodeConfig.label_name || (isVlAlgorithm ? 'VL Result' : isOcrAlgorithm ? 'OCR Text' : 'Object');
+        formValues.labelColor = nodeConfig.label_color || (isVlAlgorithm ? '#13c2c2' : isOcrAlgorithm ? '#1677ff' : '#FF0000');
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         formValues.externalApiId = node.data.dataId ?? node.data.externalApiId;
         formValues.executionMode = nodeConfig.execution_mode || node.data.executionMode || 'sync';
@@ -163,8 +164,16 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.classFilterB = config.input_b.class_filter.join(',');
         }
       } else if (nodeType === 'condition') {
+        formValues.conditionKind = node.data.conditionKind || node.data.condition_kind || 'count';
         formValues.targetCount = node.data.targetCount || node.data.target_count || 1;
         formValues.comparisonType = node.data.comparisonType || node.data.comparison_type || '>=';
+        formValues.sourceNodeId = node.data.sourceNodeId || node.data.source_node_id;
+        formValues.textOperator = node.data.textOperator || node.data.text_operator || 'contains';
+        formValues.patternType = node.data.patternType || node.data.pattern_type || 'keywords';
+        formValues.keywords = node.data.keywords || [];
+        formValues.keywordLogic = node.data.keywordLogic || node.data.keyword_logic || 'any';
+        formValues.regexPattern = node.data.regexPattern || node.data.regex_pattern || '';
+        formValues.caseSensitive = node.data.caseSensitive ?? node.data.case_sensitive ?? false;
       } else if (nodeType === 'roi') {
         formValues.roiMode = node.data.roiMode || 'postFilter';
       } else if (nodeType === 'alert') {
@@ -227,7 +236,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
       }, 100);
     }
-  }, [node, node?.data, node?.id, form, vlConfigReady, isVlAlgorithm, vlDefaultTimeout]); // 移除 videoSources 依赖，避免不必要的重渲染
+  }, [node, node?.data, node?.id, form, vlConfigReady, isVlAlgorithm, isOcrAlgorithm, vlDefaultTimeout]); // 移除 videoSources 依赖，避免不必要的重渲染
 
   if (!node) {
     return (
@@ -296,9 +305,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             delete config.runtime_timeout;
           }
           delete config.memory_limit_mb;
-        } else {
+        } else if (!isOcrAlgorithm) {
           config.runtime_timeout = values.runtimeTimeout;
           config.memory_limit_mb = values.memoryLimitMb;
+        } else {
+          delete config.runtime_timeout;
+          delete config.memory_limit_mb;
         }
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
@@ -452,8 +464,16 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.classFilterB;
       } else if (nodeType === 'condition') {
         // Condition 节点：保存条件配置
+        updatedData.conditionKind = values.conditionKind || 'count';
         updatedData.targetCount = values.targetCount || 1;
         updatedData.comparisonType = values.comparisonType || '>=';
+        updatedData.sourceNodeId = values.sourceNodeId;
+        updatedData.textOperator = values.textOperator || 'contains';
+        updatedData.patternType = values.patternType || 'keywords';
+        updatedData.keywords = values.keywords || [];
+        updatedData.keywordLogic = values.keywordLogic || 'any';
+        updatedData.regexPattern = values.regexPattern || '';
+        updatedData.caseSensitive = values.caseSensitive === true;
       }
 
       console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
@@ -575,8 +595,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 <span>此节点调用 VL 语义算法；提示词和模型参数在算法管理中统一维护。</span>
               </div>
             ) : null}
+            {isOcrAlgorithm ? (
+              <div className="info-box" style={{ marginBottom: 16, background: '#f0f7ff', borderColor: '#91caff', color: '#0958d9' }}>
+                <InfoCircleOutlined />
+                <span>此节点调用本地 OCR；检测与识别模型在算法管理中统一维护。</span>
+              </div>
+            ) : null}
             <Form.Item
-              label="置信度阈值"
+              label={isOcrAlgorithm ? '文字置信度阈值' : '置信度阈值'}
               name="confidence"
             >
               <Select>
@@ -625,7 +651,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                     ) : null}
                   </Form.Item>
                 </>
-              ) : (
+              ) : isOcrAlgorithm ? null : (
                 <Form.Item
                   label="运行超时（秒）"
                   name="runtimeTimeout"
@@ -635,7 +661,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 </Form.Item>
               )}
 
-              {isVlAlgorithm ? null : (
+              {isVlAlgorithm || isOcrAlgorithm ? null : (
                 <Form.Item
                   label="内存限制（MB）"
                   name="memoryLimitMb"
@@ -769,51 +795,135 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
 
-      case 'condition':
+      case 'condition': {
+        const upstreamOcrNodes = edges
+          .filter(edge => edge.target === node.id)
+          .map(edge => nodes.find(item => item.id === edge.source))
+          .filter(sourceNode => {
+            if (!sourceNode || (sourceNode.data?.type || sourceNode.type) !== 'algorithm') return false;
+            const sourceAlgorithm = algorithms.find(item =>
+              String(item.id) === String(sourceNode.data?.dataId ?? sourceNode.data?.algorithmId));
+            return (sourceNode.data?.algorithmType || sourceAlgorithm?.algorithm_type) === 'ocr';
+          });
         return (
           <>
             <div className="info-box" style={{ marginBottom: 16 }}>
               <InfoCircleOutlined />
-              <span>条件节点判断检测数量是否满足条件，通过 yes/no 端口控制后续节点执行</span>
+              <span>条件节点根据目标数量或 OCR 文字控制 yes/no 分支</span>
             </div>
 
             <Form.Item
-              label="比较类型"
-              name="comparisonType"
-              extra="选择如何比较检测数量与阈值"
+              label="条件类型"
+              name="conditionKind"
+              initialValue="count"
             >
               <Select>
-                <Option value=">=">至少N个 (≥)</Option>
-                <Option value="==">正好N个 (=)</Option>
+                <Option value="count">目标数量</Option>
+                <Option value="ocr_text">OCR 文字</Option>
               </Select>
             </Form.Item>
 
-            <Form.Item
-              label="数量阈值"
-              name="targetCount"
-              extra="检测数量的比较阈值"
-              rules={[
-                { required: true, message: '请输入数量阈值' },
-                { type: 'number', min: 1, max: 1000, message: '请输入1-1000之间的数字' }
-              ]}
-            >
-              <InputNumber
-                min={1}
-                max={1000}
-                step={1}
-                style={{ width: '100%' }}
-                placeholder="输入数量阈值"
-              />
+            <Form.Item noStyle shouldUpdate={(previous, current) => previous.conditionKind !== current.conditionKind}>
+              {({ getFieldValue }) => getFieldValue('conditionKind') === 'ocr_text' ? (
+                <>
+                  <Form.Item
+                    label="OCR 来源节点"
+                    name="sourceNodeId"
+                    rules={[{ required: true, message: '请选择已连接的 OCR 节点' }]}
+                  >
+                    <Select placeholder="选择上游 OCR 节点">
+                      {upstreamOcrNodes.map(sourceNode => (
+                        <Option key={sourceNode.id} value={sourceNode.id}>{sourceNode.data?.label || sourceNode.id}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  {upstreamOcrNodes.length === 0 ? (
+                    <div className="info-box" style={{ marginBottom: 16, background: '#fff7e6', borderColor: '#ffd591', color: '#ad4e00' }}>
+                      <InfoCircleOutlined />
+                      <span>请先将 OCR 算法节点连接到当前条件节点。</span>
+                    </div>
+                  ) : null}
+                  <Form.Item label="判断方式" name="textOperator" initialValue="contains">
+                    <Select>
+                      <Option value="contains">包含</Option>
+                      <Option value="not_contains">不包含</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item label="匹配方式" name="patternType" initialValue="keywords">
+                    <Select>
+                      <Option value="keywords">关键词</Option>
+                      <Option value="regex">正则表达式</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(previous, current) => previous.patternType !== current.patternType}>
+                    {({ getFieldValue: getPatternType }) => getPatternType('patternType') === 'regex' ? (
+                      <Form.Item
+                        label="正则表达式"
+                        name="regexPattern"
+                        rules={[
+                          { required: true, message: '请输入正则表达式' },
+                          {
+                            validator: (_, value) => {
+                              if (!value) return Promise.resolve();
+                              try {
+                                new RegExp(value);
+                                return Promise.resolve();
+                              } catch {
+                                return Promise.reject(new Error('正则表达式无效'));
+                              }
+                            },
+                          },
+                        ]}
+                      >
+                        <Input placeholder="例如：车牌[A-Z0-9]{6}" />
+                      </Form.Item>
+                    ) : (
+                      <>
+                        <Form.Item
+                          label="关键词"
+                          name="keywords"
+                          rules={[{ required: true, type: 'array', min: 1, message: '至少输入一个关键词' }]}
+                          extra="输入关键词后按回车确认"
+                        >
+                          <Select mode="tags" tokenSeparators={[',', '，']} placeholder="输入关键词" />
+                        </Form.Item>
+                        <Form.Item label="关键词逻辑" name="keywordLogic" initialValue="any">
+                          <Select>
+                            <Option value="any">任一关键词命中</Option>
+                            <Option value="all">全部关键词命中</Option>
+                          </Select>
+                        </Form.Item>
+                      </>
+                    )}
+                  </Form.Item>
+                  <Form.Item label="区分大小写" name="caseSensitive" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </>
+              ) : (
+                <>
+                  <Form.Item label="比较类型" name="comparisonType">
+                    <Select>
+                      <Option value=">=">至少N个 (≥)</Option>
+                      <Option value="==">正好N个 (=)</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item
+                    label="数量阈值"
+                    name="targetCount"
+                    rules={[
+                      { required: true, message: '请输入数量阈值' },
+                      { type: 'number', min: 1, max: 1000, message: '请输入1-1000之间的数字' }
+                    ]}
+                  >
+                    <InputNumber min={1} max={1000} step={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              )}
             </Form.Item>
-
-            <div className="info-box" style={{ background: '#f6ffed', borderColor: '#b7eb8f', color: '#52c41a' }}>
-              <InfoCircleOutlined />
-              <span>
-                示例：至少3人 → 连接 Alert 到 yes 端口；少于3人 → 连接 Alert 到 no 端口
-              </span>
-            </div>
           </>
         );
+      }
 
       case 'function':
         // 自动识别上游算法节点

@@ -7,9 +7,18 @@ const ConditionNode = ({ data }: any) => {
   // 获取条件配置用于显示
   const comparisonType = data.comparisonType || data.comparison_type || '>=';
   const targetCount = data.targetCount || data.target_count || 1;
+  const conditionKind = data.conditionKind || data.condition_kind || 'count';
 
   // 生成条件描述
   const getConditionLabel = () => {
+    if (conditionKind === 'ocr_text') {
+      const operator = (data.textOperator || data.text_operator) === 'not_contains' ? '不包含' : '包含';
+      const patternType = data.patternType || data.pattern_type || 'keywords';
+      const value = patternType === 'regex'
+        ? (data.regexPattern || data.regex_pattern || '未配置')
+        : (data.keywords || []).join(' / ') || '未配置';
+      return `${operator} ${value}`;
+    }
     if (comparisonType === '>=') {
       return `数量 ≥ ${targetCount}`;
     } else if (comparisonType === '==') {

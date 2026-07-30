@@ -11,6 +11,7 @@ import {
   FunctionOutlined,
   ApiOutlined,
   RobotOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
@@ -97,8 +98,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       ),
       children: (
         <div className="component-list">
-          {algorithms.length > 0 ? (
-            algorithms.map((algo, index) => (
+          {algorithms.some(algo => algo.runtime_available !== false) ? (
+            algorithms.filter(algo => algo.runtime_available !== false).map((algo, index) => (
               <div
                 key={index}
                 className="component-item"
@@ -133,16 +134,24 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                     },
                   });
                 }}
-                style={{ borderColor: algo.algorithm_type === 'vl' ? '#13c2c2' : '#52c41a' }}
+                style={{ borderColor: algo.algorithm_type === 'vl' ? '#13c2c2' : algo.algorithm_type === 'ocr' ? '#1677ff' : '#52c41a' }}
               >
                 <div className="component-item-inner">
-                  <span className="component-icon" style={{ color: algo.algorithm_type === 'vl' ? '#08979c' : '#52c41a' }}>
-                    {algo.algorithm_type === 'vl' ? <RobotOutlined /> : <BugOutlined />}
+                  <span className="component-icon" style={{ color: algo.algorithm_type === 'vl' ? '#08979c' : algo.algorithm_type === 'ocr' ? '#0958d9' : '#52c41a' }}>
+                    {algo.algorithm_type === 'vl'
+                      ? <RobotOutlined />
+                      : algo.algorithm_type === 'ocr'
+                        ? <FileSearchOutlined />
+                        : <BugOutlined />}
                   </span>
                   <div className="component-content">
                     <div className="component-label">{algo.name}</div>
                     <div className="component-description">
-                      {algo.algorithm_type === 'vl' ? `VL · ${algo.vl_config?.model_name || '视觉语言模型'}` : (algo.description || '算法检测')}
+                      {algo.algorithm_type === 'vl'
+                        ? `VL · ${algo.vl_config?.model_name || '视觉语言模型'}`
+                        : algo.algorithm_type === 'ocr'
+                          ? `OCR · ${algo.ocr_config?.device || 'auto'}`
+                          : (algo.description || '算法检测')}
                     </div>
                   </div>
                   <PlusOutlined className="component-add" />

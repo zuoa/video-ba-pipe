@@ -8,6 +8,7 @@ interface Model {
   name: string;
   version: string;
   model_type: string;
+  model_role?: string;
   framework: string;
   filename: string;
   file_path: string;
@@ -106,6 +107,13 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
         </Descriptions.Item>
         <Descriptions.Item label="类型">{model.model_type}</Descriptions.Item>
         <Descriptions.Item label="框架">{model.framework}</Descriptions.Item>
+        {model.model_type === 'OCR' ? (
+          <Descriptions.Item label="OCR 角色" span={2}>
+            <Tag color={model.model_role === 'detection' ? 'cyan' : 'geekblue'}>
+              {model.model_role === 'detection' ? '文字检测' : '文字识别'}
+            </Tag>
+          </Descriptions.Item>
+        ) : null}
         <Descriptions.Item label="文件名" span={2}>
           <span style={{
             fontFamily: 'monospace',

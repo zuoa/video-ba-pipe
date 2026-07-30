@@ -31,6 +31,7 @@ import {
   DeleteOutlined,
   PlusOutlined,
   RobotOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import {
   getScripts,
@@ -39,6 +40,7 @@ import {
   getAlgorithms,
   updateAlgorithm,
   getScriptConfigSchema,
+  getPluginModules,
 } from '@/services/api';
 import type { Script } from '@/services/api';
 import './index.css';
@@ -46,7 +48,7 @@ import './index.css';
 const { TextArea } = Input;
 const { Option } = Select;
 
-type AlgorithmType = 'script' | 'vl';
+type AlgorithmType = 'script' | 'vl' | 'ocr';
 
 const DEFAULT_VL_PROMPT = `请判断画面中是否存在需要关注的目标或事件。
 如果命中，请为每个目标或事件返回一个检测项；无法可靠定位时 bbox 返回 null。
@@ -109,18 +111,23 @@ export default function AlgorithmWizard() {
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
   const [editingAlgorithm, setEditingAlgorithm] = useState<any>(null);
   const [algorithmType, setAlgorithmType] = useState<AlgorithmType>('script');
+  const [ocrRuntimeAvailable, setOcrRuntimeAvailable] = useState(false);
+  const [ocrRuntimeError, setOcrRuntimeError] = useState('');
   const [form] = Form.useForm();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [scriptsData, modelsData, algorithmsData] = await Promise.all([
+      const [scriptsData, modelsData, algorithmsData, pluginData] = await Promise.all([
         getScripts().catch(() => ({ scripts: [] })),
         getModels().catch(() => ({ models: [] })),
         editId ? getAlgorithms() : Promise.resolve([]),
+        getPluginModules().catch(() => ({ modules: [], capabilities: {} })),
       ]);
       setScripts(scriptsData?.scripts || []);
       setModels(modelsData?.models || []);
+      setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
+      setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
 
       if (editId) {
         const algorithm = algorithmsData.find((a: any) => a.id === parseInt(editId));
@@ -140,7 +147,9 @@ export default function AlgorithmWizard() {
   }, [editId, navigate]);
 
   const loadEditData = async (algorithm: any) => {
-    const currentType: AlgorithmType = algorithm.algorithm_type === 'vl' ? 'vl' : 'script';
+    const currentType: AlgorithmType = ['vl', 'ocr'].includes(algorithm.algorithm_type)
+      ? algorithm.algorithm_type
+      : 'script';
     setAlgorithmType(currentType);
 
     if (currentType === 'vl') {
@@ -174,6 +183,35 @@ export default function AlgorithmWizard() {
         vlImageDetail: vlConfig.image_detail || 'auto',
         vlExtraHeaders: JSON.stringify(vlConfig.extra_headers || {}, null, 2),
         vlExtraBody: JSON.stringify(vlConfig.extra_body || {}, null, 2),
+      });
+      return;
+    }
+
+    if (currentType === 'ocr') {
+      const ocrConfig = algorithm.ocr_config || {};
+      setSelectedDetector({
+        type: 'template',
+        id: null,
+        name: 'PaddleOCR',
+        description: '本地文字检测与识别',
+        scriptPath: '',
+      });
+      setConfigSchema({});
+      form.setFieldsValue({
+        algorithmName: algorithm.name,
+        algorithmDescription: algorithm.description || '',
+        intervalSeconds: algorithm.interval_seconds || 1,
+        labelName: algorithm.label_name || 'OCR Text',
+        labelColor: algorithm.label_color || '#1677ff',
+        ocrDetectionModelId: ocrConfig.detection_model_id,
+        ocrRecognitionModelId: ocrConfig.recognition_model_id,
+        ocrDevice: ocrConfig.device || 'auto',
+        ocrRecognitionScoreThreshold: ocrConfig.recognition_score_threshold ?? 0.5,
+        ocrDetectionThreshold: ocrConfig.detection_threshold,
+        ocrBoxThreshold: ocrConfig.box_threshold,
+        ocrUnclipRatio: ocrConfig.unclip_ratio,
+        ocrLimitSideLen: ocrConfig.limit_side_len,
+        ocrRecognitionBatchSize: ocrConfig.recognition_batch_size || 1,
       });
       return;
     }
@@ -284,6 +322,29 @@ export default function AlgorithmWizard() {
     });
   };
 
+  const handleSelectOcr = () => {
+    if (!ocrRuntimeAvailable) {
+      message.error(ocrRuntimeError || '当前运行环境不支持 OCR');
+      return;
+    }
+    setAlgorithmType('ocr');
+    setSelectedDetector({
+      type: 'template',
+      id: null,
+      name: 'PaddleOCR',
+      description: '本地文字检测与识别',
+      scriptPath: '',
+    });
+    setConfigSchema({});
+    form.setFieldsValue({
+      ocrDevice: form.getFieldValue('ocrDevice') || 'auto',
+      ocrRecognitionScoreThreshold: form.getFieldValue('ocrRecognitionScoreThreshold') ?? 0.5,
+      ocrRecognitionBatchSize: form.getFieldValue('ocrRecognitionBatchSize') || 1,
+      labelName: form.getFieldValue('labelName') || 'OCR Text',
+      labelColor: form.getFieldValue('labelColor') || '#1677ff',
+    });
+  };
+
   const handleNext = async () => {
     if (currentStep === 0) {
       if (!selectedDetector) {
@@ -381,6 +442,44 @@ export default function AlgorithmWizard() {
         } else {
           await createAlgorithm(data);
           message.success('VL 算法创建成功！');
+        }
+        navigate('/algorithms');
+        return;
+      }
+
+      if (algorithmType === 'ocr') {
+        if (!ocrRuntimeAvailable) {
+          message.error(ocrRuntimeError || '当前运行环境不支持 OCR，无法保存');
+          return;
+        }
+        const data = {
+          name: values.algorithmName,
+          description: values.algorithmDescription,
+          algorithm_type: 'ocr',
+          script_path: '',
+          script_config: '{}',
+          plugin_module: 'ocr_algorithm',
+          interval_seconds: values.intervalSeconds,
+          label_name: values.labelName,
+          label_color: values.labelColor,
+          ocr_config: {
+            detection_model_id: values.ocrDetectionModelId,
+            recognition_model_id: values.ocrRecognitionModelId,
+            device: values.ocrDevice || 'auto',
+            recognition_score_threshold: values.ocrRecognitionScoreThreshold,
+            detection_threshold: values.ocrDetectionThreshold ?? null,
+            box_threshold: values.ocrBoxThreshold ?? null,
+            unclip_ratio: values.ocrUnclipRatio ?? null,
+            limit_side_len: values.ocrLimitSideLen ?? null,
+            recognition_batch_size: values.ocrRecognitionBatchSize || 1,
+          },
+        };
+        if (editingAlgorithm) {
+          await updateAlgorithm(editingAlgorithm.id, data);
+          message.success('OCR 算法更新成功！');
+        } else {
+          await createAlgorithm(data);
+          message.success('OCR 算法创建成功！');
         }
         navigate('/algorithms');
         return;
@@ -515,7 +614,7 @@ export default function AlgorithmWizard() {
           选择算法类型
         </h3>
         <Row gutter={[16, 16]} className="algorithm-type-grid">
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               hoverable
               className={`algorithm-type-card ${algorithmType === 'script' ? 'selected script' : ''}`}
@@ -531,7 +630,7 @@ export default function AlgorithmWizard() {
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               hoverable
               className={`algorithm-type-card ${algorithmType === 'vl' ? 'selected vl' : ''}`}
@@ -544,6 +643,23 @@ export default function AlgorithmWizard() {
               </div>
             </Card>
           </Col>
+          {ocrRuntimeAvailable || editingAlgorithm?.algorithm_type === 'ocr' ? (
+          <Col xs={24} md={8}>
+            <Card
+              hoverable
+              className={`algorithm-type-card ${algorithmType === 'ocr' ? 'selected ocr' : ''}`}
+              onClick={handleSelectOcr}
+            >
+              <FileSearchOutlined className="algorithm-type-icon" />
+              <div>
+                <h4>OCR 算法</h4>
+                <p>{ocrRuntimeAvailable
+                  ? '使用本地 PaddleOCR 检测并识别视频画面中的文字。'
+                  : '当前运行环境缺少 PaddleOCR，无法运行或保存。'}</p>
+              </div>
+            </Card>
+          </Col>
+          ) : null}
         </Row>
 
         {algorithmType === 'script' ? (
@@ -594,13 +710,21 @@ export default function AlgorithmWizard() {
               </Button>
             </div>
           </div>
-        ) : (
+        ) : algorithmType === 'vl' ? (
           <Alert
             className="vl-contract-callout"
             type="info"
             showIcon
             message="统一算法输出"
             description="VL 会把模型回答校验为 detections 和 metadata。语义结果可以不带检测框，但仍能参与条件计数和告警。"
+          />
+        ) : (
+          <Alert
+            className="vl-contract-callout"
+            type="info"
+            showIcon
+            message="检测与识别两阶段"
+            description="OCR 算法需要分别选择文字检测模型和文字识别模型，输出文字、置信度与位置，可连接文字条件节点。"
           />
         )}
       </div>
@@ -712,6 +836,126 @@ export default function AlgorithmWizard() {
                 message="返回格式由系统约束"
                 description="模型必须返回 has_detection、detections 和 reason。每个检测项包含名称、置信度和可为空的 bbox。"
               />
+            </Card>
+          </Form>
+        </div>
+      );
+    }
+
+    if (algorithmType === 'ocr') {
+      const detectionModels = models.filter(model =>
+        model.enabled && model.model_type === 'OCR' && model.model_role === 'detection');
+      const recognitionModels = models.filter(model =>
+        model.enabled && model.model_type === 'OCR' && model.model_role === 'recognition');
+      return (
+        <div className="config-form ocr-config-form">
+          <Form form={form} layout="vertical">
+            {!ocrRuntimeAvailable ? (
+              <Alert
+                type="error"
+                showIcon
+                message="当前环境不支持 OCR"
+                description={ocrRuntimeError || '请使用包含 PaddleOCR 运行时的 CPU 或 CUDA 镜像。'}
+                style={{ marginBottom: 16 }}
+              />
+            ) : null}
+            <Card title={<Space><FileSearchOutlined />OCR 模型</Space>} className="config-card">
+              <Row gutter={16}>
+                <Col xs={24} lg={12}>
+                  <Form.Item
+                    label="文字检测模型"
+                    name="ocrDetectionModelId"
+                    rules={[{ required: true, message: '请选择文字检测模型' }]}
+                  >
+                    <Select placeholder="选择 detection 模型">
+                      {detectionModels.map(model => (
+                        <Option key={model.id} value={model.id}>{model.name} · {model.version}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Form.Item
+                    label="文字识别模型"
+                    name="ocrRecognitionModelId"
+                    rules={[{ required: true, message: '请选择文字识别模型' }]}
+                  >
+                    <Select placeholder="选择 recognition 模型">
+                      {recognitionModels.map(model => (
+                        <Option key={model.id} value={model.id}>{model.name} · {model.version}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Col>
+              </Row>
+              {detectionModels.length === 0 || recognitionModels.length === 0 ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="OCR 模型不完整"
+                  description="请先在模型管理中分别上传 detection 和 recognition 角色的 OCR 模型。"
+                />
+              ) : null}
+            </Card>
+
+            <Card title={<Space><ThunderboltOutlined />推理参数</Space>} className="config-card">
+              <Row gutter={16}>
+                <Col xs={24} md={8}>
+                  <Form.Item label="运行设备" name="ocrDevice" initialValue="auto">
+                    <Select>
+                      <Option value="auto">自动选择</Option>
+                      <Option value="cpu">CPU</Option>
+                      <Option value="gpu">GPU</Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item
+                    label="最低文字置信度"
+                    name="ocrRecognitionScoreThreshold"
+                    initialValue={0.5}
+                    rules={[{ required: true, message: '请输入置信度阈值' }]}
+                  >
+                    <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="识别批大小" name="ocrRecognitionBatchSize" initialValue={1}>
+                    <InputNumber min={1} max={64} step={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card title={<Space><SettingOutlined />高级检测参数</Space>} className="config-card">
+              <Alert
+                type="info"
+                showIcon
+                message="留空时使用模型默认值"
+                style={{ marginBottom: 16 }}
+              />
+              <Row gutter={16}>
+                <Col xs={24} md={12} lg={6}>
+                  <Form.Item label="检测阈值" name="ocrDetectionThreshold">
+                    <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12} lg={6}>
+                  <Form.Item label="文本框阈值" name="ocrBoxThreshold">
+                    <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12} lg={6}>
+                  <Form.Item label="文本框扩展比例" name="ocrUnclipRatio">
+                    <InputNumber min={0.1} max={10} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12} lg={6}>
+                  <Form.Item label="检测边长限制" name="ocrLimitSideLen">
+                    <InputNumber min={32} max={4096} step={32} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
             </Card>
           </Form>
         </div>
@@ -1103,12 +1347,16 @@ export default function AlgorithmWizard() {
     {
       title: '选择类型',
       icon: <ApiOutlined />,
-      description: '选择脚本或视觉语言算法',
+      description: '选择脚本、VL 或 OCR 算法',
     },
     {
       title: '配置参数',
       icon: <SettingOutlined />,
-      description: algorithmType === 'vl' ? '配置接口、模型与提示词' : '配置检测器参数',
+      description: algorithmType === 'vl'
+        ? '配置接口、模型与提示词'
+        : algorithmType === 'ocr'
+          ? '配置 OCR 模型与推理参数'
+          : '配置检测器参数',
     },
     {
       title: '执行配置',
