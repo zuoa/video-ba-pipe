@@ -36,18 +36,22 @@ Orin NX Super 模式属于宿主机 BSP 和功耗配置。设备必须使用支�
 在 GitHub Actions 中运行：
 
 ```text
-Build backend images -> runtime=jetson
-Build frontend images -> platform=linux/arm64
+Build Jetson image
 ```
 
-后端会发布：
+工作流会先发布后端：
 
 ```text
 ghcr.io/<owner>/<repo>:jetson
 ghcr.io/<owner>/<repo>:jetson-<commit>
 ```
 
-ARM64 前端同一镜像会发布 `arm64` 和兼容旧部署的 `rk` 两组标签。
+随后自动发布同一提交的 ARM64 前端：
+
+```text
+ghcr.io/<owner>/<repo>-frontend:arm64
+ghcr.io/<owner>/<repo>-frontend:arm64-<commit>
+```
 
 本地构建：
 

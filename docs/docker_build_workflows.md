@@ -153,9 +153,11 @@ RK 的 wheel、FFmpeg 包、NPU runtime 挂载等细节见 `docs/rk3588_docker.m
 ### GitHub Actions
 
 ```text
-Build backend images -> runtime=jetson
-Build frontend images -> platform=linux/arm64
+Build Jetson image
 ```
+
+该工作流会先构建并推送 Jetson 后端镜像，成功后再自动构建同一提交的
+ARM64 前端镜像。
 
 ### 本地构建
 
