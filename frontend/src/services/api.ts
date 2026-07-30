@@ -24,6 +24,10 @@ export async function getSystemInfo() {
   return request('/api/system/info');
 }
 
+export async function getSystemMetrics() {
+  return request('/api/system/metrics');
+}
+
 export async function getVlConfig() {
   return request('/api/system/vl-config');
 }
@@ -473,6 +477,7 @@ export async function importModelFromSource(data: {
   filename?: string;
   revision?: string;
   hf_token?: string;
+  use_hf_mirror?: boolean;
 }) {
   return request('/api/models/import', {
     method: 'POST',

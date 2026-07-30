@@ -1,0 +1,458 @@
+.system-monitor {
+  margin-bottom: 24px;
+  padding: 24px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 20px;
+  box-shadow: var(--app-shadow-sm);
+}
+
+.system-monitor__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.system-monitor__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.system-monitor__live-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--app-success);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--app-success-soft);
+}
+
+.system-monitor__live-dot.is-stale {
+  background: var(--app-warning);
+  box-shadow: 0 0 0 4px var(--app-warning-soft);
+}
+
+.system-monitor__header h2 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.system-monitor__header p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 3px 0 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.system-monitor__header time {
+  flex-shrink: 0;
+  color: var(--app-text-muted);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 11px;
+}
+
+.system-monitor__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.system-metric-card {
+  min-width: 0;
+  padding: 16px;
+  background: var(--app-surface-muted);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 16px;
+}
+
+.system-metric-card__header {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.system-metric-card__icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.system-metric-card__title {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.system-metric-card__value {
+  color: var(--app-text);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.system-usage-bar {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  background: #e2e6eb;
+  border-radius: 999px;
+}
+
+.system-usage-bar > span {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+  background: var(--app-info);
+  border-radius: inherit;
+  transition: width 400ms ease, background-color 200ms ease;
+}
+
+.system-usage-bar--warning > span {
+  background: var(--app-warning);
+}
+
+.system-usage-bar--critical > span {
+  background: var(--app-danger);
+}
+
+.system-metric-card__details {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+  color: var(--app-text-muted);
+  font-size: 10px;
+}
+
+.system-metric-card__details span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-network-rates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.system-network-rates > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.system-network-rates__arrow {
+  color: var(--app-info);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.system-network-rates small,
+.system-network-rates strong {
+  display: block;
+}
+
+.system-network-rates small {
+  color: var(--app-text-muted);
+  font-size: 9px;
+}
+
+.system-network-rates strong {
+  overflow: hidden;
+  color: var(--app-text);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-monitor__disks {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.system-monitor__disks > span {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.system-disk-chip {
+  display: grid;
+  grid-template-columns: minmax(60px, 1fr) auto;
+  gap: 4px 10px;
+  min-width: 180px;
+  padding: 9px 11px;
+  background: var(--app-surface-muted);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 12px;
+  color: var(--app-text-secondary);
+  font-size: 10px;
+}
+
+.system-disk-chip > span {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-disk-chip > strong {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+}
+
+.system-disk-chip .system-usage-bar {
+  align-self: center;
+}
+
+.system-disk-chip small {
+  color: var(--app-text-muted);
+  text-align: right;
+}
+
+.system-monitor__gpus {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-line-soft);
+}
+
+.system-monitor__section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.system-monitor__section-label small {
+  color: var(--app-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.system-gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.system-gpu-card {
+  min-width: 0;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, 0.76);
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0.035), transparent 50%),
+    #242a32;
+  border: 1px solid #343c46;
+  border-radius: 15px;
+}
+
+.system-gpu-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.system-gpu-card__heading > div {
+  min-width: 0;
+}
+
+.system-gpu-card__heading small {
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.system-gpu-card__heading h3 {
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-gpu-card__heading strong {
+  flex-shrink: 0;
+  color: #fff;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.system-gpu-card .system-usage-bar {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.system-gpu-card .system-usage-bar > span {
+  background: #71a3c7;
+}
+
+.system-gpu-card .system-usage-bar--warning > span {
+  background: #d6a654;
+}
+
+.system-gpu-card .system-usage-bar--critical > span {
+  background: #d86a66;
+}
+
+.system-gpu-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 10px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 10px;
+}
+
+.system-gpu-card__stats span {
+  display: flex;
+  gap: 6px;
+}
+
+.system-gpu-card__stats small {
+  color: rgba(255, 255, 255, 0.45);
+  font-family: inherit;
+}
+
+.system-monitor--loading {
+  min-height: 222px;
+}
+
+.system-monitor__loading-line,
+.system-monitor__loading-card {
+  background: linear-gradient(90deg, #eef0f3 25%, #f7f8fa 50%, #eef0f3 75%);
+  background-size: 200% 100%;
+  animation: system-monitor-loading 1.4s ease infinite;
+}
+
+.system-monitor__loading-line {
+  width: 180px;
+  height: 34px;
+  margin-bottom: 20px;
+  border-radius: 10px;
+}
+
+.system-monitor__loading-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.system-monitor__loading-card {
+  height: 112px;
+  border-radius: 16px;
+}
+
+.system-monitor--error {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 110px;
+  color: var(--app-warning);
+}
+
+.system-monitor--error > .anticon {
+  font-size: 28px;
+}
+
+.system-monitor--error h2 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 16px;
+}
+
+.system-monitor--error p {
+  margin: 3px 0 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+@keyframes system-monitor-loading {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .system-monitor__grid,
+  .system-monitor__loading-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .system-monitor {
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .system-monitor__header {
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .system-monitor__header time {
+    display: none;
+  }
+
+  .system-monitor__grid,
+  .system-monitor__loading-grid,
+  .system-gpu-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .system-monitor__loading-card {
+    height: 112px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .system-monitor__loading-line,
+  .system-monitor__loading-card {
+    animation: none;
+  }
+}

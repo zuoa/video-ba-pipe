@@ -117,6 +117,8 @@ cp env.example .env
 - `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`：PostgreSQL 连接配置
 - `DB_SSLMODE`：PostgreSQL SSL 模式
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
+- `HF_USE_MIRROR` / `HF_MIRROR_ENDPOINT`：Hugging Face 模型拉取的默认镜像开关和镜像地址；模型导入弹窗也可逐次选择官方源或国内镜像
+- `HF_DOWNLOAD_TIMEOUT_SECONDS` / `WEB_REQUEST_TIMEOUT_SECONDS` / `HF_TOKEN`：Hugging Face 下载超时、Web 请求超时及私有仓库访问 Token
 - `RECORDING_ENABLED`：是否录制预警视频
 - `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 推荐 `rk_mpp`，Jetson 推荐 `jetson_gst`
 - `ANALYSIS_TARGET_FPS` / `ANALYSIS_BUFFER_SECONDS`：分析链路缓冲参数

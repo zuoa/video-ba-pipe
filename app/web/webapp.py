@@ -44,6 +44,7 @@ from app.core.workflow_runtime import (
 from app.core.algorithm import BaseAlgorithm
 from app.core.window_detector import get_window_detector
 from app.core.video_probe import normalize_video_codec
+from app.core.system_metrics import collect_system_metrics
 from app.setup_database import setup_database
 from app.version import get_app_version
 
@@ -173,6 +174,22 @@ def get_system_info():
         'success': True,
         'version': get_app_version(),
     })
+
+
+@app.route('/api/system/metrics', methods=['GET'])
+@require_auth
+def get_system_metrics():
+    try:
+        return jsonify({
+            'success': True,
+            'data': collect_system_metrics(),
+        })
+    except Exception as e:
+        app.logger.error(f"采集系统状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': '无法读取当前机器的系统状态',
+        }), 500
 
 
 @app.route('/api/system/vl-config', methods=['GET'])

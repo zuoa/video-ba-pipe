@@ -57,6 +57,14 @@ os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
 MODEL_SAVE_PATH = _resolve_data_path('MODEL_SAVE_PATH', 'models')
 os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
 
+# Hugging Face model import
+HF_USE_MIRROR = os.getenv('HF_USE_MIRROR', 'false').lower() in ('true', '1', 'yes', 'on')
+HF_MIRROR_ENDPOINT = (
+    os.getenv('HF_MIRROR_ENDPOINT', 'https://hf-mirror.com').strip().rstrip('/')
+    or 'https://hf-mirror.com'
+)
+HF_DOWNLOAD_TIMEOUT_SECONDS = max(1, int(os.getenv('HF_DOWNLOAD_TIMEOUT_SECONDS', '120')))
+
 USER_SCRIPTS_ROOT = _resolve_data_path('USER_SCRIPTS_ROOT', 'user_scripts')
 os.makedirs(USER_SCRIPTS_ROOT, exist_ok=True)
 

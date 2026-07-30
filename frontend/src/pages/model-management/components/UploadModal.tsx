@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Form, Input, Select, Row, Col, message, Upload, Radio } from 'antd';
+import { Form, Input, Select, Row, Col, message, Upload, Radio, Switch } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { uploadModel, importModelFromSource } from '@/services/api';
 import type { RcFile, UploadFile } from 'antd/es/upload/interface';
@@ -20,6 +20,7 @@ const frameworks = ['ultralytics', 'paddleocr', 'rknn', 'onnx', 'tensorrt', 'pyt
 const extensionModelHints: Record<string, { model_type: string; framework: string }> = {
   '.pt': { model_type: 'YOLO', framework: 'ultralytics' },
   '.pth': { model_type: 'PyTorch', framework: 'pytorch' },
+  '.safetensors': { model_type: 'PyTorch', framework: 'pytorch' },
   '.onnx': { model_type: 'ONNX', framework: 'onnx' },
   '.engine': { model_type: 'TensorRT', framework: 'tensorrt' },
   '.tflite': { model_type: 'TFLite', framework: 'tflite' },
@@ -94,6 +95,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           filename: values.repo_filename,
           revision: values.revision,
           hf_token: values.hf_token,
+          use_hf_mirror: values.use_hf_mirror,
         });
         message.success('Hugging Face 模型拉取成功');
       }
@@ -121,14 +123,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
     beforeUpload: (file: RcFile) => {
       const validExtensions = isOcrModel
         ? ['.zip', '.tar', '.tar.gz', '.tgz']
-        : ['.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
+        : ['.pt', '.pth', '.safetensors', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
       const lowerFileName = file.name.toLowerCase();
       const isValid = validExtensions.some(ext => lowerFileName.endsWith(ext));
 
       if (!isValid) {
         message.error(isOcrModel
           ? 'OCR 模型只支持 .zip、.tar、.tar.gz 或 .tgz 压缩包'
-          : '只支持 .pt、.onnx、.engine、.rknn 等模型文件格式');
+          : '只支持 .pt、.safetensors、.onnx、.engine、.rknn 等模型文件格式');
         return Upload.LIST_IGNORE;
       }
 
@@ -173,6 +175,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           source_type: 'local',
           version: 'v1.0',
           revision: 'main',
+          use_hf_mirror: false,
           model_type: 'YOLO',
           framework: 'ultralytics',
         }}
@@ -304,7 +307,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
                 <InboxOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
               </p>
               <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-              <p className="ant-upload-hint">支持 .pt, .onnx, .engine, .rknn 等格式</p>
+              <p className="ant-upload-hint">支持 .pt, .safetensors, .onnx, .engine, .rknn 等格式</p>
             </Dragger>
           </Form.Item>
         )}
@@ -347,6 +350,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
                 </Form.Item>
               </Col>
             </Row>
+            <Form.Item
+              label="国内镜像"
+              name="use_hf_mirror"
+              valuePropName="checked"
+              extra="开启后使用服务端配置的国内镜像（默认 hf-mirror.com）；关闭时使用 Hugging Face 官方源。"
+            >
+              <Switch checkedChildren="使用镜像" unCheckedChildren="官方源" />
+            </Form.Item>
           </>
         )}
 

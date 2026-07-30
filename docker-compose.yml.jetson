@@ -19,6 +19,10 @@ x-jetson-environment: &jetson-environment
   VIDEO_SAVE_PATH: /data/videos
   VIDEO_SOURCE_PATH: /data/video_sources
   MODEL_SAVE_PATH: /data/models
+  HF_USE_MIRROR: ${HF_USE_MIRROR:-false}
+  HF_MIRROR_ENDPOINT: ${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
+  HF_DOWNLOAD_TIMEOUT_SECONDS: ${HF_DOWNLOAD_TIMEOUT_SECONDS:-120}
+  HF_TOKEN: ${HF_TOKEN:-}
   USER_SCRIPTS_ROOT: /data/user_scripts
   SNAPSHOT_PATH: /data/snapshots
   VIDEO_DECODER_TYPE: ${VIDEO_DECODER_TYPE:-jetson_gst}
@@ -81,7 +85,7 @@ services:
     restart: unless-stopped
     runtime: nvidia
     shm_size: "4gb"
-    command: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
+    command: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
     environment: *jetson-environment
     volumes:
       - ./data:/data

@@ -11,11 +11,19 @@ import {
   ExperimentOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
-import { getVideoSources, getAlgorithms, getTodayAlertsCount, getAlerts } from '@/services/api';
+import {
+  getVideoSources,
+  getAlgorithms,
+  getTodayAlertsCount,
+  getAlerts,
+  getSystemMetrics,
+} from '@/services/api';
 import StatCard from './components/StatCard';
 import QuickAccessCard from './components/QuickAccessCard';
 import RecentAlertCard from './components/RecentAlertCard';
 import WelcomeBanner from './components/WelcomeBanner';
+import SystemMonitor from './components/SystemMonitor';
+import type { SystemMetrics } from './components/SystemMonitor';
 import type { Alert as AlertType, Task as TaskType } from './components/RecentAlertCard';
 import './index.css';
 
@@ -29,6 +37,9 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [tasks, setTasks] = useState<TaskType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
+  const [systemMetricsLoading, setSystemMetricsLoading] = useState(true);
+  const [systemMetricsError, setSystemMetricsError] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -37,6 +48,38 @@ export default function Dashboard() {
     const interval = setInterval(loadDashboardData, 30000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout>;
+
+    const loadSystemMetrics = async () => {
+      try {
+        const response = await getSystemMetrics();
+        if (!cancelled) {
+          setSystemMetrics(response?.data || null);
+          setSystemMetricsError('');
+        }
+      } catch (error) {
+        console.error('加载系统状态失败:', error);
+        if (!cancelled) {
+          setSystemMetricsError('无法读取系统指标，请检查服务权限或稍后重试。');
+        }
+      } finally {
+        if (!cancelled) {
+          setSystemMetricsLoading(false);
+          refreshTimer = setTimeout(loadSystemMetrics, 5000);
+        }
+      }
+    };
+
+    loadSystemMetrics();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(refreshTimer);
+    };
   }, []);
 
   const loadDashboardData = async () => {
@@ -132,13 +175,23 @@ export default function Dashboard() {
           <StatCard
             icon={<CheckCircleOutlined />}
             title="系统状态"
-            value="运行中"
-            subtitle="服务、视频流处理与告警链路正常"
-            iconBgColor="#52c41a"
-            trendIcon={<CheckCircleOutlined />}
+            value={systemMetricsError && !systemMetrics ? '监控异常' : systemMetrics ? '运行中' : '检测中'}
+            subtitle={systemMetrics
+              ? `${systemMetrics.hostname} · 已采集主机资源状态`
+              : '正在连接系统状态服务'}
+            iconBgColor={systemMetricsError && !systemMetrics ? '#9a681f' : '#52c41a'}
+            trendIcon={systemMetricsError && !systemMetrics
+              ? <ExclamationCircleOutlined />
+              : <CheckCircleOutlined />}
           />
         </Col>
       </Row>
+
+      <SystemMonitor
+        metrics={systemMetrics}
+        loading={systemMetricsLoading}
+        error={systemMetricsError}
+      />
 
       {/* 快捷操作和最近告警 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

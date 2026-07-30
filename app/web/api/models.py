@@ -11,17 +11,22 @@ import tarfile
 import tempfile
 import zipfile
 from datetime import datetime
+from urllib.parse import urlparse, unquote, quote
+
+import requests
 from flask import Blueprint, request, jsonify, send_file, current_app, after_this_request
 from werkzeug.utils import secure_filename
-from urllib.parse import urlparse, unquote, quote
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.core.database_models import MLModel, Algorithm, db
-from app.config import MODEL_SAVE_PATH
+from app.config import (
+    HF_DOWNLOAD_TIMEOUT_SECONDS,
+    HF_MIRROR_ENDPOINT,
+    HF_USE_MIRROR,
+    MODEL_SAVE_PATH,
+)
 from app import logger
 from app.web.api.auth import require_auth, require_admin, current_username
 
@@ -42,7 +47,19 @@ def enforce_model_permissions():
 MODELS_ROOT = MODEL_SAVE_PATH
 
 # 允许的模型文件扩展名
-ALLOWED_EXTENSIONS = {'.pt', '.pth', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'}
+ALLOWED_EXTENSIONS = {
+    '.pt',
+    '.pth',
+    '.safetensors',
+    '.onnx',
+    '.engine',
+    '.bin',
+    '.tflite',
+    '.xml',
+    '.param',
+    '.json',
+    '.rknn',
+}
 OCR_ARCHIVE_EXTENSIONS = ('.zip', '.tar', '.tar.gz', '.tgz')
 OCR_MODEL_ROLES = {'detection', 'recognition'}
 OCR_MAX_ARCHIVE_ENTRIES = 10_000
@@ -52,11 +69,92 @@ OCR_MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 EXTENSION_MODEL_HINTS = {
     '.pt': ('YOLO', 'ultralytics'),
     '.pth': ('PyTorch', 'pytorch'),
+    '.safetensors': ('PyTorch', 'pytorch'),
     '.onnx': ('ONNX', 'onnx'),
     '.engine': ('TensorRT', 'tensorrt'),
     '.tflite': ('TFLite', 'tflite'),
     '.rknn': ('RKNN', 'rknn'),
 }
+
+HF_OFFICIAL_ENDPOINT = 'https://huggingface.co'
+
+
+def _parse_boolean(value, default=False):
+    """解析 JSON/环境变量中的布尔开关。"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ('true', '1', 'yes', 'on'):
+            return True
+        if normalized in ('false', '0', 'no', 'off', ''):
+            return False
+    raise ValueError('use_hf_mirror 必须是布尔值')
+
+
+def _normalize_hf_endpoint(endpoint):
+    """校验并标准化 Hugging Face 下载端点。"""
+    normalized = str(endpoint or '').strip().rstrip('/')
+    parsed = urlparse(normalized)
+    if (
+        parsed.scheme not in ('http', 'https')
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError('Hugging Face 下载端点必须是合法的 http/https 地址')
+    return normalized
+
+
+def _build_huggingface_download_url(
+    repo_id,
+    repo_filename,
+    revision='main',
+    use_mirror=False,
+    mirror_endpoint=HF_MIRROR_ENDPOINT,
+):
+    """构建 Hugging Face 单文件下载地址，并拒绝歧义路径。"""
+    repo_id = str(repo_id or '').strip()
+    repo_filename = str(repo_filename or '').strip()
+    revision = str(revision or 'main').strip()
+
+    repo_parts = repo_id.split('/')
+    if (
+        len(repo_parts) not in (1, 2)
+        or any(part in ('', '.', '..') for part in repo_parts)
+        or '\\' in repo_id
+        or any(ord(char) < 32 for char in repo_id)
+    ):
+        raise ValueError('仓库 ID 格式错误，应为 repo 或 owner/repo')
+
+    filename_parts = repo_filename.split('/')
+    if (
+        not repo_filename
+        or repo_filename.startswith('/')
+        or '\\' in repo_filename
+        or any(part in ('', '.', '..') for part in filename_parts)
+    ):
+        raise ValueError('模型文件路径格式错误')
+
+    if not revision or any(ord(char) < 32 for char in revision):
+        raise ValueError('Revision 格式错误')
+
+    endpoint = _normalize_hf_endpoint(
+        mirror_endpoint if use_mirror else HF_OFFICIAL_ENDPOINT
+    )
+    encoded_repo_id = '/'.join(quote(part, safe='') for part in repo_parts)
+    encoded_revision = quote(revision, safe='')
+    encoded_filename = '/'.join(quote(part, safe='') for part in filename_parts)
+    return (
+        f'{endpoint}/{encoded_repo_id}/resolve/'
+        f'{encoded_revision}/{encoded_filename}?download=true'
+    )
 
 
 def _is_ocr_archive(filename):
@@ -593,6 +691,7 @@ def import_model_from_url():
         - filename: 仓库内模型文件路径（source_type=huggingface时必填）
         - revision: 分支/Tag/Commit（默认main）
         - hf_token: 私有仓库访问Token（可选）
+        - use_hf_mirror: 是否使用国内镜像（可选，默认读取 HF_USE_MIRROR）
     """
     file_path = None
     try:
@@ -636,10 +735,19 @@ def import_model_from_url():
             if not repo_id or not repo_filename:
                 return jsonify({'success': False, 'error': 'huggingface 模式下 repo_id 和 filename 必填'}), 400
 
-            source_url = (
-                f"https://huggingface.co/{quote(repo_id, safe='/-')}"
-                f"/resolve/{quote(revision, safe='')}/{quote(repo_filename, safe='/-_.')}?download=1"
-            )
+            try:
+                use_hf_mirror = _parse_boolean(
+                    data.get('use_hf_mirror'),
+                    default=HF_USE_MIRROR,
+                )
+                source_url = _build_huggingface_download_url(
+                    repo_id,
+                    repo_filename,
+                    revision=revision,
+                    use_mirror=use_hf_mirror,
+                )
+            except ValueError as e:
+                return jsonify({'success': False, 'error': str(e)}), 400
             source_filename = secure_filename(os.path.basename(repo_filename))
             if hf_token:
                 headers['Authorization'] = f'Bearer {hf_token}'
@@ -667,10 +775,22 @@ def import_model_from_url():
         if not model_name:
             return jsonify({'success': False, 'error': '模型名称不能为空'}), 400
 
-        request_obj = Request(source_url, headers=headers)
         try:
-            with urlopen(request_obj, timeout=120) as response:
-                response_filename = _extract_filename_from_content_disposition(response.headers.get('Content-Disposition'))
+            request_timeout = (
+                min(30, HF_DOWNLOAD_TIMEOUT_SECONDS),
+                HF_DOWNLOAD_TIMEOUT_SECONDS,
+            )
+            with requests.get(
+                source_url,
+                headers=headers,
+                stream=True,
+                timeout=request_timeout,
+                allow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                response_filename = _extract_filename_from_content_disposition(
+                    response.headers.get('Content-Disposition')
+                )
                 download_filename = source_filename if source_filename_valid else ''
                 if response_filename:
                     response_filename = secure_filename(response_filename)
@@ -692,15 +812,18 @@ def import_model_from_url():
                     return jsonify({'success': False, 'error': str(e)}), 500
 
                 with open(file_path, 'wb') as output_file:
-                    shutil.copyfileobj(response, output_file, length=1024 * 1024)
-        except HTTPError as e:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            output_file.write(chunk)
+        except requests.HTTPError as e:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
-            return jsonify({'success': False, 'error': f'下载失败，HTTP状态码: {e.code}'}), 400
-        except URLError as e:
+            status_code = e.response.status_code if e.response is not None else '未知'
+            return jsonify({'success': False, 'error': f'下载失败，HTTP状态码: {status_code}'}), 400
+        except requests.RequestException as e:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
-            return jsonify({'success': False, 'error': f'下载失败: {e.reason}'}), 400
+            return jsonify({'success': False, 'error': f'下载失败: {e}'}), 400
         except Exception as e:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)

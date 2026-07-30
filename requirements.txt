@@ -11,3 +11,4 @@ pika
 gunicorn
 PyJWT
 requests
+psutil
