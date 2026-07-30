@@ -72,7 +72,8 @@ SCRIPT_METADATA = {
                     "type": "string",
                     "label": "显示标签",
                     "default": "Object",
-                    "description": "检测框上显示的文字"
+                    "description": "检测框上显示的文字，支持用 {class} 代表实际识别类别",
+                    "placeholder": "例如：目标-{class}"
                 },
                 "label_color": {
                     "type": "color",
@@ -570,11 +571,15 @@ def process(frame: np.ndarray,
             
             for det in first_result.boxes.data.tolist():
                 x1, y1, x2, y2, conf, cls = det
+                class_id = int(cls)
+                class_name = first_result.names[class_id]
                 detections.append({
                     'box': (x1, y1, x2, y2),
                     'label_name': first_config.get('label_name', 'Object'),
                     'label_color': first_config.get('label_color', '#FF0000'),
-                    'class': int(cls),
+                    'label': class_name,
+                    'class_name': class_name,
+                    'class': class_id,
                     'confidence': float(conf)
                 })
     else:
@@ -610,13 +615,19 @@ def process(frame: np.ndarray,
                     'label_name': model_config.get('label_name', 'Object'),
                     'label_color': model_config.get('label_color', '#00FF00'),
                     'class': d['class'],
+                    'class_name': d['class_name'],
+                    'label': d['class_name'],
                     'confidence': d['confidence']
                 })
+
+            group_class_name = '/'.join(dict.fromkeys(d['class_name'] for d in group))
             
             detections.append({
                 'box': (x_min, y_min, x_max, y_max),
                 'label_name': config.get('label_name', 'Target'),
                 'label_color': config.get('label_color', '#FF0000'),
+                'label': group_class_name,
+                'class_name': group_class_name,
                 'class': 0,
                 'confidence': np.mean([d['confidence'] for d in group]),
                 'stages': stages_info  # 包含各模型的检测明细

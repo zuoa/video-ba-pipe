@@ -674,9 +674,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               <Form.Item
                 label="标签名称"
                 name="labelName"
-                extra="检测结果中显示的标签名称"
+                extra={<>支持 <code>{'{class}'}</code> 占位符，将替换为实际识别类别</>}
               >
-                <Input placeholder="例如: Person" />
+                <Input placeholder="例如：目标-{class}" />
               </Form.Item>
 
               <Form.Item

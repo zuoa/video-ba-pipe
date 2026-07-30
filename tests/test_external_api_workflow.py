@@ -58,7 +58,11 @@ def test_normalize_external_api_result_supports_nested_output_mapping():
             'body': {
                 'data': {
                     'summary': {'hit': True},
-                    'items': [{'box': [1, 2, 3, 4], 'confidence': 0.9}],
+                    'items': [{
+                        'xyxy': [1, 2, 3, 4],
+                        'score': 0.9,
+                        'class_name': 'person',
+                    }],
                     'meta': {'latency_ms': 42},
                 },
                 'style': {'color': '#00AA00'},
@@ -69,6 +73,9 @@ def test_normalize_external_api_result_supports_nested_output_mapping():
     assert result['has_detection'] is True
     assert result['label_color'] == '#00AA00'
     assert len(result['result']['detections']) == 1
+    assert result['result']['detections'][0]['box'] == [1, 2, 3, 4]
+    assert result['result']['detections'][0]['confidence'] == 0.9
+    assert result['result']['detections'][0]['label_name'] == 'person'
     assert result['result']['metadata']['latency_ms'] == 42
     assert result['result']['metadata']['external_api_status_code'] == 200
 
@@ -113,3 +120,64 @@ def test_handle_external_api_node_async_submit_is_non_blocking():
     assert result['result']['metadata']['submitted'] is True
     assert len(executor._async_submit_executor.calls) == 1
     assert executor.node_results_cache['ext_1']['result']['metadata']['execution_mode'] == 'async_submit'
+
+
+def test_handle_external_api_node_attaches_visualized_image_in_test_mode():
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow_id = 1
+    executor.video_source = None
+    executor.connections = []
+    executor.node_results_cache = {}
+    executor.external_api_datamap = {
+        'ext_1': {
+            'id': 9,
+            'name': 'Remote API',
+            'enabled': True,
+            'request_template': {},
+        }
+    }
+    executor.external_api_configs = {
+        'ext_1': {
+            'execution_mode': 'sync',
+            'include_image': False,
+            'include_upstream_results': False,
+            'payload_template': {},
+            'output_mapping': {},
+            'label_color': '#1677ff',
+        }
+    }
+    executor._state_lock = threading.Lock()
+    executor.test_mode = True
+    executor._submit_external_api_request = lambda _node_id, _payload: {
+        'status_code': 200,
+        'body': {
+            'has_detection': True,
+            'detections': [{
+                'bbox': [1, 2, 6, 7],
+                'score': 0.9,
+                'class_name': 'person',
+            }],
+        },
+    }
+
+    visualization_calls = []
+
+    def save_test_result_image(**kwargs):
+        visualization_calls.append(kwargs)
+        return '/api/image/frames/external-api-result.jpg'
+
+    executor._save_test_result_image = save_test_result_image
+
+    result = executor._handle_external_api_node(
+        'ext_1',
+        {
+            'frame': np.zeros((8, 8, 3), dtype=np.uint8),
+            'frame_bgr': np.zeros((8, 8, 3), dtype=np.uint8),
+            'frame_timestamp': 123.0,
+        },
+    )
+
+    assert result['result_image'] == '/api/image/frames/external-api-result.jpg'
+    assert result['result']['detections'][0]['box'] == [1, 2, 6, 7]
+    assert visualization_calls[0]['detections'] == result['result']['detections']
+    assert executor.node_results_cache['ext_1']['result_image'] == result['result_image']

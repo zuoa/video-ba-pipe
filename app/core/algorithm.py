@@ -163,22 +163,73 @@ class BaseAlgorithm(ABC):
 
     @staticmethod
     def _get_detection_box(det):
-        """兼容 box/bbox 两种字段名。"""
+        """兼容 box/bbox/xyxy 三种字段名。"""
         if not isinstance(det, dict):
             return None
         box = det.get('box')
         if box is None:
             box = det.get('bbox')
+        if box is None:
+            box = det.get('xyxy')
         if not isinstance(box, (list, tuple)) or len(box) < 4:
             return None
         return box
 
     @staticmethod
     def _get_detection_label(det, default='Object'):
-        """兼容 label/label_name/class_name。"""
+        """兼容 label/label_name/class_name，并展开显示标签中的 {class}。"""
         if not isinstance(det, dict):
             return default
-        return det.get('label_name') or det.get('label') or det.get('class_name') or default
+
+        label_template = det.get('label_name') or det.get('label') or det.get('class_name') or default
+        if not isinstance(label_template, str) or '{class}' not in label_template:
+            return label_template
+
+        class_name = det.get('class_name')
+        raw_label = det.get('label')
+        if class_name is None and raw_label and raw_label != label_template:
+            class_name = raw_label
+        if class_name is None:
+            class_name = det.get('class')
+        if class_name is None:
+            return label_template
+        return label_template.replace('{class}', str(class_name))
+
+    @staticmethod
+    def normalize_detection_results(detections):
+        """
+        将不同检测器的常见字段别名统一成工作流可视化使用的格式。
+
+        不强制要求检测框，避免丢弃 VL 等只返回语义结果的检测项。
+        """
+        normalized_results = []
+        for det in detections or []:
+            if not isinstance(det, dict):
+                continue
+
+            normalized = dict(det)
+            if normalized.get('box') is None:
+                box = normalized.get('bbox')
+                if box is None:
+                    box = normalized.get('xyxy')
+                if box is not None:
+                    normalized['box'] = box
+
+            if normalized.get('confidence') is None and normalized.get('score') is not None:
+                normalized['confidence'] = normalized.get('score')
+
+            if normalized.get('label') is None and normalized.get('class_name') is not None:
+                normalized['label'] = normalized.get('class_name')
+
+            normalized['label_name'] = BaseAlgorithm._get_detection_label(normalized)
+
+            stages = normalized.get('stages')
+            if isinstance(stages, list):
+                normalized['stages'] = BaseAlgorithm.normalize_detection_results(stages)
+
+            normalized_results.append(normalized)
+
+        return normalized_results
 
     @staticmethod
     def _get_detection_confidence(det, default=1.0):

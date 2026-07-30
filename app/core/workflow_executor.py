@@ -1189,6 +1189,9 @@ class WorkflowExecutor:
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
             result = algo.process(frame_nv12, effective_roi_regions, upstream_results=upstream_results)
             result = self._apply_algorithm_confidence_filter(node_id, result)
+            if isinstance(result, dict):
+                result = dict(result)
+                result['detections'] = BaseAlgorithm.normalize_detection_results(result.get('detections', []))
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} algo.process 返回: {result}")
             if result is None:
                 raise RuntimeError(f"algo.process returned None for node {node_id}")
@@ -1516,6 +1519,7 @@ class WorkflowExecutor:
         detections = self._get_nested_value(body, mapping.get('detections_path', 'detections'), [])
         if not isinstance(detections, list):
             detections = []
+        detections = BaseAlgorithm.normalize_detection_results(detections)
 
         metadata = self._get_nested_value(body, mapping.get('metadata_path'), None)
         if metadata is None:
@@ -1611,6 +1615,17 @@ class WorkflowExecutor:
             else:
                 response_payload = self._submit_external_api_request(node_id, payload)
                 result = self._normalize_external_api_result(node_id, response_payload)
+
+            if getattr(self, 'test_mode', False):
+                result_image = self._save_test_result_image(
+                    node_id=node_id,
+                    frame_rgb=context.get('frame'),
+                    detections=result.get('result', {}).get('detections', []),
+                    label_color=result.get('label_color', '#1677ff'),
+                    upstream_node_id=node_id,
+                )
+                if result_image:
+                    result['result_image'] = result_image
 
             with self._state_lock:
                 self.node_results_cache[node_id] = result
@@ -3353,6 +3368,7 @@ class WorkflowExecutor:
                     'detection_count': len(detections),
                     'execution_mode': execution_mode,
                     'debug_info': metadata,
+                    'result_image': cached.get('result_image'),
                 }
             return {'message': '外部 API 未产生结果'}
 

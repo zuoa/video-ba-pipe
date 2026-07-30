@@ -63,3 +63,42 @@ def test_visualize_accepts_normalized_xywh_boxes():
 
     assert rendered is not None
     assert tuple(rendered[24, 24]) == (255, 0, 0)
+
+
+def test_normalize_detection_results_expands_class_placeholder():
+    detections = BaseAlgorithm.normalize_detection_results([{
+        "bbox": [10, 10, 50, 50],
+        "score": 0.92,
+        "class": 0,
+        "class_name": "person",
+        "label_name": "目标-{class}",
+    }])
+
+    assert detections == [{
+        "bbox": [10, 10, 50, 50],
+        "box": [10, 10, 50, 50],
+        "score": 0.92,
+        "confidence": 0.92,
+        "class": 0,
+        "class_name": "person",
+        "label": "person",
+        "label_name": "目标-person",
+    }]
+
+
+def test_visualize_draws_xyxy_alias_detection():
+    frame_rgb = np.full((80, 80, 3), 255, dtype=np.uint8)
+    detections = [{
+        "xyxy": [10, 10, 50, 50],
+        "score": 0.92,
+        "class_name": "person",
+    }]
+
+    rendered = BaseAlgorithm.visualize(
+        frame_rgb,
+        detections,
+        label_color="#00FF00",
+    )
+
+    assert rendered is not None
+    assert tuple(rendered[10, 10]) == (0, 255, 0)

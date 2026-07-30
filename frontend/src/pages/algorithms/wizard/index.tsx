@@ -1147,6 +1147,9 @@ export default function AlgorithmWizard() {
           name={fieldId}
           label={subField.label || subKey}
           initialValue={defaultValue}
+          extra={subKey === 'label_name'
+            ? <>支持 <code>{'{class}'}</code> 占位符，将替换为实际识别类别</>
+            : undefined}
           style={{ marginBottom: 12 }}
         >
           {subField.type === 'model_select' ? (
@@ -1173,7 +1176,7 @@ export default function AlgorithmWizard() {
             />
           ) : (
             <Input
-              placeholder={subField.placeholder}
+              placeholder={subField.placeholder || (subKey === 'label_name' ? '例如：目标-{class}' : undefined)}
             />
           )}
         </Form.Item>
@@ -1321,8 +1324,9 @@ export default function AlgorithmWizard() {
                   label="标签名称"
                   name="labelName"
                   initialValue="Object"
+                  extra={<>支持 <code>{'{class}'}</code> 占位符，将替换为实际识别类别，例如：目标-{'{class}'}</>}
                 >
-                  <Input placeholder="Object" />
+                  <Input placeholder="例如：目标-{class}" />
                 </Form.Item>
               </Col>
               <Col span={12}>

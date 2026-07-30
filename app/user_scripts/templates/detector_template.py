@@ -73,7 +73,8 @@ SCRIPT_METADATA = {
             "type": "string",
             "label": "显示标签",
             "default": "Object",
-            "placeholder": "输入标签名称"
+            "description": "支持用 {class} 代表实际识别类别",
+            "placeholder": "例如：目标-{class}"
         },
         
         # 示例：颜色选择

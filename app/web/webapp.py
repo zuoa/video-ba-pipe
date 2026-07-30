@@ -41,6 +41,7 @@ from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     workflow_references_algorithm,
 )
+from app.core.algorithm import BaseAlgorithm
 from app.core.window_detector import get_window_detector
 from app.core.video_probe import normalize_video_codec
 from app.setup_database import setup_database
@@ -535,7 +536,7 @@ def test_algorithm():
             results = algo_instance.process(image)
 
             # 处理结果
-            detections = results.get('detections', [])
+            detections = BaseAlgorithm.normalize_detection_results(results.get('detections', []))
             metadata = results.get('metadata', {})
             algorithm_error = metadata.get('error') if isinstance(metadata, dict) else None
             
