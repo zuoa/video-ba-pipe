@@ -1,4 +1,4 @@
-.upload-btn {
+.models-page .upload-btn {
   min-width: 112px;
 }
 
@@ -6,7 +6,7 @@
   margin-top: 16px;
 }
 
-.loading-container {
+.models-page .loading-container {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -15,7 +15,7 @@
 
 /* 响应式 */
 @media (max-width: 768px) {
-  .upload-btn {
+  .models-page .upload-btn {
     width: 100%;
   }
 }

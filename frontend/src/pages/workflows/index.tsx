@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, message, Button } from 'antd';
+import { message, Button } from 'antd';
 import {
   PlusOutlined,
   ApartmentOutlined,
@@ -14,7 +14,7 @@ import {
   getVideoSources,
   batchCopyWorkflow,
 } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { PageHeader, useAppConfirm } from '@/components/common';
 import WorkflowTable from './components/WorkflowTable';
 import WorkflowForm from './components/WorkflowForm';
 import CopyWorkflowModal from './components/CopyWorkflowModal';
@@ -30,6 +30,7 @@ export default function Workflows() {
   const [copyingWorkflow, setCopyingWorkflow] = useState<any>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
+  const confirmAction = useAppConfirm();
 
   const loadWorkflows = useCallback(async () => {
     setLoading(true);
@@ -73,12 +74,12 @@ export default function Workflows() {
   };
 
   const handleDelete = (id: number) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个工作流吗？',
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
+    const workflow = workflows.find((item) => item.id === id);
+    confirmAction({
+      title: '删除工作流',
+      objectName: workflow?.name || `工作流 #${id}`,
+      description: '删除后，当前编排和节点配置将无法恢复。',
+      onConfirm: async () => {
         try {
           await deleteWorkflow(id);
           message.success('工作流删除成功');

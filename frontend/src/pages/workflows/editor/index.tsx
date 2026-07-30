@@ -44,6 +44,7 @@ export default function WorkflowEditorPage() {
   const [externalApis, setExternalApis] = useState<any[]>([]);
   const [vlConfig, setVlConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [resourcesLoaded, setResourcesLoaded] = useState(false);
 
   // 使用 ref 保存 selectedNode 的最新值，防止闭包陷阱
@@ -479,6 +480,9 @@ export default function WorkflowEditorPage() {
 
   const handleSave = async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent);
+    if (!silent) {
+      setSaving(true);
+    }
     try {
       console.log('💾 ============ [EDITOR] handleSave 开始 ============');
       console.log('📊 [EDITOR] 当前nodes数量:', nodes.length);
@@ -686,6 +690,10 @@ export default function WorkflowEditorPage() {
         message.error('保存失败');
       }
       return false;
+    } finally {
+      if (!silent) {
+        setSaving(false);
+      }
     }
   };
 
@@ -853,7 +861,7 @@ export default function WorkflowEditorPage() {
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="workflow-editor-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* 头部工具栏 */}
       <div className="editor-header">
         <div className="header-left">
@@ -885,7 +893,13 @@ export default function WorkflowEditorPage() {
             >
               测试
             </Button>
-            <Button type="primary" icon={<SaveOutlined />} onClick={() => void handleSave()}>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saving}
+              disabled={saving}
+              onClick={() => void handleSave()}
+            >
               保存
             </Button>
           </Space>

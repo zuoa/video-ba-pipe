@@ -10,13 +10,13 @@
   color: #262626;
 }
 
-.modal-title {
+.workflow-form-modal .modal-title {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.modal-title-icon {
+.workflow-form-modal .modal-title-icon {
   font-size: 18px;
   color: #000000;
 }
@@ -44,13 +44,13 @@
   padding: 16px 24px;
 }
 
-.modal-footer {
+.workflow-form-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
 }
 
-.modal-footer .ant-btn {
+.workflow-form-footer .ant-btn {
   height: 38px;
   padding: 0 20px;
   font-size: 14px;
@@ -58,12 +58,12 @@
   border-radius: 6px;
 }
 
-.modal-footer .ant-btn-primary {
+.workflow-form-footer .ant-btn-primary {
   background: #000000;
   border-color: #000000;
 }
 
-.modal-footer .ant-btn-primary:hover {
+.workflow-form-footer .ant-btn-primary:hover {
   background: #333333;
   border-color: #333333;
 }

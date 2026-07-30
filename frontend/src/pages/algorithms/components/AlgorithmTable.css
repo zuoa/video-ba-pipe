@@ -201,7 +201,7 @@
 }
 
 /* Action Buttons - simplified to use Ant Design styles */
-.action-btn {
+.algorithm-table-wrapper .action-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -216,38 +216,38 @@
   background: transparent;
 }
 
-.action-btn span {
+.algorithm-table-wrapper .action-btn span {
   line-height: 1;
 }
 
-.action-btn-test {
+.algorithm-table-wrapper .action-btn-test {
   color: #52c41a;
   border-color: #b7eb8f;
 }
 
-.action-btn-test:hover {
+.algorithm-table-wrapper .action-btn-test:hover {
   color: #389e0d;
   border-color: #95de64;
   background: #f6ffed;
 }
 
-.action-btn-edit {
+.algorithm-table-wrapper .action-btn-edit {
   color: #1890ff;
   border-color: #91d5ff;
 }
 
-.action-btn-edit:hover {
+.algorithm-table-wrapper .action-btn-edit:hover {
   color: #096dd9;
   border-color: #69c0ff;
   background: #e6f7ff;
 }
 
-.action-btn-delete {
+.algorithm-table-wrapper .action-btn-delete {
   color: #ff4d4f;
   border-color: #ffa39e;
 }
 
-.action-btn-delete:hover {
+.algorithm-table-wrapper .action-btn-delete:hover {
   color: #d9363e;
   border-color: #ff7875;
   background: #fff1f0;

@@ -5,7 +5,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Select,
   Space,
   Table,
@@ -22,6 +21,7 @@ import {
   discoverImportChannels,
   getSourceImportProviders,
 } from '@/services/api';
+import AppModal from '@/components/common/AppModal';
 import './ImportSourcesModal.css';
 
 interface ImportSourcesModalProps {
@@ -222,22 +222,31 @@ export default function ImportSourcesModal({
   ];
 
   return (
-    <Modal
+    <AppModal
       open={visible}
-      width={1080}
+      size="xl"
       onCancel={onCancel}
       title="批量导入视频源"
+      description="发现设备通道，校对名称后批量添加到视频源列表"
       className="import-sources-modal"
+      closable={!importing}
+      keyboard={!importing}
       footer={
         <Space>
-          <Button onClick={onCancel}>取消</Button>
-          <Button icon={<ReloadOutlined />} loading={discovering} onClick={handleDiscover}>
+          <Button onClick={onCancel} disabled={importing}>取消</Button>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={discovering}
+            disabled={importing}
+            onClick={handleDiscover}
+          >
             发现通道
           </Button>
           <Button
             type="primary"
             icon={<CloudDownloadOutlined />}
             loading={importing}
+            disabled={discovering || selectedKeys.length === 0}
             onClick={handleImport}
           >
             导入已选通道
@@ -377,6 +386,6 @@ export default function ImportSourcesModal({
           </div>
         )}
       </div>
-    </Modal>
+    </AppModal>
   );
 }

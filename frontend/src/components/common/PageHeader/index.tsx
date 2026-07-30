@@ -21,19 +21,19 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 }) => {
   return (
     <div className="page-header">
-      <div className="header-left">
-        <div className="header-icon">{icon}</div>
-        <div className="header-content">
-          <h3 className="page-title">{title}</h3>
-          {subtitle && <p className="page-subtitle">{subtitle}</p>}
+      <div className="page-header__left">
+        <div className="page-header__icon">{icon}</div>
+        <div className="page-header__content">
+          <h3 className="page-header__title">{title}</h3>
+          {subtitle && <p className="page-header__subtitle">{subtitle}</p>}
         </div>
       </div>
-      <div className="header-right">
+      <div className="page-header__right">
         <Space size={12} wrap>
           {count !== undefined && (
-            <div className="header-count">
-              <span className="count-number">{count}</span>
-              <span className="count-label">{countLabel}</span>
+            <div className="page-header__count">
+              <span className="page-header__count-number">{count}</span>
+              <span className="page-header__count-label">{countLabel}</span>
             </div>
           )}
           {extra}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Space, Typography, Tooltip, Popconfirm } from 'antd';
+import { Card, Space, Typography, Tooltip, message } from 'antd';
 import {
   EyeOutlined,
   CopyOutlined,
@@ -37,9 +37,9 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
     try {
       const data = await getModel(model.id);
       await navigator.clipboard.writeText(data.model.file_path);
-      // 使用轻量提示
+      message.success('模型路径已复制');
     } catch (error) {
-      console.error('复制失败:', error);
+      message.error('复制路径失败');
     }
   };
 
@@ -142,26 +142,23 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
             <button
               type="button"
               className="action-btn action-btn-copy"
+              aria-label={`复制模型 ${model.name} 的路径`}
               onClick={handleCopyPath}
             >
               <CopyOutlined />
             </button>
           </Tooltip>
           {model.usage_count === 0 && (
-            <Popconfirm
-              title="确定要删除这个模型吗？"
-              description="此操作不可恢复"
-              onConfirm={() => onDelete(model.id)}
-              okText="确定"
-              cancelText="取消"
-            >
+            <Tooltip title="删除模型">
               <button
                 type="button"
                 className="action-btn action-btn-delete"
+                aria-label={`删除模型 ${model.name}`}
+                onClick={() => onDelete(model.id)}
               >
                 <DeleteOutlined />
               </button>
-            </Popconfirm>
+            </Tooltip>
           )}
         </Space>
       </div>

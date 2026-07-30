@@ -39,6 +39,11 @@
   padding-right: 36px;
 }
 
+.alertDetailModal .app-modal__heading-copy,
+.alertDetailModal .app-modal__title {
+  width: 100%;
+}
+
 .alertDetailModal__toolbarTitle {
   display: flex;
   align-items: center;

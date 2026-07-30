@@ -113,5 +113,5 @@
 
 .preview-close-btn:hover {
   background: #f5f5f5;
-  transform: rotate(90deg);
+  color: var(--app-text);
 }

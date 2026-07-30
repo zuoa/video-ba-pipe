@@ -16,7 +16,7 @@
   font-size: 14px;
 }
 
-.panel-header {
+.property-panel .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -25,11 +25,11 @@
   background: linear-gradient(to bottom, #fafafa, #ffffff);
 }
 
-.panel-header .ant-space {
+.property-panel .panel-header .ant-space {
   gap: 12px;
 }
 
-.panel-title {
+.property-panel .panel-title {
   font-size: 16px;
   font-weight: 600;
   color: #262626;
@@ -187,19 +187,19 @@
   border: 1px solid #f0f0f0;
 }
 
-.info-row {
+.property-panel .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
 }
 
-.info-label {
+.property-panel .info-label {
   color: #8c8c8c;
   font-weight: 500;
 }
 
-.info-value {
+.property-panel .info-value {
   color: #262626;
   font-weight: 600;
 }
@@ -379,4 +379,3 @@
   gap: 8px;
   padding: 6px 0;
 }
-

@@ -76,6 +76,7 @@ export default function Login() {
                 <Input 
                   prefix={<UserOutlined className="input-icon" />} 
                   placeholder="用户名" 
+                  aria-label="用户名"
                   size="large"
                   className="login-input"
                 />
@@ -88,6 +89,7 @@ export default function Login() {
                 <Input.Password
                   prefix={<LockOutlined className="input-icon" />}
                   placeholder="密码"
+                  aria-label="密码"
                   size="large"
                   className="login-input"
                 />

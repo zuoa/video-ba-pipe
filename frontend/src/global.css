@@ -1,20 +1,34 @@
 :root {
   --app-bg: #f3f4f6;
   --app-bg-soft: #f7f8fa;
-  --app-surface: rgba(255, 255, 255, 0.84);
+  --app-surface: rgba(255, 255, 255, 0.92);
   --app-surface-strong: #ffffff;
   --app-surface-muted: #f7f8fa;
-  --app-text: #1f2328;
-  --app-text-muted: #6b7280;
+  --app-text: #1f242b;
+  --app-text-secondary: #4b5563;
+  --app-text-muted: #667085;
   --app-line: #d7dbe2;
   --app-line-soft: #e5e7eb;
   --app-accent: #1f242b;
   --app-accent-soft: #eceff3;
+  --app-info: #356a92;
+  --app-info-soft: #edf5fa;
+  --app-success: #2f6b4f;
+  --app-success-soft: #edf6f1;
+  --app-warning: #9a681f;
+  --app-warning-soft: #fbf5e8;
+  --app-danger: #b54743;
+  --app-danger-soft: #fbefee;
   --app-shadow-sm: 0 10px 24px rgba(15, 23, 42, 0.05);
   --app-shadow-md: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --app-shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.14);
   --app-radius-s: 12px;
   --app-radius-m: 18px;
   --app-radius-l: 26px;
+  --app-z-header: 20;
+  --app-z-overlay: 1000;
+  --app-motion-fast: 160ms;
+  --app-motion-base: 220ms;
 }
 
 * {
@@ -38,12 +52,25 @@ body {
     'Microsoft YaHei',
     'Segoe UI',
     sans-serif;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 a {
   color: inherit;
+}
+
+button,
+[role='button'],
+.ant-btn,
+.ant-card-hoverable {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(53, 106, 146, 0.72);
+  outline-offset: 2px;
 }
 
 ::selection {
@@ -61,6 +88,7 @@ a {
 
 .app-shell__content {
   width: 100%;
+  min-width: 0;
 }
 
 .app-primary-button.ant-btn,
@@ -125,6 +153,10 @@ a {
   border-color: var(--app-line) !important;
   background: rgba(255, 255, 255, 0.88) !important;
   box-shadow: none !important;
+  transition:
+    border-color var(--app-motion-fast) ease,
+    box-shadow var(--app-motion-fast) ease,
+    background-color var(--app-motion-fast) ease;
 }
 
 .ant-input-affix-wrapper:hover,
@@ -138,6 +170,7 @@ a {
 .ant-picker-focused,
 .ant-input-number-focused {
   border-color: #b8c0cc !important;
+  box-shadow: 0 0 0 3px rgba(53, 106, 146, 0.1) !important;
 }
 
 .ant-table-wrapper {
@@ -146,6 +179,10 @@ a {
   overflow: hidden;
   background: var(--app-surface-strong);
   box-shadow: var(--app-shadow-sm);
+}
+
+.ant-table-wrapper .ant-table-container {
+  overflow-x: auto;
 }
 
 .ant-table {
@@ -163,16 +200,11 @@ a {
 }
 
 .ant-card,
-.ant-modal .ant-modal-content,
 .ant-dropdown .ant-dropdown-menu,
 .ant-popover .ant-popover-inner {
   border: 1px solid var(--app-line-soft);
   border-radius: var(--app-radius-m);
   box-shadow: var(--app-shadow-sm);
-}
-
-.ant-modal .ant-modal-content {
-  padding: 24px;
 }
 
 .ant-empty-description,
@@ -181,8 +213,82 @@ a {
   color: var(--app-text-muted) !important;
 }
 
+.ant-btn {
+  min-height: 40px;
+  border-radius: 10px;
+  box-shadow: none;
+  transition:
+    color var(--app-motion-fast) ease,
+    border-color var(--app-motion-fast) ease,
+    background-color var(--app-motion-fast) ease,
+    box-shadow var(--app-motion-fast) ease;
+}
+
+.ant-btn-sm {
+  min-height: 32px;
+}
+
+.ant-btn-primary {
+  border-color: var(--app-accent);
+  background: var(--app-accent);
+}
+
+.ant-btn-primary:not(:disabled):hover {
+  border-color: #343b45 !important;
+  background: #343b45 !important;
+}
+
+.ant-btn-dangerous.ant-btn-primary {
+  border-color: var(--app-danger);
+  background: var(--app-danger);
+}
+
+.ant-message-notice-content {
+  border: 1px solid var(--app-line-soft);
+  border-radius: 12px;
+  box-shadow: var(--app-shadow-md);
+}
+
+.ant-form-item-label > label {
+  color: var(--app-text-secondary) !important;
+  font-weight: 600;
+}
+
+.ant-form-item-explain-error {
+  color: var(--app-danger) !important;
+}
+
+.app-page,
+.dashboard-page,
+.workflows-page,
+.algorithms-page,
+.video-sources-page,
+.alerts-page,
+.models-page,
+.scripts-page,
+.external-apis-page,
+.users-page,
+.system-settings-page {
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media (max-width: 768px) {
   .app-shell__main {
     padding: 14px 16px 28px;
+  }
+
+  .ant-table-wrapper {
+    border-radius: var(--app-radius-s);
   }
 }

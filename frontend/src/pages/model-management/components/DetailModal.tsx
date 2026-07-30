@@ -1,7 +1,8 @@
-import React from 'react';
-import { Modal, Descriptions, Button, Space, Tag, message } from 'antd';
-import { DownloadOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Descriptions, Button, Space, Tag, message } from 'antd';
+import { DownloadOutlined, CopyOutlined } from '@ant-design/icons';
 import { downloadModelFile } from '@/services/api';
+import AppModal from '@/components/common/AppModal';
 
 interface Model {
   id: number;
@@ -29,6 +30,8 @@ interface DetailModalProps {
 }
 
 const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) => {
+  const [downloading, setDownloading] = useState(false);
+
   if (!model) return null;
 
   const handleCopy = async () => {
@@ -41,10 +44,13 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
   };
 
   const handleDownload = async () => {
+    setDownloading(true);
     try {
       await downloadModelFile(model.id);
     } catch (error: any) {
       message.error(error?.message || '下载失败');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -61,26 +67,11 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
   };
 
   return (
-    <Modal
-      title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              background: 'linear-gradient(135deg, #000000 0%, #333333 100%)',
-              borderRadius: 8,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-            }}
-          >
-            <InfoCircleOutlined />
-          </div>
-          <span>模型详情</span>
-        </div>
-      }
+    <AppModal
+      title="模型详情"
+      description={model.name}
+      kind="detail"
+      size="md"
       open={visible}
       onCancel={onClose}
       footer={
@@ -88,12 +79,17 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
           <Button icon={<CopyOutlined />} onClick={handleCopy}>
             复制路径
           </Button>
-          <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
+          <Button
+            type="primary"
+            icon={<DownloadOutlined />}
+            onClick={handleDownload}
+            loading={downloading}
+            disabled={downloading}
+          >
             下载模型
           </Button>
         </Space>
       }
-      width={640}
     >
       <Descriptions column={2} bordered size="small">
         <Descriptions.Item label="模型名称" span={2}>
@@ -165,7 +161,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
           </span>
         </Descriptions.Item>
       </Descriptions>
-    </Modal>
+    </AppModal>
   );
 };
 

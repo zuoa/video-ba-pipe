@@ -27,61 +27,51 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
       color: string;
       bgColor: string;
       borderColor: string;
-      icon?: string;
     }> = {
       RUNNING: {
         color: '#389e0d',
         bgColor: '#f6ffed',
         borderColor: '#b7eb8f',
-        icon: '●',
       },
       STARTING: {
         color: '#0958d9',
         bgColor: '#e6f4ff',
         borderColor: '#91caff',
-        icon: '●',
       },
       DRAINING: {
         color: '#d46b08',
         bgColor: '#fff7e6',
         borderColor: '#ffd591',
-        icon: '●',
       },
       STOPPED: {
         color: '#595959',
         bgColor: '#fafafa',
         borderColor: '#d9d9d9',
-        icon: '■',
       },
       ERROR: {
         color: '#cf1322',
         bgColor: '#fff1f0',
         borderColor: '#ffa39e',
-        icon: '●',
       },
       ACTIVE: {
         color: '#389e0d',
         bgColor: '#f6ffed',
         borderColor: '#b7eb8f',
-        icon: '●',
       },
       INACTIVE: {
         color: '#8c8c8c',
         bgColor: '#fafafa',
         borderColor: '#d9d9d9',
-        icon: '○',
       },
       ENABLED: {
         color: '#389e0d',
         bgColor: '#f6ffed',
         borderColor: '#b7eb8f',
-        icon: '✓',
       },
       DISABLED: {
         color: '#8c8c8c',
         bgColor: '#fafafa',
         borderColor: '#d9d9d9',
-        icon: '✕',
       },
     };
 
@@ -93,14 +83,14 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
 
   return (
     <span
-      className={`status-badge status-badge-${size} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
+      className={`status-badge status-badge-${size} status-badge-${status.toLowerCase()} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
       style={{
         color: config.color,
         backgroundColor: config.bgColor,
         borderColor: config.borderColor,
       }}
     >
-      {config.icon && <span className="status-icon">{config.icon}</span>}
+      <span className="status-icon" aria-hidden="true" />
       {displayText}
     </span>
   );

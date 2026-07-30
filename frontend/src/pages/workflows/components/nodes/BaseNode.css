@@ -34,7 +34,7 @@
   background: #f5222d;
 }
 
-.node-header {
+.custom-node .node-header {
   display: flex;
   align-items: center;
   gap: 8px;

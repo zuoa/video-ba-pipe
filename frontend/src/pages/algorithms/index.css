@@ -3,17 +3,17 @@
 }
 
 /* Header Actions */
-.header-actions {
+.algorithms-page .header-actions {
   display: flex;
   gap: 12px;
 }
 
 /* Buttons - use Ant Design styles */
-.wizard-btn {
+.algorithms-page .wizard-btn {
   min-width: 118px;
 }
 
-.create-btn {
+.algorithms-page .create-btn {
   height: 36px;
   padding: 0 20px;
   font-weight: 500;
@@ -21,13 +21,13 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .header-actions {
+  .algorithms-page .header-actions {
     flex-direction: column;
     gap: 8px;
   }
 
-  .wizard-btn,
-  .create-btn {
+  .algorithms-page .wizard-btn,
+  .algorithms-page .create-btn {
     width: 100%;
   }
 }

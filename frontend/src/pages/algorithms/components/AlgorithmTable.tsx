@@ -137,6 +137,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
         <Space size="small">
           <Tooltip title="测试算法">
             <button
+              type="button"
               className="action-btn action-btn-test"
               onClick={() => onTest(record)}
             >
@@ -146,6 +147,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
           </Tooltip>
           <Tooltip title="编辑算法">
             <button
+              type="button"
               className="action-btn action-btn-edit"
               onClick={() => onEdit(record)}
             >
@@ -155,6 +157,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
           </Tooltip>
           <Tooltip title="删除算法">
             <button
+              type="button"
               className="action-btn action-btn-delete"
               onClick={() => onDelete(record.id)}
             >

@@ -151,7 +151,7 @@
 }
 
 /* Action Buttons */
-.action-btn {
+.source-table-wrapper .action-btn {
   border-radius: 6px;
   font-weight: 500;
   transition: all 0.3s;
@@ -159,26 +159,26 @@
   padding: 0 12px;
 }
 
-.action-btn-edit {
+.source-table-wrapper .action-btn-edit {
   background: #e6f7ff;
   color: #1890ff;
   border-color: #91d5ff;
 }
 
-.action-btn-edit:hover {
+.source-table-wrapper .action-btn-edit:hover {
   background: #bae7ff;
   border-color: #69c0ff;
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
 }
 
-.action-btn-delete {
+.source-table-wrapper .action-btn-delete {
   background: #fff1f0;
   color: #cf1322;
   border-color: #ffa39e;
 }
 
-.action-btn-delete:hover {
+.source-table-wrapper .action-btn-delete:hover {
   background: #ffccc7;
   border-color: #ff7875;
   transform: translateY(-1px);

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Modal,
   Form,
   Input,
   InputNumber,
@@ -28,6 +27,7 @@ import {
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { detectStreamInfo, uploadVideoFile, getVideoFiles, deleteVideoFile } from '@/services/api';
+import { AppModal, useAppConfirm } from '@/components/common';
 import './SourceForm.css';
 
 const { Option } = Select;
@@ -53,31 +53,29 @@ const SourceForm: React.FC<SourceFormProps> = ({
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const confirmAction = useAppConfirm();
 
   const isEdit = !!editingSource;
 
   // 当弹窗打开或 editingSource 变化时，回填表单数据
   useEffect(() => {
     if (visible && editingSource) {
-      console.log('📝 回填编辑数据:', editingSource);
       // 根据URL判断源类型
       const url = editingSource.source_url || '';
       const type = url.startsWith('rtsp://') || url.startsWith('rtsps://') ? 'rtsp' : 'file';
       setSourceType(type);
 
-      // 使用 setTimeout 确保弹窗已打开
-      setTimeout(() => {
-        form.setFieldsValue({
-          source_code: editingSource.source_code,
-          name: editingSource.name,
-          source_url: editingSource.source_url,
-          source_decode_width: editingSource.source_decode_width,
-          source_decode_height: editingSource.source_decode_height,
-          source_fps: editingSource.source_fps,
-          enabled: editingSource.enabled !== undefined ? editingSource.enabled : true,
-          source_type: type,
-        });
-      }, 0);
+      form.setFieldsValue({
+        source_code: editingSource.source_code,
+        name: editingSource.name,
+        source_url: editingSource.source_url,
+        source_decode_width: editingSource.source_decode_width,
+        source_decode_height: editingSource.source_decode_height,
+        source_fps: editingSource.source_fps,
+        enabled: editingSource.enabled !== undefined ? editingSource.enabled : true,
+        source_type: type,
+      });
 
       // 如果是文件类型，加载文件列表
       if (type === 'file') {
@@ -85,7 +83,6 @@ const SourceForm: React.FC<SourceFormProps> = ({
       }
     } else if (visible && !editingSource) {
       // 新增模式，重置表单为初始值
-      console.log('📝 重置为新增模式');
       form.resetFields();
       setStreamInfo(null);
       setSourceType('rtsp');
@@ -127,25 +124,14 @@ const SourceForm: React.FC<SourceFormProps> = ({
       const result = await detectStreamInfo(url);
       if (result.success) {
         setStreamInfo({
+          width: result.width,
+          height: result.height,
           resolution: `${result.width}x${result.height}`,
           fps: result.fps,
         });
         message.success({
           content: '流信息检测成功',
           duration: 2,
-        });
-
-        // 提示是否自动填充
-        Modal.confirm({
-          title: '检测成功',
-          content: `检测到流信息：${result.width}x${result.height} @ ${result.fps}fps，是否自动填充解码配置？`,
-          onOk: () => {
-            form.setFieldsValue({
-              source_decode_width: result.width,
-              source_decode_height: result.height,
-              source_fps: Math.min(Math.max(result.fps, 1), 30),
-            });
-          },
         });
       } else {
         message.error(result.error || '检测失败');
@@ -160,6 +146,7 @@ const SourceForm: React.FC<SourceFormProps> = ({
   };
 
   const handleSubmit = async () => {
+    setSaving(true);
     try {
       const values = await form.validateFields();
       await onSubmit(values);
@@ -167,6 +154,8 @@ const SourceForm: React.FC<SourceFormProps> = ({
       setStreamInfo(null);
     } catch (error) {
       // Validation failed
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -209,17 +198,24 @@ const SourceForm: React.FC<SourceFormProps> = ({
 
   // 删除视频文件
   const handleDeleteFile = async (filename: string) => {
-    try {
-      const result = await deleteVideoFile(filename);
-      if (result.success) {
-        message.success('文件删除成功');
-        await loadVideoFiles();
-      } else {
-        message.error(result.error || '删除失败');
-      }
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
-    }
+    confirmAction({
+      title: '删除视频文件',
+      objectName: filename,
+      description: '正在使用该文件的视频源可能无法继续运行。',
+      onConfirm: async () => {
+        try {
+          const result = await deleteVideoFile(filename);
+          if (result.success) {
+            message.success('视频文件已删除');
+            await loadVideoFiles();
+          } else {
+            message.error(result.error || '删除失败');
+          }
+        } catch (error: any) {
+          message.error(error.message || '删除失败');
+        }
+      },
+    });
   };
 
   // 格式化文件大小
@@ -238,21 +234,20 @@ const SourceForm: React.FC<SourceFormProps> = ({
   };
 
   return (
-    <Modal
-      title={
-        <div className="source-form-title">
-          <div className="title-icon">
-            <VideoCameraOutlined />
-          </div>
-          <span>{isEdit ? '编辑视频源' : '添加视频源'}</span>
-        </div>
-      }
+    <AppModal
+      title={isEdit ? '编辑视频源' : '添加视频源'}
+      description="配置输入地址、解码参数和调度状态"
       open={visible}
       onCancel={handleCancel}
       onOk={handleSubmit}
-      width={720}
-      okText="保存"
+      size="lg"
+      okText={isEdit ? '保存视频源' : '添加视频源'}
       cancelText="取消"
+      confirmLoading={saving}
+      okButtonProps={{ disabled: saving }}
+      cancelButtonProps={{ disabled: saving }}
+      closable={!saving && !uploading}
+      keyboard={!saving && !uploading}
       className="source-form-modal"
     >
       <Form
@@ -383,6 +378,7 @@ const SourceForm: React.FC<SourceFormProps> = ({
                                 size="small"
                                 danger
                                 icon={<DeleteOutlined />}
+                                aria-label={`删除视频文件 ${item.filename}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteFile(item.filename);
@@ -423,10 +419,22 @@ const SourceForm: React.FC<SourceFormProps> = ({
             {streamInfo && (
               <div className="stream-info">
                 <InfoCircleOutlined style={{ color: '#1890ff', marginRight: 8 }} />
-                <span className="stream-info-label">流信息：</span>
-                <span className="stream-info-value">{streamInfo.resolution}</span>
-                <span className="stream-info-divider">|</span>
-                <span className="stream-info-value">{streamInfo.fps} FPS</span>
+                <div className="stream-info-content">
+                  <span className="stream-info-label">检测到流信息</span>
+                  <span className="stream-info-value">
+                    {streamInfo.resolution} · {streamInfo.fps} FPS
+                  </span>
+                </div>
+                <Button
+                  size="small"
+                  onClick={() => form.setFieldsValue({
+                    source_decode_width: streamInfo.width,
+                    source_decode_height: streamInfo.height,
+                    source_fps: Math.min(Math.max(streamInfo.fps, 1), 30),
+                  })}
+                >
+                  应用检测参数
+                </Button>
               </div>
             )}
 
@@ -510,7 +518,7 @@ const SourceForm: React.FC<SourceFormProps> = ({
           </div>
         </div>
       </Form>
-    </Modal>
+    </AppModal>
   );
 };
 

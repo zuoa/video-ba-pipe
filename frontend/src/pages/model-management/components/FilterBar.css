@@ -1,4 +1,4 @@
-.filter-bar {
+.models-page .filter-bar {
   padding: 16px 24px;
   background: white;
   border-radius: 8px;
@@ -7,25 +7,25 @@
   margin-bottom: 16px;
 }
 
-.filter-search {
+.models-page .filter-search {
   width: 280px;
 }
 
-.filter-select {
+.models-page .filter-select {
   width: 140px;
 }
 
 /* 响应式 */
 @media (max-width: 768px) {
-  .filter-bar {
+  .models-page .filter-bar {
     padding: 12px 16px;
   }
 
-  .filter-search {
+  .models-page .filter-search {
     width: 100%;
   }
 
-  .filter-select {
+  .models-page .filter-select {
     width: 120px;
   }
 }

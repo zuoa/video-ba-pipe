@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Image, Space, Button, Typography } from 'antd';
+import { Image, Space, Button, Typography } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
-  InfoCircleOutlined,
   VideoCameraOutlined,
   PlayCircleOutlined,
   FileImageOutlined,
@@ -18,6 +17,7 @@ import {
 } from '@ant-design/icons';
 import { Alert, Task, DetectionImage, WindowStats, getAlertTypeConfig } from '../types';
 import { buildAlertVideoUrls } from '@/utils/media';
+import AppModal from '@/components/common/AppModal';
 import './AlertDetailModal.css';
 
 const { Title, Text } = Typography;
@@ -237,18 +237,16 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   ];
 
   return (
-    <Modal
+    <AppModal
       open={visible}
       onCancel={onClose}
       footer={null}
-      width={1120}
+      kind="detail"
+      size="xl"
       className="alertDetailModal"
       title={
         <div className="alertDetailModal__toolbar">
           <div className="alertDetailModal__toolbarTitle">
-            <span className="alertDetailModal__titleIcon">
-              <InfoCircleOutlined />
-            </span>
             <div className="alertDetailModal__titleGroup">
               <span className="alertDetailModal__titleEyebrow">告警详情</span>
               <span className="alertDetailModal__titleMain">{taskName}</span>
@@ -506,7 +504,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           </section>
         )}
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

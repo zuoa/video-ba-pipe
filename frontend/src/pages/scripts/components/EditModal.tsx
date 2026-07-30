@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Checkbox, Space, Button, message, Spin } from 'antd';
-import { EditOutlined, CheckOutlined, SaveOutlined } from '@ant-design/icons';
+import { Form, Input, Checkbox, Space, Button, message, Spin } from 'antd';
+import { CheckOutlined, SaveOutlined } from '@ant-design/icons';
 import { getScript, updateScript, validateScript } from '@/services/api';
 import CodeEditor from './CodeEditor';
 import ValidationModal from './ValidationModal';
-
-const { TextArea } = Input;
+import AppModal from '@/components/common/AppModal';
 
 export interface EditModalProps {
   visible: boolean;
@@ -24,6 +23,7 @@ const EditModal: React.FC<EditModalProps> = ({
   const [codeContent, setCodeContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
   const [createVersion, setCreateVersion] = useState(true);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
@@ -50,6 +50,7 @@ const EditModal: React.FC<EditModalProps> = ({
   };
 
   const handleValidate = async () => {
+    setValidating(true);
     try {
       const result = await validateScript({ content: codeContent });
       if (result.success) {
@@ -58,6 +59,8 @@ const EditModal: React.FC<EditModalProps> = ({
       }
     } catch (error: any) {
       message.error('验证失败');
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -88,27 +91,20 @@ const EditModal: React.FC<EditModalProps> = ({
 
   return (
     <>
-      <Modal
-        title={
-          <Space>
-            <div className="modal-icon">
-              <EditOutlined />
-            </div>
-            <div>
-              <div>编辑脚本</div>
-              <div className="modal-subtitle">{script?.path}</div>
-            </div>
-          </Space>
-        }
+      <AppModal
+        title="编辑脚本"
+        description={script?.path}
+        size="xl"
         open={visible}
         onCancel={handleCancel}
         footer={
           <Space>
-            <Button onClick={handleCancel}>取消</Button>
+            <Button onClick={handleCancel} disabled={saving || validating}>取消</Button>
             <Button
               icon={<CheckOutlined />}
               onClick={handleValidate}
-              disabled={!codeContent.trim()}
+              disabled={!codeContent.trim() || saving}
+              loading={validating}
             >
               验证
             </Button>
@@ -117,14 +113,15 @@ const EditModal: React.FC<EditModalProps> = ({
               icon={<SaveOutlined />}
               onClick={handleSave}
               loading={saving}
-              disabled={!codeContent.trim()}
+              disabled={!codeContent.trim() || validating}
             >
               保存
             </Button>
           </Space>
         }
-        width={1000}
         className="edit-modal"
+        closable={!saving && !validating}
+        keyboard={!saving && !validating}
         centered
       >
         <Spin spinning={loading}>
@@ -158,7 +155,7 @@ const EditModal: React.FC<EditModalProps> = ({
             </Form.Item>
           </Form>
         </Spin>
-      </Modal>
+      </AppModal>
 
       <ValidationModal
         visible={validationModalVisible}

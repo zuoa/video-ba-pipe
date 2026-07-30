@@ -61,7 +61,7 @@
   padding-left: 24px;
 }
 
-.detail-row {
+.video-source-selector-modal .detail-row {
   display: flex;
   align-items: center;
 }

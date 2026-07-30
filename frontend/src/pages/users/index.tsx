@@ -1,8 +1,8 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons';
-import { Button, Form, Input, message, Modal, Select, Space, Switch, Table } from 'antd';
+import { Button, Form, Input, message, Select, Space, Switch, Table } from 'antd';
 import { useEffect, useState } from 'react';
 import { getUsers, createUser, updateUser, deleteUser } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { AppModal, PageHeader, useAppConfirm } from '@/components/common';
 import './index.css';
 
 interface User {
@@ -19,7 +19,9 @@ export default function Users() {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const confirmAction = useAppConfirm();
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -52,10 +54,12 @@ export default function Users() {
   };
 
   const handleDelete = (id: number) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除该用户吗？',
-      onOk: async () => {
+    const user = users.find((item) => item.id === id);
+    confirmAction({
+      title: '删除用户',
+      objectName: user?.username || `用户 #${id}`,
+      description: '删除后，该账号将无法登录系统。',
+      onConfirm: async () => {
         try {
           const data = await deleteUser(id);
           if (data.success) {
@@ -72,6 +76,7 @@ export default function Users() {
   };
 
   const handleSubmit = async (values: any) => {
+    setSubmitting(true);
     try {
       const data = editingUser 
         ? await updateUser(editingUser.id, values)
@@ -86,6 +91,8 @@ export default function Users() {
       }
     } catch (error) {
       message.error(editingUser ? '更新失败' : '创建失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -161,11 +168,18 @@ export default function Users() {
         loading={loading}
       />
 
-      <Modal
+      <AppModal
         title={editingUser ? '编辑用户' : '新增用户'}
+        description={editingUser ? `更新 ${editingUser.username} 的账号信息` : '创建新的系统登录账号'}
         open={modalVisible}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => {
+          setModalVisible(false);
+          form.resetFields();
+        }}
         footer={null}
+        size="sm"
+        closable={!submitting}
+        keyboard={!submitting}
       >
         <Form form={form} onFinish={handleSubmit} layout="vertical">
           <Form.Item
@@ -205,16 +219,29 @@ export default function Users() {
               <Switch />
             </Form.Item>
           )}
-          <Form.Item>
+          <Form.Item className="app-form-actions">
             <Space>
-              <Button type="primary" htmlType="submit">
-                提交
+              <Button
+                disabled={submitting}
+                onClick={() => {
+                  setModalVisible(false);
+                  form.resetFields();
+                }}
+              >
+                取消
               </Button>
-              <Button onClick={() => setModalVisible(false)}>取消</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={submitting}
+                disabled={submitting}
+              >
+                {editingUser ? '保存用户' : '创建用户'}
+              </Button>
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </AppModal>
     </div>
   );
 }

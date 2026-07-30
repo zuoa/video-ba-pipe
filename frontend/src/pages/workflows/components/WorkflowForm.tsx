@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
-import { Modal, Form, Input, Button } from 'antd';
-import { ApartmentOutlined } from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import { Form, Input, Button } from 'antd';
+import AppModal from '@/components/common/AppModal';
 import './WorkflowForm.css';
 
 const { TextArea } = Input;
@@ -19,6 +19,7 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
   onSubmit,
 }) => {
   const [form] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -34,38 +35,41 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
   }, [visible, editingWorkflow, form]);
 
   const handleSubmit = async () => {
+    setSubmitting(true);
     try {
       const values = await form.validateFields();
       await onSubmit(values);
       form.resetFields();
     } catch (error) {
       // 表单验证失败
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  const handleCancel = () => {
+    form.resetFields();
+    onCancel();
+  };
+
   return (
-    <Modal
-      title={
-        <div className="modal-title">
-          <ApartmentOutlined className="modal-title-icon" />
-          <span>{editingWorkflow ? '编辑算法编排' : '新建算法编排'}</span>
-        </div>
-      }
+    <AppModal
+      title={editingWorkflow ? '编辑算法编排' : '新建算法编排'}
+      description="定义编排名称和用途说明"
       open={visible}
-      onCancel={() => {
-        form.resetFields();
-        onCancel();
-      }}
+      onCancel={handleCancel}
       footer={
-        <div className="modal-footer">
-          <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" onClick={handleSubmit}>
+        <div className="workflow-form-footer">
+          <Button onClick={handleCancel} disabled={submitting}>取消</Button>
+          <Button type="primary" onClick={handleSubmit} loading={submitting}>
             {editingWorkflow ? '保存' : '创建并编辑'}
           </Button>
         </div>
       }
-      width={600}
+      size="md"
       className="workflow-form-modal"
+      closable={!submitting}
+      keyboard={!submitting}
     >
       <Form
         form={form}
@@ -93,7 +97,7 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
           />
         </Form.Item>
       </Form>
-    </Modal>
+    </AppModal>
   );
 };
 

@@ -1,9 +1,9 @@
-.create-btn {
+.users-page .create-btn {
   min-width: 112px;
 }
 
 @media (max-width: 768px) {
-  .create-btn {
+  .users-page .create-btn {
     width: 100%;
   }
 }

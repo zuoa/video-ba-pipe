@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Row, Col, message, Upload, Radio } from 'antd';
-import { UploadOutlined, InboxOutlined } from '@ant-design/icons';
+import { Form, Input, Select, Row, Col, message, Upload, Radio } from 'antd';
+import { InboxOutlined } from '@ant-design/icons';
 import { uploadModel, importModelFromSource } from '@/services/api';
 import type { RcFile, UploadFile } from 'antd/es/upload/interface';
+import AppModal from '@/components/common/AppModal';
 
 const { TextArea } = Input;
 const { Dragger } = Upload;
@@ -149,32 +150,19 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
   };
 
   return (
-    <Modal
-      title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              background: 'linear-gradient(135deg, #000000 0%, #333333 100%)',
-              borderRadius: 8,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-            }}
-          >
-            <UploadOutlined />
-          </div>
-          <span>上传模型</span>
-        </div>
-      }
+    <AppModal
+      title="导入模型"
+      description="从本地、URL 或 Hugging Face 添加可供算法使用的模型"
       open={visible}
       onCancel={handleCancel}
       onOk={handleOk}
       confirmLoading={uploading}
-      width={640}
-      okText={sourceType === 'local' ? '上传' : '拉取'}
+      cancelButtonProps={{ disabled: uploading }}
+      okButtonProps={{ disabled: uploading }}
+      closable={!uploading}
+      keyboard={!uploading}
+      size="md"
+      okText={sourceType === 'local' ? '上传模型' : '拉取模型'}
       cancelText="取消"
     >
       <Form
@@ -366,7 +354,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           <Input />
         </Form.Item>
       </Form>
-    </Modal>
+    </AppModal>
   );
 };
 

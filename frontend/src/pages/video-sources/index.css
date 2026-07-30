@@ -1,15 +1,15 @@
-.create-btn {
+.video-sources-page .create-btn {
   min-width: 120px;
 }
 
-.import-btn {
+.video-sources-page .import-btn {
   min-width: 108px;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .create-btn,
-  .import-btn {
+  .video-sources-page .create-btn,
+  .video-sources-page .import-btn {
     width: 100%;
   }
 }

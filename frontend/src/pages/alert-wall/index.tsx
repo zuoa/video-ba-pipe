@@ -21,12 +21,12 @@ import {
   FireOutlined,
   BranchesOutlined,
   LineChartOutlined,
-  CloseOutlined,
   PlayCircleOutlined,
   FileImageOutlined,
   TagOutlined,
   ApartmentOutlined,
 } from '@ant-design/icons';
+import AppModal from '@/components/common/AppModal';
 import './index.css';
 
 // 告警详情弹窗组件
@@ -90,21 +90,17 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
   }
 
   return (
-    <div className="alert-detail-modal-overlay" onClick={onClose}>
-      <div className="alert-detail-modal" onClick={(e) => e.stopPropagation()}>
-        {/* 弹窗头部 */}
-        <div className="modal-header">
-          <div className="modal-title">
-            <ExclamationCircleOutlined />
-            <span>告警详情</span>
-          </div>
-          <button className="modal-close" onClick={onClose}>
-            <CloseOutlined />
-          </button>
-        </div>
-
-        {/* 弹窗内容 */}
-        <div className="modal-content">
+    <AppModal
+      open={visible}
+      onCancel={onClose}
+      footer={null}
+      title="告警详情"
+      description={task?.name || `任务 #${alert.task_id}`}
+      kind="detail"
+      size="xl"
+      className="alert-wall-detail-modal"
+    >
+        <div className="alert-wall-modal-content">
           {/* 基本信息 */}
           <div className="detail-section">
             <h3 className="section-title">
@@ -267,8 +263,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </AppModal>
   );
 };
 
@@ -652,7 +647,9 @@ const AlertWallPage: React.FC = () => {
                           <div className="alert-item-header">
                             <span className="alert-task-name">{task?.name || `任务 #${alert.task_id}`}</span>
                             <button
+                              type="button"
                               className="detail-button"
+                              aria-label={`查看 ${task?.name || `任务 #${alert.task_id}`} 的告警详情`}
                               onClick={(e) => viewAlertDetail(alert, e)}
                               title="查看详情"
                             >

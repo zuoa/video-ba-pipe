@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Checkbox, Space, message, Tabs, Upload } from 'antd';
-import { UploadOutlined, CodeOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
+import { Form, Input, Checkbox, message, Tabs, Upload } from 'antd';
+import { CodeOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
 import type { UploadChangeParam } from 'antd/es/upload';
 import { createScript } from '@/services/api';
 import CodeEditor from './CodeEditor';
-
-const { Option } = Select;
-const { TextArea } = Input;
-const { TabPane } = Tabs;
+import AppModal from '@/components/common/AppModal';
 
 export interface UploadModalProps {
   visible: boolean;
@@ -27,6 +24,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const [createAlgorithm, setCreateAlgorithm] = useState(false);
   const [uploadMode, setUploadMode] = useState<'code' | 'file'>('code');
   const [fileList, setFileList] = useState<any[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -85,6 +83,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   };
 
   const handleSubmit = async () => {
+    setSubmitting(true);
     try {
       const values = await form.validateFields();
 
@@ -106,6 +105,8 @@ const UploadModal: React.FC<UploadModalProps> = ({
         return; // 表单验证错误
       }
       message.error(error?.response?.data?.error || '上传失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -117,21 +118,20 @@ const UploadModal: React.FC<UploadModalProps> = ({
   };
 
   return (
-    <Modal
-      title={
-        <Space>
-          <div className="modal-icon">
-            <UploadOutlined />
-          </div>
-          <span>{script?.content ? '使用模板创建脚本' : '上传脚本'}</span>
-        </Space>
-      }
+    <AppModal
+      title={script?.content ? '使用模板创建脚本' : '创建脚本'}
+      description="在线编辑或导入 Python 文件，保存到用户脚本目录"
       open={visible}
       onCancel={handleCancel}
       onOk={handleSubmit}
-      width={900}
-      okText="创建"
+      size="xl"
+      okText="创建脚本"
       cancelText="取消"
+      confirmLoading={submitting}
+      okButtonProps={{ disabled: submitting }}
+      cancelButtonProps={{ disabled: submitting }}
+      closable={!submitting}
+      keyboard={!submitting}
       className="upload-modal"
       centered
     >
@@ -224,7 +224,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
           </Checkbox>
         </Form.Item>
       </Form>
-    </Modal>
+    </AppModal>
   );
 };
 

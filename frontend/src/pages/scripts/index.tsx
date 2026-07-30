@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Modal, message, Button, Space } from 'antd';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { message, Button, Space } from 'antd';
 import {
   PlusOutlined,
   CodeOutlined,
@@ -7,7 +7,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { getScripts, deleteScript, validateScript } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { PageHeader, useAppConfirm } from '@/components/common';
 import ScriptTable from './components/ScriptTable';
 import UploadModal from './components/UploadModal';
 import EditModal from './components/EditModal';
@@ -16,13 +16,13 @@ import './index.css';
 
 export default function Scripts() {
   const [scripts, setScripts] = useState<any[]>([]);
-  const [filteredScripts, setFilteredScripts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
   const [selectedScript, setSelectedScript] = useState<any>(null);
   const [searchText, setSearchText] = useState('');
+  const confirmAction = useAppConfirm();
 
   const loadScripts = useCallback(async () => {
     setLoading(true);
@@ -40,29 +40,24 @@ export default function Scripts() {
     loadScripts();
   }, [loadScripts]);
 
-  useEffect(() => {
-    filterScripts();
+  const filteredScripts = useMemo(() => {
+    if (!searchText) {
+      return scripts;
+    }
+
+    const lowerSearch = searchText.toLowerCase();
+    return scripts.filter((script) =>
+      script.path?.toLowerCase().includes(lowerSearch) ||
+      script.name?.toLowerCase().includes(lowerSearch)
+    );
   }, [scripts, searchText]);
 
-  const filterScripts = () => {
-    if (!searchText) {
-      setFilteredScripts(scripts);
-    } else {
-      const lowerSearch = searchText.toLowerCase();
-      setFilteredScripts(scripts.filter((s) =>
-        s.path?.toLowerCase().includes(lowerSearch) ||
-        s.name?.toLowerCase().includes(lowerSearch)
-      ));
-    }
-  };
-
   const handleDelete = (scriptPath: string) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除脚本 ${scriptPath} 吗？`,
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
+    confirmAction({
+      title: '删除脚本',
+      objectName: scriptPath,
+      description: '删除后，引用该脚本的算法可能无法运行。',
+      onConfirm: async () => {
         try {
           await deleteScript(scriptPath);
           message.success('脚本删除成功');

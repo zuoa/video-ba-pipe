@@ -23,9 +23,18 @@
   font-size: 14px;
 }
 
-.status-icon {
+.status-badge .status-icon {
   margin-right: 6px;
-  font-size: 10px;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-badge-stopped .status-icon,
+.status-badge-disabled .status-icon {
+  border-radius: 2px;
 }
 
 .status-animated .status-icon {

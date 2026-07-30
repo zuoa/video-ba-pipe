@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import {
-  Modal,
   Upload,
   Button,
   Alert,
@@ -41,6 +40,7 @@ import {
 import type { UploadFile } from 'antd/es/upload/interface';
 import type { Algorithm } from './AlgorithmTable';
 import { testAlgorithm } from '@/services/api';
+import AppModal from '@/components/common/AppModal';
 import './TestModal.css';
 
 const { Dragger } = Upload;
@@ -970,26 +970,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
   ];
 
   return (
-    <Modal
-      title={
-        <div className="test-modal-title">
-          <div className="title-icon">
-            <PlayCircleOutlined />
-          </div>
-          <div className="title-content">
-            <span className="title-text">算法测试</span>
-            {algorithm && (
-              <span className="title-subtitle">
-                {algorithm.name} (ID: {algorithm.id})
-              </span>
-            )}
-          </div>
-        </div>
-      }
+    <AppModal
+      title="算法测试"
+      description={algorithm ? `${algorithm.name} · ID ${algorithm.id}` : '上传样本并检查算法输出'}
+      kind="inspect"
+      size="xl"
+      bodyMode="canvas"
       open={visible}
       onCancel={handleCancel}
       footer={null}
-      width={1200}
       className="test-modal"
     >
       <Tabs
@@ -998,7 +987,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
         items={tabItems}
         className="test-tabs"
       />
-    </Modal>
+    </AppModal>
   );
 };
 

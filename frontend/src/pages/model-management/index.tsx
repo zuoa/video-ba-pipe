@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Row, Col, Button, message, Spin } from 'antd';
 import {
   PlusOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
-import { getModels, getModelTypes, getModelFrameworks } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { deleteModel, getModels, getModelTypes, getModelFrameworks } from '@/services/api';
+import { PageHeader, useAppConfirm } from '@/components/common';
 import ModelCard from './components/ModelCard';
 import FilterBar from './components/FilterBar';
 import UploadModal from './components/UploadModal';
@@ -41,7 +41,6 @@ interface ModelFilter {
 
 const ModelsPage: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
-  const [filteredModels, setFilteredModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -50,6 +49,7 @@ const ModelsPage: React.FC = () => {
   const [filter, setFilter] = useState<ModelFilter>({});
   const [modelTypes, setModelTypes] = useState<string[]>([]);
   const [modelFrameworks, setModelFrameworks] = useState<string[]>([]);
+  const confirmAction = useAppConfirm();
 
   // 加载模型列表
   const loadModels = useCallback(async () => {
@@ -83,8 +83,7 @@ const ModelsPage: React.FC = () => {
     loadFilterOptions();
   }, [loadModels, loadFilterOptions]);
 
-  // 筛选模型
-  useEffect(() => {
+  const filteredModels = useMemo(() => {
     let filtered = [...models];
 
     if (filter.search) {
@@ -108,7 +107,7 @@ const ModelsPage: React.FC = () => {
       filtered = filtered.filter((m) => m.enabled);
     }
 
-    setFilteredModels(filtered);
+    return filtered;
   }, [models, filter]);
 
   // 处理筛选器变化
@@ -124,14 +123,22 @@ const ModelsPage: React.FC = () => {
   };
 
   // 处理删除
-  const handleDelete = async (id: number) => {
-    try {
-      message.success('模型删除成功');
-      loadModels();
-      loadFilterOptions();
-    } catch (error: any) {
-      message.error('删除失败: ' + error.message);
-    }
+  const handleDelete = (id: number) => {
+    const model = models.find((item) => item.id === id);
+    confirmAction({
+      title: '删除模型',
+      objectName: model?.name || `模型 #${id}`,
+      description: '模型文件将被移除，此操作无法恢复。',
+      onConfirm: async () => {
+        try {
+          await deleteModel(id);
+          message.success('模型删除成功');
+          await Promise.all([loadModels(), loadFilterOptions()]);
+        } catch (error: any) {
+          message.error('删除失败: ' + error.message);
+        }
+      },
+    });
   };
 
   // 显示详情

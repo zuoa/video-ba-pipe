@@ -1,11 +1,11 @@
 import React from 'react';
-import { Modal } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   MinusCircleOutlined,
 } from '@ant-design/icons';
 import './ValidationModal.css';
+import AppModal from '@/components/common/AppModal';
 
 export interface ValidationModalProps {
   visible: boolean;
@@ -30,15 +30,11 @@ const ValidationModal: React.FC<ValidationModalProps> = ({
   ];
 
   return (
-    <Modal
-      title={
-        <div className="validation-modal-title">
-          <div className="validation-icon">
-            <CheckCircleOutlined />
-          </div>
-          <span>语法验证结果</span>
-        </div>
-      }
+    <AppModal
+      title="语法验证结果"
+      description="检查脚本结构和运行入口是否完整"
+      kind="inspect"
+      size="sm"
       open={visible}
       onCancel={onClose}
       onOk={onClose}
@@ -70,7 +66,7 @@ const ValidationModal: React.FC<ValidationModalProps> = ({
           </div>
         ))}
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

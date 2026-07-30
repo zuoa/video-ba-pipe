@@ -1,0 +1,295 @@
+.app-modal {
+  --app-modal-accent: var(--app-accent);
+  max-width: calc(100vw - 32px);
+}
+
+.app-modal--detail {
+  --app-modal-accent: var(--app-info);
+}
+
+.app-modal--inspect {
+  --app-modal-accent: var(--app-success);
+}
+
+.app-modal--media,
+.app-modal--fullscreen {
+  --app-modal-accent: var(--app-text-muted);
+}
+
+.app-modal .ant-modal-content {
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-m);
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-lg);
+}
+
+.app-modal .ant-modal-header {
+  min-height: 72px;
+  margin: 0;
+  padding: 18px 64px 16px 24px;
+  border-bottom: 1px solid var(--app-line-soft);
+  background: var(--app-surface-strong);
+}
+
+.app-modal .ant-modal-title {
+  color: var(--app-text);
+  line-height: 1.35;
+}
+
+.app-modal__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-modal__signal {
+  width: 3px;
+  height: 34px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--app-modal-accent);
+}
+
+.app-modal__heading-copy,
+.app-modal__title {
+  min-width: 0;
+}
+
+.app-modal__title {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.app-modal__description {
+  margin-top: 4px;
+  color: var(--app-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.app-modal .ant-modal-close {
+  top: 15px;
+  inset-inline-end: 16px;
+  width: 40px;
+  height: 40px;
+  color: var(--app-text-muted);
+  border-radius: 10px;
+}
+
+.app-modal .ant-modal-close:hover {
+  color: var(--app-text);
+  background: var(--app-surface-muted);
+}
+
+.app-modal .ant-modal-body {
+  max-height: calc(100dvh - 200px);
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.app-modal--body-compact .ant-modal-body {
+  padding: 16px 24px;
+}
+
+.app-modal--body-canvas .ant-modal-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.app-modal .ant-modal-footer {
+  position: relative;
+  z-index: 1;
+  min-height: 70px;
+  margin: 0;
+  padding: 14px 24px;
+  border-top: 1px solid var(--app-line-soft);
+  background: var(--app-surface-strong);
+}
+
+.app-modal .ant-modal-footer .ant-btn {
+  min-width: 84px;
+}
+
+.app-modal .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.app-modal .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+
+.app-modal .ant-table-wrapper {
+  box-shadow: none;
+}
+
+.app-modal--fullscreen {
+  top: 20px;
+  padding-bottom: 0;
+}
+
+.app-modal--fullscreen .ant-modal-content {
+  height: calc(100dvh - 40px);
+  max-height: none;
+}
+
+.app-modal--fullscreen .ant-modal-body {
+  height: calc(100dvh - 113px);
+  max-height: none;
+}
+
+.app-confirm-modal .ant-modal-content {
+  padding: 24px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-m);
+  box-shadow: var(--app-shadow-lg);
+}
+
+.app-confirm-modal .ant-modal-confirm-title {
+  color: var(--app-text);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.app-confirm-modal .ant-modal-confirm-content {
+  color: var(--app-text-muted);
+  line-height: 1.65;
+}
+
+.app-confirm__object {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--app-text);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* Keep legacy page-level Ant Design overrides from changing the shared shell. */
+body .app-modal .ant-modal-content {
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid var(--app-line) !important;
+  border-radius: var(--app-radius-m) !important;
+  background: var(--app-surface-strong) !important;
+  box-shadow: var(--app-shadow-lg) !important;
+}
+
+body .app-modal .ant-modal-header {
+  min-height: 72px !important;
+  margin: 0 !important;
+  padding: 18px 64px 16px 24px !important;
+  border-bottom: 1px solid var(--app-line-soft) !important;
+  background: var(--app-surface-strong) !important;
+}
+
+body .app-modal--body-scroll .ant-modal-body {
+  max-height: calc(100dvh - 200px) !important;
+  padding: 24px !important;
+  overflow: auto !important;
+}
+
+body .app-modal--body-compact .ant-modal-body {
+  max-height: calc(100dvh - 200px) !important;
+  padding: 16px 24px !important;
+  overflow: auto !important;
+}
+
+body .app-modal--body-canvas .ant-modal-body {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+body .app-modal--media .ant-modal-body {
+  max-height: calc(100dvh - 64px) !important;
+}
+
+body .app-modal .ant-modal-close-x {
+  color: var(--app-text-muted) !important;
+}
+
+body .app-modal .ant-modal-footer {
+  margin: 0 !important;
+  padding: 14px 24px !important;
+  border-top: 1px solid var(--app-line-soft) !important;
+  background: var(--app-surface-strong) !important;
+}
+
+@media (max-width: 768px) {
+  .app-modal {
+    width: auto !important;
+    margin: 16px;
+    max-width: none;
+  }
+
+  .app-modal .ant-modal-content {
+    max-height: calc(100dvh - 32px);
+    border-radius: var(--app-radius-s);
+  }
+
+  body .app-modal .ant-modal-header {
+    min-height: 64px !important;
+    padding: 15px 56px 13px 18px !important;
+  }
+
+  body .app-modal--body-scroll .ant-modal-body {
+    max-height: calc(100dvh - 176px) !important;
+    padding: 18px !important;
+  }
+
+  body .app-modal .ant-modal-footer {
+    padding: 12px 18px !important;
+  }
+
+  .app-modal .ant-modal-header {
+    min-height: 64px;
+    padding: 15px 56px 13px 18px;
+  }
+
+  .app-modal .ant-modal-body {
+    max-height: calc(100dvh - 176px);
+    padding: 18px;
+  }
+
+  .app-modal--body-compact .ant-modal-body {
+    padding: 14px 18px;
+  }
+
+  .app-modal .ant-modal-footer {
+    min-height: 64px;
+    padding: 12px 18px;
+  }
+
+  .app-modal .ant-modal-footer .ant-space {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .app-modal--fullscreen {
+    top: 0;
+    margin: 8px;
+  }
+
+  .app-modal--fullscreen .ant-modal-content {
+    height: calc(100dvh - 16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-modal *,
+  .app-confirm-modal * {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

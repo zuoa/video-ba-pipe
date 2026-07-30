@@ -9,7 +9,7 @@
 }
 
 /* 编辑器头部 - 使用黑色主题 */
-.editor-header {
+.workflow-editor-page .editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -20,13 +20,13 @@
   z-index: 10;
 }
 
-.header-left {
+.workflow-editor-page .header-left {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.header-icon {
+.workflow-editor-page .header-icon {
   width: 48px;
   height: 48px;
   display: flex;
@@ -39,13 +39,13 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.header-content {
+.workflow-editor-page .header-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.header-title {
+.workflow-editor-page .header-title {
   font-size: 20px;
   font-weight: 600;
   margin: 0;
@@ -53,14 +53,14 @@
   color: white;
 }
 
-.header-subtitle {
+.workflow-editor-page .header-subtitle {
   font-size: 13px;
   opacity: 0.85;
   margin: 0;
   color: rgba(255, 255, 255, 0.85);
 }
 
-.header-right .ant-btn {
+.workflow-editor-page .header-right .ant-btn {
   height: 38px;
   padding: 0 20px;
   font-size: 14px;
@@ -73,23 +73,23 @@
   transition: all 0.2s ease;
 }
 
-.header-right .ant-btn:hover {
+.workflow-editor-page .header-right .ant-btn:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.5);
   color: white;
 }
 
-.header-right .ant-btn-primary {
+.workflow-editor-page .header-right .ant-btn-primary {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
 }
 
-.header-right .ant-btn-primary:hover {
+.workflow-editor-page .header-right .ant-btn-primary:hover {
   background: rgba(255, 255, 255, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.header-right .ant-btn.active {
+.workflow-editor-page .header-right .ant-btn.active {
   background: white;
   color: #000000;
 }
@@ -205,4 +205,65 @@
 
 .panel-tab:focus {
   outline: none;
+}
+
+@media (max-width: 1024px) {
+  .workflow-editor-page .editor-header {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .workflow-editor-page .header-left {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .workflow-editor-page .header-title {
+    overflow: hidden;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workflow-editor-page .header-subtitle {
+    display: none;
+  }
+
+  .workflow-editor-page .header-right .ant-btn {
+    padding-inline: 12px;
+  }
+
+  .workflow-editor-page .component-sidebar {
+    width: 220px;
+    min-width: 220px;
+  }
+
+  .workflow-editor-page .editor-right-panel,
+  .workflow-editor-page .editor-properties {
+    width: 320px;
+    min-width: 320px;
+  }
+
+  .workflow-editor-page .react-flow__minimap {
+    width: 140px;
+    height: 105px;
+  }
+}
+
+@media (max-width: 800px) {
+  .workflow-editor-page .component-sidebar {
+    width: 188px;
+    min-width: 188px;
+  }
+
+  .workflow-editor-page .editor-right-panel,
+  .workflow-editor-page .editor-properties {
+    width: 270px;
+    min-width: 270px;
+  }
+
+  .workflow-editor-page .header-right .ant-btn {
+    min-width: 40px;
+    padding-inline: 10px;
+  }
 }

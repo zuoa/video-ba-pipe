@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, message, Button } from 'antd';
+import { message, Button } from 'antd';
 import { useNavigate } from '@umijs/max';
 import {
   PlusOutlined,
@@ -11,7 +11,7 @@ import {
   getPluginModules,
   deleteAlgorithm,
 } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { PageHeader, useAppConfirm } from '@/components/common';
 import AlgorithmTable from './components/AlgorithmTable';
 import TestModal from './components/TestModal';
 import type { Algorithm } from './components/AlgorithmTable';
@@ -24,6 +24,7 @@ export default function Algorithms() {
   const [loading, setLoading] = useState(false);
   const [testModalVisible, setTestModalVisible] = useState(false);
   const [testingAlgorithm, setTestingAlgorithm] = useState<Algorithm | null>(null);
+  const confirmAction = useAppConfirm();
 
   const loadAlgorithms = useCallback(async () => {
     setLoading(true);
@@ -61,12 +62,12 @@ export default function Algorithms() {
   };
 
   const handleDelete = (id: number) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个算法吗？',
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
+    const algorithm = algorithms.find((item) => item.id === id);
+    confirmAction({
+      title: '删除算法',
+      objectName: algorithm?.name || `算法 #${id}`,
+      description: '删除后，工作流将无法再选择该算法。',
+      onConfirm: async () => {
         try {
           await deleteAlgorithm(id);
           message.success('算法删除成功');

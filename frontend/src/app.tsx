@@ -25,12 +25,12 @@ function isAdminOnlyPath(pathname: string) {
 const appTheme = {
   token: {
     colorPrimary: '#1f242b',
-    colorInfo: '#1f242b',
+    colorInfo: '#356a92',
     colorSuccess: '#2f6b4f',
-    colorWarning: '#8a5cf6',
-    colorError: '#c4544f',
-    colorText: '#1f2328',
-    colorTextSecondary: '#6b7280',
+    colorWarning: '#9a681f',
+    colorError: '#b54743',
+    colorText: '#1f242b',
+    colorTextSecondary: '#667085',
     colorBorder: '#d7dbe2',
     colorBorderSecondary: '#e5e7eb',
     colorBgLayout: '#f3f4f6',
@@ -52,8 +52,9 @@ const appTheme = {
       bodyPadding: 20,
     },
     Modal: {
-      contentBg: '#fffdf8',
+      contentBg: '#ffffff',
       headerBg: 'transparent',
+      titleFontSize: 17,
     },
     Table: {
       headerBg: '#f7f8fa',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, message, Empty, Spin, Space, Button, Tooltip } from 'antd';
+import { message, Empty, Spin, Space, Button, Tooltip } from 'antd';
 import {
   FileTextOutlined,
   EyeOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { getScriptTemplates } from '@/services/api';
 import './TemplateLibrary.css';
+import AppModal from '@/components/common/AppModal';
 
 export interface TemplateLibraryProps {
   visible: boolean;
@@ -83,15 +84,10 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
 
   return (
     <>
-      <Modal
-        title={
-          <Space>
-            <div className="modal-icon template-icon">
-              <FileTextOutlined />
-            </div>
-            <span>脚本模板库</span>
-          </Space>
-        }
+      <AppModal
+        title="脚本模板库"
+        description="浏览、下载或克隆内置算法脚本模板"
+        size="xl"
         open={visible}
         onCancel={onClose}
         footer={
@@ -104,7 +100,6 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
             </Button>
           </Space>
         }
-        width={900}
         className="template-library-modal"
         centered
       >
@@ -184,21 +179,14 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
             )}
           </div>
         </Spin>
-      </Modal>
+      </AppModal>
 
       {/* 查看模板模态框 */}
-      <Modal
-        title={
-          <Space>
-            <div className="modal-icon">
-              <FileTextOutlined />
-            </div>
-            <div>
-              <div>{viewingTemplate?.name}</div>
-              <div className="modal-subtitle">{viewingTemplate?.path}</div>
-            </div>
-          </Space>
-        }
+      <AppModal
+        title={viewingTemplate?.name || '模板详情'}
+        description={viewingTemplate?.path}
+        kind="detail"
+        size="xl"
         open={viewModalVisible}
         onCancel={() => setViewModalVisible(false)}
         footer={
@@ -228,7 +216,6 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
             </Button>
           </Space>
         }
-        width={900}
         className="view-template-modal"
         centered
       >
@@ -237,7 +224,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
             <code>{viewingTemplate?.content}</code>
           </pre>
         </div>
-      </Modal>
+      </AppModal>
     </>
   );
 };

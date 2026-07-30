@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Button, Form, Input, InputNumber, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { ApiOutlined, PlusOutlined } from '@ant-design/icons';
-import { PageHeader } from '@/components/common';
+import { AppModal, PageHeader, useAppConfirm } from '@/components/common';
 import {
   getExternalApis,
   createExternalApi,
@@ -41,7 +41,9 @@ export default function ExternalApisPage() {
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const confirmAction = useAppConfirm();
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -94,17 +96,18 @@ export default function ExternalApisPage() {
   };
 
   const handleSubmit = async () => {
-    const values = await form.validateFields();
-    const payload = {
-      ...values,
-      headers: JSON.parse(values.headers || '{}'),
-      request_template: JSON.parse(values.request_template || '{}'),
-      input_schema: JSON.parse(values.input_schema || '[]'),
-      output_schema: JSON.parse(values.output_schema || '[]'),
-      output_mapping: JSON.parse(values.output_mapping || '{}'),
-    };
-
+    setSubmitting(true);
     try {
+      const values = await form.validateFields();
+      const payload = {
+        ...values,
+        headers: JSON.parse(values.headers || '{}'),
+        request_template: JSON.parse(values.request_template || '{}'),
+        input_schema: JSON.parse(values.input_schema || '[]'),
+        output_schema: JSON.parse(values.output_schema || '[]'),
+        output_mapping: JSON.parse(values.output_mapping || '{}'),
+      };
+
       if (editingItem) {
         await updateExternalApi(editingItem.id, payload);
         message.success('外部 API 更新成功');
@@ -115,17 +118,21 @@ export default function ExternalApisPage() {
       setVisible(false);
       loadItems();
     } catch (error: any) {
-      message.error(error?.message || (editingItem ? '更新失败' : '创建失败'));
+      if (!error?.errorFields) {
+        const jsonError = error instanceof SyntaxError ? 'JSON 配置格式有误，请检查后重试' : null;
+        message.error(jsonError || error?.message || (editingItem ? '更新失败' : '创建失败'));
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDelete = (item: any) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除外部 API“${item.name}”吗？`,
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
+    confirmAction({
+      title: '删除外部 API',
+      objectName: item.name,
+      description: '删除后，引用该接口的工作流节点将无法继续调用。',
+      onConfirm: async () => {
         try {
           await deleteExternalApi(item.id);
           message.success('外部 API 删除成功');
@@ -223,13 +230,23 @@ export default function ExternalApisPage() {
         ]}
       />
 
-      <Modal
+      <AppModal
         title={editingItem ? '编辑外部 API' : '新建外部 API'}
+        description="配置工作流可调用的第三方算法接口"
         open={visible}
-        onCancel={() => setVisible(false)}
+        onCancel={() => {
+          setVisible(false);
+          form.resetFields();
+        }}
         onOk={handleSubmit}
-        width={820}
-        okText="保存"
+        size="lg"
+        okText="保存配置"
+        cancelText="取消"
+        confirmLoading={submitting}
+        okButtonProps={{ disabled: submitting }}
+        cancelButtonProps={{ disabled: submitting }}
+        closable={!submitting}
+        keyboard={!submitting}
         destroyOnClose
       >
         <Form form={form} layout="vertical" className="external-api-form">
@@ -301,7 +318,7 @@ export default function ExternalApisPage() {
             <TextArea rows={5} />
           </Form.Item>
         </Form>
-      </Modal>
+      </AppModal>
     </div>
   );
 }

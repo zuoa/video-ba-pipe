@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Image } from 'antd';
+import { Image } from 'antd';
+import { CloseOutlined, WarningOutlined } from '@ant-design/icons';
+import AppModal from '../AppModal';
 import './index.css';
 
 export interface ImagePreviewProps {
@@ -28,17 +30,18 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   }, [visible, src]);
 
   return (
-    <Modal
+    <AppModal
       open={visible}
       onCancel={onClose}
       footer={null}
+      kind="media"
+      size="full"
       centered
-      width="90%"
-      style={{ maxWidth: '1200px' }}
+      width="min(1200px, calc(100vw - 40px))"
       className="image-preview-modal"
       closeIcon={
         <div className="preview-close-btn">
-          <span>✕</span>
+          <CloseOutlined />
         </div>
       }
     >
@@ -47,7 +50,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
         <div className="preview-image-wrapper">
           {error ? (
             <div className="preview-error">
-              <div className="error-icon">⚠</div>
+              <WarningOutlined className="error-icon" />
               <div className="error-text">无法加载预览图片</div>
             </div>
           ) : (
@@ -72,7 +75,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           )}
         </div>
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

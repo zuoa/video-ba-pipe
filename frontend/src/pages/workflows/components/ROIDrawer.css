@@ -5,6 +5,12 @@
   min-height: 500px;
 }
 
+.roi-drawer-modal .roi-drawer-container {
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+}
+
 .roi-controls {
   width: 260px;
   flex-shrink: 0;
@@ -70,16 +76,17 @@
 
 /* 响应式调整 */
 @media (max-width: 768px) {
-  .roi-drawer-container {
+  .roi-drawer-modal .roi-drawer-container {
     flex-direction: column;
-    height: auto;
+    height: 100%;
   }
 
-  .roi-controls {
+  .roi-drawer-modal .roi-controls {
     width: 100%;
+    max-height: 38%;
   }
 
-  .roi-canvas-wrapper {
-    min-height: 400px;
+  .roi-drawer-modal .roi-canvas-wrapper {
+    min-height: 0;
   }
 }

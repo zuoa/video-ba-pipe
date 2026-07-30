@@ -143,6 +143,8 @@ const Header: React.FC = () => {
           <Dropdown menu={{ items: menuItems }} placement="bottomLeft">
             <button
               type="button"
+              aria-haspopup="menu"
+              aria-label="打开算法管理菜单"
               className={`nav-link nav-link--button ${isAlgorithmActive ? 'active' : ''}`}
             >
               <ExperimentOutlined />

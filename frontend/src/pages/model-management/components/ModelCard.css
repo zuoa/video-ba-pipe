@@ -67,21 +67,21 @@
   border-radius: 8px;
 }
 
-.info-item {
+.model-card .info-item {
   display: flex;
   align-items: center;
   font-size: 13px;
   gap: 8px;
 }
 
-.info-label {
+.model-card .info-label {
   color: #8c8c8c;
   font-weight: 400;
   flex-shrink: 0;
   width: 36px;
 }
 
-.info-value {
+.model-card .info-value {
   font-weight: 500;
   color: #262626;
   flex: 1;
@@ -115,7 +115,7 @@
   font-size: 12px;
 }
 
-.action-btn {
+.model-card .action-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -129,33 +129,33 @@
   white-space: nowrap;
 }
 
-.action-btn-view {
+.model-card .action-btn-view {
   background: #e6f4ff;
   color: #1677ff;
 }
 
-.action-btn-view:hover {
+.model-card .action-btn-view:hover {
   background: #bae0ff;
   box-shadow: 0 2px 6px rgba(22, 119, 255, 0.2);
 }
 
-.action-btn-copy {
+.model-card .action-btn-copy {
   background: #f5f5f5;
   color: #595959;
   padding: 6px 10px;
 }
 
-.action-btn-copy:hover {
+.model-card .action-btn-copy:hover {
   background: #e8e8e8;
 }
 
-.action-btn-delete {
+.model-card .action-btn-delete {
   background: #fff1f0;
   color: #ff4d4f;
   padding: 6px 10px;
 }
 
-.action-btn-delete:hover {
+.model-card .action-btn-delete:hover {
   background: #ffccc7;
 }
 
@@ -167,11 +167,11 @@
     gap: 8px;
   }
 
-  .info-item {
+  .model-card .info-item {
     font-size: 12px;
   }
 
-  .info-label {
+  .model-card .info-label {
     width: 40px;
   }
 

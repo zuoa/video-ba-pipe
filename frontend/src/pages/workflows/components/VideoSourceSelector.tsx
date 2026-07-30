@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Modal, Input, List, Tag, Empty, Space, Typography, Badge } from 'antd';
+import { Input, List, Tag, Empty, Space, Typography, Badge } from 'antd';
 import { SearchOutlined, VideoCameraOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import './VideoSourceSelector.css';
+import AppModal from '@/components/common/AppModal';
 
 const { Search } = Input;
 const { Text } = Typography;
@@ -65,6 +66,12 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
     return <Tag color="default">其他</Tag>;
   };
 
+  const selectSource = (sourceId: number) => {
+    onChange(sourceId);
+    setSearchText('');
+    onCancel();
+  };
+
   // 渲染视频源项
   const renderSourceItem = (source: any) => {
     // 使用宽松相等 == 来匹配，避免类型不一致（字符串 vs 数字）导致的匹配失败
@@ -74,10 +81,15 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
       <List.Item
         key={source.id}
         className={`source-item ${isSelected ? 'selected' : ''}`}
-        onClick={() => {
-          onChange(source.id);
-          setSearchText('');
-          onCancel();
+        role="button"
+        tabIndex={0}
+        aria-pressed={isSelected}
+        onClick={() => selectSource(source.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectSource(source.id);
+          }
         }}
       >
         <div className="source-item-content">
@@ -129,12 +141,13 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
   };
 
   return (
-    <Modal
+    <AppModal
       title="选择视频源"
+      description="按名称、编码或 ID 查找可用输入源"
       open={visible}
       onCancel={onCancel}
       footer={null}
-      width={700}
+      size="lg"
       className="video-source-selector-modal"
     >
       <div className="video-source-selector">
@@ -173,7 +186,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
           />
         )}
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

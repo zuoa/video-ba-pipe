@@ -78,7 +78,7 @@
 }
 
 
-.section-title {
+.algorithm-wizard-page .section-title {
   font-size: 18px;
   font-weight: 600;
   color: #262626;
@@ -88,7 +88,7 @@
   gap: 10px;
 }
 
-.section-title.compact {
+.algorithm-wizard-page .section-title.compact {
   margin-bottom: 16px;
   font-size: 15px;
 }
@@ -220,7 +220,7 @@
   font-size: 12px;
 }
 
-.title-icon {
+.algorithm-wizard-page .title-icon {
   color: #1890ff;
   font-size: 20px;
 }

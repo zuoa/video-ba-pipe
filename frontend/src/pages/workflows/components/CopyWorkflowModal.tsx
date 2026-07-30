@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Modal, Checkbox, Button, Space, Typography, Alert, Divider } from 'antd';
+import { Checkbox, Button, Space, Typography, Alert, Divider } from 'antd';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import './CopyWorkflowModal.css';
+import AppModal from '@/components/common/AppModal';
 
 const { Text, Paragraph } = Typography;
 
@@ -25,9 +26,9 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
 
   const handleSourceChange = (sourceId: number, checked: boolean) => {
     if (checked) {
-      setSelectedSourceIds([...selectedSourceIds, sourceId]);
+      setSelectedSourceIds((current) => [...current, sourceId]);
     } else {
-      setSelectedSourceIds(selectedSourceIds.filter((id) => id !== sourceId));
+      setSelectedSourceIds((current) => current.filter((id) => id !== sourceId));
     }
   };
 
@@ -57,16 +58,14 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
   const isIndeterminate = selectedSourceIds.length > 0 && selectedSourceIds.length < videoSources.length;
 
   return (
-    <Modal
-      title={
-        <Space>
-          <CopyOutlined />
-          <span>复制编排到其他视频源</span>
-        </Space>
-      }
+    <AppModal
+      title="复制编排到其他视频源"
+      description="选择目标视频源并创建独立的编排副本"
       open={visible}
       onCancel={onCancel}
-      width={600}
+      size="md"
+      closable={!loading}
+      keyboard={!loading}
       footer={[
         <Button key="cancel" onClick={onCancel} disabled={loading}>
           取消
@@ -171,7 +170,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
           />
         )}
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

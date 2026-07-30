@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Modal, Badge, Tag, Space, Descriptions, Image, Button } from 'antd';
+import { Badge, Tag, Space, Descriptions, Image, Button } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -25,6 +25,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './TestResultModal.css';
+import AppModal from '@/components/common/AppModal';
 
 export interface TestResultModalProps {
   visible: boolean;
@@ -305,13 +306,13 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
   };
 
   return (
-    <Modal
+    <AppModal
       open={visible}
       onCancel={onClose}
       footer={null}
-      width="90vw"
-      style={{ top: 20, paddingBottom: 0 }}
-      styles={{ body: { height: 'calc(100vh - 200px)', padding: 0 } }}
+      kind="fullscreen"
+      size="full"
+      bodyMode="canvas"
       className="test-result-modal"
       title={
         <div className="modal-title">
@@ -530,7 +531,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
           </div>
         )}
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

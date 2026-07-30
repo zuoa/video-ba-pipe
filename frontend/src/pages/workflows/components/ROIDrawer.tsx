@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Modal, Button, Space, message, Spin, Alert, Input, Select, List, Tag, Divider } from 'antd';
+import { Button, Space, message, Spin, Alert, Input, Select, List, Tag, Divider } from 'antd';
 import {
   ClearOutlined,
   SaveOutlined,
@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { captureFrame } from '../../../services/api';
 import './ROIDrawer.css';
+import AppModal from '@/components/common/AppModal';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -426,17 +427,15 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   };
 
   return (
-    <Modal
-      title={
-        <Space>
-          <span>ROI 区域绘制</span>
-          {videoSourceName && <span style={{ color: '#1890ff' }}>- {videoSourceName}</span>}
-        </Space>
-      }
+    <AppModal
+      title="ROI 区域绘制"
+      description={videoSourceName || '在视频画面上定义需要分析的区域'}
+      kind="fullscreen"
+      size="full"
+      bodyMode="canvas"
+      className="roi-drawer-modal"
       open={visible}
       onCancel={onClose}
-      width="90vw"
-      style={{ top: 20 }}
       footer={null}
     >
       <div className="roi-drawer-container">
@@ -627,7 +626,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
           <img ref={imageRef} src={imageData} style={{ display: 'none' }} alt="" />
         </div>
       </div>
-    </Modal>
+    </AppModal>
   );
 };
 

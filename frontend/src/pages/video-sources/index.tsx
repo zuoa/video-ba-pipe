@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, message, Button, Space } from 'antd';
+import { message, Button, Space } from 'antd';
 import {
   PlusOutlined,
   CloudDownloadOutlined,
@@ -11,7 +11,7 @@ import {
   updateVideoSource,
   deleteVideoSource,
 } from '@/services/api';
-import { PageHeader, ImagePreview } from '@/components/common';
+import { PageHeader, ImagePreview, useAppConfirm } from '@/components/common';
 import SourceForm from './components/SourceForm';
 import ImportSourcesModal from './components/ImportSourcesModal';
 import SourceTable from './components/SourceTable';
@@ -25,6 +25,7 @@ export default function VideoSources() {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<any>(null);
   const [previewSource, setPreviewSource] = useState<any>(null);
+  const confirmAction = useAppConfirm();
 
   const loadSources = useCallback(async () => {
     setLoading(true);
@@ -59,12 +60,12 @@ export default function VideoSources() {
   };
 
   const handleDelete = (id: number) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个视频源吗？',
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
+    const source = sources.find((item) => item.id === id);
+    confirmAction({
+      title: '删除视频源',
+      objectName: source?.name || `视频源 #${id}`,
+      description: '删除后，关联的工作流将无法继续读取该视频源。',
+      onConfirm: async () => {
         try {
           await deleteVideoSource(id);
           message.success('视频源删除成功');

@@ -1,4 +1,4 @@
-.empty-state {
+.models-page .empty-state {
   padding: 80px 20px;
   text-align: center;
   min-height: 400px;
@@ -9,7 +9,7 @@
 
 /* 响应式 */
 @media (max-width: 768px) {
-  .empty-state {
+  .models-page .empty-state {
     padding: 60px 16px;
   }
 }
