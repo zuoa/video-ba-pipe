@@ -9,10 +9,9 @@ import {
   FileImageOutlined,
   ApartmentOutlined,
   ClockCircleOutlined,
-  AlertOutlined,
   DashboardOutlined,
-  FileTextOutlined,
   NumberOutlined,
+  BarChartOutlined,
   LinkOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -21,7 +20,7 @@ import { buildAlertVideoUrls } from '@/utils/media';
 import AppModal from '@/components/common/AppModal';
 import './AlertDetailModal.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface AlertDetailModalProps {
   visible: boolean;
@@ -222,20 +221,17 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
       icon: <DashboardOutlined />,
     },
     {
-      label: '工作流',
-      value: alert.workflow_id ? (alert.workflow_name || `流程编排 #${alert.workflow_id}`) : '未关联',
-      icon: <ApartmentOutlined />,
+      label: '记录编号',
+      value: `#${alert.id}`,
+      icon: <NumberOutlined />,
     },
   ];
 
-  const detailItems = [
-    { label: '记录编号', value: `#${alert.id}` },
-    { label: '任务名称', value: taskName },
-    { label: '任务 ID', value: `#${alert.task_id}` },
-    { label: '告警类型', value: alertTypeConfig.label },
-    { label: '原始类型', value: alert.alert_type },
-    { label: '工作流 ID', value: alert.workflow_id ? `#${alert.workflow_id}` : '未关联' },
-  ];
+  const techItems = [
+    `任务 #${alert.task_id}`,
+    `类型编码 ${alert.alert_type}`,
+    alert.workflow_id ? `工作流 #${alert.workflow_id}` : null,
+  ].filter(Boolean) as string[];
 
   return (
     <AppModal
@@ -284,33 +280,9 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           ['--alert-accent-border' as string]: alertTypeConfig.borderColor,
         }}
       >
-        <section className="alertDetail__summaryBand">
-          <div className="alertDetail__summaryItem">
-            <span className="alertDetail__summaryLabel">告警类型</span>
-            <strong>{alertTypeConfig.label}</strong>
-          </div>
-          <div className="alertDetail__summaryItem">
-            <span className="alertDetail__summaryLabel">发生时间</span>
-            <strong>{formatDateTime(alert.alert_time)}</strong>
-          </div>
-          <div className="alertDetail__summaryItem">
-            <span className="alertDetail__summaryLabel">检测帧数</span>
-            <strong>{alert.detection_count} 帧</strong>
-          </div>
-          <div className="alertDetail__summaryItem">
-            <span className="alertDetail__summaryLabel">记录编号</span>
-            <strong>#{alert.id}</strong>
-          </div>
-        </section>
-
-        <section className="alertDetail__hero">
-          <div className="alertDetail__heroMain">
-            <div className="alertDetail__eyebrow">
-              <AlertOutlined />
-              <span>事件摘要</span>
-            </div>
-
-            <div className="alertDetail__heroTags">
+        <section className="alertDetail__header">
+          <div className="alertDetail__headerMain">
+            <div className="alertDetail__headerTags">
               <span className="alertDetail__typePill">{alertTypeConfig.label}</span>
               {alert.workflow_id && (
                 <span className="alertDetail__workflowPill">
@@ -319,30 +291,17 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                 </span>
               )}
             </div>
-
-            <Title level={4} className="alertDetail__heroTitle">
-              {taskName}
-            </Title>
-
-            <div className="alertDetail__messageCard">
-              <div className="alertDetail__messageLabel">
-                <FileTextOutlined />
-                <span>告警描述</span>
-              </div>
-              <div className="alertDetail__messageText">
-                {alert.alert_message || '暂无告警说明'}
-              </div>
-            </div>
+            <p className="alertDetail__headerMessage">
+              {alert.alert_message || '暂无告警说明'}
+            </p>
           </div>
 
-          <div className="alertDetail__heroAside">
+          <div className="alertDetail__headerMeta">
             {metaItems.map(item => (
-              <div key={item.label} className="alertDetail__metaCard">
-                <div className="alertDetail__metaIcon">{item.icon}</div>
-                <div className="alertDetail__metaContent">
-                  <span className="alertDetail__metaLabel">{item.label}</span>
-                  <span className="alertDetail__metaValue">{item.value}</span>
-                </div>
+              <div key={item.label} className="alertDetail__metaRow">
+                <span className="alertDetail__metaIcon">{item.icon}</span>
+                <span className="alertDetail__metaLabel">{item.label}</span>
+                <span className="alertDetail__metaValue">{item.value}</span>
               </div>
             ))}
           </div>
@@ -355,7 +314,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                 <PlayCircleOutlined />
                 <span>现场画面</span>
               </div>
-              <Text type="secondary">优先展示最能说明问题的告警素材</Text>
+              <Text type="secondary">告警截图、录像与原始画面</Text>
             </div>
 
             <div className="alertDetail__mediaLayout">
@@ -407,70 +366,35 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           </section>
         )}
 
-        <div className="alertDetail__panelGrid">
+        {hasWindowStats && (
           <section className="alertDetail__panel">
             <div className="alertDetail__panelHeader">
               <div className="alertDetail__panelTitle">
-                <NumberOutlined />
-                <span>事件信息</span>
+                <BarChartOutlined />
+                <span>窗口统计</span>
               </div>
+              <Text type="secondary">时间窗口内的命中率与连续命中，辅助判断告警稳定性</Text>
             </div>
 
-            <div className="alertDetail__infoGrid">
-              {detailItems.map(item => (
-                <div key={item.label} className="alertDetail__infoItem">
-                  <span className="alertDetail__infoLabel">{item.label}</span>
-                  <span className="alertDetail__infoValue">{item.value}</span>
-                </div>
-              ))}
+            <div className="alertDetail__statsGrid">
+              <div className="alertDetail__statCard">
+                <span className="alertDetail__statLabel">检测帧数</span>
+                <strong className="alertDetail__statValue">
+                  {windowStats.detection_count || 0}
+                  <small> / {windowStats.total_count || 0}</small>
+                </strong>
+              </div>
+              <div className="alertDetail__statCard">
+                <span className="alertDetail__statLabel">检测比例</span>
+                <strong className="alertDetail__statValue">{ratioPercent.toFixed(1)}%</strong>
+              </div>
+              <div className="alertDetail__statCard">
+                <span className="alertDetail__statLabel">最大连续命中</span>
+                <strong className="alertDetail__statValue">{windowStats.max_consecutive || 0}</strong>
+              </div>
             </div>
           </section>
-
-          {hasWindowStats && (
-            <section className="alertDetail__panel">
-              <div className="alertDetail__panelHeader">
-                <div className="alertDetail__panelTitle">
-                  <VideoCameraOutlined />
-                  <span>窗口统计</span>
-                </div>
-              </div>
-
-              <div className="alertDetail__statsGrid">
-                <div className="alertDetail__statCard">
-                  <span className="alertDetail__statLabel">检测帧数</span>
-                  <strong className="alertDetail__statValue">
-                    {windowStats.detection_count || 0}
-                    <small> / {windowStats.total_count || 0}</small>
-                  </strong>
-                </div>
-                <div className="alertDetail__statCard">
-                  <span className="alertDetail__statLabel">检测比例</span>
-                  <strong className="alertDetail__statValue">{ratioPercent.toFixed(1)}%</strong>
-                </div>
-                <div className="alertDetail__statCard">
-                  <span className="alertDetail__statLabel">最大连续命中</span>
-                  <strong className="alertDetail__statValue">{windowStats.max_consecutive || 0}</strong>
-                </div>
-              </div>
-
-              <div className="alertDetail__ratioBlock">
-                <div className="alertDetail__ratioHeader">
-                  <span>窗口内命中密度</span>
-                  <strong>{ratioPercent.toFixed(1)}%</strong>
-                </div>
-                <div className="alertDetail__ratioTrack">
-                  <div
-                    className="alertDetail__ratioBar"
-                    style={{ width: `${ratioPercent}%` }}
-                  />
-                </div>
-                <Text type="secondary">
-                  以时间窗口内检测命中率与连续命中次数辅助判断告警稳定性。
-                </Text>
-              </div>
-            </section>
-          )}
-        </div>
+        )}
 
         {detectionImages.length > 0 && (
           <section className="alertDetail__panel">
@@ -505,6 +429,8 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             </div>
           </section>
         )}
+
+        <footer className="alertDetail__footer">{techItems.join(' · ')}</footer>
       </div>
     </AppModal>
   );

@@ -23,18 +23,6 @@
   color: var(--app-text);
 }
 
-.alertDetailModal__titleIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  border-radius: 12px;
-  background: rgba(31, 36, 43, 0.06);
-  color: var(--app-accent);
-}
-
 .alertDetailModal__titleGroup {
   display: flex;
   flex-direction: column;
@@ -88,7 +76,7 @@
 .alertDetail {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   max-height: calc(100dvh - 112px);
   padding: 20px 24px 24px;
   overflow-y: auto;
@@ -96,95 +84,31 @@
   color: var(--app-text);
 }
 
-.alertDetail__summaryBand {
+/* ===== 头部摘要 ===== */
+
+.alertDetail__header {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.alertDetail__summaryItem {
-  padding: 14px 16px;
-  border: 1px solid var(--app-line-soft);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: var(--app-shadow-sm);
-}
-
-.alertDetail__summaryItem strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.alertDetail__summaryLabel {
-  color: var(--app-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.alertDetail__hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
-  gap: 18px;
-}
-
-.alertDetail__heroMain,
-.alertDetail__heroAside,
-.alertDetail__panel {
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 20px;
+  padding: 20px 24px;
   border: 1px solid var(--app-line-soft);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(243, 246, 249, 0.96) 100%);
   box-shadow: var(--app-shadow-sm);
 }
 
-.alertDetail__heroMain {
-  position: relative;
-  overflow: hidden;
-  padding: 24px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(243, 246, 249, 0.96) 100%);
-}
-
-.alertDetail__heroMain::before {
-  content: '';
-  position: absolute;
-  top: -56px;
-  right: -40px;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--alert-accent-soft) 0%, transparent 68%);
-  pointer-events: none;
-}
-
-.alertDetail__heroAside {
+.alertDetail__headerMain {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-  background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.9) 100%);
+  gap: 12px;
+  min-width: 0;
 }
 
-.alertDetail__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  color: var(--alert-accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.alertDetail__heroTags {
+.alertDetail__headerTags {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 16px;
 }
 
 .alertDetail__typePill,
@@ -192,7 +116,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 14px;
   border-radius: 999px;
   font-size: 13px;
@@ -211,34 +135,8 @@
   border: 1px solid rgba(31, 36, 43, 0.08);
 }
 
-.alertDetail__heroTitle.ant-typography {
-  margin: 0 0 18px;
-  color: var(--app-text);
-  font-size: 30px;
-  line-height: 1.2;
-}
-
-.alertDetail__messageCard {
-  position: relative;
-  z-index: 1;
-  padding: 18px 18px 16px;
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--alert-accent-soft) 100%);
-  border: 1px solid var(--app-line-soft);
-}
-
-.alertDetail__messageLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.alertDetail__messageText {
+.alertDetail__headerMessage {
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
   color: #2c333a;
@@ -246,51 +144,63 @@
   line-height: 1.7;
 }
 
-.alertDetail__metaCard {
+.alertDetail__headerMeta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-left: 20px;
+  border-left: 1px solid var(--app-line-soft);
+}
+
+.alertDetail__metaRow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--app-line-soft);
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.alertDetail__metaRow + .alertDetail__metaRow {
+  border-top: 1px dashed var(--app-line-soft);
 }
 
 .alertDetail__metaIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 10px;
   background: var(--alert-accent-soft);
   color: var(--alert-accent);
-  font-size: 18px;
-}
-
-.alertDetail__metaContent {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  font-size: 14px;
 }
 
 .alertDetail__metaLabel {
+  flex: 0 0 auto;
   color: var(--app-text-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .alertDetail__metaValue {
+  margin-left: auto;
   color: var(--app-text);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.45;
+  text-align: right;
   word-break: break-word;
 }
 
+/* ===== 通用面板 ===== */
+
 .alertDetail__panel {
   padding: 20px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--app-shadow-sm);
 }
 
 .alertDetail__panelHeader {
@@ -313,6 +223,8 @@
 .alertDetail__panelTitle .anticon {
   color: var(--alert-accent);
 }
+
+/* ===== 现场画面 ===== */
 
 .alertDetail__mediaLayout {
   display: grid;
@@ -452,47 +364,12 @@
   gap: 14px;
 }
 
-.alertDetail__panelGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 20px;
-}
-
-.alertDetail__infoGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.alertDetail__infoItem {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(248, 249, 250, 0.84);
-  border: 1px solid var(--app-line-soft);
-}
-
-.alertDetail__infoLabel {
-  color: var(--app-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.alertDetail__infoValue {
-  color: var(--app-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.5;
-  word-break: break-word;
-}
+/* ===== 窗口统计 ===== */
 
 .alertDetail__statsGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .alertDetail__statCard {
@@ -525,43 +402,7 @@
   font-weight: 600;
 }
 
-.alertDetail__ratioBlock {
-  padding: 18px;
-  border-radius: 20px;
-  background: rgba(248, 249, 250, 0.92);
-  border: 1px solid var(--app-line-soft);
-}
-
-.alertDetail__ratioHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  color: #4b5563;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.alertDetail__ratioHeader strong {
-  color: var(--alert-accent);
-  font-size: 18px;
-}
-
-.alertDetail__ratioTrack {
-  position: relative;
-  height: 10px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(31, 36, 43, 0.08);
-}
-
-.alertDetail__ratioBar {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--alert-accent), var(--alert-accent-border));
-}
+/* ===== 检测序列 ===== */
 
 .alertDetail__sequenceGrid {
   display: grid;
@@ -617,6 +458,16 @@
   font-weight: 600;
 }
 
+/* ===== 底部技术信息 ===== */
+
+.alertDetail__footer {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  word-break: break-all;
+}
+
 .alertDetailModal .ant-modal-body::-webkit-scrollbar {
   width: 8px;
 }
@@ -636,14 +487,17 @@
 }
 
 @media (max-width: 960px) {
-  .alertDetail__summaryBand,
-  .alertDetail__hero,
-  .alertDetail__panelGrid,
+  .alertDetail__header,
   .alertDetail__mediaLayout {
     grid-template-columns: 1fr;
   }
 
-  .alertDetail__infoGrid,
+  .alertDetail__headerMeta {
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid var(--app-line-soft);
+  }
+
   .alertDetail__statsGrid {
     grid-template-columns: 1fr;
   }
@@ -673,15 +527,10 @@
     justify-content: space-between;
   }
 
-  .alertDetail__heroMain,
-  .alertDetail__heroAside,
+  .alertDetail__header,
   .alertDetail__panel {
     padding: 16px;
     border-radius: 20px;
-  }
-
-  .alertDetail__heroTitle.ant-typography {
-    font-size: 22px;
   }
 
   .alertDetail__sequenceGrid {
