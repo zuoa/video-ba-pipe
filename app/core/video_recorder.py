@@ -4,6 +4,9 @@
 支持录制预警前N秒和后M秒的视频
 """
 import os
+import re
+import shutil
+import subprocess
 import threading
 import time
 from typing import List, Tuple, Optional
@@ -17,6 +20,141 @@ from app.core.frame_utils import (
     infer_frame_dimensions,
 )
 from app.core.ringbuffer import VideoRingBuffer
+
+
+class _FFmpegVideoWriter:
+    """通过独立 FFmpeg 进程写入 BGR 帧，作为 OpenCV VideoWriter 的兜底。"""
+
+    def __init__(
+        self,
+        ffmpeg_path: str,
+        output_path: str,
+        fps: float,
+        frame_size: Tuple[int, int],
+        encoder: str,
+    ):
+        width, height = frame_size
+        command = [
+            ffmpeg_path,
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-y',
+            '-f', 'rawvideo',
+            '-pix_fmt', 'bgr24',
+            '-video_size', f'{width}x{height}',
+            '-framerate', str(fps),
+            '-i', 'pipe:0',
+            '-an',
+            '-c:v', encoder,
+        ]
+        if encoder == 'libx264':
+            command.extend(['-preset', 'veryfast'])
+        else:
+            command.extend(['-q:v', '5'])
+        command.extend([
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart',
+            '-f', 'mp4',
+            output_path,
+        ])
+
+        self.output_path = output_path
+        self.encoder = encoder
+        self.width = int(width)
+        self.height = int(height)
+        self._released = False
+        self._stderr = ''
+        self._process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+        )
+
+    def isOpened(self) -> bool:
+        return (
+            not self._released
+            and self._process.stdin is not None
+            and self._process.poll() is None
+        )
+
+    def write(self, frame: np.ndarray):
+        if not self.isOpened():
+            raise RuntimeError(self._failure_message())
+
+        frame = np.asarray(frame)
+        expected_shape = (self.height, self.width, 3)
+        if frame.shape != expected_shape:
+            raise ValueError(
+                f"FFmpeg 写入帧尺寸不匹配: {frame.shape} != {expected_shape}"
+            )
+
+        frame = np.ascontiguousarray(frame, dtype=np.uint8)
+        try:
+            remaining = memoryview(frame).cast('B')
+            while remaining:
+                written = self._process.stdin.write(remaining)
+                if not written:
+                    raise BrokenPipeError("FFmpeg stdin 已关闭")
+                remaining = remaining[written:]
+        except (BrokenPipeError, OSError) as exc:
+            raise RuntimeError(self._failure_message()) from exc
+
+    def release(self) -> bool:
+        if self._released:
+            return self._process.returncode == 0
+
+        self._released = True
+        stdin = self._process.stdin
+        if stdin is not None:
+            try:
+                stdin.close()
+            except OSError:
+                pass
+            # communicate() 会尝试刷新仍挂在 Popen 上的 stdin。
+            self._process.stdin = None
+
+        try:
+            _, stderr = self._process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            _, stderr = self._process.communicate()
+            self._stderr = self._decode_stderr(stderr)
+            logger.error(
+                f"FFmpeg 视频编码超时并已终止: {self.output_path}"
+            )
+            return False
+
+        self._stderr = self._decode_stderr(stderr)
+        if self._process.returncode != 0:
+            logger.error(self._failure_message())
+            return False
+        return True
+
+    def _failure_message(self) -> str:
+        if (
+            not self._stderr
+            and self._process.stderr is not None
+            and self._process.poll() is not None
+        ):
+            try:
+                self._stderr = self._decode_stderr(self._process.stderr.read())
+            except OSError:
+                pass
+        detail = self._stderr or f"进程退出码 {self._process.returncode}"
+        return (
+            f"FFmpeg 视频编码失败 ({self.encoder}): {self.output_path}; "
+            f"{detail}"
+        )
+
+    @staticmethod
+    def _decode_stderr(stderr) -> str:
+        if not stderr:
+            return ''
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode('utf-8', errors='replace')
+        return str(stderr).strip()
 
 
 class VideoRecorder:
@@ -229,8 +367,8 @@ class VideoRecorder:
             with self.lock:
                 self.recording_tasks[alert_id]['status'] = 'encoding'
 
-            if video_writer is not None:
-                video_writer.release()
+            if video_writer is not None and not self._release_video_writer(video_writer):
+                raise RuntimeError("结束视频编码失败")
 
             logger.info(f"[录制 {alert_id}] 视频录制完成: {output_path}, 共写入 {written_frame_count} 帧")
             with self.lock:
@@ -241,11 +379,6 @@ class VideoRecorder:
             with self.lock:
                 if alert_id in self.recording_tasks:
                     self.recording_tasks[alert_id]['status'] = 'failed'
-            try:
-                if video_writer is not None:
-                    video_writer.release()
-            except Exception:
-                pass
             try:
                 if video_writer is not None:
                     video_writer.release()
@@ -284,8 +417,110 @@ class VideoRecorder:
             except Exception as exc:
                 logger.debug(f"编码器 {fourcc_str} 不可用: {exc}")
 
-        logger.error(f"无法创建视频写入器: {output_path} (尝试了所有编码器)")
+        logger.warning(
+            f"OpenCV 无法创建视频写入器: {output_path} "
+            f"(尝试了所有编码器; {self._opencv_videoio_summary()})，"
+            "尝试独立 FFmpeg"
+        )
+        return self._open_ffmpeg_video_writer(
+            output_path,
+            width=width,
+            height=height,
+        )
+
+    def _open_ffmpeg_video_writer(
+        self,
+        output_path: str,
+        width: int,
+        height: int,
+    ):
+        ffmpeg_path = shutil.which('ffmpeg')
+        if not ffmpeg_path:
+            logger.error(
+                f"无法创建视频写入器: {output_path}; "
+                "OpenCV 编码不可用，且未找到 ffmpeg 命令"
+            )
+            return None
+
+        encoder = self._select_ffmpeg_encoder(ffmpeg_path)
+        if encoder is None:
+            logger.error(
+                f"无法创建视频写入器: {output_path}; "
+                "FFmpeg 未提供 libx264 或 mpeg4 编码器"
+            )
+            return None
+
+        try:
+            writer = _FFmpegVideoWriter(
+                ffmpeg_path=ffmpeg_path,
+                output_path=output_path,
+                fps=self.fps,
+                frame_size=(width, height),
+                encoder=encoder,
+            )
+            if writer.isOpened():
+                logger.info(f"使用独立 FFmpeg 编码器: {encoder}")
+                return writer
+            writer.release()
+        except Exception as exc:
+            logger.error(
+                f"启动独立 FFmpeg 视频写入器失败: {output_path}; {exc}",
+                exc_info=True,
+            )
+
+        logger.error(f"无法创建视频写入器: {output_path}")
         return None
+
+    @staticmethod
+    def _select_ffmpeg_encoder(ffmpeg_path: str) -> Optional[str]:
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, '-hide_banner', '-encoders'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.error(f"查询 FFmpeg 编码器失败: {exc}")
+            return None
+
+        if result.returncode != 0:
+            logger.error(
+                f"查询 FFmpeg 编码器失败，退出码: {result.returncode}"
+            )
+            return None
+
+        encoders = set()
+        for line in result.stdout.splitlines():
+            match = re.match(r'^\s*[A-Z.]{6}\s+(\S+)', line)
+            if match:
+                encoders.add(match.group(1))
+
+        for encoder in ('libx264', 'mpeg4'):
+            if encoder in encoders:
+                return encoder
+        return None
+
+    @staticmethod
+    def _opencv_videoio_summary() -> str:
+        try:
+            version = getattr(cv2, '__version__', 'unknown')
+            interesting_lines = []
+            for line in cv2.getBuildInformation().splitlines():
+                stripped = line.strip()
+                if stripped.startswith(('FFMPEG:', 'GStreamer:')):
+                    interesting_lines.append(stripped)
+            details = ', '.join(interesting_lines) or '视频后端信息未知'
+            return f"cv2={version}, {details}"
+        except Exception:
+            return "无法读取 OpenCV 视频后端信息"
+
+    @staticmethod
+    def _release_video_writer(video_writer) -> bool:
+        result = video_writer.release()
+        return result is not False
 
     def _write_frame(self, video_writer, frame: np.ndarray) -> bool:
         if video_writer is None:
@@ -325,58 +560,20 @@ class VideoRecorder:
             require_cv2()
             # 获取视频尺寸（从第一帧）
             first_frame = frames[0][0]
-            pixel_format = self._get_frame_pixel_format(first_frame)
-            width, height = infer_frame_dimensions(
-                first_frame,
-                pixel_format=pixel_format,
-            )
-            
-            # 创建VideoWriter - 使用H.264编码器以确保浏览器兼容性
-            # 尝试多个H.264编码器，按优先级顺序
-            fourcc_options = [
-                'avc1',  # H.264编码（macOS推荐）
-                'H264',  # H.264编码（通用）
-                'X264',  # H.264编码（x264库）
-                'mp4v'   # MPEG-4编码（备选方案）
-            ]
-            
-            video_writer = None
-            for fourcc_str in fourcc_options:
-                try:
-                    fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
-                    video_writer = cv2.VideoWriter(
-                        output_path,
-                        fourcc,
-                        self.fps,
-                        (width, height)
-                    )
-                    if video_writer.isOpened():
-                        logger.info(f"使用编码器: {fourcc_str}")
-                        break
-                    else:
-                        video_writer.release()
-                        video_writer = None
-                except Exception as e:
-                    logger.debug(f"编码器 {fourcc_str} 不可用: {e}")
-                    continue
-            
-            if not video_writer or not video_writer.isOpened():
-                logger.error(f"无法创建视频写入器: {output_path} (尝试了所有编码器)")
+
+            video_writer = self._open_video_writer(first_frame, output_path)
+            if video_writer is None:
                 return False
             
             # 写入所有帧
             for frame, timestamp in frames:
-                pixel_format = self._get_frame_pixel_format(frame)
-                bgr_frame = frame_to_bgr(
-                    frame,
-                    pixel_format=pixel_format,
-                    width=getattr(self.buffer, 'width', None) if pixel_format in {'nv12', 'yuv420p'} else None,
-                    height=getattr(self.buffer, 'height', None) if pixel_format in {'nv12', 'yuv420p'} else None,
-                )
-                video_writer.write(bgr_frame)
+                if not self._write_frame(video_writer, frame):
+                    video_writer.release()
+                    return False
             
             # 释放资源
-            video_writer.release()
+            if not self._release_video_writer(video_writer):
+                return False
             
             logger.info(f"视频编码完成: {output_path}, 共 {len(frames)} 帧")
             return True
