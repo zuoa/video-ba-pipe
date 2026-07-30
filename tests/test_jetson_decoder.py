@@ -130,6 +130,84 @@ def test_jetson_pipeline_error_remains_visible_after_writer_observes_it():
     assert second.value is not decoder._pipeline_error
 
 
+def test_jetson_encoded_queue_never_leaks_buffers():
+    pipeline = _decoder().build_pipeline_description()
+
+    assert "leaky" not in pipeline.split("h264parse")[0]
+
+
+def test_jetson_recoverable_error_restarts_pipeline_and_clears_error(monkeypatch):
+    decoder = _decoder()
+    restarts = []
+    monkeypatch.setattr(decoder, "_teardown_pipeline", lambda: None)
+    monkeypatch.setattr(
+        decoder, "_create_pipeline", lambda: restarts.append("restarted")
+    )
+    decoder._pipeline_error = RuntimeError("corrupted bitstream")
+    decoder._pipeline_error_recoverable = True
+
+    decoder._raise_pipeline_error()
+
+    assert restarts == ["restarted"]
+    assert decoder._pipeline_error is None
+    assert decoder.fatal_error is None
+
+
+def test_jetson_restart_backoff_defers_second_attempt(monkeypatch):
+    decoder = _decoder()
+    restarts = []
+    monkeypatch.setattr(decoder, "_teardown_pipeline", lambda: None)
+    monkeypatch.setattr(
+        decoder, "_create_pipeline", lambda: restarts.append("restarted")
+    )
+
+    decoder._pipeline_error = RuntimeError("first failure")
+    decoder._pipeline_error_recoverable = True
+    decoder._raise_pipeline_error()
+
+    decoder._pipeline_error = RuntimeError("second failure")
+    decoder._pipeline_error_recoverable = True
+    with pytest.raises(RuntimeError, match="second failure"):
+        decoder._raise_pipeline_error()
+
+    assert restarts == ["restarted"]
+
+
+def test_jetson_failed_restarts_eventually_become_fatal(monkeypatch):
+    decoder = _decoder()
+    monkeypatch.setattr(decoder, "_teardown_pipeline", lambda: None)
+
+    def fail_create():
+        raise RuntimeError("out of decoder memory")
+
+    monkeypatch.setattr(decoder, "_create_pipeline", fail_create)
+    decoder._last_restart_attempt_at = float("-inf")
+    decoder._restart_backoff_seconds = 0.0
+
+    for _ in range(decoder._RESTART_MAX_CONSECUTIVE_FAILURES):
+        decoder._pipeline_error = RuntimeError("corrupted bitstream")
+        decoder._pipeline_error_recoverable = True
+        with pytest.raises(RuntimeError):
+            decoder._raise_pipeline_error()
+
+    assert decoder.fatal_error is not None
+    assert "放弃恢复" in str(decoder.fatal_error)
+
+
+def test_jetson_non_recoverable_error_never_restarts(monkeypatch):
+    decoder = _decoder()
+    monkeypatch.setattr(
+        decoder,
+        "_try_restart_pipeline",
+        lambda: pytest.fail("must not attempt restart"),
+    )
+    decoder._pipeline_error = RuntimeError("frame processing bug")
+    decoder._pipeline_error_recoverable = False
+
+    with pytest.raises(RuntimeError, match="frame processing bug"):
+        decoder._raise_pipeline_error()
+
+
 class _FakeVideoInfo:
     def __init__(
         self,

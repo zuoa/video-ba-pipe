@@ -1,4 +1,6 @@
 import queue
+import threading
+import time
 from typing import Optional
 
 import numpy as np
@@ -26,6 +28,13 @@ class JetsonGStreamerDecoder(BaseDecoder):
         "rgb24": "RGB",
         "bgr24": "BGR",
     }
+
+    # Pipeline 重建退避参数：可恢复错误（bus ERROR/EOS、push 被拒）后
+    # 重建 pipeline 让 h264parse/h265parse 在下一个 IDR 处重新同步，
+    # 避免一次码流损坏就拖垮整个 worker 进程。
+    _RESTART_INITIAL_BACKOFF_SECONDS = 1.0
+    _RESTART_MAX_BACKOFF_SECONDS = 30.0
+    _RESTART_MAX_CONSECUTIVE_FAILURES = 5
 
     def __init__(
         self,
@@ -56,6 +65,17 @@ class JetsonGStreamerDecoder(BaseDecoder):
         self.bus = None
         self._running = False
         self._pipeline_error: Optional[RuntimeError] = None
+        # 可恢复错误（码流损坏、EOS 等）会触发 pipeline 重建；
+        # 不可恢复错误（自身帧处理异常、重建连续失败）通过 fatal_error 暴露，
+        # 供上层 worker 立即退出而不是空转重试。
+        self._pipeline_error_recoverable = False
+        self._fatal_error: Optional[RuntimeError] = None
+        self._restart_lock = threading.Lock()
+        self._last_restart_attempt_at = 0.0
+        self._restart_backoff_seconds = self._RESTART_INITIAL_BACKOFF_SECONDS
+        self._consecutive_restart_failures = 0
+        # nvv4l2decoder 附加属性解析失败时回退到裸插件名
+        self._use_decoder_props = True
         self._invalid_video_meta_warned = False
         super().__init__(
             decoder_id=decoder_id,
@@ -69,14 +89,23 @@ class JetsonGStreamerDecoder(BaseDecoder):
     def build_pipeline_description(self) -> str:
         input_caps, parser = self._PARSER_BY_CODEC[self.input_format]
         output_format = self._GST_FORMAT_BY_OUTPUT[self.output_format]
+        # nvv4l2decoder 降低显存占用（多路并发时），属性不存在会回退重建
+        decoder_element = (
+            "nvv4l2decoder num-extra-surfaces=0"
+            if self._use_decoder_props
+            else "nvv4l2decoder"
+        )
         pipeline = [
             (
                 "appsrc name=source is-live=true format=time do-timestamp=true "
                 f"block=false caps={input_caps}"
             ),
-            "queue max-size-buffers=4 leaky=downstream",
+            # 编码侧队列绝不能 leaky：上游按任意字节块推送裸码流，
+            # 丢弃任意一块都会截断 NAL/打断参考链，硬件解码器直接报
+            # gst-resource-error-quark。队列满时阻塞形成背压即可。
+            "queue max-size-buffers=500 max-size-time=2000000000",
             parser,
-            "nvv4l2decoder",
+            decoder_element,
             "nvvidconv",
             f"video/x-raw,format=NV12,width={self.width},height={self.height}",
         ]
@@ -114,18 +143,7 @@ class JetsonGStreamerDecoder(BaseDecoder):
 
         self.Gst = Gst
         self.GstVideo = GstVideo
-        self.pipeline = Gst.parse_launch(self.build_pipeline_description())
-        self.appsrc = self.pipeline.get_by_name("source")
-        self.appsink = self.pipeline.get_by_name("sink")
-        self.bus = self.pipeline.get_bus()
-        if self.appsrc is None or self.appsink is None:
-            raise RuntimeError("Failed to create Jetson GStreamer appsrc/appsink pipeline")
-
-        self.appsink.connect("new-sample", self._on_new_sample)
-        state_result = self.pipeline.set_state(Gst.State.PLAYING)
-        if state_result == Gst.StateChangeReturn.FAILURE:
-            self.pipeline.set_state(Gst.State.NULL)
-            raise RuntimeError("Failed to start Jetson GStreamer decoding pipeline")
+        self._create_pipeline()
 
         self._running = True
         logger.info(
@@ -136,6 +154,103 @@ class JetsonGStreamerDecoder(BaseDecoder):
             self.height,
         )
         return True
+
+    def _create_pipeline(self):
+        """构建并启动 GStreamer pipeline（初始化与错误恢复共用）。"""
+        try:
+            pipeline = self.Gst.parse_launch(self.build_pipeline_description())
+        except Exception:
+            if not self._use_decoder_props:
+                raise
+            # 个别固件版本的 nvv4l2decoder 没有 num-extra-surfaces 属性，
+            # 回退到裸插件名再试一次
+            logger.warning(
+                "Jetson pipeline 解析失败，回退到不带附加属性的 nvv4l2decoder 重试"
+            )
+            self._use_decoder_props = False
+            pipeline = self.Gst.parse_launch(self.build_pipeline_description())
+
+        appsrc = pipeline.get_by_name("source")
+        appsink = pipeline.get_by_name("sink")
+        if appsrc is None or appsink is None:
+            pipeline.set_state(self.Gst.State.NULL)
+            raise RuntimeError("Failed to create Jetson GStreamer appsrc/appsink pipeline")
+
+        appsink.connect("new-sample", self._on_new_sample)
+        state_result = pipeline.set_state(self.Gst.State.PLAYING)
+        if state_result == self.Gst.StateChangeReturn.FAILURE:
+            pipeline.set_state(self.Gst.State.NULL)
+            raise RuntimeError("Failed to start Jetson GStreamer decoding pipeline")
+
+        self.pipeline = pipeline
+        self.appsrc = appsrc
+        self.appsink = appsink
+        self.bus = pipeline.get_bus()
+
+    def _teardown_pipeline(self):
+        """停止并释放当前 pipeline（恢复重建与清理共用）。"""
+        if self.appsrc is not None:
+            try:
+                self.appsrc.emit("end-of-stream")
+            except Exception:
+                pass
+        if self.pipeline is not None and self.Gst is not None:
+            try:
+                self.pipeline.set_state(self.Gst.State.NULL)
+            except Exception:
+                pass
+        self.pipeline = None
+        self.appsrc = None
+        self.appsink = None
+        self.bus = None
+
+    def _try_restart_pipeline(self) -> bool:
+        """可恢复错误后重建 pipeline，带指数退避；返回是否已恢复。"""
+        with self._restart_lock:
+            if self._fatal_error is not None:
+                return False
+            now = time.monotonic()
+            if now - self._last_restart_attempt_at < self._restart_backoff_seconds:
+                return False
+            self._last_restart_attempt_at = now
+
+            logger.warning(
+                "Jetson pipeline 出现可恢复错误，准备重建: %s",
+                self._pipeline_error,
+            )
+            try:
+                self._teardown_pipeline()
+                self._create_pipeline()
+            except Exception as exc:
+                self._consecutive_restart_failures += 1
+                self._restart_backoff_seconds = min(
+                    self._restart_backoff_seconds * 2,
+                    self._RESTART_MAX_BACKOFF_SECONDS,
+                )
+                logger.error(
+                    "Jetson pipeline 重建失败（连续第 %d 次，下次退避 %.0fs）: %s",
+                    self._consecutive_restart_failures,
+                    self._restart_backoff_seconds,
+                    exc,
+                )
+                if (
+                    self._consecutive_restart_failures
+                    >= self._RESTART_MAX_CONSECUTIVE_FAILURES
+                ):
+                    self._fatal_error = RuntimeError(
+                        f"Jetson pipeline 连续重建 "
+                        f"{self._consecutive_restart_failures} 次均失败，"
+                        f"放弃恢复: {self._pipeline_error}"
+                    )
+                return False
+
+            self._pipeline_error = None
+            self._pipeline_error_recoverable = False
+            self._consecutive_restart_failures = 0
+            self._restart_backoff_seconds = self._RESTART_INITIAL_BACKOFF_SECONDS
+            self.status = DecoderStatus.DECODING
+            logger.info("Jetson pipeline 已重建并恢复运行")
+            return True
 
     def _frame_from_bytes(self, raw_frame: bytes, width: int, height: int) -> np.ndarray:
         expected_size = get_frame_size_bytes(width, height, self.output_format)
@@ -308,6 +423,8 @@ class JetsonGStreamerDecoder(BaseDecoder):
             self.errors += 1
             self.status = DecoderStatus.ERROR
             self._pipeline_error = RuntimeError("Failed to map a Jetson decoded frame")
+            self._pipeline_error_recoverable = False
+            self._fatal_error = self._pipeline_error
             logger.error(str(self._pipeline_error))
             return self.Gst.FlowReturn.ERROR
 
@@ -328,6 +445,9 @@ class JetsonGStreamerDecoder(BaseDecoder):
                 f"Failed to process a Jetson decoded frame: "
                 f"{type(exc).__name__}: {exc}"
             )
+            # 自身帧处理代码出错，重建 pipeline 无法修复，直接判死
+            self._pipeline_error_recoverable = False
+            self._fatal_error = self._pipeline_error
             logger.exception(str(self._pipeline_error))
             return self.Gst.FlowReturn.ERROR
         finally:
@@ -335,11 +455,22 @@ class JetsonGStreamerDecoder(BaseDecoder):
 
         return self.Gst.FlowReturn.OK
 
+    @property
+    def fatal_error(self) -> Optional[RuntimeError]:
+        """不可恢复的错误；非空时上层 worker 应立即退出而不是重试。"""
+        return self._fatal_error
+
     def _raise_pipeline_error(self):
         if self._pipeline_error is not None:
+            if (
+                self._pipeline_error_recoverable
+                and self._fatal_error is None
+                and self._try_restart_pipeline()
+            ):
+                return
             # Raise a fresh exception so repeated polling does not keep appending
             # frames to the traceback stored on the original exception instance.
-            raise RuntimeError(str(self._pipeline_error))
+            raise RuntimeError(str(self._fatal_error or self._pipeline_error))
         if self.bus is None:
             return
         message = self.bus.pop_filtered(
@@ -354,12 +485,19 @@ class JetsonGStreamerDecoder(BaseDecoder):
             self._pipeline_error = RuntimeError(
                 f"Jetson GStreamer decoding error: {error}; {debug or ''}"
             )
-            raise self._pipeline_error
+            # 码流损坏/资源抖动可通过重建 pipeline 恢复
+            self._pipeline_error_recoverable = True
+            if self._try_restart_pipeline():
+                return
+            raise RuntimeError(str(self._fatal_error or self._pipeline_error))
         self.status = DecoderStatus.ERROR
         self._pipeline_error = RuntimeError(
             "Jetson GStreamer decoding pipeline reached EOS"
         )
-        raise self._pipeline_error
+        self._pipeline_error_recoverable = True
+        if self._try_restart_pipeline():
+            return
+        raise RuntimeError(str(self._fatal_error or self._pipeline_error))
 
     def send_packet(self, data: bytes):
         if not data:
@@ -377,7 +515,11 @@ class JetsonGStreamerDecoder(BaseDecoder):
             self._pipeline_error = RuntimeError(
                 f"Jetson GStreamer rejected encoded packet: {flow_result}"
             )
-            raise self._pipeline_error
+            # FLUSHING/ERROR 等多为 pipeline 内部异常，重建可恢复
+            self._pipeline_error_recoverable = True
+            if self._try_restart_pipeline():
+                return
+            raise RuntimeError(str(self._fatal_error or self._pipeline_error))
         self.bytes_processed += len(data)
 
     def get_frame(self, timeout=1.0) -> Optional[np.ndarray]:
@@ -393,15 +535,5 @@ class JetsonGStreamerDecoder(BaseDecoder):
 
     def _cleanup(self):
         self._running = False
-        if self.appsrc is not None:
-            try:
-                self.appsrc.emit("end-of-stream")
-            except Exception:
-                pass
-        if self.pipeline is not None and self.Gst is not None:
-            self.pipeline.set_state(self.Gst.State.NULL)
-        self.pipeline = None
-        self.appsrc = None
-        self.appsink = None
-        self.bus = None
+        self._teardown_pipeline()
         self.GstVideo = None

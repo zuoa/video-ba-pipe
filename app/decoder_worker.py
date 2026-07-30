@@ -325,6 +325,8 @@ class DecoderWorker:
             analysis_skipped_count = 0
             error_count = 0
             max_consecutive_errors = MAX_CONSECUTIVE_ERRORS
+            last_error_message = None
+            repeated_error_count = 0
 
             # 帧率监控变量
             start_time = time.time()
@@ -496,7 +498,29 @@ class DecoderWorker:
                     logger.info("收到中断信号")
                     break
                 except Exception as e:
-                    logger.error(f"处理帧时出错: {e}", exc_info=True)
+                    # 解码器不可恢复错误（如 Jetson pipeline 重建连续失败），
+                    # 立即退出交给 orchestrator 重启进程，不要空转重试
+                    fatal_error = getattr(self.decoder, 'fatal_error', None)
+                    if fatal_error is not None:
+                        logger.error(f"解码器出现不可恢复错误，停止工作: {fatal_error}")
+                        if self.analysis_buffer:
+                            self.analysis_buffer.increment_error_count()
+                        break
+
+                    # 相同错误（如 pipeline 恢复退避期间）只首条打完整 traceback，
+                    # 避免毫秒内刷满日志
+                    error_message = str(e)
+                    if error_message != last_error_message:
+                        logger.error(f"处理帧时出错: {e}", exc_info=True)
+                        last_error_message = error_message
+                        repeated_error_count = 0
+                    else:
+                        repeated_error_count += 1
+                        if repeated_error_count % 20 == 0:
+                            logger.error(
+                                f"处理帧时出错（相同错误已重复 {repeated_error_count} 次）: {e}"
+                            )
+
                     error_count += 1
                     if self.analysis_buffer:
                         self.analysis_buffer.increment_error_count()

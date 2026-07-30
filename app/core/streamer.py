@@ -1,5 +1,6 @@
 import subprocess
 import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Optional, Callable, List
 from pathlib import Path
@@ -28,6 +29,8 @@ class BaseStreamer(ABC):
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._handlers: List[Callable[[bytes], None]] = []
+        # handler 报错日志限频状态：handler -> (上次日志时间, 窗口内已抑制次数)
+        self._handler_error_log_state = {}
 
     def add_packet_handler(self, callback: Callable[[bytes], None]):
         """
@@ -83,7 +86,25 @@ class BaseStreamer(ABC):
             try:
                 handler(packet)
             except Exception as e:
-                logger.error(f"调用处理器 {handler.__name__} 时发生错误: {e}")
+                # 解码器异常期间（如 Jetson pipeline 恢复退避）每个包都会抛错，
+                # 按时间窗口限频，避免日志风暴
+                now = time.monotonic()
+                last_logged_at, suppressed = self._handler_error_log_state.get(
+                    handler, (0.0, 0)
+                )
+                if now - last_logged_at >= 5.0:
+                    suppressed_note = (
+                        f"（5秒内已抑制相同报错 {suppressed} 次）" if suppressed else ""
+                    )
+                    logger.error(
+                        f"调用处理器 {handler.__name__} 时发生错误: {e}{suppressed_note}"
+                    )
+                    self._handler_error_log_state[handler] = (now, 0)
+                else:
+                    self._handler_error_log_state[handler] = (
+                        last_logged_at,
+                        suppressed + 1,
+                    )
 
     def _reader_loop(self):
         """
