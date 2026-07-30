@@ -121,10 +121,114 @@ def test_jetson_pipeline_error_remains_visible_after_writer_observes_it():
     decoder = _decoder()
     decoder._pipeline_error = RuntimeError("persistent decoder failure")
 
-    with pytest.raises(RuntimeError, match="persistent decoder failure"):
+    with pytest.raises(RuntimeError, match="persistent decoder failure") as first:
         decoder._raise_pipeline_error()
-    with pytest.raises(RuntimeError, match="persistent decoder failure"):
+    with pytest.raises(RuntimeError, match="persistent decoder failure") as second:
         decoder.get_latest_frame()
+
+    assert first.value is not decoder._pipeline_error
+    assert second.value is not decoder._pipeline_error
+
+
+class _FakeVideoInfo:
+    def __init__(
+        self,
+        *,
+        width=16,
+        height=8,
+        strides=(16, 16, 0, 0),
+        offsets=(0, 128, 0, 0),
+        parses_caps=True,
+    ):
+        self.width = width
+        self.height = height
+        self.stride = strides
+        self.offset = offsets
+        self._parses_caps = parses_caps
+
+    def from_caps(self, _caps):
+        return self._parses_caps
+
+
+class _FakeVideoMeta:
+    def __init__(self, width, height, strides, offsets):
+        self.width = width
+        self.height = height
+        self.stride = strides
+        self.offset = offsets
+
+
+class _FakeGstVideo:
+    def __init__(self, meta, video_info):
+        self._meta = meta
+        self._video_info = video_info
+
+    def buffer_get_video_meta(self, _buffer):
+        return self._meta
+
+    def VideoInfo(self):
+        return self._video_info
+
+
+class _TupleReturningVideoInfo:
+    parsed_info = None
+
+    def from_caps(self, _caps):
+        return True, self.parsed_info
+
+
+class _TupleReturningGstVideo:
+    VideoInfo = _TupleReturningVideoInfo
+
+    @staticmethod
+    def buffer_get_video_meta(_buffer):
+        return None
+
+
+def test_jetson_video_layout_falls_back_to_caps_for_zeroed_jetson_meta(caplog):
+    decoder = _decoder()
+    decoder.GstVideo = _FakeGstVideo(
+        _FakeVideoMeta(
+            width=0,
+            height=0,
+            strides=(0, 0, 0, 0),
+            offsets=(0, 0, 0, 0),
+        ),
+        _FakeVideoInfo(),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        layout = decoder._video_layout(object(), object())
+
+    assert layout == (16, 8, (16, 16, 0, 0), (0, 128, 0, 0))
+    assert "falling back to negotiated caps" in caplog.text
+
+
+def test_jetson_video_layout_uses_info_returned_by_pygobject_from_caps():
+    decoder = _decoder()
+    _TupleReturningVideoInfo.parsed_info = _FakeVideoInfo()
+    decoder.GstVideo = _TupleReturningGstVideo()
+
+    layout = decoder._video_layout(object(), object())
+
+    assert layout == (16, 8, (16, 16, 0, 0), (0, 128, 0, 0))
+
+
+def test_jetson_video_layout_prefers_valid_buffer_meta():
+    decoder = _decoder()
+    decoder.GstVideo = _FakeGstVideo(
+        _FakeVideoMeta(
+            width=16,
+            height=8,
+            strides=(32, 32, 0, 0),
+            offsets=(0, 256, 0, 0),
+        ),
+        _FakeVideoInfo(width=99, height=99),
+    )
+
+    layout = decoder._video_layout(object(), object())
+
+    assert layout == (16, 8, (32, 32, 0, 0), (0, 256, 0, 0))
 
 
 def _padded_plane(rows, active_width, stride, start_value):

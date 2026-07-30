@@ -56,6 +56,7 @@ class JetsonGStreamerDecoder(BaseDecoder):
         self.bus = None
         self._running = False
         self._pipeline_error: Optional[RuntimeError] = None
+        self._invalid_video_meta_warned = False
         super().__init__(
             decoder_id=decoder_id,
             width=width,
@@ -180,21 +181,7 @@ class JetsonGStreamerDecoder(BaseDecoder):
         strides,
         offsets,
     ) -> np.ndarray:
-        if self.output_format == "nv12":
-            plane_specs = (
-                (width, height),
-                (width, height // 2),
-            )
-        elif self.output_format == "yuv420p":
-            plane_specs = (
-                (width, height),
-                (width // 2, height // 2),
-                (width // 2, height // 2),
-            )
-        elif self.output_format in {"rgb24", "bgr24"}:
-            plane_specs = ((width * 3, height),)
-        else:  # guarded by __init__, retained for defensive runtime checks
-            raise ValueError(f"Unsupported Jetson output format: {self.output_format}")
+        plane_specs = self._plane_specs(width, height)
 
         if len(strides) < len(plane_specs) or len(offsets) < len(plane_specs):
             raise ValueError(
@@ -214,25 +201,93 @@ class JetsonGStreamerDecoder(BaseDecoder):
         )
         return self._frame_from_bytes(packed, width, height)
 
+    def _plane_specs(self, width: int, height: int):
+        if self.output_format == "nv12":
+            return (
+                (width, height),
+                (width, height // 2),
+            )
+        if self.output_format == "yuv420p":
+            return (
+                (width, height),
+                (width // 2, height // 2),
+                (width // 2, height // 2),
+            )
+        if self.output_format in {"rgb24", "bgr24"}:
+            return ((width * 3, height),)
+        raise ValueError(f"Unsupported Jetson output format: {self.output_format}")
+
+    def _is_valid_video_layout(self, width, height, strides, offsets) -> bool:
+        if width <= 0 or height <= 0:
+            return False
+        plane_specs = self._plane_specs(width, height)
+        if len(strides) < len(plane_specs) or len(offsets) < len(plane_specs):
+            return False
+        return all(
+            int(strides[index]) != 0
+            and abs(int(strides[index])) >= row_bytes
+            for index, (row_bytes, _rows) in enumerate(plane_specs)
+        )
+
+    def _video_info_from_caps(self, caps):
+        video_info_type = self.GstVideo.VideoInfo
+        new_from_caps = getattr(video_info_type, "new_from_caps", None)
+        if new_from_caps is not None:
+            video_info = new_from_caps(caps)
+            if video_info is None:
+                raise ValueError("Failed to parse GStreamer video caps")
+            return video_info
+
+        # Older PyGObject bindings expose from_caps either as a mutating
+        # instance method or as a function returning (success, VideoInfo).
+        video_info = video_info_type()
+        result = video_info.from_caps(caps)
+        if isinstance(result, tuple):
+            success, parsed_info = result[:2]
+            if not success or parsed_info is None:
+                raise ValueError("Failed to parse GStreamer video caps")
+            return parsed_info
+        if not result:
+            raise ValueError("Failed to parse GStreamer video caps")
+        return video_info
+
     def _video_layout(self, buffer, caps):
         video_meta = self.GstVideo.buffer_get_video_meta(buffer)
         if video_meta is not None:
-            return (
+            meta_layout = (
                 int(video_meta.width),
                 int(video_meta.height),
                 tuple(video_meta.stride),
                 tuple(video_meta.offset),
             )
+            if self._is_valid_video_layout(*meta_layout):
+                return meta_layout
+            if not self._invalid_video_meta_warned:
+                logger.warning(
+                    "Jetson returned invalid GstVideoMeta "
+                    "(size=%sx%s, strides=%s, offsets=%s); "
+                    "falling back to negotiated caps",
+                    meta_layout[0],
+                    meta_layout[1],
+                    meta_layout[2],
+                    meta_layout[3],
+                )
+                self._invalid_video_meta_warned = True
 
-        video_info = self.GstVideo.VideoInfo()
-        if not video_info.from_caps(caps):
-            raise ValueError("Failed to parse GStreamer video caps")
-        return (
+        video_info = self._video_info_from_caps(caps)
+        caps_layout = (
             int(video_info.width),
             int(video_info.height),
             tuple(video_info.stride),
             tuple(video_info.offset),
         )
+        if not self._is_valid_video_layout(*caps_layout):
+            raise ValueError(
+                "Invalid GStreamer video layout from negotiated caps: "
+                f"size={caps_layout[0]}x{caps_layout[1]}, "
+                f"strides={caps_layout[2]}, offsets={caps_layout[3]}"
+            )
+        return caps_layout
 
     def _enqueue_frame(self, frame: np.ndarray):
         try:
@@ -266,13 +321,14 @@ class JetsonGStreamerDecoder(BaseDecoder):
                 offsets,
             )
             self._enqueue_frame(frame)
-        except Exception:
+        except Exception as exc:
             self.errors += 1
             self.status = DecoderStatus.ERROR
             self._pipeline_error = RuntimeError(
-                "Failed to process a Jetson decoded frame"
+                f"Failed to process a Jetson decoded frame: "
+                f"{type(exc).__name__}: {exc}"
             )
-            logger.exception("Failed to process a Jetson decoded frame")
+            logger.exception(str(self._pipeline_error))
             return self.Gst.FlowReturn.ERROR
         finally:
             buffer.unmap(map_info)
@@ -281,7 +337,9 @@ class JetsonGStreamerDecoder(BaseDecoder):
 
     def _raise_pipeline_error(self):
         if self._pipeline_error is not None:
-            raise self._pipeline_error
+            # Raise a fresh exception so repeated polling does not keep appending
+            # frames to the traceback stored on the original exception instance.
+            raise RuntimeError(str(self._pipeline_error))
         if self.bus is None:
             return
         message = self.bus.pop_filtered(
