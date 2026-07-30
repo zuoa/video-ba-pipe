@@ -26,6 +26,28 @@ jobs:
       packages: write
 
     steps:
+      - name: Free disk space for the NVIDIA base image
+        shell: bash
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h /
+
+          # The hosted runner contains SDKs that are not used by this Docker
+          # build. The Jetson PyTorch base image is large, so remove them before
+          # BuildKit starts unpacking ARM64 layers.
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+
+          docker image prune --all --force
+          docker builder prune --all --force
+
+          echo "Disk usage after cleanup:"
+          df -h /
+
       - name: Check out selected revision
         uses: actions/checkout@v4
 
@@ -62,5 +84,4 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             com.nvidia.jetpack.version=6.2.1
             com.nvidia.l4t.version=36.4.4
-          cache-from: type=gha,scope=jetson
-          cache-to: type=gha,mode=max,scope=jetson
+          provenance: false
