@@ -83,12 +83,27 @@ VIDEO_BA_PIPE_JETSON_IMAGE=ghcr.io/<owner>/<repo>:jetson
 VIDEO_BA_PIPE_FRONTEND_IMAGE=ghcr.io/<owner>/<repo>-frontend:arm64
 ```
 
-启动：
+需要跟随 GitHub Actions 最新构建时，应使用上面的 `:jetson` 和 `:arm64`
+标签，不要在 `.env` 中固定旧的 `@sha256:...` digest。Action 只负责推送镜像，
+不会自动重建 Jetson 上已经运行的容器。
+
+启动或更新：
 
 ```bash
-docker compose -f docker-compose.yml.jetson up -d
+docker compose -f docker-compose.yml.jetson pull
+docker compose -f docker-compose.yml.jetson up -d --force-recreate
 docker compose -f docker-compose.yml.jetson ps
 ```
+
+确认前端大文件上传限制已经加载：
+
+```bash
+docker compose -f docker-compose.yml.jetson exec frontend \
+  nginx -T 2>&1 | grep client_max_body_size
+```
+
+预期输出为 `client_max_body_size 1g;`。Jetson compose 还包含相同规则的
+启动校验和健康检查，配置缺失时前端不会被标记为 healthy。
 
 默认配置：
 

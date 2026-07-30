@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import {
   getAlgorithms,
+  getPluginModules,
   deleteAlgorithm,
 } from '@/services/api';
 import { PageHeader } from '@/components/common';
@@ -38,8 +39,7 @@ export default function Algorithms() {
 
   const loadPluginModules = useCallback(async () => {
     try {
-      const response = await fetch('/api/plugins/modules');
-      const data = await response.json();
+      const data = await getPluginModules();
       setPluginModules(Array.isArray(data.modules) ? data.modules : []);
     } catch (error) {
       console.error('加载插件模块失败:', error);
