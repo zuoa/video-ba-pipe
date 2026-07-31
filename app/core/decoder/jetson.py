@@ -36,6 +36,15 @@ class JetsonGStreamerDecoder(BaseDecoder):
     _RESTART_MAX_BACKOFF_SECONDS = 30.0
     _RESTART_MAX_CONSECUTIVE_FAILURES = 5
 
+    # 沉默卡死看门狗：NVMMLite 内部错误（Unsupported Codec 刷屏、解析器
+    # 卡死等）只打 stderr、不上报 Gst bus，pipeline 状态看似正常，
+    # bus 检测永远触发不了重建。此时唯一可观测特征是"码流持续输入但
+    # 长时间无任何帧输出"。持续灌流最终会拖垮硬解堆（malloc_consolidate
+    # SIGABRT），必须在崩溃前主动重建；连续重建无效则判死，让上层
+    # worker 退出重启，而不是陪跑到进程崩溃连累其他通道。
+    _STALL_WATCHDOG_SECONDS = 10.0
+    _STALL_MAX_CONSECUTIVE_RESTARTS = 3
+
     def __init__(
         self,
         decoder_id: int,
@@ -77,6 +86,11 @@ class JetsonGStreamerDecoder(BaseDecoder):
         # nvv4l2decoder 附加属性解析失败时回退到裸插件名
         self._use_decoder_props = True
         self._invalid_video_meta_warned = False
+        # 沉默卡死看门狗状态
+        self._watchdog_bytes_baseline = 0
+        self._watchdog_frames_baseline = 0
+        self._stall_started_at: Optional[float] = None
+        self._consecutive_stall_restarts = 0
         super().__init__(
             decoder_id=decoder_id,
             width=width,
@@ -506,6 +520,69 @@ class JetsonGStreamerDecoder(BaseDecoder):
             return
         raise RuntimeError(str(self._fatal_error or self._pipeline_error))
 
+    def _check_decode_watchdog(self):
+        """检测硬解沉默卡死：码流持续输入但长时间无任何帧输出。
+
+        只在 send_packet 路径调用（持有上游推流节奏，天然是周期触发点）。
+        无输入时不归解码器背锅（信源问题由健康监控处理）；输出队列满导致
+        的 frames_dropped 也算输出活动，解码器本身仍是活的。
+        """
+        if not self._running or self.appsrc is None or self._fatal_error is not None:
+            return
+        # 已有待处理的 pipeline 错误，交给常规恢复路径，不重复干预
+        if self._pipeline_error is not None:
+            return
+
+        output_activity = self.frames_decoded + self.frames_dropped
+        if output_activity != self._watchdog_frames_baseline:
+            self._watchdog_frames_baseline = output_activity
+            self._watchdog_bytes_baseline = self.bytes_processed
+            self._stall_started_at = None
+            self._consecutive_stall_restarts = 0
+            return
+        if self.bytes_processed == self._watchdog_bytes_baseline:
+            self._stall_started_at = None
+            return
+        self._watchdog_bytes_baseline = self.bytes_processed
+
+        now = time.monotonic()
+        if self._stall_started_at is None:
+            self._stall_started_at = now
+            return
+        stall_seconds = now - self._stall_started_at
+        if stall_seconds < self._STALL_WATCHDOG_SECONDS:
+            return
+
+        # 确认卡死：走重建流程；连续重建都无帧输出说明码流/固件层面
+        # 已不可恢复，判死让上层重启，避免持续灌流引发硬解堆崩溃
+        self._consecutive_stall_restarts += 1
+        stall_error = RuntimeError(
+            f"Jetson decoder stalled: encoded data flowing but no decoded "
+            f"frames for {stall_seconds:.0f}s "
+            f"(bytes_processed={self.bytes_processed})"
+        )
+        logger.warning(
+            "Jetson 解码器沉默卡死（%.0fs 有输入无输出），主动重建 pipeline（第 %d/%d 次）",
+            stall_seconds,
+            self._consecutive_stall_restarts,
+            self._STALL_MAX_CONSECUTIVE_RESTARTS,
+        )
+        self.errors += 1
+        self.status = DecoderStatus.ERROR
+        self._pipeline_error = stall_error
+        self._pipeline_error_recoverable = True
+        # 重置计时，重建后给下一个完整观察窗口
+        self._stall_started_at = None
+        if self._consecutive_stall_restarts >= self._STALL_MAX_CONSECUTIVE_RESTARTS:
+            self._fatal_error = RuntimeError(
+                f"Jetson 解码器沉默卡死且连续重建 "
+                f"{self._consecutive_stall_restarts} 次后仍无帧输出，"
+                f"放弃恢复: {stall_error}"
+            )
+        if self._try_restart_pipeline():
+            return
+        raise RuntimeError(str(self._fatal_error or stall_error))
+
     def send_packet(self, data: bytes):
         if not data:
             return
@@ -513,6 +590,7 @@ class JetsonGStreamerDecoder(BaseDecoder):
             raise RuntimeError("Jetson GStreamer decoder is not running")
 
         self._raise_pipeline_error()
+        self._check_decode_watchdog()
         buffer = self.Gst.Buffer.new_allocate(None, len(data), None)
         buffer.fill(0, data)
         flow_result = self.appsrc.emit("push-buffer", buffer)
