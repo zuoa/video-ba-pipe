@@ -40,8 +40,9 @@ class BaseDecoder(ABC):
         self.width = width
         self.height = height
 
-        # 为每个解码器实例创建独立的 logger
-        self.logger = logging.getLogger(f"Decoder-{self.decoder_id}")
+        # 为每个解码器实例创建独立的 logger（挂在 decoder 命名空间下，
+        # 统一写入 decoder.log / decoder_debug.log）
+        self.logger = logging.getLogger(f"decoder.{self.decoder_id}")
 
         output_queue_size = max(1, int(kwargs.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)))
         self.output_queue = queue.Queue(maxsize=output_queue_size)

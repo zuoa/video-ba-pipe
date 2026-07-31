@@ -583,8 +583,28 @@ class DecoderWorker:
         self.running = False
 
 
+def _redirect_logs_to_decoder_files():
+    """解码进程独立运行：把 aj 日志从共享的 run.log/debug.log 拆到 decoder 专属文件，
+    避免与 orchestrator/workflow 日志互相淹没。"""
+    from app import create_rotating_file_handler
+    from app.config import DECODER_DEBUG_LOG_PATH, DECODER_LOG_PATH
+
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    logger.addHandler(create_rotating_file_handler(DECODER_LOG_PATH, logging.INFO))
+    logger.addHandler(create_rotating_file_handler(DECODER_DEBUG_LOG_PATH, logging.DEBUG))
+
+    # 本进程的 stdout/stderr 已被 orchestrator 接管并写入 decoder.log，
+    # 屏蔽控制台输出，避免同一条日志经管道重复落盘
+    for handler in logging.getLogger().handlers:
+        handler.setLevel(logging.CRITICAL)
+
+
 def main(args):
     """主函数"""
+
+    _redirect_logs_to_decoder_files()
 
     logger.info("启动 DECODER 工作进程")
 

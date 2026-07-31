@@ -76,6 +76,8 @@ LOG_BACKUP_COUNT = int(os.getenv('LOG_BACKUP_COUNT', '3'))
 
 RUN_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'run.log')
 DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'debug.log')
+DECODER_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'decoder.log')
+DECODER_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'decoder_debug.log')
 WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
 WORKFLOW_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow_debug.log')
 

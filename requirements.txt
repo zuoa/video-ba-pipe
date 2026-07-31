@@ -12,3 +12,4 @@ gunicorn
 PyJWT
 requests
 psutil
+concurrent-log-handler>=0.9.25

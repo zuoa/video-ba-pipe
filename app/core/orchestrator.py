@@ -1,4 +1,5 @@
 import signal
+import logging
 import os
 import subprocess
 import sys
@@ -54,6 +55,7 @@ class OutputReader(threading.Thread):
         log_label,
         stream_type='stdout',
         on_line: Optional[Callable[[str], None]] = None,
+        target_logger=None,
     ):
         super().__init__(daemon=True)
         self.process = process
@@ -62,6 +64,7 @@ class OutputReader(threading.Thread):
         self.stream = getattr(process, stream_type)
         self.running = True
         self.on_line = on_line
+        self.target_logger = target_logger or logger
 
     def run(self):
         """持续读取并输出日志"""
@@ -77,9 +80,9 @@ class OutputReader(threading.Thread):
                         except Exception as exc:
                             logger.warning(f"[{self.log_label}] 处理子进程状态消息失败: {exc}")
                     if self.stream_type == 'stderr':
-                        logger.error(f"[{self.log_label}] {log_msg}")
+                        self.target_logger.error(f"[{self.log_label}] {log_msg}")
                     else:
-                        logger.info(f"[{self.log_label}] {log_msg}")
+                        self.target_logger.info(f"[{self.log_label}] {log_msg}")
         except Exception as e:
             if self.running:
                 logger.warning(f"[{self.log_label}] 读取{self.stream_type}时出错: {e}")
@@ -684,7 +687,27 @@ class Orchestrator:
             input_format=input_format,
         )
         logger.debug(' '.join(decoder_args))
-        decoder_p = subprocess.Popen(decoder_args, cwd=APP_DIR)
+        decoder_p = subprocess.Popen(
+            decoder_args,
+            cwd=APP_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            bufsize=1,
+        )
+
+        # 接管解码进程输出：Python 日志在子进程内已直接写入 decoder.log，
+        # 这里主要捕获原生层输出（glibc/GStreamer/NVMEDIA 的崩溃信息等）
+        decoder_logger = logging.getLogger('decoder')
+        log_label = f"Decoder-{source.id}"
+        stdout_reader = OutputReader(
+            decoder_p, log_label, 'stdout', target_logger=decoder_logger
+        )
+        stderr_reader = OutputReader(
+            decoder_p, log_label, 'stderr', target_logger=decoder_logger
+        )
+        stdout_reader.start()
+        stderr_reader.start()
 
         source.status = 'STARTING' if starting else 'RUNNING'
         source.decoder_pid = decoder_p.pid
@@ -693,6 +716,8 @@ class Orchestrator:
         self.running_processes[source.id] = {
             'process': decoder_p,
             'decoder': decoder_p,
+            'stdout_reader': stdout_reader,
+            'stderr_reader': stderr_reader,
         }
 
         # 记录启动时间（用于健康检查宽限期）
@@ -730,7 +755,7 @@ class Orchestrator:
     ):
         decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
         return [
-            sys.executable, decoder_entry,
+            sys.executable, '-u', decoder_entry,
             '--url', source.source_url,
             '--source-id', str(source.id),
             '--decoder-type', VIDEO_DECODER_TYPE,
