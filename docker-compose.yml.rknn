@@ -112,6 +112,7 @@ services:
     image: ghcr.io/zuoa/video-ba-pipe:rk
     container_name: video-ba-pipe-worker
     restart: unless-stopped
+    init: true
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     environment:

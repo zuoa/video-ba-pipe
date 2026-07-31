@@ -116,6 +116,34 @@ FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1
 # 解码输出队列大小（运行时主帧格式，默认 NV12）。队列越大，解码抖动越小，但内存占用会线性增加。
 DECODER_OUTPUT_QUEUE_SIZE = max(1, int(os.getenv('DECODER_OUTPUT_QUEUE_SIZE', '5')))
 
+# ============ 硬解资源准入与重启退避 ============
+# 硬解准入控制器总开关。启用后，硬解解码器按可用硬件资源（CMA）自适应发放并发槽位，
+# 拿不到槽位的源自动软解兜底或等待，避免 NVDEC 资源耗尽导致的崩溃-重启风暴。
+HW_DECODE_BUDGET_ENABLED = os.getenv('HW_DECODE_BUDGET_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+# 每路硬解码器占用的 CMA 估算（MB）。Jetson Orin 上 1080p 以下 nvv4l2decoder 实测约 12MB。
+HW_DECODE_CMA_PER_INSTANCE_MB = max(1, int(os.getenv('HW_DECODE_CMA_PER_INSTANCE_MB', '16')))
+
+# 系统其他部分（GPU/显示/相机等）常驻占用的 CMA 预留（MB）。
+HW_DECODE_CMA_RESERVE_MB = max(0, int(os.getenv('HW_DECODE_CMA_RESERVE_MB', '160')))
+
+# 硬解并发槽位上下限（自适应结果会被钳制在该区间）。
+HW_DECODE_MIN_SLOTS = max(1, int(os.getenv('HW_DECODE_MIN_SLOTS', '1')))
+HW_DECODE_MAX_SLOTS = max(HW_DECODE_MIN_SLOTS, int(os.getenv('HW_DECODE_MAX_SLOTS', '32')))
+
+# 硬解槽位不足时是否自动回退 ffmpeg 软解；HW_DECODE_SW_FALLBACK_MAX 限制软解兜底路数（0=不限）。
+HW_DECODE_SW_FALLBACK_ENABLED = os.getenv('HW_DECODE_SW_FALLBACK_ENABLED', 'true').lower() in ('true', '1', 'yes')
+HW_DECODE_SW_FALLBACK_MAX = max(0, int(os.getenv('HW_DECODE_SW_FALLBACK_MAX', '0')))
+
+# 软解兜底源自动升级回硬解的检查间隔（秒）。
+HW_DECODE_UPGRADE_INTERVAL_SECONDS = max(10, int(os.getenv('HW_DECODE_UPGRADE_INTERVAL_SECONDS', '60')))
+
+# 解码器重启退避上限（秒）。初始退避按失败类别区分（流类 30s / 崩溃类 5s），指数增长到该上限。
+SOURCE_RESTART_BACKOFF_MAX_SECONDS = max(30, int(os.getenv('SOURCE_RESTART_BACKOFF_MAX_SECONDS', '300')))
+
+# 每个管理周期最多启动的视频源数量，防止批量启动时 ffprobe/硬解通道惊群。
+SOURCE_MAX_CONCURRENT_STARTS = max(1, int(os.getenv('SOURCE_MAX_CONCURRENT_STARTS', '2')))
+
 # 资源剖析日志。默认关闭；打开后会周期性输出关键帧拷贝、编码、workflow耗时。
 RESOURCE_PROFILING_ENABLED = os.getenv('RESOURCE_PROFILING_ENABLED', 'false').lower() in ('true', '1', 'yes')
 RESOURCE_PROFILE_LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv('RESOURCE_PROFILE_LOG_INTERVAL_SECONDS', '30')))

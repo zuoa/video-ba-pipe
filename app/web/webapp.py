@@ -832,7 +832,11 @@ def get_health_event_types():
         {'value': 'process_exit', 'label': '进程退出'},
         {'value': 'rotation_drain_timeout', 'label': '轮转排空超时'},
         {'value': 'low_fps', 'label': '低帧率'},
-        {'value': 'high_error_rate', 'label': '高错误率'}
+        {'value': 'high_error_rate', 'label': '高错误率'},
+        {'value': 'restart_backoff', 'label': '重启退避'},
+        {'value': 'resource_wait', 'label': '硬解资源等待'},
+        {'value': 'sw_fallback', 'label': '软解兜底'},
+        {'value': 'hw_upgrade', 'label': '硬解升级'}
     ]
     return jsonify(event_types)
 

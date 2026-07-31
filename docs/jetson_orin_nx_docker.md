@@ -117,6 +117,31 @@ docker compose -f docker-compose.yml.jetson exec frontend \
 
 视频源每次启动前会通过 `ffprobe` 探测实际编码，将结果保存到 `source_codec`，并把同一个编码值同时传给 FFmpeg 拉流封装和 Jetson parser。历史数据库会在启动时自动增加该字段；探测临时失败时仅可回退到该视频源上一次成功保存的结果，首次探测失败不会盲猜 H.264。
 
+## 硬解资源准入与重启退避（多路并发保护）
+
+NVDEC 的 DMA 缓冲区来自宿主机 CMA（默认 256MB），每路 `nvv4l2decoder` 实例约占用 12MB。系统常驻（GPU/显示等）再占去约 130MB，默认只能支撑约 7-8 路硬解。此前超出容量的解码进程会进入 "Host1x channel open failed → 堆破坏 SIGABRT → 立即重启" 的崩溃循环。系统内置了与路数无关的保护机制，无需按视频源数量手工调参：
+
+- **自适应硬解准入**：orchestrator 按 `/proc/meminfo` 的 CMA 容量自动计算硬解并发槽位（`HW_DECODE_CMA_*` 可调），只向拿到槽位的源发放硬解；出现资源类失败自动降档，稳定运行后缓慢升档试探真实容量。
+- **自动软解兜底**：拿不到槽位的源自动改用 `ffmpeg_sw` 软解（`HW_DECODE_SW_FALLBACK_*` 控制，可用 `HW_DECODE_SW_FALLBACK_MAX` 限制软解路数保护 CPU）；硬解槽位空闲后每 60s 自动把一路软解源升级回硬解。
+- **失败分类退避**：解码进程退出按 stderr/退出码分类为 resource/stream/crash，分别走 15s/30s/5s 起始的指数退避（上限 `SOURCE_RESTART_BACKOFF_MAX_SECONDS`，默认 300s），期间视频源状态为 `ERROR` 并记录健康事件（`restart_backoff`/`resource_wait`/`sw_fallback`/`hw_upgrade`）。上游流不存在（如 RTSP 404）不再每秒空转重启。
+- **启动限流**：每个管理周期最多启动 `SOURCE_MAX_CONCURRENT_STARTS`（默认 2）个源，防止容器启动时 ffprobe/NVDEC 通道惊群。
+- **僵尸回收**：worker/api 容器启用 `init: true`，orchestrator 每 10s 主动回收僵尸子进程。
+
+CMA 余量可在系统指标 API（`memory.cma_free_mb`）中观测。
+
+### 大容量部署建议（可选）
+
+路数较多且希望全部走硬解时，可在宿主机扩大 CMA（默认 256MB → 768MB）：
+
+```bash
+sudo cp /boot/extlinux/extlinux.conf /boot/extlinux/extlinux.conf.bak
+sudo sed -i 's/console=tty0$/console=tty0 cma=768M/' /boot/extlinux/extlinux.conf
+grep APPEND /boot/extlinux/extlinux.conf   # 确认 cma=768M 已追加
+sudo reboot
+```
+
+不调整内核参数系统也能稳定运行（超出部分自动软解），该参数只是提升硬解容量上限。
+
 ## 实机验收
 
 先验证 CUDA、运行时库和插件：

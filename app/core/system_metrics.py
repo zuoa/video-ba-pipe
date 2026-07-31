@@ -57,6 +57,7 @@ def _collect_cpu() -> Dict[str, Any]:
 def _collect_memory() -> Dict[str, Any]:
     memory = psutil.virtual_memory()
     swap = psutil.swap_memory()
+    cma_total_mb, cma_free_mb = _read_cma_mb()
     return {
         "total_bytes": memory.total,
         "used_bytes": memory.used,
@@ -65,7 +66,29 @@ def _collect_memory() -> Dict[str, Any]:
         "swap_total_bytes": swap.total,
         "swap_used_bytes": swap.used,
         "swap_usage_percent": round(swap.percent, 1),
+        "cma_total_mb": cma_total_mb,
+        "cma_free_mb": cma_free_mb,
     }
+
+
+def _read_cma_mb(meminfo_path: str = "/proc/meminfo"):
+    """读取 Linux CMA 总量/空闲量（MB）；非 Linux 或缺失时为 (None, None)。
+
+    CMA 是 Jetson NVDEC 硬解 DMA 缓冲区的来源，是硬解并发容量的关键指标。
+    """
+    try:
+        total_kb = free_kb = None
+        with open(meminfo_path, "r") as f:
+            for line in f:
+                if line.startswith("CmaTotal:"):
+                    total_kb = int(line.split()[1])
+                elif line.startswith("CmaFree:"):
+                    free_kb = int(line.split()[1])
+        if total_kb is None:
+            return None, None
+        return total_kb // 1024, (free_kb or 0) // 1024
+    except (OSError, ValueError, IndexError):
+        return None, None
 
 
 def _collect_disks() -> List[Dict[str, Any]]:

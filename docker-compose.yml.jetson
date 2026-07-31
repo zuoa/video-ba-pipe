@@ -83,6 +83,7 @@ services:
     pull_policy: always
     container_name: video-ba-pipe-api-jetson
     restart: unless-stopped
+    init: true
     runtime: nvidia
     shm_size: "4gb"
     command: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
@@ -108,6 +109,7 @@ services:
     pull_policy: always
     container_name: video-ba-pipe-worker-jetson
     restart: unless-stopped
+    init: true
     runtime: nvidia
     shm_size: "4gb"
     command: ["python3", "main.py"]

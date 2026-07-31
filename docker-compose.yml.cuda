@@ -132,6 +132,7 @@ services:
     pull_policy: always
     container_name: video-ba-pipe-worker-cuda
     restart: unless-stopped
+    init: true
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     gpus: all
