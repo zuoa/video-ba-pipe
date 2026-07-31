@@ -332,6 +332,10 @@ export async function getAlertTrend(days: number = 7) {
   return request(`/api/alerts/trend?days=${days}`);
 }
 
+export async function getChannelAlertStats(period: 'day' | 'week' | 'month' | 'year' = 'day') {
+  return request(`/api/alerts/channel-stats?period=${period}`);
+}
+
 // 模型
 export async function getModels(params?: any) {
   return request('/api/models/', { params });

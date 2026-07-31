@@ -1,0 +1,116 @@
+.channel-alert-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 20px;
+  box-shadow: var(--app-shadow-sm);
+}
+
+.channel-alert-chart__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.channel-alert-chart__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--app-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.channel-alert-chart__title .title-icon {
+  color: var(--app-text-muted);
+  font-size: 18px;
+}
+
+.channel-alert-chart__placeholder {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.channel-alert-chart__body {
+  flex: 1;
+  min-height: 0;
+  transition: opacity 0.2s ease;
+}
+
+.channel-alert-chart__body.is-refreshing {
+  opacity: 0.5;
+}
+
+.channel-alert-chart__bars {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 100%;
+  min-height: 180px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.channel-alert-chart__item {
+  display: flex;
+  flex: 1 0 56px;
+  flex-direction: column;
+  align-items: center;
+  min-width: 56px;
+  max-width: 96px;
+}
+
+.channel-alert-chart__count {
+  margin-bottom: 6px;
+  color: var(--app-text-secondary);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.channel-alert-chart__bar-track {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  min-height: 120px;
+}
+
+.channel-alert-chart__bar {
+  width: 60%;
+  max-width: 36px;
+  background: linear-gradient(180deg, #5b8def 0%, #2f5fc4 100%);
+  border-radius: 6px 6px 2px 2px;
+  transition: height 0.3s ease;
+}
+
+.channel-alert-chart__item:hover .channel-alert-chart__bar {
+  background: linear-gradient(180deg, #6f9cf1 0%, #3d6dd1 100%);
+}
+
+.channel-alert-chart__bar.is-empty {
+  background: transparent;
+}
+
+.channel-alert-chart__name {
+  width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

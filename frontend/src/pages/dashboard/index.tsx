@@ -3,13 +3,11 @@ import { Row, Col } from 'antd';
 import {
   AppstoreOutlined,
   AlertOutlined,
-  RocketOutlined,
   HistoryOutlined,
   ArrowUpOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   ExperimentOutlined,
-  VideoCameraOutlined,
 } from '@ant-design/icons';
 import {
   getVideoSources,
@@ -19,7 +17,7 @@ import {
   getSystemMetrics,
 } from '@/services/api';
 import StatCard from './components/StatCard';
-import QuickAccessCard from './components/QuickAccessCard';
+import ChannelAlertChart from './components/ChannelAlertChart';
 import RecentAlertCard from './components/RecentAlertCard';
 import WelcomeBanner from './components/WelcomeBanner';
 import SystemMonitor from './components/SystemMonitor';
@@ -113,30 +111,6 @@ export default function Dashboard() {
     }
   };
 
-  const quickAccessItems = [
-    {
-      title: '视频源管理',
-      description: '新增、启停并查看视频源',
-      icon: <VideoCameraOutlined />,
-      iconBgColor: '#000000',
-      path: '/video-sources',
-    },
-    {
-      title: '算法管理',
-      description: '维护检测算法与模型版本',
-      icon: <ExperimentOutlined />,
-      iconBgColor: '#000000',
-      path: '/algorithms',
-    },
-    {
-      title: '告警记录',
-      description: '按时间和视频源追踪最新告警',
-      icon: <AlertOutlined />,
-      iconBgColor: '#ff4d4f',
-      path: '/alerts',
-    },
-  ];
-
   return (
     <div className="dashboard-page">
       {/* 统计卡片 */}
@@ -193,14 +167,10 @@ export default function Dashboard() {
         error={systemMetricsError}
       />
 
-      {/* 快捷操作和最近告警 */}
+      {/* 通道告警统计和最近告警 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
-          <QuickAccessCard
-            title="常用入口"
-            icon={<RocketOutlined />}
-            items={quickAccessItems}
-          />
+          <ChannelAlertChart />
         </Col>
         <Col xs={24} lg={12}>
           <RecentAlertCard

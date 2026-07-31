@@ -1239,6 +1239,52 @@ def get_alert_trend():
 
     return jsonify({'trend': trend})
 
+@app.route('/api/alerts/channel-stats', methods=['GET'])
+@require_auth
+def get_alert_channel_stats():
+    """按通道统计告警数量，支持 日/周/月/年 时间维度切换"""
+    from datetime import timedelta
+
+    period = request.args.get('period', 'day')
+    now = datetime.now()
+
+    if period == 'week':
+        # 本周（周一起）
+        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == 'month':
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == 'year':
+        start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        # 默认今日
+        period = 'day'
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 统计时间范围内各通道的告警数量
+    counts = {}
+    alerts = apply_owner_scope(
+        Alert.select(Alert.video_source).where(Alert.alert_time >= start),
+        Alert,
+    )
+    for alert in alerts:
+        counts[alert.video_source_id] = counts.get(alert.video_source_id, 0) + 1
+
+    # 返回所有视频源（无告警的通道 count 为 0），按告警数降序
+    channels = []
+    for source in apply_owner_scope(VideoSource.select(), VideoSource):
+        channels.append({
+            'id': source.id,
+            'name': source.name,
+            'count': counts.get(source.id, 0),
+        })
+    channels.sort(key=lambda c: (-c['count'], c['id']))
+
+    return jsonify({
+        'period': period,
+        'start': start.strftime('%Y-%m-%d %H:%M:%S'),
+        'channels': channels,
+    })
+
 # ========== 时间窗口检测API ==========
 
 @app.route('/api/window/stats/<int:source_id>/<algorithm_id>', methods=['GET'])

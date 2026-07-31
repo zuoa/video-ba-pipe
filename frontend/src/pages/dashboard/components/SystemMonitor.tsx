@@ -4,7 +4,6 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   HddOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons';
 import './SystemMonitor.css';
 
@@ -271,6 +270,41 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
             </span>
           </div>
         </article>
+
+        {metrics.gpus.map((gpu) => (
+          <article key={`${gpu.vendor}-${gpu.index}-${gpu.name}`} className="system-gpu-card">
+            <div className="system-gpu-card__heading">
+              <div>
+                <small>{gpu.vendor} · GPU {gpu.index}</small>
+                <h3>{gpu.name}</h3>
+              </div>
+              <strong>{gpu.usage_percent === null || gpu.usage_percent === undefined
+                ? '在线'
+                : `${gpu.usage_percent.toFixed(1)}%`}</strong>
+            </div>
+            <UsageBar value={gpu.usage_percent} label={`${gpu.name} GPU 使用率`} />
+            <div className="system-gpu-card__stats">
+              {gpu.memory_total_bytes ? (
+                <span>
+                  <small>显存</small>
+                  {formatBytes(gpu.memory_used_bytes)} / {formatBytes(gpu.memory_total_bytes)}
+                </span>
+              ) : null}
+              {gpu.temperature_c !== null && gpu.temperature_c !== undefined ? (
+                <span>
+                  <small>温度</small>
+                  {gpu.temperature_c.toFixed(1)}°C
+                </span>
+              ) : null}
+              {gpu.power_watts !== null && gpu.power_watts !== undefined ? (
+                <span>
+                  <small>功耗</small>
+                  {gpu.power_watts.toFixed(1)} W
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ))}
       </div>
 
       {metrics.disks.length > 1 ? (
@@ -284,52 +318,6 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
               <small>{formatBytes(disk.free_bytes)} 可用</small>
             </div>
           ))}
-        </div>
-      ) : null}
-
-      {metrics.gpus.length > 0 ? (
-        <div className="system-monitor__gpus">
-          <div className="system-monitor__section-label">
-            <ThunderboltOutlined />
-            <span>GPU</span>
-            <small>{metrics.gpus.length} 个设备</small>
-          </div>
-          <div className="system-gpu-grid">
-            {metrics.gpus.map((gpu) => (
-              <article key={`${gpu.vendor}-${gpu.index}-${gpu.name}`} className="system-gpu-card">
-                <div className="system-gpu-card__heading">
-                  <div>
-                    <small>{gpu.vendor} · GPU {gpu.index}</small>
-                    <h3>{gpu.name}</h3>
-                  </div>
-                  <strong>{gpu.usage_percent === null || gpu.usage_percent === undefined
-                    ? '在线'
-                    : `${gpu.usage_percent.toFixed(1)}%`}</strong>
-                </div>
-                <UsageBar value={gpu.usage_percent} label={`${gpu.name} GPU 使用率`} />
-                <div className="system-gpu-card__stats">
-                  {gpu.memory_total_bytes ? (
-                    <span>
-                      <small>显存</small>
-                      {formatBytes(gpu.memory_used_bytes)} / {formatBytes(gpu.memory_total_bytes)}
-                    </span>
-                  ) : null}
-                  {gpu.temperature_c !== null && gpu.temperature_c !== undefined ? (
-                    <span>
-                      <small>温度</small>
-                      {gpu.temperature_c.toFixed(1)}°C
-                    </span>
-                  ) : null}
-                  {gpu.power_watts !== null && gpu.power_watts !== undefined ? (
-                    <span>
-                      <small>功耗</small>
-                      {gpu.power_watts.toFixed(1)} W
-                    </span>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
         </div>
       ) : null}
     </section>
