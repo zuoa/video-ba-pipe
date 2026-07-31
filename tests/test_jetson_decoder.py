@@ -136,6 +136,16 @@ def test_jetson_encoded_queue_never_leaks_buffers():
     assert "leaky" not in pipeline.split("h264parse")[0]
 
 
+@pytest.mark.parametrize("parser", ["h264parse", "h265parse"])
+def test_jetson_parser_realigns_stream_and_reinserts_parameter_sets(parser):
+    codec = "h264" if parser == "h264parse" else "h265"
+    pipeline = _decoder(codec=codec).build_pipeline_description()
+
+    # 重建 pipeline 后码流从 GOP 中间灌入，解析器必须按 AU 对齐并补发
+    # SPS/PPS，否则 nvv4l2decoder 会报 gst-resource-error-quark
+    assert f"{parser} config-interval=1 disable-passthrough=true" in pipeline
+
+
 def test_jetson_recoverable_error_restarts_pipeline_and_clears_error(monkeypatch):
     decoder = _decoder()
     restarts = []

@@ -104,7 +104,14 @@ class JetsonGStreamerDecoder(BaseDecoder):
             # 丢弃任意一块都会截断 NAL/打断参考链，硬件解码器直接报
             # gst-resource-error-quark。队列满时阻塞形成背压即可。
             "queue max-size-buffers=500 max-size-time=2000000000",
-            parser,
+            # disable-passthrough：强制解析器完整解析并按 AU 对齐输出，
+            # 未拿到 SPS/PPS 之前的残帧直接丢弃不透传——否则 pipeline
+            # 重建后码流从 GOP 中间灌入，nvv4l2decoder 收到无参数集上下文
+            # 的 P 帧切片会报 gst-resource-error-quark: Failed to process
+            # frame，陷入“重建→再报错→再重建”循环。
+            # config-interval=1：每个 IDR 前补发缓存的 SPS/PPS，保证重建后
+            # 第一个 IDR 即可恢复解码。
+            f"{parser} config-interval=1 disable-passthrough=true",
             decoder_element,
             "nvvidconv",
             f"video/x-raw,format=NV12,width={self.width},height={self.height}",
