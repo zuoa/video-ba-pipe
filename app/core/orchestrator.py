@@ -20,10 +20,8 @@ from app.config import (
     DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
-    RECORDING_ENABLED,
     RECORDING_FPS,
     RECORDING_JPEG_QUALITY,
-    POST_ALERT_DURATION,
     NO_FRAME_WARNING_THRESHOLD,
     NO_FRAME_CRITICAL_THRESHOLD,
     HIGH_ERROR_COUNT_THRESHOLD,
@@ -51,6 +49,9 @@ from app.core.hw_decode_budget import (
     HwDecodeBudget,
 )
 from app.core.ringbuffer import VideoRingBuffer
+from app.core.recording_storage_config import (
+    get_recording_storage_config,
+)
 from app.core.workflow_runtime import build_workflow_signature, extract_source_id_from_workflow_data
 from app.core.source_rotation import (
     RoundRobinBatchSelector,
@@ -164,6 +165,7 @@ class Orchestrator:
         self.last_health_log_times = {}  # 记录上次健康日志时间
         self.workflow_host_signatures = {}
         self.draining_sources = {}
+        self.media_cleaner = AlertMediaCleaner()
         self.rotation_selector = RoundRobinBatchSelector()
         self.rotation_config = normalize_source_rotation_config(
             get_source_rotation_config()
@@ -175,7 +177,8 @@ class Orchestrator:
         self.last_rotation_config_refresh_at = 0.0
         self._rotation_was_enabled = self.rotation_config.enabled
         self.desired_source_ids = set()
-        self.media_cleaner = AlertMediaCleaner()
+        self.recording_config = get_recording_storage_config()
+        self.last_recording_config_refresh_at = 0.0
 
         # 重启退避状态: source_id -> {'failures', 'fail_class', 'next_retry_at'}
         self.source_backoff = {}
@@ -621,7 +624,7 @@ class Orchestrator:
         self.draining_sources[source.id] = {
             'host_info': process_info,
             'deadline': time.monotonic()
-            + float(POST_ALERT_DURATION)
+            + float(self.recording_config.post_alert_seconds)
             + float(SOURCE_ROTATION_DRAIN_GRACE_SECONDS),
             'reason': reason,
         }
@@ -885,21 +888,28 @@ class Orchestrator:
             f"pixel_format={analysis_buffer.pixel_format}"
         )
 
-        if RECORDING_ENABLED:
+        if self.recording_config.recording_enabled:
+            recording_buffer_duration = max(
+                RECORDING_BUFFER_DURATION,
+                self.recording_config.pre_alert_seconds
+                + self.recording_config.post_alert_seconds
+                + 2,
+            )
             recording_buffer = CompressedVideoRingBuffer(
                 name=source.recording_buffer_name,
                 create=True,
                 width=source.source_decode_width,
                 height=source.source_decode_height,
                 pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
-                fps=RECORDING_FPS,
-                duration_seconds=RECORDING_BUFFER_DURATION,
+                fps=self.recording_config.recording_fps,
+                duration_seconds=recording_buffer_duration,
                 max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
                 jpeg_quality=RECORDING_JPEG_QUALITY,
             )
             self.recording_buffers[source.id] = recording_buffer
             logger.debug(
-                f"创建录制CompressedRingBuffer: fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
+                f"创建录制CompressedRingBuffer: fps={self.recording_config.recording_fps}, "
+                f"duration={recording_buffer_duration}s, "
                 f"capacity={recording_buffer.capacity}帧, frame_shape={recording_buffer.frame_shape}, "
                 f"pixel_format={recording_buffer.pixel_format}"
             )
@@ -910,6 +920,8 @@ class Orchestrator:
             analysis_fps=analysis_fps,
             input_format=input_format,
             decoder_type=decoder_type,
+            recording_enabled=self.recording_config.recording_enabled,
+            recording_fps=self.recording_config.recording_fps,
         )
         logger.debug(' '.join(decoder_args))
         decoder_p = subprocess.Popen(
@@ -981,6 +993,8 @@ class Orchestrator:
         analysis_fps: int,
         input_format: str,
         decoder_type: str = None,
+        recording_enabled: bool = False,
+        recording_fps: int = RECORDING_FPS,
     ):
         decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
         return [
@@ -993,7 +1007,8 @@ class Orchestrator:
             '--decoder-output-queue-size', str(DECODER_OUTPUT_QUEUE_SIZE),
             '--sample-mode', 'fps',
             '--analysis-fps', str(analysis_fps),
-            '--recording-fps', str(RECORDING_FPS),
+            '--recording-enabled', 'true' if recording_enabled else 'false',
+            '--recording-fps', str(recording_fps),
             '--width', str(source.source_decode_width),
             '--height', str(source.source_decode_height),
             '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
@@ -1037,6 +1052,7 @@ class Orchestrator:
     def manage_sources(self):
         self._poll_draining_sources()
         now = time.monotonic()
+        self._refresh_recording_config(now)
         self.desired_source_ids = self._update_rotation_schedule(now)
 
         # 启动限流:每个周期最多启动 SOURCE_MAX_CONCURRENT_STARTS 个源，
@@ -1188,6 +1204,41 @@ class Orchestrator:
             source.decoder_pid = None
             self._save_source(source, f'保存视频源硬解升级状态:{source.id}')
             break
+
+    def _refresh_recording_config(self, now: float) -> None:
+        if now - self.last_recording_config_refresh_at < 5.0:
+            return
+        self.last_recording_config_refresh_at = now
+        updated = get_recording_storage_config()
+        previous = self.recording_config
+        if updated == previous:
+            return
+
+        self.recording_config = updated
+        runtime_changed = (
+            previous.recording_enabled,
+            previous.pre_alert_seconds,
+            previous.post_alert_seconds,
+            previous.recording_fps,
+            previous.stop_recording_percent,
+        ) != (
+            updated.recording_enabled,
+            updated.pre_alert_seconds,
+            updated.post_alert_seconds,
+            updated.recording_fps,
+            updated.stop_recording_percent,
+        )
+        logger.info(f"录像与存储配置已热更新: {updated.to_dict()}")
+        if not runtime_changed:
+            return
+
+        # 录制缓冲区尺寸和 decoder/source-host 参数在进程创建时确定，
+        # 因此配置变化时逐路安全重建；下一管理周期会按启动限流恢复。
+        sources = list(VideoSource.select().where(
+            VideoSource.status.in_(['STARTING', 'RUNNING', 'ERROR'])
+        ))
+        for source in sources:
+            self._stop_source(source)
     
     def _start_source_host(self, source_id: int, workflows):
         try:
@@ -1265,7 +1316,10 @@ class Orchestrator:
 
         logger.info(f"  -> 正在停止视频源宿主进程 Source={source_id}")
         process_info = self.workflow_hosts[source_id]
-        host_wait_timeout = max(35.0, float(POST_ALERT_DURATION) + 10.0)
+        host_wait_timeout = max(
+            35.0,
+            float(self.recording_config.post_alert_seconds) + 10.0,
+        )
         self._stop_process(process_info, wait_timeout=host_wait_timeout)
         process = process_info.get('process')
         if process is not None:

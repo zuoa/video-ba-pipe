@@ -20,7 +20,6 @@ from app.config import (
     DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
-    RECORDING_ENABLED,
     RECORDING_FPS,
     RECORDING_JPEG_QUALITY,
     NO_FRAME_CRITICAL_THRESHOLD,
@@ -652,7 +651,9 @@ def main(args):
     worker = DecoderWorker(
         stream_url=args.url,
         analysis_buffer_name=source.analysis_buffer_name,
-        recording_buffer_name=source.recording_buffer_name if RECORDING_ENABLED else None,
+        recording_buffer_name=(
+            source.recording_buffer_name if args.recording_enabled else None
+        ),
         source_info=source_info,
         stream_config=stream_config,
         decoder_config=decoder_config,
@@ -736,6 +737,12 @@ if __name__ == '__main__':
                               help='分析缓冲区目标帧率（默认读取 ANALYSIS_TARGET_FPS）')
     sample_group.add_argument('--recording-fps', type=float, default=None,
                               help='录制缓冲区目标帧率（默认读取 RECORDING_FPS）')
+    sample_group.add_argument(
+        '--recording-enabled',
+        type=lambda value: str(value).lower() in {'true', '1', 'yes', 'on'},
+        default=False,
+        help='是否写入录制缓冲区（默认关闭）',
+    )
 
     # 日志级别
     parser.add_argument('--log-level', default='INFO',

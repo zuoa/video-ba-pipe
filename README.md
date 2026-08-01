@@ -119,10 +119,15 @@ cp env.example .env
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
 - `HF_USE_MIRROR` / `HF_MIRROR_ENDPOINT`：Hugging Face 模型拉取的默认镜像开关和镜像地址；模型导入弹窗也可逐次选择官方源或国内镜像
 - `HF_DOWNLOAD_TIMEOUT_SECONDS` / `WEB_REQUEST_TIMEOUT_SECONDS` / `HF_TOKEN`：Hugging Face 下载超时、Web 请求超时及私有仓库访问 Token
-- `RECORDING_ENABLED`：是否录制预警视频
+- `RECORDING_ENABLED`：是否录制预警视频（默认关闭；运行后优先使用“系统设置”中的配置）
+- `ALERT_VIDEO_MAX_STORAGE_GB`：本地告警录像容量上限，默认 20 GB
+- `ALERT_IMAGE_MAX_STORAGE_GB`：本地告警图片容量上限，默认 10 GB
+- `ALERT_IMAGE_MIN_FREE_GB`：磁盘最低剩余空间，默认 10 GB
 - `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 推荐 `rk_mpp`，Jetson 推荐 `jetson_gst`
 - `ANALYSIS_TARGET_FPS` / `ANALYSIS_BUFFER_SECONDS`：分析链路缓冲参数
 - `PRE_ALERT_DURATION` / `POST_ALERT_DURATION` / `RECORDING_BUFFER_DURATION`：录制链路缓冲参数
+
+运行后可在“系统设置”中配置磁盘压力保护和钉钉运维通知：默认磁盘使用率达到 80% 时停止正在进行及后续告警录像，达到 90% 时只创建告警元数据、不再写入图片或录像。媒体清理按最老文件优先覆盖；磁盘水位变化、清理失败以及指定时间窗内告警量超过阈值时，可通过钉钉群自定义机器人 Webhook 通知，并按冷却时间去重。
 - `RECORDING_JPEG_QUALITY` / `RECORDING_COMPRESSED_MAX_BYTES`：录制压缩帧缓存参数
 - `IS_EXTREME_DECODE_MODE`：极速解码（仅保留最新帧）
 - `RESOURCE_PROFILING_ENABLED`：输出帧拷贝、录制编码、工作流执行等性能埋点

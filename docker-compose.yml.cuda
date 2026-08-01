@@ -66,7 +66,7 @@ services:
       # 功能开关
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60
-      - RECORDING_ENABLED=true
+      - RECORDING_ENABLED=${RECORDING_ENABLED:-false}
       - IS_EXTREME_DECODE_MODE=false
       
       # 录制配置
@@ -154,7 +154,7 @@ services:
       - SNAPSHOT_PATH=/data/snapshots
       - SNAPSHOT_ENABLED=true
       - SNAPSHOT_INTERVAL=60
-      - RECORDING_ENABLED=true
+      - RECORDING_ENABLED=${RECORDING_ENABLED:-false}
       - IS_EXTREME_DECODE_MODE=false
       - PRE_ALERT_DURATION=30
       - POST_ALERT_DURATION=30

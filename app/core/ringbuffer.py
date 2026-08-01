@@ -229,7 +229,7 @@ class VideoRingBuffer:
         started_at = time.perf_counter()
         with self._lock:
             write_idx, read_idx, count, _, _, _ = self._read_metadata()
-            if count == 0 or abs(index) >= count:
+            if count == 0 or index >= count or index < -count:
                 return None
 
             actual_idx = (write_idx + index) % self.capacity if index < 0 else (read_idx + index) % self.capacity
@@ -250,7 +250,7 @@ class VideoRingBuffer:
         started_at = time.perf_counter()
         with self._lock:
             write_idx, read_idx, count, _, _, _ = self._read_metadata()
-            if count == 0 or abs(index) >= count:
+            if count == 0 or index >= count or index < -count:
                 return None
 
             actual_idx = (write_idx + index) % self.capacity if index < 0 else (read_idx + index) % self.capacity

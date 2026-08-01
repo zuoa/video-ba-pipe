@@ -50,6 +50,76 @@ export async function updateSourceRotationConfig(data: any) {
   });
 }
 
+export interface RecordingStorageConfig {
+  recording_enabled: boolean;
+  pre_alert_seconds: number;
+  post_alert_seconds: number;
+  recording_fps: number;
+  video_max_gb: number;
+  image_max_gb: number;
+  min_free_gb: number;
+  stop_recording_percent: number;
+  metadata_only_percent: number;
+}
+
+export interface RecordingStorageUsage {
+  video_bytes: number;
+  image_bytes: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  disk_free_bytes: number;
+  disk_used_percent: number;
+  pressure_level: 'normal' | 'recording_stopped' | 'metadata_only';
+}
+
+export async function getRecordingStorageConfig() {
+  return request<{
+    success: boolean;
+    config: RecordingStorageConfig;
+    usage: RecordingStorageUsage;
+  }>('/api/system/recording-storage-config');
+}
+
+export async function updateRecordingStorageConfig(data: RecordingStorageConfig) {
+  return request('/api/system/recording-storage-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
+export interface OpsNotificationConfig {
+  enabled: boolean;
+  webhook_url: string;
+  secret: string;
+  secret_configured?: boolean;
+  notify_disk_pressure: boolean;
+  notify_cleanup_failure: boolean;
+  notify_alert_growth: boolean;
+  alert_growth_window_minutes: number;
+  alert_growth_threshold: number;
+  cooldown_minutes: number;
+}
+
+export async function getOpsNotificationConfig() {
+  return request<{ success: boolean; config: OpsNotificationConfig }>(
+    '/api/system/ops-notification-config',
+  );
+}
+
+export async function updateOpsNotificationConfig(data: OpsNotificationConfig) {
+  return request('/api/system/ops-notification-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
+export async function testOpsNotificationConfig(data: OpsNotificationConfig) {
+  return request('/api/system/ops-notification-config/test', {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }

@@ -31,7 +31,7 @@ x-jetson-environment: &jetson-environment
   DECODER_OUTPUT_QUEUE_SIZE: ${DECODER_OUTPUT_QUEUE_SIZE:-2}
   ANALYSIS_TARGET_FPS: ${ANALYSIS_TARGET_FPS:-2}
   ANALYSIS_BUFFER_SECONDS: ${ANALYSIS_BUFFER_SECONDS:-3}
-  RECORDING_ENABLED: ${RECORDING_ENABLED:-true}
+  RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
   PRE_ALERT_DURATION: ${PRE_ALERT_DURATION:-15}
   POST_ALERT_DURATION: ${POST_ALERT_DURATION:-15}
   RECORDING_FPS: ${RECORDING_FPS:-3}
@@ -43,9 +43,13 @@ x-jetson-environment: &jetson-environment
   ALERT_SUPPRESSION_DURATION: ${ALERT_SUPPRESSION_DURATION:-60}
   ALERT_IMAGE_CLEANUP_ENABLED: ${ALERT_IMAGE_CLEANUP_ENABLED:-true}
   ALERT_IMAGE_RETENTION_DAYS: ${ALERT_IMAGE_RETENTION_DAYS:-7}
+  ALERT_VIDEO_RETENTION_DAYS: ${ALERT_VIDEO_RETENTION_DAYS:-7}
+  ALERT_RECORD_RETENTION_DAYS: ${ALERT_RECORD_RETENTION_DAYS:-30}
   WINDOW_DETECTION_RETENTION_HOURS: ${WINDOW_DETECTION_RETENTION_HOURS:-24}
-  ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-2}
-  MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-3600}
+  ALERT_IMAGE_MAX_STORAGE_GB: ${ALERT_IMAGE_MAX_STORAGE_GB:-10}
+  ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
+  ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
+  MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
   RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
   RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
   RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
@@ -58,6 +62,29 @@ x-jetson-environment: &jetson-environment
   TZ: Asia/Shanghai
 
 services:
+  storage-guard:
+    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    pull_policy: missing
+    container_name: video-ba-pipe-storage-guard-jetson
+    restart: "no"
+    runtime: nvidia
+    environment: *jetson-environment
+    command:
+      - python3
+      - -c
+      - >-
+        from app.core.alert_media_cleaner import AlertMediaCleaner;
+        result = AlertMediaCleaner().run_startup_filesystem_cleanup(wait_for_database_seconds=30);
+        print(f'storage preflight removed_files={result.removed_files} removed_bytes={result.removed_bytes}')
+    volumes:
+      - ./data:/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_started
+
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: video-ba-pipe-postgres-jetson
@@ -99,6 +126,8 @@ services:
           - app
     logging: *default-logging
     depends_on:
+      storage-guard:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       rabbitmq:
@@ -120,6 +149,8 @@ services:
       - video-ba-network
     logging: *default-logging
     depends_on:
+      storage-guard:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       rabbitmq:

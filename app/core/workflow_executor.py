@@ -24,12 +24,8 @@ from app.config import (
     ANALYSIS_TARGET_FPS,
     FRAME_SAVE_PATH,
     VIDEO_SAVE_PATH,
-    RECORDING_ENABLED,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
-    PRE_ALERT_DURATION,
-    POST_ALERT_DURATION,
-    RECORDING_FPS,
     RECORDING_JPEG_QUALITY,
     ALERT_SUPPRESSION_DURATION,
     LOG_SAVE_PATH,
@@ -54,6 +50,12 @@ from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.recording_storage_config import get_recording_storage_config
+from app.core.storage_pressure import (
+    StoragePressure,
+    StoragePressureLevel,
+    measure_storage_pressure,
+)
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
@@ -248,6 +250,9 @@ class WorkflowExecutor:
         self.test_mode = test_mode
         self.workflow = Workflow.get_by_id(workflow_id)
         self.workflow_data = self.workflow.data_dict
+        self.recording_config = get_recording_storage_config()
+        self._storage_pressure: Optional[StoragePressure] = None
+        self._storage_pressure_checked_at = 0.0
 
         # 创建节点数据字典
         workflow_nodes = self.workflow_data.get('nodes', [])
@@ -411,7 +416,7 @@ class WorkflowExecutor:
                 recorder_cleaned = recorder_manager.cleanup_recorder(
                     self.recorder_key,
                     wait_timeout=(
-                        float(POST_ALERT_DURATION)
+                        float(self.recording_config.post_alert_seconds)
                         + float(SOURCE_ROTATION_DRAIN_GRACE_SECONDS)
                     ),
                 )
@@ -808,7 +813,13 @@ class WorkflowExecutor:
         shm_name = analysis_buffer_name if os.name == 'nt' else f"/{analysis_buffer_name}"
         resource_tracker.unregister(shm_name, 'shared_memory')
 
-        if RECORDING_ENABLED:
+        if self.recording_config.recording_enabled:
+            recording_buffer_duration = max(
+                RECORDING_BUFFER_DURATION,
+                self.recording_config.pre_alert_seconds
+                + self.recording_config.post_alert_seconds
+                + 2,
+            )
             recording_buffer_name = self.video_source.recording_buffer_name
             try:
                 self.recording_buffer = CompressedVideoRingBuffer(
@@ -817,8 +828,8 @@ class WorkflowExecutor:
                     width=self.video_source.source_decode_width,
                     height=self.video_source.source_decode_height,
                     pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
-                    fps=RECORDING_FPS,
-                    duration_seconds=RECORDING_BUFFER_DURATION,
+                    fps=self.recording_config.recording_fps,
+                    duration_seconds=recording_buffer_duration,
                     max_frame_bytes=RECORDING_COMPRESSED_MAX_BYTES,
                     jpeg_quality=RECORDING_JPEG_QUALITY,
                 )
@@ -826,7 +837,8 @@ class WorkflowExecutor:
                 resource_tracker.unregister(shm_name, 'shared_memory')
                 logger.info(
                     f"已连接录制缓冲区: {recording_buffer_name} "
-                    f"(compressed jpeg, fps={RECORDING_FPS}, duration={RECORDING_BUFFER_DURATION}s, "
+                    f"(compressed jpeg, fps={self.recording_config.recording_fps}, "
+                    f"duration={recording_buffer_duration}s, "
                     f"capacity={self.recording_buffer.capacity}, frame_shape={self.recording_buffer.frame_shape}, "
                     f"pixel_format={self.recording_buffer.pixel_format})"
                 )
@@ -842,11 +854,13 @@ class WorkflowExecutor:
                     source_id=self.video_source.id,
                     buffer=self.recording_buffer,
                     save_dir=VIDEO_SAVE_PATH,
-                    fps=RECORDING_FPS
+                    fps=self.recording_config.recording_fps,
+                    max_disk_used_percent=self.recording_config.stop_recording_percent,
                 )
                 logger.info(
                     f"[WorkflowWorker:{os.getpid()}] 视频录制功能已启用 "
-                    f"(前{PRE_ALERT_DURATION}秒 + 后{POST_ALERT_DURATION}秒)"
+                    f"(前{self.recording_config.pre_alert_seconds}秒 + "
+                    f"后{self.recording_config.post_alert_seconds}秒)"
                 )
             else:
                 self.video_recorder = None
@@ -2468,6 +2482,25 @@ class WorkflowExecutor:
             except Exception:
                 return False
 
+    def _get_storage_pressure(self) -> StoragePressure:
+        """短周期缓存磁盘检查，兼顾落盘保护与实时告警吞吐。"""
+        now = time.monotonic()
+        if self._storage_pressure is None or now - self._storage_pressure_checked_at >= 2.0:
+            self.recording_config = get_recording_storage_config()
+            try:
+                self._storage_pressure = measure_storage_pressure(self.recording_config)
+            except Exception as exc:
+                logger.error(f"[Workflow-{self.workflow_id}] 无法读取磁盘水位，降级为仅保留元数据: {exc}")
+                self._storage_pressure = StoragePressure(
+                    level=StoragePressureLevel.METADATA_ONLY,
+                    used_percent=100.0,
+                    total_bytes=0,
+                    used_bytes=0,
+                    free_bytes=0,
+                )
+            self._storage_pressure_checked_at = now
+        return self._storage_pressure
+
     def _save_test_result_image(self, node_id: str, frame_rgb: np.ndarray, detections: List[dict], label_color: str = '#FF0000',
                                 roi_mask=None, roi_regions=None, upstream_node_id: Optional[str] = None) -> Optional[str]:
         """保存测试可视化图片并返回可访问 URL"""
@@ -2574,6 +2607,8 @@ class WorkflowExecutor:
         detection_count = len(result.get('detections', []))
         roi_mask = context.get('roi_mask')
         label_color = context.get('label_color', '#FF0000')  # 默认红色
+        storage_pressure = self._get_storage_pressure() if has_detection else None
+        media_allowed = storage_pressure is None or storage_pressure.allow_media
 
         logger.debug(
             f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={detection_count}")
@@ -2620,7 +2655,7 @@ class WorkflowExecutor:
         # 如果启用了窗口检测，保存检测图片（用于窗口检测图片序列）
         # 注意：每帧的记录已在 _record_to_window_detector_for_all_alerts 中完成
         # 这里只负责保存检测到目标时的图片
-        if window_detection_enabled and has_detection:
+        if window_detection_enabled and has_detection and media_allowed:
             # 保存检测图片到临时路径（用于窗口检测图片序列）
             filepath = f"{self.video_source.source_code}/.window_detection/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}_wf{self.workflow_id}.jpg"
             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
@@ -2849,7 +2884,7 @@ class WorkflowExecutor:
         # 获取窗口内的检测记录（用于保存检测图片）
         # 注意：只有启用窗口检测时（trigger_stats不为None）才获取历史检测记录
         # 如果未启用窗口检测，detection_records为空，后续会保存当前触发帧
-        if trigger_stats:
+        if trigger_stats and media_allowed:
             # 启用了窗口检测，获取窗口内的所有历史检测记录
             detection_records = self.window_detector.get_detection_records(
                 source_id=self.video_source.id,
@@ -2875,7 +2910,7 @@ class WorkflowExecutor:
                 })
 
         # 如果没有检测图片，保存当前帧
-        if not detection_images:
+        if not detection_images and media_allowed:
             filepath = f"{self.video_source.source_code}/{alert_type}/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}_wf{self.workflow_id}.jpg"
             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
 
@@ -2917,8 +2952,14 @@ class WorkflowExecutor:
                 'detection_time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(frame_timestamp))
             })
 
-        main_image = detection_images[-1]['image_path'] if detection_images else ""
-        main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else ""
+        main_image = detection_images[-1]['image_path'] if detection_images else None
+        main_image_ori = detection_images[-1]['image_ori_path'] if detection_images else None
+
+        if not media_allowed and storage_pressure is not None:
+            logger.warning(
+                f"[Workflow-{self.workflow_id}] 磁盘使用率 {storage_pressure.used_percent:.1f}% "
+                "已进入仅保留告警元数据模式"
+            )
 
         # 创建告警记录
         logger.info(f"[Workflow-{self.workflow_id}] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
@@ -2931,8 +2972,8 @@ class WorkflowExecutor:
             alert_message=alert_message,
             alert_image=main_image,
             alert_image_ori=main_image_ori,
-            alert_video="",
-            detection_count=len(detection_images),
+            alert_video=None,
+            detection_count=(detection_count if not media_allowed else len(detection_images)),
             window_stats=json.dumps(trigger_stats) if trigger_stats else None,
             detection_images=json.dumps(detection_images) if detection_images else None,
             created_by=getattr(self.video_source, 'created_by', 'admin'),
@@ -2948,20 +2989,25 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
 
         # 启动视频录制
-        if self.video_recorder:
+        if self.video_recorder and storage_pressure is not None and storage_pressure.allow_recording:
             try:
                 video_path = self.video_recorder.start_recording(
                     source_id=self.video_source.id,
                     alert_id=alert.id,
                     trigger_time=trigger_time,
-                    pre_seconds=PRE_ALERT_DURATION,
-                    post_seconds=POST_ALERT_DURATION
+                    pre_seconds=self.recording_config.pre_alert_seconds,
+                    post_seconds=self.recording_config.post_alert_seconds
                 )
                 alert.alert_video = video_path
                 alert.save()
                 logger.info(f"[Workflow-{self.workflow_id}] 已启动视频录制任务: {video_path}")
             except Exception as rec_err:
                 logger.error(f"[Workflow-{self.workflow_id}] 启动视频录制失败: {rec_err}", exc_info=True)
+        elif self.video_recorder and storage_pressure is not None:
+            logger.warning(
+                f"[Workflow-{self.workflow_id}] 磁盘使用率 {storage_pressure.used_percent:.1f}% "
+                "已达到停录像水位，本次告警不录像"
+            )
 
         # 发布到 RabbitMQ
         try:

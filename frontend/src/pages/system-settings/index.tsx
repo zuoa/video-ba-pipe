@@ -1,12 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Form, Input, InputNumber, Switch, message, Spin } from 'antd';
+import { Alert, Card, Form, Input, InputNumber, Progress, Switch, message, Spin } from 'antd';
 import Button from '@/components/common/AppButton';
-import { SettingOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons';
+import {
+  DatabaseOutlined,
+  NotificationOutlined,
+  SaveOutlined,
+  SendOutlined,
+  SettingOutlined,
+  SyncOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import {
   getSourceRotationConfig,
+  getRecordingStorageConfig,
+  getOpsNotificationConfig,
   getVlConfig,
+  RecordingStorageUsage,
+  testOpsNotificationConfig,
   updateSourceRotationConfig,
+  updateRecordingStorageConfig,
+  updateOpsNotificationConfig,
   updateVlConfig,
 } from '@/services/api';
 import './index.css';
@@ -14,10 +28,19 @@ import './index.css';
 const SystemSettingsPage: React.FC = () => {
   const [vlForm] = Form.useForm();
   const [rotationForm] = Form.useForm();
+  const [recordingForm] = Form.useForm();
+  const [opsForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
+  const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
+  const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
+  const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
+  const imageMaxGb = Form.useWatch('image_max_gb', recordingForm) ?? 10;
   const rotationEnabled = Form.useWatch('enabled', rotationForm) ?? false;
+  const opsEnabled = Form.useWatch('enabled', opsForm) ?? false;
+  const alertGrowthEnabled = Form.useWatch('notify_alert_growth', opsForm) ?? true;
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
   const dwellSeconds = Form.useWatch('dwell_seconds', rotationForm) ?? 30;
   const estimatedBatches = eligibleSourceCount > 0
@@ -28,9 +51,11 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, recordingResponse, opsResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
+        getRecordingStorageConfig(),
+        getOpsNotificationConfig(),
       ]);
       vlForm.setFieldsValue({
         enabled: vlResponse?.config?.enabled ?? false,
@@ -45,6 +70,9 @@ const SystemSettingsPage: React.FC = () => {
         dwell_seconds: rotationResponse?.config?.dwell_seconds || 30,
       });
       setEligibleSourceCount(rotationResponse?.eligible_source_count || 0);
+      recordingForm.setFieldsValue(recordingResponse.config);
+      setStorageUsage(recordingResponse.usage);
+      opsForm.setFieldsValue(opsResponse.config);
     } catch (error: any) {
       message.error(`加载系统配置失败: ${error.message}`);
     } finally {
@@ -58,14 +86,18 @@ const SystemSettingsPage: React.FC = () => {
 
   const handleSave = async () => {
     try {
-      const [vlValues, rotationValues] = await Promise.all([
+      const [vlValues, rotationValues, recordingValues, opsValues] = await Promise.all([
         vlForm.validateFields(),
         rotationForm.validateFields(),
+        recordingForm.validateFields(),
+        opsForm.validateFields(),
       ]);
       setSaving(true);
       await Promise.all([
         updateVlConfig(vlValues),
         updateSourceRotationConfig(rotationValues),
+        updateRecordingStorageConfig(recordingValues),
+        updateOpsNotificationConfig(opsValues),
       ]);
       message.success('系统配置已保存');
       await loadConfig();
@@ -79,12 +111,26 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
+  const handleTestWebhook = async () => {
+    try {
+      const values = await opsForm.validateFields(['webhook_url', 'secret']);
+      setTestingWebhook(true);
+      await testOpsNotificationConfig({ ...opsForm.getFieldsValue(), ...values });
+      message.success('钉钉测试通知已发送');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(`测试通知失败: ${error.message}`);
+    } finally {
+      setTestingWebhook(false);
+    }
+  };
+
   return (
     <div className="system-settings-page">
       <PageHeader
         icon={<SettingOutlined />}
         title="系统设置"
-        subtitle="统一管理视频轮转检测与 VL 核验服务配置。"
+        subtitle="统一管理录像、磁盘降级、运维通知、视频轮转与 VL 核验配置。"
         extra={
           <Button
             type="primary"
@@ -103,6 +149,221 @@ const SystemSettingsPage: React.FC = () => {
         </div>
       ) : (
         <div className="system-settings-grid">
+          <Card
+            className="system-settings-card system-settings-card-wide"
+            title={<span><VideoCameraOutlined /> 录像与存储保护</span>}
+          >
+            <Alert
+              type={recordingEnabled ? 'warning' : 'success'}
+              showIcon
+              className="system-settings-alert"
+              message={recordingEnabled ? '录像已开启，会持续占用磁盘空间' : '录像默认关闭'}
+              description="配置保存后 worker 会自动重建相关缓冲区。媒体目录超过上限时按最老文件优先覆盖；磁盘低于安全水位时会提前回收。"
+            />
+
+            <Form form={recordingForm} layout="vertical">
+              <div className="system-settings-form-grid">
+                <Form.Item
+                  label="启用告警录像"
+                  name="recording_enabled"
+                  valuePropName="checked"
+                  extra="仅影响告警前后录像，告警图片仍会保存并受容量上限保护。"
+                >
+                  <Switch />
+                </Form.Item>
+
+                <Form.Item
+                  label="录像帧率（FPS）"
+                  name="recording_fps"
+                  rules={[{ required: true, message: '请输入录像帧率' }]}
+                >
+                  <InputNumber min={1} max={30} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="告警前录像（秒）"
+                  name="pre_alert_seconds"
+                  rules={[{ required: true, message: '请输入告警前录像时长' }]}
+                >
+                  <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="告警后录像（秒）"
+                  name="post_alert_seconds"
+                  rules={[{ required: true, message: '请输入告警后录像时长' }]}
+                >
+                  <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="录像目录上限（GB）"
+                  name="video_max_gb"
+                  extra="达到上限后回收到约 90%，避免频繁逐文件清理。"
+                  rules={[{ required: true, message: '请输入录像容量上限' }]}
+                >
+                  <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="自动停录像水位（%）"
+                  name="stop_recording_percent"
+                  extra="磁盘达到该使用率后，正在进行和后续录像都会停止。"
+                  rules={[{ required: true, message: '请输入自动停录像水位' }]}
+                >
+                  <InputNumber min={1} max={98} precision={1} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="仅保留元数据水位（%）"
+                  name="metadata_only_percent"
+                  dependencies={['stop_recording_percent']}
+                  extra="达到后不再写入告警图片、临时图片和录像。"
+                  rules={[
+                    { required: true, message: '请输入仅保留元数据水位' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (Number(value) > Number(getFieldValue('stop_recording_percent'))) {
+                          return Promise.resolve();
+                        }
+                        return Promise.reject(new Error('必须高于自动停录像水位'));
+                      },
+                    }),
+                  ]}
+                >
+                  <InputNumber min={2} max={99} precision={1} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="图片目录上限（GB）"
+                  name="image_max_gb"
+                  rules={[{ required: true, message: '请输入图片容量上限' }]}
+                >
+                  <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="最低剩余空间（GB）"
+                  name="min_free_gb"
+                  extra="低于该水位时，即使尚未达到目录上限，也会优先淘汰最老录像和图片。"
+                  rules={[{ required: true, message: '请输入最低剩余空间' }]}
+                >
+                  <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+            </Form>
+
+            {storageUsage ? (
+              <div className="storage-usage-panel" aria-label="当前媒体存储用量">
+                <StorageUsageItem
+                  label="录像"
+                  usedBytes={storageUsage.video_bytes}
+                  maxGb={videoMaxGb}
+                />
+                <StorageUsageItem
+                  label="图片"
+                  usedBytes={storageUsage.image_bytes}
+                  maxGb={imageMaxGb}
+                />
+                <div className="storage-free-space">
+                  <DatabaseOutlined />
+                  磁盘使用率 {storageUsage.disk_used_percent.toFixed(1)}%，剩余 {formatBytes(storageUsage.disk_free_bytes)} / {formatBytes(storageUsage.disk_total_bytes)}
+                  <span className={`storage-pressure-badge storage-pressure-${storageUsage.pressure_level}`}>
+                    {pressureLevelLabel(storageUsage.pressure_level)}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+
+          <Card
+            className="system-settings-card system-settings-card-wide"
+            title={<span><NotificationOutlined /> 钉钉运维通知</span>}
+            extra={
+              <Button
+                icon={<SendOutlined />}
+                loading={testingWebhook}
+                onClick={handleTestWebhook}
+              >
+                发送测试通知
+              </Button>
+            }
+          >
+            <Alert
+              type={opsEnabled ? 'info' : 'warning'}
+              showIcon
+              className="system-settings-alert"
+              message={opsEnabled ? '运维通知已启用' : '运维通知未启用'}
+              description="支持磁盘水位变化、媒体清理失败和滑动时间窗内告警量异常。相同事件按冷却时间去重，避免通知风暴。"
+            />
+
+            <Form form={opsForm} layout="vertical">
+              <div className="system-settings-form-grid">
+                <Form.Item label="启用钉钉通知" name="enabled" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+
+                <Form.Item label="磁盘水位通知" name="notify_disk_pressure" valuePropName="checked">
+                  <Switch disabled={!opsEnabled} />
+                </Form.Item>
+
+                <Form.Item label="清理失败通知" name="notify_cleanup_failure" valuePropName="checked">
+                  <Switch disabled={!opsEnabled} />
+                </Form.Item>
+
+                <Form.Item label="异常告警增长通知" name="notify_alert_growth" valuePropName="checked">
+                  <Switch disabled={!opsEnabled} />
+                </Form.Item>
+
+                <Form.Item
+                  className="system-settings-field-span-2"
+                  label="钉钉机器人 Webhook"
+                  name="webhook_url"
+                  rules={[
+                    { required: opsEnabled, message: '启用通知时必须填写 Webhook' },
+                    { type: 'url', message: '请输入有效的 HTTPS URL' },
+                  ]}
+                  extra="仅接受钉钉官方 oapi.dingtalk.com/robot/send 地址；机器人关键词可设置为“VideoBA运维”。"
+                >
+                  <Input placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
+                </Form.Item>
+
+                <Form.Item
+                  className="system-settings-field-span-2"
+                  label="加签密钥（可选）"
+                  name="secret"
+                  extra="留空会保留已保存的密钥；建议在钉钉机器人安全设置中启用加签。"
+                >
+                  <Input.Password placeholder="SEC..." autoComplete="new-password" />
+                </Form.Item>
+
+                <Form.Item
+                  label="统计窗口（分钟）"
+                  name="alert_growth_window_minutes"
+                  rules={[{ required: true, message: '请输入统计窗口' }]}
+                >
+                  <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="窗口告警阈值（条）"
+                  name="alert_growth_threshold"
+                  rules={[{ required: true, message: '请输入告警阈值' }]}
+                >
+                  <InputNumber min={1} max={1000000} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+
+                <Form.Item
+                  label="相同事件冷却（分钟）"
+                  name="cooldown_minutes"
+                  rules={[{ required: true, message: '请输入通知冷却时间' }]}
+                >
+                  <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+            </Form>
+          </Card>
+
           <Card
             className="system-settings-card"
             title={<span><SyncOutlined /> 视频轮转检测</span>}
@@ -198,6 +459,39 @@ const SystemSettingsPage: React.FC = () => {
           </Card>
         </div>
       )}
+    </div>
+  );
+};
+
+const GIB = 1024 ** 3;
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 GB';
+  return `${(bytes / GIB).toFixed(1)} GB`;
+}
+
+function pressureLevelLabel(level: RecordingStorageUsage['pressure_level']): string {
+  if (level === 'metadata_only') return '仅保留元数据';
+  if (level === 'recording_stopped') return '录像已暂停';
+  return '正常';
+}
+
+interface StorageUsageItemProps {
+  label: string;
+  usedBytes: number;
+  maxGb: number;
+}
+
+const StorageUsageItem: React.FC<StorageUsageItemProps> = ({ label, usedBytes, maxGb }) => {
+  const maxBytes = Math.max(1, maxGb) * GIB;
+  const percent = Math.min(100, Math.round((usedBytes / maxBytes) * 100));
+  return (
+    <div className="storage-usage-item">
+      <div className="storage-usage-label">
+        <span>{label}</span>
+        <strong>{formatBytes(usedBytes)} / {maxGb} GB</strong>
+      </div>
+      <Progress percent={percent} size="small" status={percent >= 90 ? 'exception' : 'normal'} />
     </div>
   );
 };

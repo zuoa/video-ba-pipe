@@ -160,7 +160,13 @@ class _FFmpegVideoWriter:
 class VideoRecorder:
     """视频录制器，从RingBuffer提取帧并编码为视频"""
     
-    def __init__(self, buffer: VideoRingBuffer, save_dir: str, fps: int = 10):
+    def __init__(
+        self,
+        buffer: VideoRingBuffer,
+        save_dir: str,
+        fps: int = 10,
+        max_disk_used_percent: float = 80.0,
+    ):
         """
         初始化视频录制器
         
@@ -172,6 +178,9 @@ class VideoRecorder:
         self.buffer = buffer
         self.save_dir = save_dir
         self.fps = fps
+        self.max_disk_used_percent = float(max_disk_used_percent)
+        self._last_disk_check_at = float('-inf')
+        self._last_disk_allowed = True
         self.recording_tasks = {}  # 记录正在进行的录制任务
         self.lock = threading.Lock()
         
@@ -288,6 +297,10 @@ class VideoRecorder:
                     return True
                 if timestamp > end_time:
                     return True
+                if not self._disk_allows_recording():
+                    raise RuntimeError(
+                        f"磁盘已达到 {self.max_disk_used_percent:g}% 停录像水位"
+                    )
 
                 if video_writer is None:
                     video_writer = self._open_video_writer(frame, output_path)
@@ -427,6 +440,20 @@ class VideoRecorder:
             width=width,
             height=height,
         )
+
+    def _disk_allows_recording(self) -> bool:
+        now = time.monotonic()
+        if now - self._last_disk_check_at < 1.0:
+            return self._last_disk_allowed
+        self._last_disk_check_at = now
+        try:
+            disk = shutil.disk_usage(self.save_dir)
+            used_percent = (disk.used / disk.total * 100.0) if disk.total else 100.0
+            self._last_disk_allowed = used_percent < self.max_disk_used_percent
+        except OSError as exc:
+            logger.error(f"读取录像目录磁盘水位失败，停止录像: {exc}")
+            self._last_disk_allowed = False
+        return self._last_disk_allowed
 
     def _open_ffmpeg_video_writer(
         self,
@@ -686,6 +713,7 @@ class VideoRecorderManager:
         save_dir: str,
         fps: int = 10,
         recorder_key=None,
+        max_disk_used_percent: float = 80.0,
     ) -> VideoRecorder:
         """
         获取或创建指定视频源的录制器
@@ -701,7 +729,12 @@ class VideoRecorderManager:
         """
         key = recorder_key if recorder_key is not None else source_id
         if key not in self.recorders:
-            self.recorders[key] = VideoRecorder(buffer, save_dir, fps)
+            self.recorders[key] = VideoRecorder(
+                buffer,
+                save_dir,
+                fps,
+                max_disk_used_percent=max_disk_used_percent,
+            )
         
         return self.recorders[key]
     

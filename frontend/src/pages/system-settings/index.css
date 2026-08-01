@@ -20,6 +20,81 @@
   color: var(--app-accent);
 }
 
+.system-settings-card-wide {
+  grid-column: 1 / -1;
+}
+
+.system-settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.storage-usage-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  padding: 16px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: 14px;
+  background: var(--app-surface-muted, #f7f8fa);
+}
+
+.storage-usage-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.storage-usage-label strong {
+  color: var(--app-text, #1d2939);
+  font-weight: 600;
+}
+
+.storage-free-space {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.storage-free-space svg {
+  color: var(--app-accent);
+}
+
+.storage-pressure-badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.storage-pressure-normal {
+  color: #087443;
+  background: #e8f7ef;
+}
+
+.storage-pressure-recording_stopped {
+  color: #9a6700;
+  background: #fff4d6;
+}
+
+.storage-pressure-metadata_only {
+  color: #b42318;
+  background: #ffebe9;
+}
+
+.system-settings-field-span-2 {
+  grid-column: span 2;
+}
+
 .rotation-estimate {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -50,5 +125,28 @@
 @media (max-width: 960px) {
   .system-settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-settings-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .system-settings-field-span-2 {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .system-settings-form-grid,
+  .storage-usage-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-free-space {
+    grid-column: auto;
+  }
+
+  .system-settings-field-span-2 {
+    grid-column: auto;
   }
 }

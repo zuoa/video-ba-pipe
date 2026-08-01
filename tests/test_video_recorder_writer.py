@@ -8,6 +8,36 @@ import app.core.video_recorder as video_recorder_module
 from app.core.video_recorder import _FFmpegVideoWriter, VideoRecorder
 
 
+def test_video_recorder_stops_at_disk_waterline(tmp_path, monkeypatch):
+    recorder = VideoRecorder(
+        buffer=object(),
+        save_dir=str(tmp_path),
+        max_disk_used_percent=80,
+    )
+    monkeypatch.setattr(
+        video_recorder_module.shutil,
+        'disk_usage',
+        lambda _path: type('DiskUsage', (), {'total': 100, 'used': 80, 'free': 20})(),
+    )
+
+    assert recorder._disk_allows_recording() is False
+
+
+def test_video_recorder_allows_recording_below_waterline(tmp_path, monkeypatch):
+    recorder = VideoRecorder(
+        buffer=object(),
+        save_dir=str(tmp_path),
+        max_disk_used_percent=80,
+    )
+    monkeypatch.setattr(
+        video_recorder_module.shutil,
+        'disk_usage',
+        lambda _path: type('DiskUsage', (), {'total': 100, 'used': 79, 'free': 21})(),
+    )
+
+    assert recorder._disk_allows_recording() is True
+
+
 class _ClosedOpenCVWriter:
     def isOpened(self):
         return False

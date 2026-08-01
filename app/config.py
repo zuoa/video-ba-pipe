@@ -81,11 +81,18 @@ DECODER_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'decoder_debug.log')
 WORKFLOW_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow.log')
 WORKFLOW_DEBUG_LOG_PATH = os.path.join(LOG_SAVE_PATH, 'workflow_debug.log')
 
-ALERT_IMAGE_CLEANUP_ENABLED = os.getenv('ALERT_IMAGE_CLEANUP_ENABLED', 'false').lower() in ('true', '1', 'yes')
+ALERT_IMAGE_CLEANUP_ENABLED = os.getenv('ALERT_IMAGE_CLEANUP_ENABLED', 'true').lower() in ('true', '1', 'yes')
 ALERT_IMAGE_RETENTION_DAYS = max(0, int(os.getenv('ALERT_IMAGE_RETENTION_DAYS', '7')))
+ALERT_VIDEO_RETENTION_DAYS = max(
+    0,
+    int(os.getenv('ALERT_VIDEO_RETENTION_DAYS', str(ALERT_IMAGE_RETENTION_DAYS))),
+)
+ALERT_RECORD_RETENTION_DAYS = max(0, int(os.getenv('ALERT_RECORD_RETENTION_DAYS', '30')))
 WINDOW_DETECTION_RETENTION_HOURS = max(0, int(os.getenv('WINDOW_DETECTION_RETENTION_HOURS', '24')))
-ALERT_IMAGE_MIN_FREE_GB = max(0.0, float(os.getenv('ALERT_IMAGE_MIN_FREE_GB', '2')))
-MEDIA_CLEANUP_INTERVAL_SECONDS = max(60, int(os.getenv('MEDIA_CLEANUP_INTERVAL_SECONDS', '3600')))
+ALERT_IMAGE_MIN_FREE_GB = max(0.0, float(os.getenv('ALERT_IMAGE_MIN_FREE_GB', '10')))
+ALERT_IMAGE_MAX_STORAGE_GB = max(1.0, float(os.getenv('ALERT_IMAGE_MAX_STORAGE_GB', '10')))
+ALERT_VIDEO_MAX_STORAGE_GB = max(1.0, float(os.getenv('ALERT_VIDEO_MAX_STORAGE_GB', '20')))
+MEDIA_CLEANUP_INTERVAL_SECONDS = max(30, int(os.getenv('MEDIA_CLEANUP_INTERVAL_SECONDS', '60')))
 
 # ============ 检测结果调试日志 ============
 # 输出算法检测结果到 logs/detection_results_YYYYMMDD.jsonl，便于排查不同部署环境输出差异
@@ -172,7 +179,7 @@ SOURCE_ROTATION_CONFIG_REFRESH_SECONDS = max(
 
 # ============ 视频录制配置 ============
 # 预警录制功能开关
-RECORDING_ENABLED = os.getenv('RECORDING_ENABLED', 'true').lower() in ('true', '1', 'yes')
+RECORDING_ENABLED = os.getenv('RECORDING_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
 # 录制预警前的时长（秒）
 PRE_ALERT_DURATION = int(os.getenv('PRE_ALERT_DURATION', '5'))

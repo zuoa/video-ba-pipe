@@ -34,6 +34,21 @@ from app.core.source_rotation import (
     get_source_rotation_config,
     save_source_rotation_config,
 )
+from app.core.alert_media_cleaner import directory_usage_bytes
+from app.core.recording_storage_config import (
+    get_recording_storage_config,
+    save_recording_storage_config,
+)
+from app.core.storage_pressure import measure_storage_pressure
+from app.core.ops_notification_config import (
+    get_ops_notification_config,
+    normalize_ops_notification_config,
+    save_ops_notification_config,
+)
+from app.core.dingtalk_notifier import (
+    send_dingtalk_text,
+    validate_dingtalk_webhook_url,
+)
 from app.core.vl_algorithm_config import normalize_vl_algorithm_config
 from app.core.ocr_algorithm_config import normalize_ocr_algorithm_config
 from app.core.ocr_runtime import get_ocr_runtime_status, is_ocr_runtime_available
@@ -266,6 +281,103 @@ def update_system_source_rotation_config():
     except Exception as exc:
         app.logger.error(f"更新视频轮转配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/recording-storage-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_recording_storage_config():
+    config = get_recording_storage_config()
+    pressure = measure_storage_pressure(config)
+    return jsonify({
+        'success': True,
+        'config': config.to_dict(),
+        'usage': {
+            'video_bytes': directory_usage_bytes(VIDEO_SAVE_PATH),
+            'image_bytes': directory_usage_bytes(FRAME_SAVE_PATH),
+            'disk_total_bytes': pressure.total_bytes,
+            'disk_used_bytes': pressure.used_bytes,
+            'disk_free_bytes': pressure.free_bytes,
+            'disk_used_percent': pressure.used_percent,
+            'pressure_level': pressure.level.value,
+        },
+    })
+
+
+@app.route('/api/system/recording-storage-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_recording_storage_config():
+    try:
+        config = save_recording_storage_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(),
+            'message': '录像与存储配置已更新，将在 5 秒内热生效',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新录像与存储配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/ops-notification-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_ops_notification_config():
+    config = get_ops_notification_config()
+    return jsonify({
+        'success': True,
+        'config': config.to_dict(include_secret=False),
+    })
+
+
+@app.route('/api/system/ops-notification-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_ops_notification_config():
+    try:
+        config = save_ops_notification_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(include_secret=False),
+            'message': '钉钉运维通知配置已更新',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新运维通知配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/ops-notification-config/test', methods=['POST'])
+@require_auth
+@require_admin
+def test_system_ops_notification_config():
+    try:
+        existing = get_ops_notification_config()
+        config = normalize_ops_notification_config(
+            request.json or {},
+            existing_secret=existing.secret,
+        )
+        validate_dingtalk_webhook_url(config.webhook_url)
+        send_dingtalk_text(
+            config,
+            '[VideoBA运维] 测试通知\n如果你收到这条消息，说明钉钉 Webhook 配置有效。',
+        )
+        return jsonify({'success': True, 'message': '测试通知已发送'})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"发送钉钉测试通知失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 502
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
