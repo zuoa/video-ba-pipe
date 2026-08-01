@@ -17,6 +17,8 @@ from app.config import (
     VIDEO_DECODER_TYPE,
     VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_SW_DECODER_THREADS,
+    FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS,
+    FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES,
     DECODER_OUTPUT_QUEUE_SIZE,
     RECORDING_BUFFER_DURATION,
     RECORDING_COMPRESSED_MAX_BYTES,
@@ -34,6 +36,7 @@ from app.config import (
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
+from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
 from app.core.utils import save_frame
@@ -80,6 +83,8 @@ class DecoderWorker:
         self.streamer = None
         self.decoder = None
         self.running = False
+        self.software_full_frame_fallback_requested = False
+        self._software_no_output_started_at = None
 
         self.analysis_sample_mode = self.analysis_config.get('mode', 'fps')
         self.analysis_sample_interval = self.analysis_config.get('interval', 1.0)
@@ -198,6 +203,9 @@ class DecoderWorker:
                 input_format=input_format,
                 output_format=output_format,
                 threads=int(self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)),
+                keyframes_only=bool(
+                    self.decoder_config.get('keyframes_only', True)
+                ),
                 output_queue_size=int(
                     self.decoder_config.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)
                 ),
@@ -293,6 +301,34 @@ class DecoderWorker:
             self.recording_last_write_time = current_time
             return True
         return False
+
+    def _should_request_software_full_frame_fallback(self, now: float) -> bool:
+        """关键帧软解已收到足量数据却持续无输出时，请求单源全帧降级。"""
+        decoder = self.decoder
+        if decoder is None or not getattr(decoder, 'keyframes_only', False):
+            self._software_no_output_started_at = None
+            return False
+
+        output_activity = (
+            int(getattr(decoder, 'frames_decoded', 0))
+            + int(getattr(decoder, 'frames_dropped', 0))
+        )
+        bytes_processed = int(getattr(decoder, 'bytes_processed', 0))
+        if (
+            output_activity > 0
+            or bytes_processed < FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES
+        ):
+            self._software_no_output_started_at = None
+            return False
+
+        if self._software_no_output_started_at is None:
+            self._software_no_output_started_at = now
+            return False
+
+        return (
+            now - self._software_no_output_started_at
+            >= FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS
+        )
 
     def snapshot(self, frame):
         """保存快照"""
@@ -466,6 +502,17 @@ class DecoderWorker:
                             logger.warning("视频流已停止")
                             break
 
+                        if self._should_request_software_full_frame_fallback(
+                            time.monotonic()
+                        ):
+                            self.software_full_frame_fallback_requested = True
+                            logger.warning(
+                                "关键帧软解已持续收到 "
+                                f"{self.decoder.bytes_processed / 1024 / 1024:.2f} MB "
+                                "码流但仍无帧输出，请求切换当前视频源为全帧软解"
+                            )
+                            break
+
                         # 检查是否长时间无帧
                         if HEALTH_MONITOR_ENABLED:
                             last_frame_reference = self.last_frame_time or start_time
@@ -540,6 +587,8 @@ class DecoderWorker:
             logger.error(f"解码过程出错: {e}", exc_info=True)
         finally:
             self.cleanup()
+
+        return self.software_full_frame_fallback_requested
 
     def cleanup(self):
         """清理资源"""
@@ -634,6 +683,7 @@ def main(args):
         'input_format': args.input_format,
         'output_format': args.output_format,
         'threads': args.decoder_threads,
+        'keyframes_only': args.software_decode_keyframes_only,
         'output_queue_size': args.decoder_output_queue_size,
     }
 
@@ -667,12 +717,14 @@ def main(args):
 
     try:
         worker.setup(source=source)
-        worker.start()
+        fallback_requested = worker.start()
     except Exception as e:
         logger.error(f"工作进程异常退出: {e}", exc_info=True)
         sys.exit(1)
 
     logger.warning("停止 DECODER 工作进程")
+    if fallback_requested:
+        sys.exit(SOFTWARE_DECODE_FALLBACK_EXIT_CODE)
     sys.exit(0)
 
 
@@ -723,6 +775,12 @@ if __name__ == '__main__':
                                help='软解 ffmpeg 线程数 (默认读取 FFMPEG_SW_DECODER_THREADS)')
     decoder_group.add_argument('--decoder-output-queue-size', type=int, default=DECODER_OUTPUT_QUEUE_SIZE,
                                help='解码输出队列大小，越大越占内存 (默认读取 DECODER_OUTPUT_QUEUE_SIZE)')
+    decoder_group.add_argument(
+        '--software-decode-keyframes-only',
+        type=lambda value: str(value).lower() in {'true', '1', 'yes', 'on'},
+        default=True,
+        help='软解是否只解关键帧（默认开启，orchestrator 可按源自动降级）',
+    )
 
     # 帧采样参数
     sample_group = parser.add_argument_group('帧采样配置')

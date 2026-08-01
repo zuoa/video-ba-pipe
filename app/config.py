@@ -120,6 +120,17 @@ VIDEO_FRAME_PIXEL_FORMAT = (os.getenv('VIDEO_FRAME_PIXEL_FORMAT') or 'nv12').str
 # ffmpeg 软解默认限制为单线程，避免多路并发时每路自动拉满 CPU。
 FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1')))
 
+# 软解默认只解关键帧以节省 CPU。如果已持续收到足量码流但仍无帧输出，
+# decoder worker 会以专用退出码通知 orchestrator，仅将该视频源切换为全帧软解。
+FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS = max(
+    1.0,
+    float(os.getenv('FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS', '10')),
+)
+FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES = max(
+    1,
+    int(os.getenv('FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES', str(256 * 1024))),
+)
+
 # 解码输出队列大小（运行时主帧格式，默认 NV12）。队列越大，解码抖动越小，但内存占用会线性增加。
 DECODER_OUTPUT_QUEUE_SIZE = max(1, int(os.getenv('DECODER_OUTPUT_QUEUE_SIZE', '5')))
 

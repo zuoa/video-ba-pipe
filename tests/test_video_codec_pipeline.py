@@ -175,6 +175,26 @@ def test_orchestrator_decoder_args_propagate_detected_codec(monkeypatch):
     assert arguments[arguments.index("--decoder-type") + 1] == "jetson_gst"
 
 
+def test_orchestrator_decoder_args_can_select_full_frame_software_decode():
+    source = SimpleNamespace(
+        id=9,
+        source_url="rtsp://camera/stream",
+        source_decode_width=960,
+        source_decode_height=540,
+    )
+
+    arguments = Orchestrator._build_decoder_args(
+        source,
+        analysis_fps=2,
+        input_format="h264",
+        decoder_type="ffmpeg_sw",
+        software_decode_keyframes_only=False,
+    )
+
+    option_index = arguments.index("--software-decode-keyframes-only")
+    assert arguments[option_index + 1] == "false"
+
+
 def test_nvdec_uses_ffmpeg_hevc_decoder_name_for_h265():
     class ConcreteNVDECDecoder(FFmpegNVDECDecoder):
         def send_packet(self, data):

@@ -18,6 +18,11 @@ from app.core.frame_utils import (
 from app.core.video_probe import elementary_stream_muxer
 
 
+# decoder worker 用该专用退出码通知 orchestrator：当前源的关键帧软解
+# 已持续收到码流却无法产出帧，下一次应仅对该源切换为全帧解码。
+SOFTWARE_DECODE_FALLBACK_EXIT_CODE = 75
+
+
 class AsyncFFmpegDecoder(BaseDecoder):
     """
     一个真正异步的FFmpeg解码器，内部管理读写线程以避免死锁。
@@ -140,19 +145,27 @@ class AsyncFFmpegDecoder(BaseDecoder):
 
 # --- 创建具体的软件解码器 ---
 class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
+    def __init__(self, decoder_id: int, width: int, height: int, **kwargs):
+        self.keyframes_only = bool(kwargs.get('keyframes_only', True))
+        super().__init__(decoder_id, width, height, **kwargs)
+
     def _build_ffmpeg_command(self) -> list:
-        self.logger.info("构建异步FFmpeg软件解码命令 (仅解码关键帧 - 修正版)...")
+        decode_mode = '仅解码关键帧' if self.keyframes_only else '解码全部帧'
+        self.logger.info(f"构建异步FFmpeg软件解码命令 ({decode_mode})...")
         threads = max(1, int(self.config.get('threads', FFMPEG_SW_DECODER_THREADS)))
 
         # 将输入参数放在 -i pipe:0 之前
         input_args = [
             '-threads', str(threads),
-            '-skip_frame', 'nokey',  # 跳过非关键帧
+        ]
+        if self.keyframes_only:
+            input_args.extend(['-skip_frame', 'nokey'])
+        input_args.extend([
             '-fflags', '+genpts+discardcorrupt',
             '-f', elementary_stream_muxer(
                 self.config.get('input_format', 'h264')
             ),
-        ]
+        ])
 
         # 将输出参数放在 -i pipe:0 之后
         output_args = [

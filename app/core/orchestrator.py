@@ -42,6 +42,7 @@ from app.config import (
 )
 from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
+from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
 from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog
 from app.core.hw_decode_budget import (
     HW_DECODER_TYPES,
@@ -186,6 +187,8 @@ class Orchestrator:
         self.source_stderr_tail = {}
         # 每个源实际使用的解码模式: 'hw' / 'sw' / 'native'
         self.source_decoder_mode = {}
+        # 关键帧软解无输出的源: source_id -> source_url。URL 变更时重新试探关键帧模式。
+        self.software_full_frame_sources = {}
         # 被僵尸回收器代为 waitpid 的进程退出码: pid -> exit_code
         self.externally_reaped = {}
         self.last_upgrade_check_at = 0.0
@@ -368,6 +371,30 @@ class Orchestrator:
     @staticmethod
     def _extract_source_id(workflow: Workflow):
         return extract_source_id_from_workflow_data(workflow.data_dict)
+
+    def _switch_source_to_full_frame_software_decode(
+        self,
+        source: VideoSource,
+        uptime_seconds: float,
+    ) -> None:
+        """记住单源全帧软解降级，清除退避并释放旧进程等待立即重启。"""
+        self.software_full_frame_sources[source.id] = source.source_url
+        self.source_backoff.pop(source.id, None)
+        logger.warning(
+            f"视频源 {source.id} 关键帧软解无输出，"
+            "将立即以全帧软解重启"
+        )
+        self._log_health_event(
+            source=source,
+            event_type='software_decode_fallback',
+            details={
+                'from': 'keyframes_only',
+                'to': 'all_frames',
+                'uptime_seconds': round(uptime_seconds, 1),
+            },
+            severity='warning',
+        )
+        self._stop_source(source)
 
     def _build_active_workflow_groups(self):
         groups = {}
@@ -870,6 +897,14 @@ class Orchestrator:
                 return False
         self.source_decoder_mode[source.id] = decoder_mode
 
+        fallback_url = self.software_full_frame_sources.get(source.id)
+        if fallback_url is not None and fallback_url != source.source_url:
+            self.software_full_frame_sources.pop(source.id, None)
+            fallback_url = None
+        software_decode_keyframes_only = fallback_url is None
+        if decoder_mode == 'sw' and not software_decode_keyframes_only:
+            logger.warning(f"视频源 {source.id} 使用单源全帧软解降级模式")
+
         analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
         analysis_buffer = VideoRingBuffer(
             name=source.analysis_buffer_name,
@@ -920,6 +955,7 @@ class Orchestrator:
             analysis_fps=analysis_fps,
             input_format=input_format,
             decoder_type=decoder_type,
+            software_decode_keyframes_only=software_decode_keyframes_only,
             recording_enabled=self.recording_config.recording_enabled,
             recording_fps=self.recording_config.recording_fps,
         )
@@ -993,6 +1029,7 @@ class Orchestrator:
         analysis_fps: int,
         input_format: str,
         decoder_type: str = None,
+        software_decode_keyframes_only: bool = True,
         recording_enabled: bool = False,
         recording_fps: int = RECORDING_FPS,
     ):
@@ -1005,6 +1042,9 @@ class Orchestrator:
             '--input-format', input_format,
             '--decoder-threads', str(FFMPEG_SW_DECODER_THREADS),
             '--decoder-output-queue-size', str(DECODER_OUTPUT_QUEUE_SIZE),
+            '--software-decode-keyframes-only', (
+                'true' if software_decode_keyframes_only else 'false'
+            ),
             '--sample-mode', 'fps',
             '--analysis-fps', str(analysis_fps),
             '--recording-enabled', 'true' if recording_enabled else 'false',
@@ -1113,6 +1153,12 @@ class Orchestrator:
                     uptime = time.time() - self.source_start_times.get(
                         source.id, time.time()
                     )
+                    if exit_code == SOFTWARE_DECODE_FALLBACK_EXIT_CODE:
+                        self._switch_source_to_full_frame_software_decode(
+                            source,
+                            uptime,
+                        )
+                        continue
                     stderr_tail = list(self.source_stderr_tail.get(source.id, ()))
                     reboot_class = classify_decoder_failure(
                         exit_code, stderr_tail, uptime
