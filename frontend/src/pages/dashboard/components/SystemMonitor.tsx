@@ -142,7 +142,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
       <section className="system-monitor system-monitor--loading" aria-busy="true">
         <div className="system-monitor__loading-line" />
         <div className="system-monitor__loading-grid">
-          {[0, 1, 2, 3].map((item) => (
+          {[0, 1, 2, 3, 4].map((item) => (
             <div key={item} className="system-monitor__loading-card" />
           ))}
         </div>
@@ -188,7 +188,10 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
         </time>
       </div>
 
-      <div className="system-monitor__grid">
+      <div
+        className="system-monitor__grid"
+        style={{ '--system-metric-count': 4 + metrics.gpus.length } as React.CSSProperties}
+      >
         <article className="system-metric-card">
           <MetricCardHeader
             icon={<DashboardOutlined />}

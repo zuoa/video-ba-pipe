@@ -78,13 +78,40 @@
   }
 }
 
-/* 告警卡片网格响应式 */
-.alerts-page .ant-row {
-  margin: 0 !important;
+/* 告警卡片网格：常规桌面端每行展示 5 条 */
+.alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.alerts-page .ant-col {
-  padding: 8px !important;
+.alerts-grid__item {
+  min-width: 0;
+}
+
+@media (max-width: 1199px) {
+  .alerts-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 991px) {
+  .alerts-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .alerts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .alerts-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* 空状态样式 */

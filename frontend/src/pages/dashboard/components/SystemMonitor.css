@@ -66,8 +66,10 @@
 
 .system-monitor__grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--system-metric-count, 4), minmax(180px, 1fr));
   gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .system-metric-card {
@@ -346,8 +348,10 @@
 
 .system-monitor__loading-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
   gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .system-monitor__loading-card {
@@ -389,13 +393,6 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .system-monitor__grid,
-  .system-monitor__loading-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 680px) {
   .system-monitor {
     padding: 18px;
@@ -409,11 +406,6 @@
 
   .system-monitor__header time {
     display: none;
-  }
-
-  .system-monitor__grid,
-  .system-monitor__loading-grid {
-    grid-template-columns: 1fr;
   }
 
   .system-monitor__loading-card {

@@ -1,9 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Row, Col, message, Card, Space, Typography, Statistic } from 'antd';
-import {
-  BellOutlined,
-  SyncOutlined,
-} from '@ant-design/icons';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { message } from 'antd';
+import { BellOutlined } from '@ant-design/icons';
 import { getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
 import { PageHeader } from '@/components/common';
 import { Alert, Task, Workflow, AlertFilter } from './types';
@@ -13,8 +10,6 @@ import PaginationBar from './components/PaginationBar';
 import FilterBar from './components/FilterBar';
 import EmptyState from './components/EmptyState';
 import './index.css';
-
-const { Title, Text } = Typography;
 
 const AlertsPage: React.FC = () => {
   // 数据状态
@@ -215,6 +210,10 @@ const AlertsPage: React.FC = () => {
   };
 
   const selectedAlert = alerts[selectedAlertIndex];
+  const tasksById = useMemo(
+    () => new Map(tasks.map(task => [task.id, task])),
+    [tasks],
+  );
 
   return (
     <div className="alerts-page">
@@ -259,17 +258,17 @@ const AlertsPage: React.FC = () => {
       {alerts.length === 0 ? (
         <EmptyState type={filter.task_id || filter.alert_type ? 'search' : 'alerts'} onRefresh={loadAlerts} />
       ) : (
-        <Row gutter={[16, 16]}>
+        <div className="alerts-grid">
           {alerts.map(alert => (
-            <Col key={alert.id} xs={24} sm={12} lg={8} xl={6}>
+            <div key={alert.id} className="alerts-grid__item">
               <AlertCard
                 alert={alert}
-                task={tasks.find(t => t.id === alert.task_id)}
+                task={tasksById.get(alert.task_id)}
                 onClick={() => showDetail(alert.id)}
               />
-            </Col>
+            </div>
           ))}
-        </Row>
+        </div>
       )}
 
       {/* 底部分页 */}

@@ -1,372 +1,186 @@
 import React from 'react';
-import {Card, Tag, Badge, Space, Typography, Tooltip} from 'antd';
+import { Card, Tooltip } from 'antd';
 import {
-    UserOutlined,
-    MobileOutlined,
-    WarningOutlined,
-    InfoCircleOutlined,
-    CloseCircleOutlined,
-    ExclamationCircleOutlined,
-    VideoCameraOutlined,
-    ClockCircleOutlined,
-    PlayCircleOutlined,
-    ApartmentOutlined,
-    FireOutlined,
-    SafetyCertificateOutlined,
+  UserOutlined,
+  MobileOutlined,
+  WarningOutlined,
+  InfoCircleOutlined,
+  CloseCircleOutlined,
+  VideoCameraOutlined,
+  ClockCircleOutlined,
+  PlayCircleOutlined,
+  ApartmentOutlined,
+  FireOutlined,
+  AppstoreOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
-import {Alert, Task} from '../types';
+import { ALERT_TYPE_CONFIG, Alert, Task } from '../types';
 import RelativeTime from './RelativeTime';
 import { appPalette } from '@/theme';
-
-const {Text, Title} = Typography;
+import './AlertCard.css';
 
 interface AlertCardProps {
-    alert: Alert;
-    task?: Task;
-    onClick?: () => void;
+  alert: Alert;
+  task?: Task;
+  onClick?: () => void;
 }
 
 // 告警类型图标映射
 const ALERT_ICONS: Record<string, React.ReactNode> = {
-    warning: <WarningOutlined/>,
-    error: <CloseCircleOutlined/>,
-    info: <InfoCircleOutlined/>,
-    critical: <FireOutlined/>,
-    person_detection: <UserOutlined/>,
-    phone_detection_2stage: <MobileOutlined/>,
+  warning: <WarningOutlined />,
+  error: <CloseCircleOutlined />,
+  info: <InfoCircleOutlined />,
+  critical: <FireOutlined />,
+  person_detection: <UserOutlined />,
+  phone_detection_2stage: <MobileOutlined />,
 };
 
 const ALERT_COLORS: Record<string, { primary: string; bg: string }> = {
-    warning: {
-        primary: appPalette.warning,
-        bg: appPalette.warningSoft,
-    },
-    error: {
-        primary: appPalette.danger,
-        bg: appPalette.dangerSoft,
-    },
-    info: {
-        primary: appPalette.info,
-        bg: appPalette.infoSoft,
-    },
-    critical: {
-        primary: appPalette.danger,
-        bg: appPalette.dangerSoft,
-    },
-    person_detection: {
-        primary: appPalette.info,
-        bg: appPalette.infoSoft,
-    },
-    phone_detection_2stage: {
-        primary: appPalette.warning,
-        bg: appPalette.warningSoft,
-    },
+  warning: {
+    primary: appPalette.warning,
+    bg: appPalette.warningSoft,
+  },
+  error: {
+    primary: appPalette.danger,
+    bg: appPalette.dangerSoft,
+  },
+  info: {
+    primary: appPalette.info,
+    bg: appPalette.infoSoft,
+  },
+  critical: {
+    primary: appPalette.danger,
+    bg: appPalette.dangerSoft,
+  },
+  person_detection: {
+    primary: appPalette.info,
+    bg: appPalette.infoSoft,
+  },
+  phone_detection_2stage: {
+    primary: appPalette.warning,
+    bg: appPalette.warningSoft,
+  },
 };
 
 // 获取默认颜色
 const DEFAULT_COLOR = {
-    primary: appPalette.info,
-    bg: appPalette.infoSoft,
+  primary: appPalette.info,
+  bg: appPalette.infoSoft,
 };
 
-const AlertCard: React.FC<AlertCardProps> = ({alert, task, onClick}) => {
-    const taskName = task?.name || `任务 #${alert.task_id}`;
-    const alertIcon = ALERT_ICONS[alert.alert_type] || <InfoCircleOutlined/>;
-    const colorScheme = ALERT_COLORS[alert.alert_type] || DEFAULT_COLOR;
-    const isCritical = alert.alert_type === 'critical' || alert.alert_type === 'error';
+const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
+  const alertType = alert.alert_type.toLowerCase();
+  const taskName = task?.name || `任务 #${alert.task_id}`;
+  const alertIcon = ALERT_ICONS[alertType] || <InfoCircleOutlined />;
+  const colorScheme = ALERT_COLORS[alertType] || DEFAULT_COLOR;
+  const alertTypeLabel = ALERT_TYPE_CONFIG[alertType]?.label || alert.alert_type.replace(/_/g, ' ');
+  const workflowName = alert.workflow_name || (alert.workflow_id ? `编排 #${alert.workflow_id}` : '未关联编排');
+  const alertMessage = alert.alert_message?.trim() || '未提供告警描述';
+  const cardStyle = {
+    '--alert-color': colorScheme.primary,
+    '--alert-soft': colorScheme.bg,
+  } as React.CSSProperties;
 
-    return (
-        <Card
-            hoverable
-            onClick={onClick}
-            style={{
-                borderRadius: 12,
-                overflow: 'hidden',
-                border: `1px solid ${colorScheme.primary}20`,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'all 0.3s ease',
-            }}
-            styles={{
-                body: {
-                    padding: '16px',
-                    background: isCritical ? `${colorScheme.bg}40` : '#fff',
-                },
-            }}
-            classNames={{
-                body: 'alert-card-body',
-            }}
-            cover={
-                <div
-                    style={{
-                        position: 'relative',
-                        aspectRatio: 16 / 9,
-                        background: `linear-gradient(135deg, ${colorScheme.bg} 0%, #ffffff 100%)`,
-                        overflow: 'hidden',
-                    }}
-                >
-                    {/* 背景装饰 */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                        background: colorScheme.primary,
-                            opacity: 0.05,
-                        }}
-                    />
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((event.key === 'Enter' || event.key === ' ') && onClick) {
+      event.preventDefault();
+      onClick();
+    }
+  };
 
-                    {alert.alert_image ? (
-                        <img
-                            alt="alert"
-                            src={`/api/image/frames/${alert.alert_image}`}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                transition: 'transform 0.3s ease',
-                            }}
-                        />
-                    ) : (
-                        <div
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 56,
-                                color: colorScheme.primary,
-                                background: `linear-gradient(135deg, ${colorScheme.bg} 0%, #ffffff 100%)`,
-                            }}
-                        >
-                            {alertIcon}
-                        </div>
-                    )}
+  return (
+    <Card
+      hoverable
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `查看${taskName}的${alertTypeLabel}告警详情` : undefined}
+      className="alert-record-card"
+      style={cardStyle}
+      styles={{ body: { padding: 0 } }}
+      cover={(
+        <div className="alert-card-media">
+          {alert.alert_image ? (
+            <img
+              alt={`${taskName}的${alertTypeLabel}告警画面`}
+              src={`/api/image/frames/${alert.alert_image}`}
+              loading="lazy"
+              decoding="async"
+              className="alert-card-image"
+            />
+          ) : (
+            <div className="alert-card-image-placeholder" aria-label="暂无告警图片">
+              {alertIcon}
+            </div>
+          )}
 
-                    {/* 顶部状态栏 */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            padding: '12px',
-                            background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 100%)',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'flex-start',
-                        }}
-                    >
-                        {/* 告警类型标签 */}
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '4px 12px',
-                                borderRadius: 20,
-                                background: colorScheme.primary,
-                                color: '#fff',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                            }}
-                        >
-                            {alertIcon}
-                            <span style={{textTransform: 'capitalize'}}>
-                                {alert.alert_type.replace(/_/g, ' ')}
-                            </span>
-                        </div>
+          <div className="alert-card-media-shade" aria-hidden="true" />
+          <div className="alert-card-media-topline">
+            <span className="alert-card-type">
+              {alertIcon}
+              <span>{alertTypeLabel}</span>
+            </span>
+            {alert.alert_video ? (
+              <span className="alert-card-video-badge">
+                <PlayCircleOutlined />
+                有录像
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )}
+    >
+      <div className="alert-card-content">
+        <div className="alert-card-source">
+          <span className="alert-card-source-icon" aria-hidden="true">
+            <VideoCameraOutlined />
+          </span>
+          <div className="alert-card-source-copy">
+            <span className="alert-card-label">视频源</span>
+            <Tooltip title={taskName} mouseEnterDelay={0.5}>
+              <strong className="alert-card-source-name">{taskName}</strong>
+            </Tooltip>
+          </div>
+        </div>
 
-                        {/* 工作流信息 */}
-                        {alert.workflow_id && (
-                            <Tooltip
-                                title={alert.workflow_name || `流程编排 #${alert.workflow_id}`}
-                            >
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 4,
-                                        padding: '4px 10px',
-                                        borderRadius: 12,
-                                        background: 'rgba(255,255,255,0.95)',
-                                        backdropFilter: 'blur(10px)',
-                                        fontSize: 11,
-                                        color: '#666',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    <ApartmentOutlined style={{fontSize: 10}}/>
-                                    <span style={{maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
-                                        {alert.workflow_name || `#${alert.workflow_id}`}
-                                    </span>
-                                </div>
-                            </Tooltip>
-                        )}
-                    </div>
+        <Tooltip title={<div className="alert-card-message-tooltip">{alertMessage}</div>} mouseEnterDelay={0.5}>
+          <div className="alert-card-message">
+            <span className="alert-card-label">告警内容</span>
+            <p>{alertMessage}</p>
+          </div>
+        </Tooltip>
 
-                    {/* 检测帧数徽章 */}
-                    {alert.detection_count > 1 && (
-                        <Tooltip title={`检测 ${alert.detection_count} 帧`}>
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    bottom: 12,
-                                    right: 12,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: '50%',
-                                    background: colorScheme.primary,
-                                    color: '#fff',
-                                    fontSize: 13,
-                                    fontWeight: 'bold',
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-                                    border: '2px solid #fff',
-                                }}
-                            >
-                                {alert.detection_count}
-                            </div>
-                        </Tooltip>
-                    )}
+        <div className="alert-card-meta">
+          <div className="alert-card-meta-row">
+            <ClockCircleOutlined aria-hidden="true" />
+            <span className="alert-card-meta-label">发生时间</span>
+            <span className="alert-card-meta-value alert-card-time">
+              <RelativeTime time={alert.alert_time} showFullTime />
+            </span>
+          </div>
+          <div className="alert-card-meta-row">
+            <ApartmentOutlined aria-hidden="true" />
+            <span className="alert-card-meta-label">算法编排</span>
+            <Tooltip title={workflowName} mouseEnterDelay={0.5}>
+              <span className="alert-card-meta-value">{workflowName}</span>
+            </Tooltip>
+          </div>
+        </div>
 
-                    {/* 视频录制标识 */}
-                    {alert.alert_video && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                bottom: 12,
-                                left: 12,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '4px 10px',
-                                borderRadius: 12,
-                                background: 'rgba(22, 119, 255, 0.95)',
-                                backdropFilter: 'blur(10px)',
-                                color: '#fff',
-                                fontSize: 11,
-                                fontWeight: 500,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                            }}
-                        >
-                            <PlayCircleOutlined style={{fontSize: 12}}/>
-                            <span>录像</span>
-                        </div>
-                    )}
-                </div>
-            }
-        >
-            <Space direction="vertical" style={{width: '100%'}} size={12}>
-                {/* 任务名称 */}
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                    }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 28,
-                            height: 28,
-                            borderRadius: 8,
-                            background: colorScheme.bg,
-                            color: colorScheme.primary,
-                        }}
-                    >
-                        <VideoCameraOutlined style={{fontSize: 14}}/>
-                    </div>
-                    <Text
-                        strong
-                        ellipsis
-                        style={{fontSize: 14, color: '#262626', flex: 1}}
-                    >
-                        {taskName}
-                    </Text>
-                </div>
-
-                {/* 告警消息 */}
-                <Tooltip title={<div style={{ whiteSpace: 'pre-wrap' }}>{alert.alert_message}</div>}>
-                    <div
-                        style={{
-                            fontSize: 13,
-                            color: '#595959',
-                            lineHeight: 1.6,
-                            padding: '10px 12px',
-                            background: `${colorScheme.bg}60`,
-                            borderRadius: 8,
-                            border: `1px solid ${colorScheme.primary}15`,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                        }}
-                    >
-                        {alert.alert_message}
-                    </div>
-                </Tooltip>
-
-                {/* 底部信息栏 */}
-                <div
-                    style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingTop: 4,
-                        borderTop: `1px solid ${colorScheme.primary}10`,
-                    }}
-                >
-                    <Space size={6}>
-                        <ClockCircleOutlined
-                            style={{
-                                fontSize: 13,
-                                color: colorScheme.primary,
-                            }}
-                        />
-                        <Text
-                            style={{
-                                fontSize: 12,
-                                color: '#8c8c8c',
-                                fontWeight: 500,
-                            }}
-                        >
-                            <RelativeTime time={alert.alert_time} showFullTime/>
-                        </Text>
-                    </Space>
-
-                    {/* 告警级别标识 */}
-                    {isCritical && (
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                fontSize: 11,
-                                color: colorScheme.primary,
-                                fontWeight: 600,
-                                padding: '2px 8px',
-                                borderRadius: 4,
-                                background: colorScheme.bg,
-                            }}
-                        >
-                            <SafetyCertificateOutlined style={{fontSize: 11}}/>
-                            <span>已确认</span>
-                        </div>
-                    )}
-                </div>
-            </Space>
-        </Card>
-    );
+        <div className="alert-card-footer">
+          <span className="alert-card-frame-count">
+            <AppstoreOutlined aria-hidden="true" />
+            检测 {alert.detection_count || 0} 帧
+          </span>
+          <span className="alert-card-detail">
+            查看详情
+            <RightOutlined aria-hidden="true" />
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
 };
 
 export default AlertCard;
