@@ -62,6 +62,7 @@ from app.core.video_probe import normalize_video_codec
 from app.core.system_metrics import collect_system_metrics
 from app.setup_database import setup_database
 from app.version import get_app_version
+from app.branding import get_company_name
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -188,6 +189,7 @@ def get_system_info():
     return jsonify({
         'success': True,
         'version': get_app_version(),
+        'company_name': get_company_name(),
     })
 
 

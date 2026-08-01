@@ -29,6 +29,7 @@ docker compose -f docker-compose.yml up -d
 如不使用消息队列，请先把 `api/worker` 的 `RABBITMQ_ENABLED` 改为 `false`，或接入外部 RabbitMQ。  
 当前 compose 已内置 PostgreSQL，应用默认通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。  
 如需改用外部 PostgreSQL，可在 `.env` 中覆盖 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。
+页面 Header 默认显示公司名称“码全科技”；可在 `.env` 中通过 `COMPANY_NAME` 修改。
 
 ### 2) CUDA/GPU 部署
 

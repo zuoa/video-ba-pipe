@@ -39,6 +39,7 @@ services:
     
     # 环境变量
     environment:
+      - COMPANY_NAME=${COMPANY_NAME:-码全科技}
       - DB_BACKEND=${DB_BACKEND:-postgres}
       - DB_HOST=${DB_HOST:-postgres}
       - DB_PORT=${DB_PORT:-5432}

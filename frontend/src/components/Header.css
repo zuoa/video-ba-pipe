@@ -72,6 +72,18 @@
   font-weight: 600;
 }
 
+.site-brand__company {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 10px;
+  border-left: 1px solid var(--app-line-soft);
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .site-nav {
   flex: 1;
   min-width: 0;
@@ -236,6 +248,10 @@
 
   .site-brand__version {
     margin-left: auto;
+  }
+
+  .site-brand__company {
+    max-width: min(32vw, 140px);
   }
 
   .site-tools {

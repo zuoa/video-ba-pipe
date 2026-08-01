@@ -20,8 +20,14 @@ export async function getCurrentUser() {
   return request('/api/auth/current');
 }
 
+export interface SystemInfo {
+  success: boolean;
+  version: string;
+  company_name: string;
+}
+
 export async function getSystemInfo() {
-  return request('/api/system/info');
+  return request<SystemInfo>('/api/system/info');
 }
 
 export async function getSystemMetrics() {

@@ -22,11 +22,14 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 
+const DEFAULT_COMPANY_NAME = '码全科技';
+
 const Header: React.FC = () => {
   const location = useLocation();
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   const [appVersion, setAppVersion] = useState<string>('');
+  const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
 
   useEffect(() => {
     let mounted = true;
@@ -36,6 +39,9 @@ const Header: React.FC = () => {
         const response = await getSystemInfo();
         if (mounted && response?.version) {
           setAppVersion(response.version);
+        }
+        if (mounted && response?.company_name) {
+          setCompanyName(response.company_name);
         }
       } catch (error) {
         // Silently keep the version tag hidden when the endpoint is unavailable.
@@ -121,6 +127,7 @@ const Header: React.FC = () => {
             <strong>{SYSTEM_NAME_ZH}</strong>
             <span>{SYSTEM_NAME_EN}</span>
           </div>
+          <span className="site-brand__company" title={companyName}>{companyName}</span>
           {appVersion ? <span className="site-brand__version">v{appVersion}</span> : null}
         </Link>
 
