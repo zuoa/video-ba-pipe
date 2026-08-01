@@ -2622,7 +2622,7 @@ class WorkflowExecutor:
         # 这里只负责保存检测到目标时的图片
         if window_detection_enabled and has_detection:
             # 保存检测图片到临时路径（用于窗口检测图片序列）
-            filepath = f"{self.video_source.source_code}/.window_detection/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}.jpg"
+            filepath = f"{self.video_source.source_code}/.window_detection/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}_wf{self.workflow_id}.jpg"
             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
 
             # 获取上游节点 ID（用于可视化）
@@ -2876,7 +2876,7 @@ class WorkflowExecutor:
 
         # 如果没有检测图片，保存当前帧
         if not detection_images:
-            filepath = f"{self.video_source.source_code}/{alert_type}/frame_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
+            filepath = f"{self.video_source.source_code}/{alert_type}/frame_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}_wf{self.workflow_id}.jpg"
             filepath_absolute = os.path.join(FRAME_SAVE_PATH, filepath)
 
             # 获取上游节点 ID（用于可视化）
