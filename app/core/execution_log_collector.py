@@ -4,7 +4,8 @@
 用于收集工作流执行过程中各节点的消息，为 Alert 节点生成格式化的 alert_message
 """
 
-from typing import List, Dict, Optional
+from collections import Counter
+from typing import Any, Collection, List, Dict, Optional
 import time
 import threading
 
@@ -68,6 +69,91 @@ class ExecutionLogCollector:
         """添加 error 级别日志（便捷方法）"""
         self.add_log(node_id, 'error', content, metadata)
 
+    def add_detection_result(
+        self,
+        node_id: str,
+        detections: Optional[List[Dict[str, Any]]],
+        node_name: Optional[str] = None,
+        has_detection: Optional[bool] = None,
+        metadata: Optional[Dict] = None,
+    ):
+        """记录可直接用于告警正文的检测摘要。"""
+        detections = [item for item in (detections or []) if isinstance(item, dict)]
+        label_counts = Counter()
+        confidences = []
+
+        for detection in detections:
+            label = (
+                detection.get('label_name')
+                or detection.get('label')
+                or detection.get('class_name')
+                or detection.get('text')
+                or '未知类别'
+            )
+            label = str(label).replace('\n', ' ').strip() or '未知类别'
+            label_counts[label[:40]] += 1
+
+            confidence = detection.get('confidence')
+            if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+                confidences.append(float(confidence))
+
+        display_name = (node_name or '目标检测').strip()
+        hit = bool(detections) if has_detection is None else bool(has_detection)
+        if detections:
+            if hit:
+                content_parts = [f"{display_name}：命中 {len(detections)} 个目标"]
+            else:
+                content_parts = [f"{display_name}：未命中，返回 {len(detections)} 个候选目标"]
+            if label_counts:
+                labels = list(label_counts.items())
+                label_text = '、'.join(f"{label} × {count}" for label, count in labels[:5])
+                if len(labels) > 5:
+                    label_text += f"等 {len(labels)} 类"
+                content_parts.append(f"类别：{label_text}")
+            if confidences:
+                min_confidence = min(confidences)
+                max_confidence = max(confidences)
+                if abs(max_confidence - min_confidence) < 0.0005:
+                    content_parts.append(f"置信度：{max_confidence:.1%}")
+                else:
+                    content_parts.append(f"置信度：{min_confidence:.1%}–{max_confidence:.1%}")
+            content = "；".join(content_parts)
+        elif hit:
+            content = f"{display_name}：命中，但未返回目标明细"
+        else:
+            content = f"{display_name}：未命中目标"
+
+        event_metadata = {
+            'event_type': 'detection',
+            'node_name': display_name,
+            'has_detection': hit,
+            'detection_count': len(detections),
+            'label_counts': dict(label_counts),
+        }
+        if confidences:
+            event_metadata.update({
+                'confidence_min': min(confidences),
+                'confidence_max': max(confidences),
+            })
+        if metadata:
+            event_metadata.update(metadata)
+        self.add_info(node_id, content, event_metadata)
+
+    def has_event(
+        self,
+        event_type: str,
+        node_id: Optional[str] = None,
+        node_ids: Optional[Collection[str]] = None,
+    ) -> bool:
+        """判断是否已记录指定类型的过程事件。"""
+        allowed_node_ids = set(node_ids) if node_ids is not None else None
+        return any(
+            log.get('metadata', {}).get('event_type') == event_type
+            and (node_id is None or log.get('node_id') == node_id)
+            and (allowed_node_ids is None or log.get('node_id') in allowed_node_ids)
+            for log in self.logs
+        )
+
     def get_logs_by_node(self, node_id: str) -> List[Dict]:
         """获取指定节点的所有日志"""
         return [log for log in self.logs if log['node_id'] == node_id]
@@ -87,7 +173,8 @@ class ExecutionLogCollector:
     def build_alert_message(
         self,
         format_type: str = 'detailed',
-        include_metadata: bool = False
+        include_metadata: bool = False,
+        node_ids: Optional[Collection[str]] = None,
     ) -> str:
         """
         构建告警消息
@@ -102,24 +189,30 @@ class ExecutionLogCollector:
         Returns:
             格式化的消息字符串
         """
-        if not self.logs:
+        allowed_node_ids = set(node_ids) if node_ids is not None else None
+        scoped_logs = [
+            log for log in self.logs
+            if allowed_node_ids is None or log.get('node_id') in allowed_node_ids
+        ]
+
+        if not scoped_logs:
             return "无执行日志"
 
         if format_type == 'detailed':
             # 自动使用智能分组格式（带节点ID）
-            return self._build_grouped_message(include_node_id=True)
+            return self._build_grouped_message(include_node_id=True, logs=scoped_logs)
 
         elif format_type == 'simple':
             # 自动使用智能分组格式（不带节点ID）
-            return self._build_grouped_message(include_node_id=False)
+            return self._build_grouped_message(include_node_id=False, logs=scoped_logs)
 
         elif format_type == 'summary':
             summary = []
 
             # 按级别分组统计
-            error_logs = self.get_logs_by_level('error')
-            warning_logs = self.get_logs_by_level('warning')
-            info_logs = self.get_logs_by_level('info')
+            error_logs = [log for log in scoped_logs if log['level'] == 'error']
+            warning_logs = [log for log in scoped_logs if log['level'] == 'warning']
+            info_logs = [log for log in scoped_logs if log['level'] == 'info']
 
             if error_logs:
                 summary.append(f"❌ 错误 ({len(error_logs)}):")
@@ -141,7 +234,11 @@ class ExecutionLogCollector:
         else:
             return f"不支持的格式类型: {format_type}"
 
-    def _build_grouped_message(self, include_node_id: bool = True) -> str:
+    def _build_grouped_message(
+        self,
+        include_node_id: bool = True,
+        logs: Optional[List[Dict]] = None,
+    ) -> str:
         """
         构建分组格式的告警消息
 
@@ -153,16 +250,19 @@ class ExecutionLogCollector:
         Args:
             include_node_id: 是否包含节点ID
         """
+        selected_logs = self.logs if logs is None else logs
+
         # 分类日志
         condition_logs = []  # 条件判断日志
         detection_logs = []  # 算法检测日志
         other_logs = []      # 其他日志
 
-        for log in self.logs:
+        for log in selected_logs:
             content = log['content']
-            if content.startswith('条件判断:'):
+            event_type = log.get('metadata', {}).get('event_type')
+            if event_type == 'condition' or content.startswith('条件判断:'):
                 condition_logs.append(log)
-            elif content.startswith('检测到 ') and ' 个目标' in content:
+            elif event_type == 'detection' or (content.startswith('检测到 ') and ' 个目标' in content):
                 detection_logs.append(log)
             else:
                 other_logs.append(log)
@@ -170,7 +270,7 @@ class ExecutionLogCollector:
         if not condition_logs and not detection_logs:
             # 如果没有检测或条件日志，返回简单格式
             lines = []
-            for log in self.logs:
+            for log in selected_logs:
                 if include_node_id:
                     lines.append(f"[{log['node_id']}] {log['content']}")
                 else:
@@ -181,7 +281,7 @@ class ExecutionLogCollector:
 
         # 按条件日志分组，每个条件日志前可能有对应的检测日志
         # 按时间顺序分组（假设日志按时间顺序记录）
-        all_logs = sorted(self.logs, key=lambda x: x.get('timestamp', 0))
+        all_logs = sorted(selected_logs, key=lambda x: x.get('timestamp', 0))
 
         # 分组：每个分支包含检测日志+条件日志
         branches = []
@@ -190,13 +290,15 @@ class ExecutionLogCollector:
         for log in all_logs:
             content = log['content']
 
-            if content.startswith('检测到 ') and ' 个目标' in content:
+            event_type = log.get('metadata', {}).get('event_type')
+
+            if event_type == 'detection' or (content.startswith('检测到 ') and ' 个目标' in content):
                 # 新的检测日志，可能开始新分支
                 if current_branch['detection'] or current_branch['condition']:
                     branches.append(current_branch)
                     current_branch = {'detection': None, 'condition': None, 'logs': []}
                 current_branch['detection'] = log
-            elif content.startswith('条件判断:'):
+            elif event_type == 'condition' or content.startswith('条件判断:'):
                 current_branch['condition'] = log
             else:
                 current_branch['logs'].append(log)
@@ -210,17 +312,23 @@ class ExecutionLogCollector:
             cond_log = branch['condition']
             det_log = branch['detection']
 
-            if not cond_log:
-                continue
-
-            metadata = cond_log.get('metadata', {})
-            condition_passed = metadata.get('condition_passed', False)
+            # 算法可以直接连到告警节点，此时没有条件日志。
+            # 旧实现会整个跳过这种分支，使告警只剩下用户填写的固定文案。
+            if cond_log:
+                metadata = cond_log.get('metadata', {})
+                condition_passed = metadata.get('condition_passed', False)
+                branch_title = f"分支 {idx + 1}: {'✓ 触发预警' if condition_passed else '未触发'}"
+            else:
+                metadata = det_log.get('metadata', {}) if det_log else {}
+                condition_passed = metadata.get(
+                    'has_detection',
+                    metadata.get('detection_count', 0) > 0,
+                )
+                branch_title = f"检测步骤 {idx + 1}: {'✓ 命中' if condition_passed else '未命中'}"
 
             if condition_passed:
                 has_passed_branch = True
-                lines.append(f"分支 {idx + 1}: ✓ 触发预警")
-            else:
-                lines.append(f"分支 {idx + 1}: 未触发")
+            lines.append(branch_title)
 
             # 检测日志
             if det_log:
@@ -230,13 +338,14 @@ class ExecutionLogCollector:
                     lines.append(f"  └─ {det_log['content']}")
 
             # 条件日志
-            content = cond_log['content']
-            condition_text = content.replace('条件判断: ', '')
+            if cond_log:
+                content = cond_log['content']
+                condition_text = content.replace('条件判断: ', '')
 
-            if include_node_id:
-                lines.append(f"  └─ [{cond_log['node_id']}] {condition_text}")
-            else:
-                lines.append(f"  └─ {condition_text}")
+                if include_node_id:
+                    lines.append(f"  └─ [{cond_log['node_id']}] {condition_text}")
+                else:
+                    lines.append(f"  └─ {condition_text}")
 
             lines.append("")  # 分支间空行
 

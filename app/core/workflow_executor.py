@@ -14,7 +14,7 @@ import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import resource_tracker
-from typing import Dict, List, Any, Optional
+from typing import Collection, Dict, List, Any, Optional
 
 from app import logger as main_logger
 from app import logging
@@ -1645,10 +1645,13 @@ class WorkflowExecutor:
                 self.node_results_cache[node_id] = result
 
             if log_collector:
-                detection_count = len(result.get('result', {}).get('detections', []))
-                log_collector.add_info(
+                detections = result.get('result', {}).get('detections', [])
+                detection_count = len(detections)
+                log_collector.add_detection_result(
                     node_id,
-                    f"外部 API 调用完成，检测到 {detection_count} 个目标",
+                    detections,
+                    node_name=api_meta.get('name') or '外部 API 检测',
+                    has_detection=result.get('has_detection', False),
                     metadata={
                         'execution_mode': execution_mode,
                         'detection_count': detection_count,
@@ -1720,12 +1723,19 @@ class WorkflowExecutor:
                             metadata={'detection_count': 0, **result_metadata},
                         )
                     else:
-                        log_collector.add_info(
+                        detections = result.get('result', {}).get('detections', [])
+                        algorithm_name = self.algorithm_datamap.get(node_id, {}).get('name')
+                        log_collector.add_detection_result(
                             node_id,
-                            f"检测到 {detection_count} 个目标",
-                            metadata={'detection_count': detection_count}
+                            detections,
+                            node_name=algorithm_name or '目标检测',
+                            has_detection=result.get('has_detection', False),
+                            metadata={
+                                'detection_count': detection_count,
+                                'algorithm_name': algorithm_name,
+                            },
                         )
-                        logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录日志: 检测到 {detection_count} 个目标")
+                        logger.debug(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 已记录检测摘要，命中 {detection_count} 个目标")
             return result
         except Exception as e:
             if log_collector:
@@ -1761,7 +1771,7 @@ class WorkflowExecutor:
                     log_collector.add_info(
                         node_id,
                         f"OCR 文字条件{'通过' if condition_passed else '未通过'}",
-                        metadata=metadata,
+                        metadata={**metadata, 'event_type': 'condition'},
                     )
             logger.info(
                 f"[Workflow-{self.workflow_id}] OCR 文字条件 {node_id}: "
@@ -1802,6 +1812,7 @@ class WorkflowExecutor:
                 node_id,
                 f"条件判断: {detection_count} {comparison_type} {target_count} = {'✓ 通过' if condition_passed else '✗ 未通过'}",
                 metadata={
+                    'event_type': 'condition',
                     'detection_count': detection_count,
                     'target_count': target_count,
                     'comparison_type': comparison_type,
@@ -1990,7 +2001,21 @@ class WorkflowExecutor:
                 log_collector.add_info(
                     node_id,
                     f"函数 {function_name} 处理完成，匹配数: {len(results)}",
-                    metadata={'function_name': function_name, 'matched_count': len(results)}
+                    metadata={
+                        'event_type': 'function',
+                        'function_name': function_name,
+                        'matched_count': len(results),
+                    }
+                )
+                log_collector.add_detection_result(
+                    node_id,
+                    all_detections,
+                    node_name=f"函数 {function_name} 输出",
+                    has_detection=len(all_detections) > 0,
+                    metadata={
+                        'function_name': function_name,
+                        'matched_count': len(results),
+                    },
                 )
                 logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 已记录日志: 函数 {function_name} 处理完成，匹配数: {len(results)}")
 
@@ -2534,6 +2559,86 @@ class WorkflowExecutor:
 
         return None
 
+    def _get_workflow_node_name(self, node_id: Optional[str], default: str = '检测节点') -> str:
+        """从工作流原始配置中取用户可读的节点名称。"""
+        if not node_id:
+            return default
+        for node_data in self.workflow_data.get('nodes', []):
+            if node_data.get('id') == node_id:
+                return str(node_data.get('name') or default)
+        return default
+
+    def _get_alert_log_scope(self, alert_node_id: str) -> set:
+        """返回当前告警节点及其所有上游祖先，用于隔离兄弟分支日志。"""
+        reverse_graph = defaultdict(set)
+        for connection in self.connections:
+            source_id = connection.get('from') or connection.get('from_node_id')
+            target_id = connection.get('to') or connection.get('to_node_id')
+            if source_id and target_id:
+                reverse_graph[target_id].add(source_id)
+
+        scope = {alert_node_id}
+        pending = [alert_node_id]
+        while pending:
+            current_id = pending.pop()
+            for upstream_id in reverse_graph.get(current_id, ()):
+                if upstream_id not in scope:
+                    scope.add(upstream_id)
+                    pending.append(upstream_id)
+        return scope
+
+    @staticmethod
+    def _compose_alert_message(
+        alert_node: AlertNodeData,
+        log_collector: Optional[ExecutionLogCollector],
+        node_ids: Optional[Collection[str]] = None,
+    ) -> str:
+        """组合用户自定义文案与实际执行过程。"""
+        custom_message = (alert_node.alert_message or '').strip()
+        execution_details = ''
+        if log_collector:
+            execution_details = log_collector.build_alert_message(
+                format_type=alert_node.message_format or 'detailed',
+                include_metadata=False,
+                node_ids=node_ids,
+            )
+            if execution_details == '无执行日志':
+                execution_details = ''
+
+        # 历史工作流普遍保存了默认占位文案“检测到目标”。
+        # 存在真实执行详情时不再把占位文案当成告警主体。
+        placeholder_messages = {'检测到目标', '检测到目标。', '告警触发', '告警触发。'}
+        if execution_details and custom_message in placeholder_messages:
+            custom_message = ''
+
+        if custom_message and execution_details:
+            return f"{custom_message}\n\n执行详情:\n{execution_details}"
+        return execution_details or custom_message or '告警触发（未记录执行详情）'
+
+    @staticmethod
+    def _format_window_trigger_log(trigger_condition: Dict[str, Any], trigger_stats: Dict[str, Any]) -> str:
+        """把时间窗口统计和通过规则格式化为可读记录。"""
+        mode = trigger_condition.get('mode', 'ratio')
+        threshold = trigger_condition.get('threshold', 0.3)
+        mode_rules = {
+            'ratio': f"命中比例 ≥ {float(threshold):.1%}",
+            'count': f"命中帧数 ≥ {threshold}",
+            'consecutive': f"最大连续命中 ≥ {threshold} 帧",
+        }
+        return (
+            f"时间窗口条件通过：{trigger_stats.get('window_size', trigger_condition.get('window_size', 30))} 秒内"
+            f"处理 {trigger_stats.get('total_count', 0)} 帧，命中 {trigger_stats.get('detection_count', 0)} 帧"
+            f"（{trigger_stats.get('detection_ratio', 0):.1%}），最大连续命中 "
+            f"{trigger_stats.get('max_consecutive', 0)} 帧；规则：{mode_rules.get(mode, mode)}"
+        )
+
+    @staticmethod
+    def _format_direct_trigger_log(has_detection: bool, detection_count: int) -> str:
+        """格式化未启用时间窗口时的当前帧命中原因。"""
+        if has_detection and detection_count == 0:
+            return "当前帧触发条件通过：上游命中信号为真，但未返回目标明细；未启用时间窗口"
+        return f"当前帧触发条件通过：上游有效结果 {detection_count} 个，未启用时间窗口"
+
     def _execute_output(self, node_id, context):
         """
         执行输出/告警节点
@@ -2599,6 +2704,8 @@ class WorkflowExecutor:
             logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不是 Alert 节点")
             return
 
+        alert_log_scope = self._get_alert_log_scope(node_id)
+
         # 从 context 获取检测数据
         has_detection = context.get('has_detection', False)
         frame = context['frame']
@@ -2609,6 +2716,18 @@ class WorkflowExecutor:
         label_color = context.get('label_color', '#FF0000')  # 默认红色
         storage_pressure = self._get_storage_pressure() if has_detection else None
         media_allowed = storage_pressure is None or storage_pressure.allow_media
+
+        # 兼容缓存结果、旧节点和其他未主动写入日志的执行器。
+        # 只要当前 Alert 收到了检测结果，最终正文就不能只剩固定文案。
+        if log_collector and not log_collector.has_event('detection', node_ids=alert_log_scope):
+            upstream_node_id = context.get('upstream_node_id')
+            log_collector.add_detection_result(
+                upstream_node_id or node_id,
+                result.get('detections', []),
+                node_name=self._get_workflow_node_name(upstream_node_id),
+                has_detection=has_detection,
+                metadata={'recovered_at_alert_node': True},
+            )
 
         logger.debug(
             f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 收到结果: has_detection={has_detection}, 检测数={detection_count}")
@@ -2727,22 +2846,7 @@ class WorkflowExecutor:
             for idx, log in enumerate(log_collector.logs):
                 logger.debug(f"[Workflow-{self.workflow_id}] 日志 {idx + 1}: [{log['node_id']}] {log['content']}")
 
-            # 构建执行详情消息
-            execution_details = log_collector.build_alert_message(
-                format_type=message_format,
-                include_metadata=False
-            )
-
-            logger.debug(f"[Workflow-{self.workflow_id}] 执行详情: {execution_details}")
-
-            # 组合用户自定义消息和执行详情
-            custom_message = alert_node.alert_message or ""
-            if custom_message and execution_details and execution_details != "无执行日志":
-                alert_message = f"{custom_message}\n\n执行详情:\n{execution_details}"
-            elif execution_details and execution_details != "无执行日志":
-                alert_message = execution_details
-            else:
-                alert_message = custom_message
+            alert_message = self._compose_alert_message(alert_node, log_collector, alert_log_scope)
 
             logger.debug(f"[Workflow-{self.workflow_id}] 最终告警消息: {alert_message}")
         else:
@@ -2781,6 +2885,21 @@ class WorkflowExecutor:
                 f"连续: {trigger_stats['max_consecutive']} 次)"
             )
 
+        if log_collector:
+            if trigger_stats:
+                trigger_log = self._format_window_trigger_log(trigger_condition, trigger_stats)
+            else:
+                trigger_log = self._format_direct_trigger_log(has_detection, detection_count)
+            log_collector.add_info(
+                node_id,
+                trigger_log,
+                metadata={
+                    'event_type': 'trigger',
+                    'condition_passed': True,
+                    'trigger_stats': trigger_stats or {},
+                },
+            )
+
         # 步骤2：检查抑制期（触发后冷却期）
         not_suppressed, suppression_stats = self.window_detector.check_suppression(
             source_id=self.video_source.id,
@@ -2802,6 +2921,17 @@ class WorkflowExecutor:
                     f"(剩余冷却时间: {suppression_stats['cooldown_remaining']:.2f}秒)"
                 )
             return
+
+        if log_collector and suppression and suppression.get('enable', False):
+            log_collector.add_info(
+                node_id,
+                f"告警抑制检查通过：当前不在 {suppression.get('seconds', 60)} 秒冷却期内",
+                metadata={
+                    'event_type': 'suppression',
+                    'suppression_passed': True,
+                    'cooldown_seconds': suppression.get('seconds', 60),
+                },
+            )
 
         vl_validation = alert_node.vl_validation or {}
         if vl_validation.get('enable'):
@@ -2839,6 +2969,7 @@ class WorkflowExecutor:
                             node_id,
                             f"VL核验通过: {vl_result.reason or '允许告警'}",
                             metadata={
+                                'event_type': 'validation',
                                 'vl_checked': True,
                                 'vl_allowed': True,
                                 'vl_confidence': vl_result.confidence,
@@ -2849,6 +2980,7 @@ class WorkflowExecutor:
                             node_id,
                             f"VL核验未通过: {vl_result.reason or '判定为非真实告警'}",
                             metadata={
+                                'event_type': 'validation',
                                 'vl_checked': True,
                                 'vl_allowed': False,
                                 'vl_confidence': vl_result.confidence,
@@ -2858,7 +2990,7 @@ class WorkflowExecutor:
                     log_collector.add_warning(
                         node_id,
                         f"VL核验已跳过: {vl_result.reason or '未执行'}",
-                        metadata={'vl_checked': False}
+                        metadata={'event_type': 'validation', 'vl_checked': False}
                     )
 
             if not vl_result.allowed:
@@ -2960,6 +3092,10 @@ class WorkflowExecutor:
                 f"[Workflow-{self.workflow_id}] 磁盘使用率 {storage_pressure.used_percent:.1f}% "
                 "已进入仅保留告警元数据模式"
             )
+
+        # 窗口条件、抑制检查和 VL 复核都在候选消息之后发生，
+        # 创建记录前必须重新构建，才能保存完整的实际触发链路。
+        alert_message = self._compose_alert_message(alert_node, log_collector, alert_log_scope)
 
         # 创建告警记录
         logger.info(f"[Workflow-{self.workflow_id}] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
@@ -3603,6 +3739,8 @@ class WorkflowExecutor:
                 log_collector.add_warning(node_id, "不是 Alert 节点")
             return
 
+        alert_log_scope = self._get_alert_log_scope(node_id)
+
         # 从 context 获取检测数据
         has_detection = context.get('has_detection', False)
         result = context['result']
@@ -3667,23 +3805,7 @@ class WorkflowExecutor:
             alert_type = alert_node.alert_type or "detection"
             alert_level = alert_node.alert_level or "info"
 
-            # 获取消息格式类型
-            message_format = alert_node.message_format or 'detailed'
-
-            # 构建执行详情消息
-            execution_details = log_collector.build_alert_message(
-                format_type=message_format,
-                include_metadata=False
-            )
-
-            # 组合消息
-            custom_message = alert_node.alert_message or ""
-            if custom_message and execution_details and execution_details != "无执行日志":
-                alert_message = f"{custom_message}\n\n执行详情:\n{execution_details}"
-            elif execution_details and execution_details != "无执行日志":
-                alert_message = execution_details
-            else:
-                alert_message = custom_message
+            alert_message = self._compose_alert_message(alert_node, log_collector, alert_log_scope)
 
             # 记录告警消息（测试模式）
             log_collector.add_info(

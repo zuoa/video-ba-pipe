@@ -3,6 +3,7 @@ import threading
 import numpy as np
 
 from app.core.workflow_executor import WorkflowExecutor
+from app.core.execution_log_collector import ExecutionLogCollector
 from app.core.workflow_types import ExternalApiNodeData, create_node_data
 
 
@@ -181,3 +182,51 @@ def test_handle_external_api_node_attaches_visualized_image_in_test_mode():
     assert result['result']['detections'][0]['box'] == [1, 2, 6, 7]
     assert visualization_calls[0]['detections'] == result['result']['detections']
     assert executor.node_results_cache['ext_1']['result_image'] == result['result_image']
+
+
+def test_external_api_hit_without_boxes_is_preserved_in_detection_log():
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow_id = 1
+    executor.video_source = None
+    executor.connections = []
+    executor.node_results_cache = {}
+    executor.external_api_datamap = {
+        'ext_1': {
+            'id': 9,
+            'name': 'Remote API',
+            'enabled': True,
+            'request_template': {},
+        }
+    }
+    executor.external_api_configs = {
+        'ext_1': {
+            'execution_mode': 'sync',
+            'include_image': False,
+            'include_upstream_results': False,
+            'output_mapping': {
+                'has_detection_path': 'summary.hit',
+                'detections_path': 'items',
+            },
+        }
+    }
+    executor._state_lock = threading.Lock()
+    executor._submit_external_api_request = lambda _node_id, _payload: {
+        'status_code': 200,
+        'body': {'summary': {'hit': True}, 'items': []},
+    }
+    collector = ExecutionLogCollector()
+
+    result = executor._handle_external_api_node(
+        'ext_1',
+        {
+            'frame': np.zeros((8, 8, 3), dtype=np.uint8),
+            'frame_timestamp': 123.0,
+            'log_collector': collector,
+        },
+    )
+
+    assert result['has_detection'] is True
+    assert result['result']['detections'] == []
+    assert collector.logs[-1]['metadata']['has_detection'] is True
+    assert collector.logs[-1]['metadata']['detection_count'] == 0
+    assert '命中，但未返回目标明细' in collector.logs[-1]['content']
