@@ -10,6 +10,7 @@ Current backends:
 
 import json
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -1192,6 +1193,8 @@ class SharedUltralyticsBackend(BaseYoloBackend):
 
         self.client = SharedInferenceClient(model_path, model_info, config)
         self.model = self.client
+        self._overload_count = 0
+        self._last_overload_log_at = float("-inf")
 
     def infer(self, frame: np.ndarray):
         from app.core.shared_inference import SharedInferenceOverloaded
@@ -1199,7 +1202,15 @@ class SharedUltralyticsBackend(BaseYoloBackend):
         try:
             response = self.client.infer(frame, self.config)
         except SharedInferenceOverloaded as exc:
-            logger.warning(f"共享推理队列已满，丢弃当前分析帧: {exc}")
+            self._overload_count += 1
+            now = time.monotonic()
+            if now - self._last_overload_log_at >= 10.0:
+                logger.warning(
+                    f"共享推理队列已满，已丢弃 {self._overload_count} "
+                    f"个分析帧: {exc}"
+                )
+                self._overload_count = 0
+                self._last_overload_log_at = now
             return [], [], {
                 "shared_inference": True,
                 "overloaded": True,

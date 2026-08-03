@@ -1,5 +1,6 @@
 import argparse
 import logging
+import math
 import os
 import signal
 import sys
@@ -108,6 +109,22 @@ class DecoderWorker:
         self.expected_fps = self.analysis_target_fps if self.analysis_sample_mode == 'fps' else 1
         self.fps_check_grace_period = 30  # 帧率检查宽限期（秒），启动后30秒内不检查帧率
 
+    def _required_decode_output_fps(self, source_fps: int) -> int:
+        """Return the minimum decoder output rate needed by active consumers."""
+        source_fps = max(1, int(source_fps))
+        if self.analysis_sample_mode == 'all':
+            analysis_fps = source_fps
+        elif self.analysis_sample_mode == 'interval':
+            interval = max(float(self.analysis_sample_interval), 0.001)
+            analysis_fps = max(1, math.ceil(1.0 / interval))
+        else:
+            analysis_fps = self.analysis_target_fps
+
+        required_fps = analysis_fps
+        if self.recording_buffer_name:
+            required_fps = max(required_fps, self.recording_target_fps)
+        return min(source_fps, required_fps)
+
     def setup(self, source=None):
         """初始化所有组件"""
         try:
@@ -195,20 +212,44 @@ class DecoderWorker:
             input_format = self.decoder_config.get('input_format', 'h264')
             output_format = self.decoder_config.get('output_format', VIDEO_FRAME_PIXEL_FORMAT)
 
-            self.decoder = DecoderFactory.create_decoder(
-                decoder_type,
-                decoder_id=decoder_id,
-                width=width,
-                height=height,
-                input_format=input_format,
-                output_format=output_format,
-                threads=int(self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)),
-                keyframes_only=bool(
+            decoder_kwargs = {
+                'decoder_id': decoder_id,
+                'width': width,
+                'height': height,
+                'input_format': input_format,
+                'output_format': output_format,
+                'threads': int(
+                    self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)
+                ),
+                'keyframes_only': bool(
                     self.decoder_config.get('keyframes_only', True)
                 ),
-                output_queue_size=int(
-                    self.decoder_config.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)
+                'output_queue_size': int(
+                    self.decoder_config.get(
+                        'output_queue_size',
+                        DECODER_OUTPUT_QUEUE_SIZE,
+                    )
                 ),
+            }
+            if decoder_type.lower() in {'jetson_gst', 'jetson', 'nvv4l2'}:
+                source_fps = int(source.source_fps) if source is not None else 0
+                output_fps = (
+                    self._required_decode_output_fps(source_fps)
+                    if source_fps > 0
+                    else 0
+                )
+                decoder_kwargs.update(
+                    input_fps=source_fps,
+                    output_fps=output_fps,
+                )
+                logger.info(
+                    f"Jetson 硬解输出采样: input={source_fps or 'unknown'} fps, "
+                    f"required={output_fps or 'unlimited'} fps"
+                )
+
+            self.decoder = DecoderFactory.create_decoder(
+                decoder_type,
+                **decoder_kwargs,
             )
             logger.info(f"已创建解码器: {decoder_type} ({width}x{height})")
 

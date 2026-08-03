@@ -16,6 +16,8 @@ from app import logger
 class WindowDetector:
     """纯内存时间窗口检测器"""
 
+    SUPPRESSION_LOG_INTERVAL_SECONDS = 10.0
+
     def __init__(self):
         # 检测记录缓冲区: {(source_id, node_id): deque([(timestamp, has_detection, image_path), ...])}
         self.buffers: Dict[Tuple[int, str], deque] = {}
@@ -28,6 +30,7 @@ class WindowDetector:
 
         # 最后触发时间（用于抑制）: {(source_id, node_id): last_trigger_time}
         self.last_trigger_times: Dict[Tuple[int, str], float] = {}
+        self.last_suppression_log_times: Dict[Tuple[int, str], float] = {}
 
         # 统计缓存（避免重复计算）: {(source_id, node_id): (cache_time, stats)}
         self.stats_cache: Dict[Tuple[int, str], Tuple[float, dict]] = {}
@@ -57,23 +60,34 @@ class WindowDetector:
 
         if not trigger_config or not trigger_config.get('enable', False):
             # 未启用窗口检测，使用默认通过配置
-            self.configs[key] = {
+            normalized_config = {
                 'enable': False,
                 'type': 'trigger_condition',
                 'mode': 'ratio',
                 'window_size': 30,
                 'threshold': 0.3,
             }
-            logger.info(f"[WindowDetector] 节点 {node_id} 未启用窗口检测，默认通过所有检测")
+            log_message = (
+                f"[WindowDetector] 节点 {node_id} "
+                f"未启用窗口检测，默认通过所有检测"
+            )
         else:
-            self.configs[key] = {
+            normalized_config = {
                 'enable': True,
                 'type': 'trigger_condition',
                 'mode': trigger_config.get('mode', 'ratio'),
                 'window_size': trigger_config.get('window_size', 30),
                 'threshold': trigger_config.get('threshold', 0.3),
             }
-            logger.info(f"[WindowDetector] 加载触发条件配置 Source={source_id}, Node={node_id}: {self.configs[key]}")
+            log_message = (
+                f"[WindowDetector] 加载触发条件配置 Source={source_id}, "
+                f"Node={node_id}: {normalized_config}"
+            )
+
+        if self.configs.get(key) == normalized_config:
+            return
+        self.configs[key] = normalized_config
+        logger.info(log_message)
 
     def load_suppression(self, source_id: int, node_id: str, suppression_config: dict):
         """
@@ -92,13 +106,21 @@ class WindowDetector:
             # 未启用抑制，删除抑制配置
             if key in self.suppression_configs:
                 del self.suppression_configs[key]
+                self.last_suppression_log_times.pop(key, None)
                 logger.info(f"[WindowDetector] 节点 {node_id} 禁用告警抑制")
         else:
-            self.suppression_configs[key] = {
+            normalized_config = {
                 'enable': True,
                 'seconds': suppression_config.get('seconds', 60),
             }
-            logger.info(f"[WindowDetector] 加载告警抑制配置 Source={source_id}, Node={node_id}: {self.suppression_configs[key]}")
+            if self.suppression_configs.get(key) == normalized_config:
+                return
+            self.suppression_configs[key] = normalized_config
+            self.last_suppression_log_times.pop(key, None)
+            logger.info(
+                f"[WindowDetector] 加载告警抑制配置 Source={source_id}, "
+                f"Node={node_id}: {normalized_config}"
+            )
 
     def add_record(self, source_id: int, node_id: str, timestamp: float, has_detection: bool, image_path: str = None):
         """
@@ -203,10 +225,14 @@ class WindowDetector:
         if current_time - last_trigger < cooldown_seconds:
             # 在抑制期内
             time_since_trigger = current_time - last_trigger
-            logger.info(
-                f"[WindowDetector] 告警抑制中 Source={source_id}, Node={node_id}, "
-                f"已过{time_since_trigger:.2f}秒，还需{cooldown_seconds - time_since_trigger:.2f}秒"
-            )
+            last_log_time = self.last_suppression_log_times.get(key, float('-inf'))
+            if current_time - last_log_time >= self.SUPPRESSION_LOG_INTERVAL_SECONDS:
+                self.last_suppression_log_times[key] = current_time
+                logger.info(
+                    f"[WindowDetector] 告警抑制中 Source={source_id}, Node={node_id}, "
+                    f"已过{time_since_trigger:.2f}秒，"
+                    f"还需{cooldown_seconds - time_since_trigger:.2f}秒"
+                )
             return False, {
                 'suppressed': True,
                 'cooldown_remaining': cooldown_seconds - time_since_trigger,
@@ -227,6 +253,7 @@ class WindowDetector:
         """
         key = (source_id, node_id)
         self.last_trigger_times[key] = trigger_time
+        self.last_suppression_log_times.pop(key, None)
 
         # 获取抑制配置用于日志
         if key in self.suppression_configs:
@@ -367,6 +394,7 @@ class WindowDetector:
         if key in self.last_trigger_times:
             del self.last_trigger_times[key]
             logger.info(f"[WindowDetector] 清空触发时间记录 Source={source_id}, Node={node_id}")
+        self.last_suppression_log_times.pop(key, None)
     
     def get_memory_usage(self) -> dict:
         """获取内存使用情况"""
@@ -490,4 +518,3 @@ def get_window_detector() -> WindowDetector:
         _window_detector_instance = WindowDetector()
         logger.info("[WindowDetector] 初始化全局实例")
     return _window_detector_instance
-

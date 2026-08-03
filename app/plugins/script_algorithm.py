@@ -8,7 +8,7 @@ import uuid
 import numpy as np
 
 from app import logger
-from app.config import VIDEO_FRAME_PIXEL_FORMAT
+from app.config import VIDEO_FRAME_PIXEL_FORMAT, WORKFLOW_FRAME_LOGS_ENABLED
 from app.core.algorithm import BaseAlgorithm
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import (
@@ -329,11 +329,14 @@ class ScriptAlgorithm(BaseAlgorithm):
                 detections = filtered_detections
 
             if detections:
-                logger.info(
-                    f"[{self.name}] 推理完成: detections={len(detections)}, exec_time_ms={exec_time_ms:.2f}, "
-                    f"script_path={self.script_path}, source_id={self.config.get('source_id')}, "
-                    f"metadata={self._metadata_summary(metadata)}"
-                )
+                if WORKFLOW_FRAME_LOGS_ENABLED:
+                    logger.info(
+                        f"[{self.name}] 推理完成: detections={len(detections)}, "
+                        f"exec_time_ms={exec_time_ms:.2f}, "
+                        f"script_path={self.script_path}, "
+                        f"source_id={self.config.get('source_id')}, "
+                        f"metadata={self._metadata_summary(metadata)}"
+                    )
             else:
                 self._empty_detection_count += 1
                 now = time.time()

@@ -230,6 +230,12 @@ INFERENCE_MODEL_MEMORY_MARGIN_PERCENT = min(
 RESOURCE_PROFILING_ENABLED = os.getenv('RESOURCE_PROFILING_ENABLED', 'false').lower() in ('true', '1', 'yes')
 RESOURCE_PROFILE_LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv('RESOURCE_PROFILE_LOG_INTERVAL_SECONDS', '30')))
 
+# 实时帧热路径诊断日志。默认关闭，避免多路视频把逐节点、逐推理日志
+# 同时写入控制台和轮转文件；排障时可临时开启。
+WORKFLOW_FRAME_LOGS_ENABLED = os.getenv(
+    'WORKFLOW_FRAME_LOGS_ENABLED', 'false'
+).lower() in ('true', '1', 'yes', 'on')
+
 # Source host 读取分析缓冲区时是否使用共享内存只读视图，避免复制最新帧。
 # 注意：只读视图可能在 buffer 环绕后被新帧覆盖，只有在 workflow 处理耗时稳定小于 buffer 时长时才建议开启。
 WORKFLOW_ZERO_COPY_FRAMES = os.getenv('WORKFLOW_ZERO_COPY_FRAMES', 'false').lower() in ('true', '1', 'yes')

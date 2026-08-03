@@ -240,6 +240,50 @@ class VideoRingBuffer:
         self._record_peek_profile((time.perf_counter() - started_at) * 1000, copied=True)
         return frame, timestamp
 
+    def peek_if_newer_with_timestamp(
+        self,
+        last_timestamp: Optional[float],
+        index: int = -1,
+        *,
+        copy: bool = True,
+    ) -> Optional[Tuple[np.ndarray, float]]:
+        """Return a frame only when its timestamp differs from ``last_timestamp``.
+
+        The timestamp comparison happens while holding the same lock used to
+        resolve the frame slot. This avoids copying the latest frame on every
+        polling iteration when a producer writes much less frequently than a
+        consumer polls.
+        """
+        started_at = time.perf_counter()
+        frame = None
+        timestamp = None
+        with self._lock:
+            write_idx, read_idx, count, _, _, _ = self._read_metadata()
+            if count == 0 or index >= count or index < -count:
+                return None
+
+            actual_idx = (
+                (write_idx + index) % self.capacity
+                if index < 0
+                else (read_idx + index) % self.capacity
+            )
+            timestamp = self._read_timestamp(actual_idx)
+            if last_timestamp is None or timestamp != last_timestamp:
+                offset = self._get_frame_offset(actual_idx)
+                frame = (
+                    self._frame_from_shm(offset)
+                    if copy
+                    else self._frame_view_from_shm(offset)
+                )
+
+        self._record_peek_profile(
+            (time.perf_counter() - started_at) * 1000,
+            copied=copy and frame is not None,
+        )
+        if frame is None:
+            return None
+        return frame, timestamp
+
     def peek_view_with_timestamp(self, index: int = 0) -> Optional[Tuple[np.ndarray, float]]:
         """Return a read-only shared-memory view without copying frame bytes.
 

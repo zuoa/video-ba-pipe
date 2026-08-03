@@ -35,6 +35,7 @@ WORKFLOW_MAX_CONSECUTIVE_ERRORS = 10
 BUFFER_CONNECT_MAX_RETRIES = 10
 BUFFER_CONNECT_RETRY_INTERVAL_SECONDS = 1.0
 RUNNER_CLEANUP_WAIT_TIMEOUT_SECONDS = 5.0
+FRAME_POLL_INTERVAL_SECONDS = 0.01
 
 
 class WorkflowRunner:
@@ -336,19 +337,16 @@ class SourceWorkflowHost:
                     logger.warning(f"[SourceHost:{self.source_id}] 无可运行工作流，宿主进程退出")
                     break
 
-                if WORKFLOW_ZERO_COPY_FRAMES:
-                    peek_result = self.buffer.peek_view_with_timestamp(-1)
-                else:
-                    peek_result = self.buffer.peek_with_timestamp(-1)
+                peek_result = self.buffer.peek_if_newer_with_timestamp(
+                    self.last_frame_timestamp,
+                    -1,
+                    copy=not WORKFLOW_ZERO_COPY_FRAMES,
+                )
                 if peek_result is None:
-                    time.sleep(0.01)
+                    time.sleep(FRAME_POLL_INTERVAL_SECONDS)
                     continue
 
                 frame_nv12, frame_timestamp = peek_result
-                if self.last_frame_timestamp == frame_timestamp:
-                    time.sleep(0.001)
-                    continue
-
                 self.last_frame_timestamp = frame_timestamp
 
                 for workflow_id, runner in list(self.runners.items()):

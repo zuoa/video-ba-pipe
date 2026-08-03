@@ -115,6 +115,40 @@ def test_worker_requests_single_source_full_frame_fallback(monkeypatch):
     assert worker._should_request_software_full_frame_fallback(120.0) is False
 
 
+def test_worker_jetson_decode_rate_covers_analysis_and_recording_consumers():
+    analysis_only = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        analysis_config={'mode': 'fps', 'fps': 2},
+        recording_config={'fps': 3},
+    )
+    with_recording = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name='recording',
+        source_info={},
+        analysis_config={'mode': 'fps', 'fps': 2},
+        recording_config={'fps': 3},
+    )
+
+    assert analysis_only._required_decode_output_fps(25) == 2
+    assert with_recording._required_decode_output_fps(25) == 3
+
+
+def test_worker_disables_jetson_frame_drop_for_all_frame_analysis():
+    worker = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        analysis_config={'mode': 'all', 'fps': 2},
+    )
+
+    assert worker._required_decode_output_fps(25) == 25
+
+
 def test_orchestrator_switches_only_failed_source_and_clears_backoff():
     source = SimpleNamespace(id=2, source_url='rtsp://camera/dy01')
     orchestrator = Orchestrator.__new__(Orchestrator)

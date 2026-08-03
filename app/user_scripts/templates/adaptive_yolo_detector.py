@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Tuple
 
 import numpy as np
 
+from app.config import WORKFLOW_FRAME_LOGS_ENABLED
 from app.core.model_resolver import get_model_resolver
 from app.user_scripts.common.result import build_result
 from app.user_scripts.common.roi import (
@@ -456,10 +457,12 @@ def process(
         metadata["detections_before_roi"] = detections_before_roi
         metadata["roi_filtered_count"] = roi_filtered_count
 
-    logger.info(
-        f"[自适应YOLO检测] 完成: backend={backend.name}, detections={len(detections)}, "
-        f"time={processing_time:.2f}ms, model={state.get('model_path')}"
-    )
+    if WORKFLOW_FRAME_LOGS_ENABLED:
+        logger.info(
+            f"[自适应YOLO检测] 完成: backend={backend.name}, "
+            f"detections={len(detections)}, time={processing_time:.2f}ms, "
+            f"model={state.get('model_path')}"
+        )
     return build_result(detections, metadata=metadata)
 
 

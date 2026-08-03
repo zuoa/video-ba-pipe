@@ -1,3 +1,4 @@
+import math
 import queue
 import threading
 import time
@@ -66,6 +67,13 @@ class JetsonGStreamerDecoder(BaseDecoder):
                 f"Jetson hardware decoder does not support output format: {self.output_format}"
             )
 
+        self.input_fps = max(0.0, float(kwargs.get("input_fps") or 0.0))
+        self.output_fps = max(0.0, float(kwargs.get("output_fps") or 0.0))
+        self.drop_frame_interval = self._calculate_drop_frame_interval(
+            self.input_fps,
+            self.output_fps,
+        )
+
         self.Gst = None
         self.GstVideo = None
         self.pipeline = None
@@ -100,15 +108,29 @@ class JetsonGStreamerDecoder(BaseDecoder):
             **kwargs,
         )
 
+    @staticmethod
+    def _calculate_drop_frame_interval(input_fps: float, output_fps: float) -> int:
+        """Translate an input/output FPS ratio to nvv4l2decoder semantics."""
+        if input_fps <= 0 or output_fps <= 0 or output_fps >= input_fps:
+            return 0
+
+        # nvv4l2decoder emits every Nth frame. Floor keeps the emitted FPS at
+        # or slightly above the requested consumer rate.
+        interval = math.floor(input_fps / output_fps)
+        return min(30, interval) if interval > 1 else 0
+
     def build_pipeline_description(self) -> str:
         input_caps, parser = self._PARSER_BY_CODEC[self.input_format]
         output_format = self._GST_FORMAT_BY_OUTPUT[self.output_format]
         # nvv4l2decoder 降低显存占用（多路并发时），属性不存在会回退重建
-        decoder_element = (
-            "nvv4l2decoder num-extra-surfaces=0"
-            if self._use_decoder_props
-            else "nvv4l2decoder"
-        )
+        decoder_properties = ["num-extra-surfaces=0"]
+        if self.drop_frame_interval > 1:
+            decoder_properties.append(
+                f"drop-frame-interval={self.drop_frame_interval}"
+            )
+        decoder_element = "nvv4l2decoder"
+        if self._use_decoder_props:
+            decoder_element += " " + " ".join(decoder_properties)
         pipeline = [
             (
                 "appsrc name=source is-live=true format=time do-timestamp=true "

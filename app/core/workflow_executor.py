@@ -31,6 +31,7 @@ from app.config import (
     LOG_SAVE_PATH,
     DETECTION_JSONL_LOG_ENABLED,
     VIDEO_FRAME_PIXEL_FORMAT,
+    WORKFLOW_FRAME_LOGS_ENABLED,
     RESOURCE_PROFILING_ENABLED,
     RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
     SOURCE_ROTATION_DRAIN_GRACE_SECONDS,
@@ -1216,7 +1217,11 @@ class WorkflowExecutor:
             algorithm_name = self.algorithm_datamap[node_id].get('name')
             label_color = self.algorithm_datamap[node_id].get('label_color', '#FF0000')
 
-            logger.info(f"[Workflow-{self.workflow_id}] 算法节点 {node_id} 处理完成，检测到目标: {has_detection}")
+            if WORKFLOW_FRAME_LOGS_ENABLED:
+                logger.info(
+                    f"[Workflow-{self.workflow_id}] 算法节点 {node_id} "
+                    f"处理完成，检测到目标: {has_detection}"
+                )
 
             # 返回结果，包含节点 ID 和 label_color（用于下游 Alert 节点）
             return {
@@ -2190,7 +2195,11 @@ class WorkflowExecutor:
                 }
             return context
 
-        logger.info(f"[Workflow-{self.workflow_id}] 执行节点 {node_id} (类型: {node_type})")
+        if WORKFLOW_FRAME_LOGS_ENABLED:
+            logger.info(
+                f"[Workflow-{self.workflow_id}] 执行节点 {node_id} "
+                f"(类型: {node_type})"
+            )
 
         try:
             result = handler(node_id, context)

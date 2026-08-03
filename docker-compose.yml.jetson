@@ -43,6 +43,7 @@ x-jetson-environment: &jetson-environment
   WORKFLOW_ZERO_COPY_FRAMES: ${WORKFLOW_ZERO_COPY_FRAMES:-false}
   SOURCE_HOST_WORKFLOW_NODE_WORKERS: ${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
   RESOURCE_PROFILING_ENABLED: ${RESOURCE_PROFILING_ENABLED:-false}
+  WORKFLOW_FRAME_LOGS_ENABLED: ${WORKFLOW_FRAME_LOGS_ENABLED:-false}
   OOM_CIRCUIT_BREAKER_ENABLED: ${OOM_CIRCUIT_BREAKER_ENABLED:-true}
   OOM_CIRCUIT_FAILURE_THRESHOLD: ${OOM_CIRCUIT_FAILURE_THRESHOLD:-3}
   OOM_CIRCUIT_OPEN_SECONDS: ${OOM_CIRCUIT_OPEN_SECONDS:-600}
@@ -71,7 +72,7 @@ x-jetson-environment: &jetson-environment
   ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
   ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
   MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
-  RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+  RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
   RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
   RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
   RABBITMQ_USER: ${RABBITMQ_USER:-admin}
@@ -151,8 +152,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
 
   worker:
     image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
@@ -176,8 +175,6 @@ services:
       storage-guard:
         condition: service_completed_successfully
       postgres:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
 
   frontend:
@@ -209,35 +206,10 @@ services:
       - video-ba-network
     logging: *default-logging
 
-  rabbitmq:
-    image: ${RABBITMQ_IMAGE:-rabbitmq:3.12-management-alpine}
-    container_name: video-ba-rabbitmq-jetson
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    networks:
-      - video-ba-network
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
 networks:
   video-ba-network:
     driver: bridge
 
 volumes:
   postgres-data:
-    driver: local
-  rabbitmq-data:
     driver: local

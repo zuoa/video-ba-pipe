@@ -38,6 +38,45 @@ def test_jetson_pipeline_uses_expected_hardware_decoder(codec, caps, parser):
     assert "appsink name=sink" in pipeline
 
 
+def test_jetson_pipeline_drops_frames_before_cpu_mapping():
+    decoder = JetsonGStreamerDecoder(
+        decoder_id=7,
+        width=16,
+        height=8,
+        input_format="h264",
+        output_format="nv12",
+        input_fps=25,
+        output_fps=2,
+    )
+
+    pipeline = decoder.build_pipeline_description()
+
+    assert decoder.drop_frame_interval == 12
+    assert "nvv4l2decoder num-extra-surfaces=0 drop-frame-interval=12" in pipeline
+
+
+@pytest.mark.parametrize(
+    ("input_fps", "output_fps", "expected_interval"),
+    [
+        (25, 25, 0),
+        (25, 30, 0),
+        (25, 3, 8),
+        (60, 1, 30),
+        (0, 2, 0),
+    ],
+)
+def test_jetson_drop_frame_interval_calculation(
+    input_fps, output_fps, expected_interval
+):
+    assert (
+        JetsonGStreamerDecoder._calculate_drop_frame_interval(
+            input_fps,
+            output_fps,
+        )
+        == expected_interval
+    )
+
+
 @pytest.mark.parametrize(
     ("output_format", "gst_format", "shape"),
     [
