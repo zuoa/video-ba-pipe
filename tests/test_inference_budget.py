@@ -32,6 +32,13 @@ def test_read_memory_snapshot_excludes_swap_from_available(tmp_path):
     assert snapshot.swap_used_mb == 7
 
 
+def test_read_memory_snapshot_falls_back_to_psutil_off_linux(tmp_path):
+    snapshot = read_memory_snapshot(str(tmp_path / "missing-meminfo"))
+    assert snapshot is not None
+    assert snapshot.total_mb > 0
+    assert snapshot.available_mb > 0
+
+
 def test_read_cgroup_oom_kill_count(tmp_path):
     path = tmp_path / "memory.events"
     path.write_text("low 0\nhigh 0\noom 3\noom_kill 14\n")

@@ -181,8 +181,9 @@ OOM_RESTART_BACKOFF_MAX_SECONDS = max(
     30, int(os.getenv('OOM_RESTART_BACKOFF_MAX_SECONDS', '300'))
 )
 
-# Ultralytics 模型共享服务。默认关闭以保持通用/开发环境兼容，Jetson compose
-# 显式开启。服务使用 Unix socket + POSIX shared memory 在 source host 间共享模型。
+# Ultralytics 模型共享服务的首次启动/数据库不可用回退值。正常运行后由
+# SystemSetting 中的推理资源配置接管。服务使用 Unix socket + POSIX shared
+# memory 在 source host 间共享模型。
 SHARED_INFERENCE_ENABLED = os.getenv(
     'SHARED_INFERENCE_ENABLED', 'false'
 ).lower() in ('true', '1', 'yes', 'on')

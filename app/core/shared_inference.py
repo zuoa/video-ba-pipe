@@ -28,6 +28,11 @@ import numpy as np
 
 from app.config import (
     APP_DIR,
+    OOM_CIRCUIT_BREAKER_ENABLED,
+    OOM_CIRCUIT_FAILURE_THRESHOLD,
+    OOM_CIRCUIT_OPEN_SECONDS,
+    OOM_CIRCUIT_STABLE_RESET_SECONDS,
+    OOM_RESTART_BACKOFF_MAX_SECONDS,
     SHARED_INFERENCE_BATCH_MAX_SIZE,
     SHARED_INFERENCE_BATCH_WAIT_MS,
     SHARED_INFERENCE_IDLE_SECONDS,
@@ -245,6 +250,7 @@ class _ModelSlot:
     start_error: Optional[str] = None
     oom_kill_count_at_start: int = 0
     oom_failures: int = 0
+    last_oom_at: Optional[float] = None
     oom_retry_at: float = 0.0
     dead_exit_handled: bool = False
 
@@ -254,11 +260,25 @@ class _ModelRegistry:
         self,
         queue_size: int,
         idle_seconds: float,
+        oom_circuit_enabled: bool = OOM_CIRCUIT_BREAKER_ENABLED,
+        oom_failure_threshold: int = OOM_CIRCUIT_FAILURE_THRESHOLD,
+        oom_open_seconds: float = OOM_CIRCUIT_OPEN_SECONDS,
+        oom_stable_reset_seconds: float = OOM_CIRCUIT_STABLE_RESET_SECONDS,
+        oom_backoff_cap_seconds: float = OOM_RESTART_BACKOFF_MAX_SECONDS,
         worker_target=_model_worker_main,
     ):
         self.context = multiprocessing.get_context("spawn")
         self.queue_size = max(1, int(queue_size))
         self.idle_seconds = max(1.0, float(idle_seconds))
+        self.oom_circuit_enabled = bool(oom_circuit_enabled)
+        self.oom_failure_threshold = max(1, int(oom_failure_threshold))
+        self.oom_open_seconds = max(1.0, float(oom_open_seconds))
+        self.oom_stable_reset_seconds = max(
+            1.0, float(oom_stable_reset_seconds)
+        )
+        self.oom_backoff_cap_seconds = max(
+            1.0, float(oom_backoff_cap_seconds)
+        )
         self.result_queue = self.context.Queue()
         self.worker_target = worker_target
         self.slots: Dict[str, _ModelSlot] = {}
@@ -269,6 +289,47 @@ class _ModelRegistry:
         self.reaper = threading.Thread(target=self._reap_idle, daemon=True)
         self.dispatcher.start()
         self.reaper.start()
+
+    def configure_oom_policy(self, policy: Dict[str, Any]) -> Dict[str, Any]:
+        with self.lock:
+            self.oom_circuit_enabled = bool(policy.get(
+                "enabled", self.oom_circuit_enabled
+            ))
+            self.oom_failure_threshold = max(
+                1,
+                int(policy.get("failure_threshold", self.oom_failure_threshold)),
+            )
+            self.oom_open_seconds = max(
+                1.0, float(policy.get("open_seconds", self.oom_open_seconds))
+            )
+            self.oom_stable_reset_seconds = max(
+                1.0,
+                float(policy.get(
+                    "stable_reset_seconds", self.oom_stable_reset_seconds
+                )),
+            )
+            self.oom_backoff_cap_seconds = max(
+                1.0,
+                float(policy.get(
+                    "backoff_cap_seconds", self.oom_backoff_cap_seconds
+                )),
+            )
+            if not self.oom_circuit_enabled:
+                for slot in self.slots.values():
+                    slot.oom_retry_at = 0.0
+            return {
+                "ok": True,
+                "oom_policy": self.oom_policy(),
+            }
+
+    def oom_policy(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.oom_circuit_enabled,
+            "failure_threshold": self.oom_failure_threshold,
+            "open_seconds": self.oom_open_seconds,
+            "stable_reset_seconds": self.oom_stable_reset_seconds,
+            "backoff_cap_seconds": self.oom_backoff_cap_seconds,
+        }
 
     def _new_slot(self, spec: Dict[str, Any], config: Dict[str, Any]) -> _ModelSlot:
         key = model_key(spec)
@@ -353,11 +414,23 @@ class _ModelRegistry:
                 slot.process.exitcode == -signal.SIGKILL
                 and current_oom_count > slot.oom_kill_count_at_start
             ):
+                if (
+                    slot.last_oom_at is not None
+                    and now - slot.last_oom_at >= self.oom_stable_reset_seconds
+                ):
+                    slot.oom_failures = 0
                 slot.oom_failures += 1
-                delay = min(15.0 * (2 ** (slot.oom_failures - 1)), 300.0)
-                if slot.oom_failures >= 3:
-                    delay = max(delay, 600.0)
-                slot.oom_retry_at = now + delay
+                slot.last_oom_at = now
+                if self.oom_circuit_enabled:
+                    delay = min(
+                        15.0 * (2 ** (slot.oom_failures - 1)),
+                        self.oom_backoff_cap_seconds,
+                    )
+                    if slot.oom_failures >= self.oom_failure_threshold:
+                        delay = max(delay, self.oom_open_seconds)
+                    slot.oom_retry_at = now + delay
+                else:
+                    slot.oom_retry_at = 0.0
         if now < slot.oom_retry_at:
             return {
                 "ok": False,
@@ -372,6 +445,7 @@ class _ModelRegistry:
         references = slot.references
         idle_since = slot.idle_since
         oom_failures = slot.oom_failures
+        last_oom_at = slot.last_oom_at
         spec = slot.spec
         base_config = slot.base_config
         self._stop_slot(slot)
@@ -379,6 +453,7 @@ class _ModelRegistry:
         replacement.references = references
         replacement.idle_since = idle_since
         replacement.oom_failures = oom_failures
+        replacement.last_oom_at = last_oom_at
         return replacement
 
     def _dispatch_results(self) -> None:
@@ -456,7 +531,12 @@ class _ModelRegistry:
                         0.0, round(slot.oom_retry_at - time.monotonic(), 1)
                     ),
                 })
-            return {"ok": True, "models": models, "model_count": len(models)}
+            return {
+                "ok": True,
+                "models": models,
+                "model_count": len(models),
+                "oom_policy": self.oom_policy(),
+            }
 
     def close(self) -> None:
         self.running = False
@@ -477,6 +557,11 @@ class SharedInferenceServer:
         self.registry = _ModelRegistry(
             queue_size=SHARED_INFERENCE_QUEUE_SIZE,
             idle_seconds=SHARED_INFERENCE_IDLE_SECONDS,
+            oom_circuit_enabled=OOM_CIRCUIT_BREAKER_ENABLED,
+            oom_failure_threshold=OOM_CIRCUIT_FAILURE_THRESHOLD,
+            oom_open_seconds=OOM_CIRCUIT_OPEN_SECONDS,
+            oom_stable_reset_seconds=OOM_CIRCUIT_STABLE_RESET_SECONDS,
+            oom_backoff_cap_seconds=OOM_RESTART_BACKOFF_MAX_SECONDS,
         )
         self.listener = None
 
@@ -494,6 +579,10 @@ class SharedInferenceServer:
                     return
                 elif action == "stats":
                     response = self.registry.stats()
+                elif action == "configure_oom":
+                    response = self.registry.configure_oom_policy(
+                        request.get("policy") or {}
+                    )
                 elif action == "acquire":
                     response = self.registry.acquire(request["spec"], request["config"])
                     if response.get("ok") and response.get("model_key"):
@@ -661,15 +750,109 @@ def request_service_stats(socket_path: str = SHARED_INFERENCE_SOCKET_PATH) -> Di
 class SharedInferenceServiceController:
     """Own the router process from the orchestrator without importing CUDA there."""
 
-    def __init__(self, socket_path: str = SHARED_INFERENCE_SOCKET_PATH):
+    def __init__(
+        self,
+        socket_path: str = SHARED_INFERENCE_SOCKET_PATH,
+        *,
+        queue_size: int = SHARED_INFERENCE_QUEUE_SIZE,
+        batch_max_size: int = SHARED_INFERENCE_BATCH_MAX_SIZE,
+        batch_wait_ms: float = SHARED_INFERENCE_BATCH_WAIT_MS,
+        request_timeout_seconds: float = SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS,
+        idle_seconds: int = SHARED_INFERENCE_IDLE_SECONDS,
+        oom_circuit_enabled: bool = OOM_CIRCUIT_BREAKER_ENABLED,
+        oom_failure_threshold: int = OOM_CIRCUIT_FAILURE_THRESHOLD,
+        oom_open_seconds: float = OOM_CIRCUIT_OPEN_SECONDS,
+        oom_stable_reset_seconds: float = OOM_CIRCUIT_STABLE_RESET_SECONDS,
+        oom_backoff_cap_seconds: float = OOM_RESTART_BACKOFF_MAX_SECONDS,
+    ):
         self.socket_path = socket_path
+        self.queue_size = int(queue_size)
+        self.batch_max_size = int(batch_max_size)
+        self.batch_wait_ms = float(batch_wait_ms)
+        self.request_timeout_seconds = float(request_timeout_seconds)
+        self.idle_seconds = int(idle_seconds)
+        self.oom_circuit_enabled = bool(oom_circuit_enabled)
+        self.oom_failure_threshold = int(oom_failure_threshold)
+        self.oom_open_seconds = float(oom_open_seconds)
+        self.oom_stable_reset_seconds = float(oom_stable_reset_seconds)
+        self.oom_backoff_cap_seconds = float(oom_backoff_cap_seconds)
         self.process: Optional[subprocess.Popen] = None
+
+    @property
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def _service_environment(self) -> Dict[str, str]:
+        environment = os.environ.copy()
+        environment.update({
+            "SHARED_INFERENCE_ENABLED": "true",
+            "SHARED_INFERENCE_SOCKET_PATH": self.socket_path,
+            "SHARED_INFERENCE_QUEUE_SIZE": str(self.queue_size),
+            "SHARED_INFERENCE_BATCH_MAX_SIZE": str(self.batch_max_size),
+            "SHARED_INFERENCE_BATCH_WAIT_MS": str(self.batch_wait_ms),
+            "SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS": str(
+                self.request_timeout_seconds
+            ),
+            "SHARED_INFERENCE_IDLE_SECONDS": str(self.idle_seconds),
+            "OOM_CIRCUIT_BREAKER_ENABLED": (
+                "true" if self.oom_circuit_enabled else "false"
+            ),
+            "OOM_CIRCUIT_FAILURE_THRESHOLD": str(self.oom_failure_threshold),
+            "OOM_CIRCUIT_OPEN_SECONDS": str(int(self.oom_open_seconds)),
+            "OOM_CIRCUIT_STABLE_RESET_SECONDS": str(
+                int(self.oom_stable_reset_seconds)
+            ),
+            "OOM_RESTART_BACKOFF_MAX_SECONDS": str(
+                int(self.oom_backoff_cap_seconds)
+            ),
+        })
+        return environment
+
+    def update_oom_policy(
+        self,
+        *,
+        enabled: bool,
+        failure_threshold: int,
+        open_seconds: float,
+        stable_reset_seconds: float,
+        backoff_cap_seconds: float,
+    ) -> bool:
+        self.oom_circuit_enabled = bool(enabled)
+        self.oom_failure_threshold = int(failure_threshold)
+        self.oom_open_seconds = float(open_seconds)
+        self.oom_stable_reset_seconds = float(stable_reset_seconds)
+        self.oom_backoff_cap_seconds = float(backoff_cap_seconds)
+        if not self.is_running:
+            return False
+        try:
+            connection = Client(
+                self.socket_path, family="AF_UNIX", authkey=_AUTHKEY
+            )
+            connection.send({
+                "action": "configure_oom",
+                "policy": {
+                    "enabled": self.oom_circuit_enabled,
+                    "failure_threshold": self.oom_failure_threshold,
+                    "open_seconds": self.oom_open_seconds,
+                    "stable_reset_seconds": self.oom_stable_reset_seconds,
+                    "backoff_cap_seconds": self.oom_backoff_cap_seconds,
+                },
+            })
+            response = connection.recv()
+            connection.close()
+            return bool(response.get("ok"))
+        except (OSError, EOFError, ConnectionError):
+            return False
 
     def start(self, timeout: float = 15.0) -> bool:
         if self.process is not None and self.process.poll() is None:
             return True
         entry = os.path.join(APP_DIR, "shared_inference_server.py")
-        self.process = subprocess.Popen([sys.executable, "-u", entry], cwd=APP_DIR)
+        self.process = subprocess.Popen(
+            [sys.executable, "-u", entry],
+            cwd=APP_DIR,
+            env=self._service_environment(),
+        )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.process.poll() is not None:

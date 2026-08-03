@@ -144,8 +144,11 @@ sudo reboot
 
 ## 共享推理与 OOM 保护
 
-Jetson compose 仅在 worker 容器中默认启用本机共享推理、推理内存准入和
-OOM 熔断。使用 `templates/adaptive_yolo_detector.py` 且实际选择 Ultralytics
+Jetson compose 仅为首次启动提供共享推理、推理内存准入和 OOM 熔断默认值。
+worker 启动后会将默认值写入 `SystemSetting`，此后由“系统设置 → 推理资源保护”
+中的数据库配置统一接管；Compose 环境变量只在数据库不可用时回退使用。
+
+使用 `templates/adaptive_yolo_detector.py` 且实际选择 Ultralytics
 后端时，相同模型由独立模型进程加载一次，各 source host 通过 Unix socket
 和 POSIX shared memory 提交帧；队列满时丢弃分析帧，不继续扩张内存。
 
@@ -172,9 +175,10 @@ worker 每 30 秒输出一条 `共享推理资源` 和 `Source host 资源` 日�
 killer 终止，日志会显示 `workflow_oom_backoff` 或
 `workflow_oom_circuit_open`，熔断期间不会立即重新加载模型。
 
-紧急回退到旧的每工作流本地模型方式时可设置
-`SHARED_INFERENCE_ENABLED=false`；该模式内存开销较大，不建议在多路 Jetson
-部署中长期使用。
+配置页会每 5 秒显示 worker 在线状态、平台能力、共享服务、模型 PSS/引用数、
+可用内存和 Swap。阈值与熔断参数热更新；共享开关、队列或批量参数变化时，
+worker 会保留解码器并安全重建 source host。紧急回退到本地模型方式时，在
+配置页关闭共享推理；该模式内存开销较大，不建议在多路 Jetson 部署中长期使用。
 
 ## 实机验收
 

@@ -45,6 +45,13 @@ from app.core.ops_notification_config import (
     normalize_ops_notification_config,
     save_ops_notification_config,
 )
+from app.core.inference_resource_config import (
+    detect_inference_capabilities,
+    effective_inference_resource_config,
+    get_inference_resource_status,
+    load_inference_resource_config,
+    save_inference_resource_config,
+)
 from app.core.dingtalk_notifier import (
     send_dingtalk_text,
     validate_dingtalk_webhook_url,
@@ -282,6 +289,73 @@ def update_system_source_rotation_config():
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         app.logger.error(f"更新视频轮转配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+def _inference_resource_response(config, source, status):
+    capabilities = (
+        status.get('capabilities')
+        if status.get('worker_online') and isinstance(status.get('capabilities'), dict)
+        else detect_inference_capabilities()
+    )
+    effective = effective_inference_resource_config(config, capabilities)
+    config_pending = (
+        status.get('applied_config_revision') != config.revision
+    )
+    restart_required = bool(
+        not status.get('worker_online') or status.get('reconcile_error')
+    )
+    return {
+        'success': True,
+        'config': config.to_dict(),
+        'configured_revision': config.revision,
+        'config_source': source,
+        'effective_config': effective.to_dict(),
+        'capabilities': capabilities,
+        'status': status,
+        'config_pending': config_pending,
+        'restart_required': restart_required,
+        'apply_mode': 'worker_auto_reconcile',
+    }
+
+
+@app.route('/api/system/inference-resource-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_inference_resource_config():
+    config, source, _database_available = load_inference_resource_config(
+        initialize=False
+    )
+    return jsonify(_inference_resource_response(
+        config,
+        source,
+        get_inference_resource_status(),
+    ))
+
+
+@app.route('/api/system/inference-resource-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_inference_resource_config():
+    try:
+        config = save_inference_resource_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        response = _inference_resource_response(
+            config,
+            'database',
+            get_inference_resource_status(),
+        )
+        response['message'] = (
+            '推理资源配置已保存，worker 将在 5 秒内自动应用；'
+            '共享服务参数变化会短暂重建 source host'
+        )
+        return jsonify(response)
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新推理资源配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 

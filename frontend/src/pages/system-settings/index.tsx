@@ -1,24 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Form, Input, InputNumber, Progress, Switch, message, Spin } from 'antd';
+import { Alert, Card, Form, Input, InputNumber, Progress, Switch, Tag, message, Spin } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
   DatabaseOutlined,
+  HddOutlined,
   NotificationOutlined,
+  SafetyCertificateOutlined,
   SaveOutlined,
   SendOutlined,
   SettingOutlined,
   SyncOutlined,
+  ThunderboltOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import {
   getSourceRotationConfig,
+  getInferenceResourceConfig,
   getRecordingStorageConfig,
   getOpsNotificationConfig,
   getVlConfig,
   RecordingStorageUsage,
+  InferenceResourceResponse,
   testOpsNotificationConfig,
   updateSourceRotationConfig,
+  updateInferenceResourceConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
   updateVlConfig,
@@ -30,32 +36,45 @@ const SystemSettingsPage: React.FC = () => {
   const [rotationForm] = Form.useForm();
   const [recordingForm] = Form.useForm();
   const [opsForm] = Form.useForm();
+  const [inferenceForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
+  const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
   const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
   const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
   const imageMaxGb = Form.useWatch('image_max_gb', recordingForm) ?? 10;
   const rotationEnabled = Form.useWatch('enabled', rotationForm) ?? false;
   const opsEnabled = Form.useWatch('enabled', opsForm) ?? false;
   const alertGrowthEnabled = Form.useWatch('notify_alert_growth', opsForm) ?? true;
+  const sharedInferenceEnabled = Form.useWatch('shared_inference_enabled', inferenceForm) ?? false;
+  const inferenceAdmissionEnabled = Form.useWatch('inference_admission_enabled', inferenceForm) ?? false;
+  const oomCircuitEnabled = Form.useWatch('oom_circuit_breaker_enabled', inferenceForm) ?? false;
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
   const dwellSeconds = Form.useWatch('dwell_seconds', rotationForm) ?? 30;
   const estimatedBatches = eligibleSourceCount > 0
     ? Math.ceil(eligibleSourceCount / Math.max(1, batchSize))
     : 0;
   const estimatedCycleSeconds = estimatedBatches * dwellSeconds;
+  const inferenceStatus = inferenceResource?.status;
+  const inferenceCapabilities = inferenceResource?.capabilities || {};
+  const effectiveInference = inferenceStatus?.effective_config || inferenceResource?.effective_config;
+  const workerOnline = inferenceStatus?.worker_online ?? false;
+  const sharedServiceRunning = inferenceStatus?.service_running ?? false;
+  const inferenceMemory = inferenceStatus?.memory;
+  const inferenceModels = inferenceStatus?.models || [];
 
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, recordingResponse, opsResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
         getRecordingStorageConfig(),
         getOpsNotificationConfig(),
+        getInferenceResourceConfig(),
       ]);
       vlForm.setFieldsValue({
         enabled: vlResponse?.config?.enabled ?? false,
@@ -73,6 +92,8 @@ const SystemSettingsPage: React.FC = () => {
       recordingForm.setFieldsValue(recordingResponse.config);
       setStorageUsage(recordingResponse.usage);
       opsForm.setFieldsValue(opsResponse.config);
+      inferenceForm.setFieldsValue(inferenceResponse.config);
+      setInferenceResource(inferenceResponse);
     } catch (error: any) {
       message.error(`加载系统配置失败: ${error.message}`);
     } finally {
@@ -84,21 +105,39 @@ const SystemSettingsPage: React.FC = () => {
     loadConfig();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const timer = window.setInterval(() => {
+      getInferenceResourceConfig()
+        .then((response) => {
+          if (active) setInferenceResource(response);
+        })
+        .catch(() => undefined);
+    }, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const handleSave = async () => {
     try {
-      const [vlValues, rotationValues, recordingValues, opsValues] = await Promise.all([
+      const [vlValues, rotationValues, recordingValues, opsValues, inferenceValues] = await Promise.all([
         vlForm.validateFields(),
         rotationForm.validateFields(),
         recordingForm.validateFields(),
         opsForm.validateFields(),
+        inferenceForm.validateFields(),
       ]);
       setSaving(true);
-      await Promise.all([
+      const [, , , , inferenceResponse] = await Promise.all([
         updateVlConfig(vlValues),
         updateSourceRotationConfig(rotationValues),
         updateRecordingStorageConfig(recordingValues),
         updateOpsNotificationConfig(opsValues),
+        updateInferenceResourceConfig(inferenceValues),
       ]);
+      setInferenceResource(inferenceResponse);
       message.success('系统配置已保存');
       await loadConfig();
     } catch (error: any) {
@@ -130,7 +169,7 @@ const SystemSettingsPage: React.FC = () => {
       <PageHeader
         icon={<SettingOutlined />}
         title="系统设置"
-        subtitle="统一管理录像、磁盘降级、运维通知、视频轮转与 VL 核验配置。"
+        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转与 VL 核验配置。"
         extra={
           <Button
             type="primary"
@@ -149,6 +188,142 @@ const SystemSettingsPage: React.FC = () => {
         </div>
       ) : (
         <div className="system-settings-grid">
+          <Card
+            className="system-settings-card system-settings-card-wide inference-resource-card"
+            title={<span><SafetyCertificateOutlined /> 推理资源保护</span>}
+            extra={<span className="inference-config-source">自动兼容 · {configSourceLabel(inferenceResource?.config_source)}</span>}
+          >
+            <div className="inference-status-strip" aria-label="推理资源运行状态">
+              <InferenceStatusMetric
+                label="Worker"
+                value={workerOnline ? '在线' : '离线'}
+                tone={workerOnline ? 'healthy' : 'danger'}
+                detail={inferenceStatus?.platform || inferenceCapabilities.platform || '未知平台'}
+              />
+              <InferenceStatusMetric
+                label="共享服务"
+                value={sharedServiceRunning ? '运行中' : '未运行'}
+                tone={sharedServiceRunning ? 'healthy' : sharedInferenceEnabled ? 'warning' : 'neutral'}
+                detail={effectiveInference?.shared_inference_enabled ? `PID ${inferenceStatus?.service_pid || '—'}` : '当前未生效'}
+              />
+              <InferenceStatusMetric
+                label="共享模型"
+                value={`${inferenceStatus?.model_count || 0} 个`}
+                tone="neutral"
+                detail={`${inferenceModels.reduce((sum, model) => sum + (model.references || 0), 0)} 个引用`}
+              />
+              <InferenceStatusMetric
+                label="内存余量"
+                value={inferenceMemory ? formatMb(inferenceMemory.available_mb) : '暂无数据'}
+                tone={inferenceMemory && inferenceMemory.usage_percent >= 90 ? 'danger' : 'neutral'}
+                detail={inferenceMemory ? `Swap ${formatMb(inferenceMemory.swap_used_mb)}` : '等待 worker 心跳'}
+              />
+            </div>
+
+            <div className="inference-capability-row" aria-label="平台推理能力">
+              <span>平台能力</span>
+              <CapabilityTag supported={Boolean(inferenceCapabilities.shared_ultralytics)}>Ultralytics 共享</CapabilityTag>
+              <CapabilityTag supported={Boolean(inferenceCapabilities.memory_admission)}>内存准入</CapabilityTag>
+              <CapabilityTag supported={Boolean(inferenceCapabilities.oom_detection)}>OOM 检测</CapabilityTag>
+              <CapabilityTag supported={Boolean(inferenceCapabilities.rknn_shared)}>RKNN 共享</CapabilityTag>
+              {inferenceResource?.restart_required
+                ? <Tag color="red">需要重启 worker</Tag>
+                : inferenceResource?.config_pending
+                  ? <Tag color="gold">等待 worker 应用</Tag>
+                  : <Tag color="green">配置已生效</Tag>}
+            </div>
+
+            <Alert
+              type={inferenceStatus?.reconcile_error ? 'error' : !workerOnline ? 'warning' : inferenceResource?.config_pending ? 'info' : 'success'}
+              showIcon
+              className="system-settings-alert"
+              message={inferenceStatus?.reconcile_error
+                ? '共享推理服务应用失败'
+                : !workerOnline
+                  ? '没有收到 worker 状态心跳'
+                  : inferenceResource?.config_pending
+                    ? '配置已保存，worker 正在自动应用'
+                    : '推理资源保护配置已生效'}
+              description="阈值和熔断参数热更新；共享服务、队列或批量参数变化时，只重建 source host，视频解码保持运行。RKNN、ONNX 和直连 YOLO 按本地模型副本计算。"
+            />
+
+            <Form form={inferenceForm} layout="vertical">
+              <InferenceSectionTitle icon={<ThunderboltOutlined />} title="共享推理" description="相同 Ultralytics 模型只保留一个模型进程" />
+              <div className="system-settings-form-grid">
+                <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="平台不支持时自动降级，不阻止本地推理。">
+                  <Switch />
+                </Form.Item>
+                <Form.Item label="请求队列长度" name="queue_size" rules={[{ required: true, message: '请输入队列长度' }]}>
+                  <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="最大批量" name="batch_max_size" rules={[{ required: true, message: '请输入最大批量' }]}>
+                  <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="批量等待（毫秒）" name="batch_wait_ms" rules={[{ required: true, message: '请输入批量等待时间' }]}>
+                  <InputNumber min={0} max={1000} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="请求超时（秒）" name="request_timeout_seconds" rules={[{ required: true, message: '请输入请求超时' }]}>
+                  <InputNumber min={1} max={1800} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="模型空闲回收（秒）" name="model_idle_seconds" rules={[{ required: true, message: '请输入空闲回收时间' }]}>
+                  <InputNumber min={10} max={86400} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+
+              <InferenceSectionTitle icon={<HddOutlined />} title="内存准入" description="在加载模型前保留系统安全水位，Swap 不计入可用容量" />
+              <div className="system-settings-form-grid">
+                <Form.Item label="启用内存准入" name="inference_admission_enabled" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+                <Form.Item label="保留内存（MB）" name="system_reserve_mb" rules={[{ required: true, message: '请输入保留内存' }]}>
+                  <InputNumber min={256} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="保留内存比例（%）" name="system_reserve_percent" extra="MB 与比例取较大值。" rules={[{ required: true, message: '请输入保留比例' }]}>
+                  <InputNumber min={0} max={50} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="新模型预估（MB）" name="new_model_default_mb" rules={[{ required: true, message: '请输入模型预估内存' }]}>
+                  <InputNumber min={128} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="模型内存余量（%）" name="model_memory_margin_percent" rules={[{ required: true, message: '请输入模型内存余量' }]}>
+                  <InputNumber min={0} max={100} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+
+              <InferenceSectionTitle icon={<SafetyCertificateOutlined />} title="OOM 熔断" description="模型或 source host 被系统终止后逐级退避，避免重启风暴" />
+              <div className="system-settings-form-grid">
+                <Form.Item label="启用 OOM 熔断" name="oom_circuit_breaker_enabled" valuePropName="checked" extra="非 Linux/cgroup 平台自动降级。">
+                  <Switch />
+                </Form.Item>
+                <Form.Item label="熔断失败次数" name="oom_failure_threshold" rules={[{ required: true, message: '请输入失败次数' }]}>
+                  <InputNumber min={1} max={100} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="熔断持续（秒）" name="oom_circuit_open_seconds" rules={[{ required: true, message: '请输入熔断时间' }]}>
+                  <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="稳定恢复（秒）" name="oom_stable_reset_seconds" rules={[{ required: true, message: '请输入恢复时间' }]}>
+                  <InputNumber min={60} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="最大退避（秒）" name="oom_restart_backoff_max_seconds" rules={[{ required: true, message: '请输入最大退避时间' }]}>
+                  <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+            </Form>
+
+            {inferenceModels.length > 0 ? (
+              <div className="inference-model-list" aria-label="共享模型运行详情">
+                {inferenceModels.map((model, index) => (
+                  <div className="inference-model-row" key={`${model.model_id ?? 'model'}-${model.pid ?? index}`}>
+                    <span className={`inference-model-dot ${model.ready ? 'is-ready' : ''}`} />
+                    <strong>模型 {model.model_id ?? '未知'}</strong>
+                    <span>PSS {formatMb(model.pss_mb)}</span>
+                    <span>{model.references || 0} 个引用</span>
+                    <span>队列 {model.queue_depth ?? '—'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Card>
+
           <Card
             className="system-settings-card system-settings-card-wide"
             title={<span><VideoCameraOutlined /> 录像与存储保护</span>}
@@ -464,6 +639,54 @@ const SystemSettingsPage: React.FC = () => {
 };
 
 const GIB = 1024 ** 3;
+
+function formatMb(value?: number | null): string {
+  if (!Number.isFinite(value)) return '—';
+  const numericValue = Number(value);
+  return numericValue >= 1024
+    ? `${(numericValue / 1024).toFixed(1)} GB`
+    : `${numericValue.toFixed(0)} MB`;
+}
+
+function configSourceLabel(source?: string): string {
+  if (source === 'database') return '数据库配置';
+  if (source === 'environment_initialized') return '环境默认已入库';
+  if (source === 'environment_fallback') return '数据库不可用，环境回退';
+  return '环境默认';
+}
+
+interface InferenceStatusMetricProps {
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'healthy' | 'warning' | 'danger' | 'neutral';
+}
+
+const InferenceStatusMetric: React.FC<InferenceStatusMetricProps> = ({ label, value, detail, tone }) => (
+  <div className={`inference-status-metric inference-status-${tone}`}>
+    <span>{label}</span>
+    <strong>{value}</strong>
+    <small>{detail}</small>
+  </div>
+);
+
+const CapabilityTag: React.FC<{ supported: boolean; children: React.ReactNode }> = ({ supported, children }) => (
+  <Tag color={supported ? 'cyan' : 'default'}>{children} · {supported ? '支持' : '未支持'}</Tag>
+);
+
+const InferenceSectionTitle: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}> = ({ icon, title, description }) => (
+  <div className="inference-section-title">
+    <span>{icon}</span>
+    <div>
+      <strong>{title}</strong>
+      <small>{description}</small>
+    </div>
+  </div>
+);
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 GB';

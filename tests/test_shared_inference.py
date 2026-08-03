@@ -110,3 +110,74 @@ def test_acquire_honors_dead_worker_oom_backoff(tmp_path, monkeypatch):
         assert replacement.oom_failures == 1
     finally:
         registry.close()
+
+
+def test_model_worker_uses_configured_oom_open_period(tmp_path, monkeypatch):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 10})
+    oom_count = {"value": 0}
+    monkeypatch.setattr(
+        shared_inference_module,
+        "read_cgroup_oom_kill_count",
+        lambda: oom_count["value"],
+    )
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        oom_circuit_enabled=True,
+        oom_failure_threshold=1,
+        oom_open_seconds=45,
+        oom_backoff_cap_seconds=20,
+        worker_target=_fake_worker,
+    )
+    try:
+        first = registry.acquire(spec, {})
+        slot = registry.slots[first["model_key"]]
+        slot.process.kill()
+        slot.process.join(timeout=2)
+        oom_count["value"] = 1
+
+        blocked = registry.acquire(spec, {})
+
+        assert blocked["ok"] is False
+        assert blocked["error"] == "model_worker_oom_backoff"
+        assert 44 <= blocked["retry_in_seconds"] <= 45
+    finally:
+        registry.close()
+
+
+def test_disabling_model_oom_policy_clears_active_backoff(tmp_path, monkeypatch):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 11})
+    oom_count = {"value": 0}
+    monkeypatch.setattr(
+        shared_inference_module,
+        "read_cgroup_oom_kill_count",
+        lambda: oom_count["value"],
+    )
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        oom_circuit_enabled=True,
+        worker_target=_fake_worker,
+    )
+    try:
+        first = registry.acquire(spec, {})
+        slot = registry.slots[first["model_key"]]
+        original_pid = slot.process.pid
+        slot.process.kill()
+        slot.process.join(timeout=2)
+        oom_count["value"] = 1
+        assert registry.acquire(spec, {})["ok"] is False
+
+        response = registry.configure_oom_policy({"enabled": False})
+        restarted = registry.acquire(spec, {})
+
+        assert response["ok"] is True
+        assert response["oom_policy"]["enabled"] is False
+        assert restarted["ok"] is True
+        assert registry.slots[first["model_key"]].process.pid != original_pid
+    finally:
+        registry.close()

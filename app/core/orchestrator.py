@@ -39,17 +39,7 @@ from app.config import (
     HW_DECODE_UPGRADE_INTERVAL_SECONDS,
     SOURCE_RESTART_BACKOFF_MAX_SECONDS,
     SOURCE_MAX_CONCURRENT_STARTS,
-    OOM_CIRCUIT_BREAKER_ENABLED,
-    OOM_CIRCUIT_FAILURE_THRESHOLD,
-    OOM_CIRCUIT_OPEN_SECONDS,
-    OOM_CIRCUIT_STABLE_RESET_SECONDS,
-    OOM_RESTART_BACKOFF_MAX_SECONDS,
-    SHARED_INFERENCE_ENABLED,
-    INFERENCE_ADMISSION_ENABLED,
-    INFERENCE_SYSTEM_RESERVE_MB,
-    INFERENCE_SYSTEM_RESERVE_PERCENT,
-    INFERENCE_NEW_MODEL_DEFAULT_MB,
-    INFERENCE_MODEL_MEMORY_MARGIN_PERCENT,
+    SHARED_INFERENCE_SOCKET_PATH,
 )
 from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
@@ -72,6 +62,15 @@ from app.core.inference_budget import (
     OomCircuitBreaker,
     read_cgroup_oom_kill_count,
     read_process_memory_metrics,
+)
+from app.core.inference_resource_config import (
+    INFERENCE_RESOURCE_CONFIG_REFRESH_SECONDS,
+    InferenceResourceConfig,
+    collect_portable_memory_status,
+    detect_inference_capabilities,
+    effective_inference_resource_config,
+    load_inference_resource_config,
+    publish_inference_resource_status,
 )
 from app.core.shared_inference import (
     SharedInferenceServiceController,
@@ -226,24 +225,49 @@ class Orchestrator:
         self.last_upgrade_check_at = 0.0
         self.last_zombie_reap_at = 0.0
         self.last_inference_telemetry_at = 0.0
+        self.last_inference_config_refresh_at = 0.0
+        self.last_inference_status_publish_at = 0.0
+        self.inference_reconcile_error = None
         self.workflow_start_block_log_times = {}
         self.oom_kill_count = read_cgroup_oom_kill_count()
+        self.inference_capabilities = detect_inference_capabilities()
+        (
+            self.inference_config,
+            self.inference_config_source,
+            _inference_database_available,
+        ) = load_inference_resource_config(initialize=True)
+        self.effective_inference_config = effective_inference_resource_config(
+            self.inference_config,
+            self.inference_capabilities,
+        )
         self.oom_circuit = OomCircuitBreaker(
-            enabled=OOM_CIRCUIT_BREAKER_ENABLED,
-            failure_threshold=OOM_CIRCUIT_FAILURE_THRESHOLD,
-            open_seconds=OOM_CIRCUIT_OPEN_SECONDS,
-            stable_reset_seconds=OOM_CIRCUIT_STABLE_RESET_SECONDS,
-            backoff_cap_seconds=OOM_RESTART_BACKOFF_MAX_SECONDS,
+            enabled=self.effective_inference_config.oom_circuit_breaker_enabled,
+            failure_threshold=self.effective_inference_config.oom_failure_threshold,
+            open_seconds=self.effective_inference_config.oom_circuit_open_seconds,
+            stable_reset_seconds=(
+                self.effective_inference_config.oom_stable_reset_seconds
+            ),
+            backoff_cap_seconds=(
+                self.effective_inference_config.oom_restart_backoff_max_seconds
+            ),
         )
         self.inference_admission = InferenceAdmissionController(
-            enabled=INFERENCE_ADMISSION_ENABLED,
-            reserve_mb=INFERENCE_SYSTEM_RESERVE_MB,
-            reserve_percent=INFERENCE_SYSTEM_RESERVE_PERCENT,
-            default_new_model_mb=INFERENCE_NEW_MODEL_DEFAULT_MB,
-            margin_percent=INFERENCE_MODEL_MEMORY_MARGIN_PERCENT,
+            enabled=self.effective_inference_config.inference_admission_enabled,
+            reserve_mb=self.effective_inference_config.system_reserve_mb,
+            reserve_percent=self.effective_inference_config.system_reserve_percent,
+            default_new_model_mb=(
+                self.effective_inference_config.new_model_default_mb
+            ),
+            margin_percent=(
+                self.effective_inference_config.model_memory_margin_percent
+            ),
         )
         self.shared_inference_service = (
-            SharedInferenceServiceController() if SHARED_INFERENCE_ENABLED else None
+            self._build_shared_inference_controller(
+                self.effective_inference_config
+            )
+            if self.effective_inference_config.shared_inference_enabled
+            else None
         )
         # 硬解资源准入控制器（仅在使用硬解解码器时生效）
         self.hw_budget = HwDecodeBudget(
@@ -263,12 +287,208 @@ class Orchestrator:
             if self.shared_inference_service.start():
                 logger.info("共享推理服务已启动")
             else:
+                self.inference_reconcile_error = "shared_inference_start_failed"
                 logger.error("共享推理服务启动失败；需要共享模型的工作流将保持等待")
 
         # 健康监控配置
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
         self.start_grace_period = 60  # 启动后60秒内不进行健康检查
         self.health_log_interval = 30  # 健康日志记录间隔（秒），避免日志泛滥
+
+    @staticmethod
+    def _build_shared_inference_controller(
+        config: InferenceResourceConfig,
+    ) -> SharedInferenceServiceController:
+        return SharedInferenceServiceController(
+            socket_path=SHARED_INFERENCE_SOCKET_PATH,
+            queue_size=config.queue_size,
+            batch_max_size=config.batch_max_size,
+            batch_wait_ms=config.batch_wait_ms,
+            request_timeout_seconds=config.request_timeout_seconds,
+            idle_seconds=config.model_idle_seconds,
+            oom_circuit_enabled=config.oom_circuit_breaker_enabled,
+            oom_failure_threshold=config.oom_failure_threshold,
+            oom_open_seconds=config.oom_circuit_open_seconds,
+            oom_stable_reset_seconds=config.oom_stable_reset_seconds,
+            oom_backoff_cap_seconds=config.oom_restart_backoff_max_seconds,
+        )
+
+    def _apply_inference_policy_values(
+        self, config: InferenceResourceConfig
+    ) -> None:
+        self.oom_circuit.enabled = config.oom_circuit_breaker_enabled
+        self.oom_circuit.failure_threshold = config.oom_failure_threshold
+        self.oom_circuit.open_seconds = float(config.oom_circuit_open_seconds)
+        self.oom_circuit.stable_reset_seconds = float(
+            config.oom_stable_reset_seconds
+        )
+        self.oom_circuit.backoff_cap_seconds = float(
+            config.oom_restart_backoff_max_seconds
+        )
+
+        self.inference_admission.enabled = config.inference_admission_enabled
+        self.inference_admission.reserve_mb = float(config.system_reserve_mb)
+        self.inference_admission.reserve_percent = float(
+            config.system_reserve_percent
+        )
+        self.inference_admission.default_new_model_mb = float(
+            config.new_model_default_mb
+        )
+        self.inference_admission.margin_percent = float(
+            config.model_memory_margin_percent
+        )
+
+    def _rebuild_shared_inference_runtime(
+        self, config: InferenceResourceConfig
+    ) -> None:
+        # Source hosts hold long-lived clients and import their backend mode at
+        # process start. Stop them before replacing the router; decoders keep
+        # running and the normal workflow loop recreates hosts with the new env.
+        source_ids = list(self.workflow_hosts.keys())
+        if source_ids:
+            logger.warning(
+                "推理服务配置变化，安全重建 %s 个 source host", len(source_ids)
+            )
+        for source_id in source_ids:
+            self._stop_source_host(source_id)
+
+        if self.shared_inference_service is not None:
+            self.shared_inference_service.stop()
+            self.shared_inference_service = None
+
+        if not config.shared_inference_enabled:
+            self.inference_reconcile_error = None
+            logger.info("共享推理服务已按系统设置关闭")
+            return
+
+        controller = self._build_shared_inference_controller(config)
+        self.shared_inference_service = controller
+        if controller.start():
+            self.inference_reconcile_error = None
+            logger.info("共享推理服务已按系统设置重建")
+        else:
+            self.inference_reconcile_error = "shared_inference_start_failed"
+            logger.error("共享推理服务重建失败；工作流将等待服务恢复")
+
+    def _refresh_inference_resource_config(self, now: float) -> None:
+        if (
+            now - self.last_inference_config_refresh_at
+            < INFERENCE_RESOURCE_CONFIG_REFRESH_SECONDS
+        ):
+            return
+        self.last_inference_config_refresh_at = now
+        configured, source, _database_available = load_inference_resource_config(
+            initialize=True
+        )
+        capabilities = detect_inference_capabilities()
+        effective = effective_inference_resource_config(configured, capabilities)
+        previous_configured = self.inference_config
+        previous_effective = self.effective_inference_config
+        self.inference_config = configured
+        self.inference_config_source = source
+        self.inference_capabilities = capabilities
+        self.effective_inference_config = effective
+
+        if (
+            configured == previous_configured
+            and effective == previous_effective
+            and self.inference_reconcile_error
+            != "shared_oom_policy_update_failed"
+        ):
+            return
+
+        self._apply_inference_policy_values(effective)
+        logger.info(
+            "推理资源配置已更新: source=%s revision=%s effective=%s",
+            source,
+            configured.revision,
+            effective.to_dict(),
+        )
+        if effective.service_fingerprint != previous_effective.service_fingerprint:
+            self._rebuild_shared_inference_runtime(effective)
+        elif self.shared_inference_service is not None and (
+            effective.oom_fingerprint != previous_effective.oom_fingerprint
+            or self.inference_reconcile_error == "shared_oom_policy_update_failed"
+        ):
+            if self.shared_inference_service.update_oom_policy(
+                enabled=effective.oom_circuit_breaker_enabled,
+                failure_threshold=effective.oom_failure_threshold,
+                open_seconds=effective.oom_circuit_open_seconds,
+                stable_reset_seconds=effective.oom_stable_reset_seconds,
+                backoff_cap_seconds=(
+                    effective.oom_restart_backoff_max_seconds
+                ),
+            ):
+                self.inference_reconcile_error = None
+            else:
+                self.inference_reconcile_error = "shared_oom_policy_update_failed"
+                logger.error("共享模型 OOM 策略热更新失败")
+        elif self.inference_reconcile_error == "shared_oom_policy_update_failed":
+            self.inference_reconcile_error = None
+
+    def _source_host_inference_environment(self) -> dict:
+        config = self.effective_inference_config
+        environment = os.environ.copy()
+        environment.update({
+            "SHARED_INFERENCE_ENABLED": (
+                "true" if config.shared_inference_enabled else "false"
+            ),
+            "SHARED_INFERENCE_SOCKET_PATH": SHARED_INFERENCE_SOCKET_PATH,
+            "SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS": str(
+                config.request_timeout_seconds
+            ),
+        })
+        return environment
+
+    def _publish_inference_resource_status(self, now: float) -> None:
+        if now - self.last_inference_status_publish_at < 5.0:
+            return
+        self.last_inference_status_publish_at = now
+        service_running = bool(
+            self.shared_inference_service is not None
+            and self.shared_inference_service.is_running
+        )
+        stats = (
+            self._collect_inference_service_stats()
+            if service_running
+            else {"ok": False, "models": [], "model_count": 0}
+        )
+        models = [
+            {
+                "model_id": item.get("model_id"),
+                "pid": item.get("pid"),
+                "alive": item.get("alive"),
+                "ready": item.get("ready"),
+                "pss_mb": item.get("pss_mb"),
+                "rss_mb": item.get("rss_mb"),
+                "references": item.get("references"),
+                "queue_depth": item.get("queue_depth"),
+                "oom_failures": item.get("oom_failures"),
+            }
+            for item in stats.get("models", [])
+        ]
+        status = {
+            "platform": self.inference_capabilities.get("platform"),
+            "capabilities": self.inference_capabilities,
+            "config_source": self.inference_config_source,
+            "applied_config_revision": self.inference_config.revision,
+            "effective_config": self.effective_inference_config.to_dict(),
+            "service_running": service_running,
+            "service_pid": (
+                self.shared_inference_service.process.pid
+                if service_running and self.shared_inference_service.process
+                else None
+            ),
+            "model_count": len(models),
+            "models": models,
+            "source_host_count": len(self.workflow_hosts),
+            "memory": collect_portable_memory_status(),
+            "reconcile_error": self.inference_reconcile_error,
+        }
+        try:
+            publish_inference_resource_status(status)
+        except Exception as exc:
+            logger.warning(f"发布推理资源运行状态失败: {exc}")
 
     def _stop_process(self, process_info: dict, wait_timeout: float = 3.0):
         if not process_info:
@@ -640,10 +860,13 @@ class Orchestrator:
 
         if self.shared_inference_service is not None:
             if not self.shared_inference_service.ensure_running():
+                self.inference_reconcile_error = "shared_inference_start_failed"
                 self._log_workflow_start_blocked(
                     source_id, 'shared_inference_unavailable', 'service restart failed'
                 )
                 return False, set(), ()
+            if self.inference_reconcile_error == "shared_inference_start_failed":
+                self.inference_reconcile_error = None
 
         shared_model_ids, local_model_ids = self._workflow_model_requirements(workflows)
         stats = self._collect_inference_service_stats()
@@ -1585,6 +1808,7 @@ class Orchestrator:
                 universal_newlines=True,
                 bufsize=1,
                 cwd=APP_DIR,
+                env=self._source_host_inference_environment(),
             )
 
             ready_event = threading.Event()
@@ -1776,9 +2000,12 @@ class Orchestrator:
         print("🚀 编排器启动，开始动态管理视频源和工作流...")
         self.media_cleaner.start()
         while True:
+            now = time.monotonic()
+            self._refresh_inference_resource_config(now)
             self.manage_sources()
             self.manage_workflows()
-            self._refresh_inference_telemetry(time.monotonic())
+            self._refresh_inference_telemetry(now)
+            self._publish_inference_resource_status(now)
             time.sleep(1)
 
     def stop(self):

@@ -56,6 +56,87 @@ export async function updateSourceRotationConfig(data: any) {
   });
 }
 
+export interface InferenceResourceConfig {
+  shared_inference_enabled: boolean;
+  inference_admission_enabled: boolean;
+  system_reserve_mb: number;
+  system_reserve_percent: number;
+  new_model_default_mb: number;
+  model_memory_margin_percent: number;
+  queue_size: number;
+  batch_max_size: number;
+  batch_wait_ms: number;
+  request_timeout_seconds: number;
+  model_idle_seconds: number;
+  oom_circuit_breaker_enabled: boolean;
+  oom_failure_threshold: number;
+  oom_circuit_open_seconds: number;
+  oom_stable_reset_seconds: number;
+  oom_restart_backoff_max_seconds: number;
+}
+
+export interface InferenceModelStatus {
+  model_id?: number | string | null;
+  pid?: number | null;
+  alive?: boolean;
+  ready?: boolean;
+  pss_mb?: number | null;
+  rss_mb?: number | null;
+  references?: number;
+  queue_depth?: number | null;
+  oom_failures?: number;
+}
+
+export interface InferenceResourceStatus {
+  worker_online: boolean;
+  status_age_seconds?: number | null;
+  platform?: string;
+  capabilities?: Record<string, any>;
+  config_source?: string;
+  applied_config_revision?: string;
+  effective_config?: InferenceResourceConfig;
+  service_running?: boolean;
+  service_pid?: number | null;
+  model_count?: number;
+  models?: InferenceModelStatus[];
+  source_host_count?: number;
+  memory?: {
+    total_mb: number;
+    available_mb: number;
+    used_mb: number;
+    usage_percent: number;
+    swap_total_mb: number;
+    swap_used_mb: number;
+    swap_usage_percent: number;
+  };
+  reconcile_error?: string | null;
+}
+
+export interface InferenceResourceResponse {
+  success: boolean;
+  config: InferenceResourceConfig;
+  configured_revision: string;
+  config_source: string;
+  effective_config: InferenceResourceConfig;
+  capabilities: Record<string, any>;
+  status: InferenceResourceStatus;
+  config_pending: boolean;
+  restart_required: boolean;
+  apply_mode: 'worker_auto_reconcile';
+  message?: string;
+}
+
+export async function getInferenceResourceConfig() {
+  return request<InferenceResourceResponse>('/api/system/inference-resource-config');
+}
+
+export async function updateInferenceResourceConfig(data: InferenceResourceConfig) {
+  return request<InferenceResourceResponse>('/api/system/inference-resource-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
 export interface RecordingStorageConfig {
   recording_enabled: boolean;
   pre_alert_seconds: number;

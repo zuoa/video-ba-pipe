@@ -3,6 +3,8 @@ from pathlib import Path
 import yaml
 
 import app.core.orchestrator as orchestrator_module
+from app.core.inference_budget import InferenceAdmissionController, OomCircuitBreaker
+from app.core.inference_resource_config import InferenceResourceConfig
 from app.core.orchestrator import Orchestrator
 
 
@@ -116,3 +118,90 @@ def test_jetson_api_keeps_worker_local_shared_socket_disabled():
     assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
         ":-true}"
     )
+
+
+def test_runtime_policy_values_are_hot_updated():
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    orchestrator.oom_circuit = OomCircuitBreaker(
+        enabled=False,
+        failure_threshold=3,
+        open_seconds=600,
+        stable_reset_seconds=600,
+        backoff_cap_seconds=300,
+    )
+    orchestrator.inference_admission = InferenceAdmissionController(
+        enabled=False,
+        reserve_mb=1024,
+        reserve_percent=10,
+        default_new_model_mb=512,
+        margin_percent=10,
+    )
+    config = InferenceResourceConfig(
+        inference_admission_enabled=True,
+        system_reserve_mb=3072,
+        system_reserve_percent=20,
+        new_model_default_mb=1536,
+        model_memory_margin_percent=40,
+        oom_circuit_breaker_enabled=True,
+        oom_failure_threshold=5,
+        oom_circuit_open_seconds=900,
+        oom_stable_reset_seconds=1200,
+        oom_restart_backoff_max_seconds=240,
+    )
+
+    orchestrator._apply_inference_policy_values(config)
+
+    assert orchestrator.inference_admission.enabled is True
+    assert orchestrator.inference_admission.reserve_mb == 3072
+    assert orchestrator.inference_admission.reserve_percent == 20
+    assert orchestrator.inference_admission.default_new_model_mb == 1536
+    assert orchestrator.inference_admission.margin_percent == 40
+    assert orchestrator.oom_circuit.enabled is True
+    assert orchestrator.oom_circuit.failure_threshold == 5
+    assert orchestrator.oom_circuit.open_seconds == 900
+
+
+def test_source_host_environment_uses_effective_database_config():
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    orchestrator.effective_inference_config = InferenceResourceConfig(
+        shared_inference_enabled=True,
+        request_timeout_seconds=47,
+    )
+
+    environment = orchestrator._source_host_inference_environment()
+
+    assert environment["SHARED_INFERENCE_ENABLED"] == "true"
+    assert environment["SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS"] == "47"
+
+
+def test_service_rebuild_stops_hosts_before_router_restart():
+    events = []
+
+    class FakeController:
+        process = None
+
+        def start(self):
+            events.append("new_start")
+            return True
+
+        def stop(self):
+            events.append("old_stop")
+
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    orchestrator.workflow_hosts = {1: {}, 2: {}}
+    orchestrator.shared_inference_service = FakeController()
+    orchestrator.inference_reconcile_error = "previous"
+
+    def stop_host(source_id):
+        events.append(f"host_stop:{source_id}")
+        orchestrator.workflow_hosts.pop(source_id)
+
+    orchestrator._stop_source_host = stop_host
+    orchestrator._build_shared_inference_controller = lambda _config: FakeController()
+
+    orchestrator._rebuild_shared_inference_runtime(InferenceResourceConfig(
+        shared_inference_enabled=True,
+    ))
+
+    assert events == ["host_stop:1", "host_stop:2", "old_stop", "new_start"]
+    assert orchestrator.inference_reconcile_error is None

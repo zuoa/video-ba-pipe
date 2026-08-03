@@ -34,12 +34,26 @@ def read_memory_snapshot(meminfo_path: str = "/proc/meminfo") -> Optional[Memory
                 except (ValueError, IndexError):
                     continue
     except OSError:
-        return None
+        values = {}
 
     total_kb = values.get("MemTotal")
     available_kb = values.get("MemAvailable")
     if total_kb is None or available_kb is None:
-        return None
+        # macOS/Windows and restricted containers do not expose /proc/meminfo.
+        # psutil keeps admission portable while Linux still uses MemAvailable,
+        # which correctly accounts for reclaimable page cache on Jetson.
+        try:
+            import psutil
+
+            memory = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            return MemorySnapshot(
+                total_mb=memory.total / (1024.0 * 1024.0),
+                available_mb=memory.available / (1024.0 * 1024.0),
+                swap_used_mb=swap.used / (1024.0 * 1024.0),
+            )
+        except Exception:
+            return None
     swap_used_kb = max(0, values.get("SwapTotal", 0) - values.get("SwapFree", 0))
     return MemorySnapshot(
         total_mb=total_kb / 1024.0,
