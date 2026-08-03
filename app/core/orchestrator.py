@@ -39,21 +39,53 @@ from app.config import (
     HW_DECODE_UPGRADE_INTERVAL_SECONDS,
     SOURCE_RESTART_BACKOFF_MAX_SECONDS,
     SOURCE_MAX_CONCURRENT_STARTS,
+    OOM_CIRCUIT_BREAKER_ENABLED,
+    OOM_CIRCUIT_FAILURE_THRESHOLD,
+    OOM_CIRCUIT_OPEN_SECONDS,
+    OOM_CIRCUIT_STABLE_RESET_SECONDS,
+    OOM_RESTART_BACKOFF_MAX_SECONDS,
+    SHARED_INFERENCE_ENABLED,
+    INFERENCE_ADMISSION_ENABLED,
+    INFERENCE_SYSTEM_RESERVE_MB,
+    INFERENCE_SYSTEM_RESERVE_PERCENT,
+    INFERENCE_NEW_MODEL_DEFAULT_MB,
+    INFERENCE_MODEL_MEMORY_MARGIN_PERCENT,
 )
 from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
-from app.core.database_models import db, VideoSource, Workflow, SourceHealthLog
+from app.core.database_models import (
+    db,
+    VideoSource,
+    Workflow,
+    Algorithm,
+    MLModel,
+    SourceHealthLog,
+)
 from app.core.hw_decode_budget import (
     HW_DECODER_TYPES,
     SW_FALLBACK_DECODER_TYPE,
     HwDecodeBudget,
 )
+from app.core.inference_budget import (
+    InferenceAdmissionController,
+    OomCircuitBreaker,
+    read_cgroup_oom_kill_count,
+    read_process_memory_metrics,
+)
+from app.core.shared_inference import (
+    SharedInferenceServiceController,
+    request_service_stats,
+)
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.recording_storage_config import (
     get_recording_storage_config,
 )
-from app.core.workflow_runtime import build_workflow_signature, extract_source_id_from_workflow_data
+from app.core.workflow_runtime import (
+    build_workflow_signature,
+    extract_source_id_from_workflow_data,
+    get_node_type,
+)
 from app.core.source_rotation import (
     RoundRobinBatchSelector,
     get_source_rotation_config,
@@ -193,6 +225,26 @@ class Orchestrator:
         self.externally_reaped = {}
         self.last_upgrade_check_at = 0.0
         self.last_zombie_reap_at = 0.0
+        self.last_inference_telemetry_at = 0.0
+        self.workflow_start_block_log_times = {}
+        self.oom_kill_count = read_cgroup_oom_kill_count()
+        self.oom_circuit = OomCircuitBreaker(
+            enabled=OOM_CIRCUIT_BREAKER_ENABLED,
+            failure_threshold=OOM_CIRCUIT_FAILURE_THRESHOLD,
+            open_seconds=OOM_CIRCUIT_OPEN_SECONDS,
+            stable_reset_seconds=OOM_CIRCUIT_STABLE_RESET_SECONDS,
+            backoff_cap_seconds=OOM_RESTART_BACKOFF_MAX_SECONDS,
+        )
+        self.inference_admission = InferenceAdmissionController(
+            enabled=INFERENCE_ADMISSION_ENABLED,
+            reserve_mb=INFERENCE_SYSTEM_RESERVE_MB,
+            reserve_percent=INFERENCE_SYSTEM_RESERVE_PERCENT,
+            default_new_model_mb=INFERENCE_NEW_MODEL_DEFAULT_MB,
+            margin_percent=INFERENCE_MODEL_MEMORY_MARGIN_PERCENT,
+        )
+        self.shared_inference_service = (
+            SharedInferenceServiceController() if SHARED_INFERENCE_ENABLED else None
+        )
         # 硬解资源准入控制器（仅在使用硬解解码器时生效）
         self.hw_budget = HwDecodeBudget(
             enabled=HW_DECODE_BUDGET_ENABLED and VIDEO_DECODER_TYPE in HW_DECODER_TYPES,
@@ -206,6 +258,12 @@ class Orchestrator:
 
         db.connect(reuse_if_open=True)
         VideoSource.update(status='STOPPED', decoder_pid=None).execute()
+
+        if self.shared_inference_service is not None:
+            if self.shared_inference_service.start():
+                logger.info("共享推理服务已启动")
+            else:
+                logger.error("共享推理服务启动失败；需要共享模型的工作流将保持等待")
 
         # 健康监控配置
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
@@ -409,6 +467,209 @@ class Orchestrator:
             workflows.sort(key=lambda item: item.id)
 
         return groups
+
+    @staticmethod
+    def _model_ids_from_algorithm_config(config) -> tuple:
+        model_ids = []
+        if not isinstance(config, dict):
+            return ()
+
+        def add(value):
+            if value in (None, ''):
+                return
+            try:
+                model_ids.append(int(value))
+            except (TypeError, ValueError):
+                return
+
+        add(config.get('model_id'))
+        models = config.get('models')
+        if isinstance(models, list):
+            for item in models:
+                if isinstance(item, dict):
+                    add(item.get('model_id'))
+        elif isinstance(models, dict):
+            for item in models.values():
+                if isinstance(item, dict):
+                    add(item.get('model_id') or item.get('id'))
+        return tuple(model_ids)
+
+    @staticmethod
+    def _algorithm_id_from_node(node) -> Optional[int]:
+        if not isinstance(node, dict):
+            return None
+        data = node.get('data') if isinstance(node.get('data'), dict) else {}
+        for key in ('dataId', 'data_id', 'algorithmId', 'algorithm_id'):
+            value = node.get(key)
+            if value in (None, ''):
+                value = data.get(key)
+            if value in (None, ''):
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _model_uses_shared_ultralytics(self, algorithm, config, model_id: int) -> bool:
+        if self.shared_inference_service is None:
+            return False
+        normalized_script = str(algorithm.script_path or '').replace('\\', '/').lstrip('./')
+        # Only scripts known to call create_backend are share-compatible. Direct
+        # ultralytics.YOLO user scripts remain local and are budgeted per host.
+        if normalized_script != 'templates/adaptive_yolo_detector.py':
+            return False
+        backend = str(config.get('backend') or 'auto').strip().lower()
+        if backend in ('rknn', 'onnxruntime'):
+            return False
+        try:
+            model = MLModel.get_by_id(int(model_id))
+        except MLModel.DoesNotExist:
+            return False
+        framework = str(model.framework or '').lower()
+        extension = os.path.splitext(str(model.file_path or ''))[1].lower()
+        return backend == 'ultralytics' or (
+            backend == 'auto'
+            and extension not in ('.onnx', '.rknn')
+            and 'onnx' not in framework
+            and 'rknn' not in framework
+        )
+
+    def _workflow_model_requirements(self, workflows) -> tuple:
+        shared_model_ids = set()
+        local_model_ids = []
+        for workflow in workflows:
+            for node in workflow.data_dict.get('nodes', []):
+                if get_node_type(node) != 'algorithm':
+                    continue
+                algorithm_id = self._algorithm_id_from_node(node)
+                if algorithm_id is None:
+                    continue
+                try:
+                    algorithm = Algorithm.get_by_id(algorithm_id)
+                except Algorithm.DoesNotExist:
+                    continue
+                # Match WorkflowExecutor: algorithm config first, then node config
+                # overrides it. This is the effective model selection at runtime.
+                effective_config = dict(algorithm.config_dict)
+                node_config = node.get('config')
+                if isinstance(node_config, dict):
+                    effective_config.update(node_config)
+                model_ids = self._model_ids_from_algorithm_config(effective_config)
+                for model_id in model_ids:
+                    if self._model_uses_shared_ultralytics(
+                        algorithm, effective_config, model_id
+                    ):
+                        shared_model_ids.add(model_id)
+                    else:
+                        local_model_ids.append(model_id)
+        return shared_model_ids, tuple(local_model_ids)
+
+    def _collect_inference_service_stats(self, *, log_snapshot: bool = False):
+        if self.shared_inference_service is None:
+            return {'ok': False, 'models': []}
+        stats = request_service_stats()
+        if not stats.get('ok'):
+            return stats
+        for model in stats.get('models', []):
+            model_id = model.get('model_id')
+            if model_id is not None:
+                self.inference_admission.update_observed_model_pss(
+                    model_id, model.get('pss_mb')
+                )
+        if log_snapshot:
+            logger.info(
+                "共享推理资源: model_count=%s models=%s",
+                stats.get('model_count', 0),
+                [
+                    {
+                        'model_id': item.get('model_id'),
+                        'pid': item.get('pid'),
+                        'pss_mb': round(item['pss_mb'], 1) if item.get('pss_mb') else None,
+                        'references': item.get('references'),
+                        'queue_depth': item.get('queue_depth'),
+                    }
+                    for item in stats.get('models', [])
+                ],
+            )
+        return stats
+
+    def _refresh_inference_telemetry(self, now: float) -> None:
+        if self.shared_inference_service is None:
+            return
+        if now - self.last_inference_telemetry_at < 30.0:
+            return
+        self.last_inference_telemetry_at = now
+        self._collect_inference_service_stats(log_snapshot=True)
+        host_metrics = []
+        for source_id, process_info in self.workflow_hosts.items():
+            process = process_info.get('process')
+            if process is None or process.poll() is not None:
+                continue
+            metrics = read_process_memory_metrics(process.pid)
+            if metrics:
+                host_metrics.append({'source_id': source_id, **metrics})
+        logger.info(
+            "Source host 资源: count=%s pss_total_mb=%.1f rss_total_mb=%.1f "
+            "swap_total_mb=%.1f top_pss=%s",
+            len(host_metrics),
+            sum(item['pss_mb'] for item in host_metrics),
+            sum(item['rss_mb'] for item in host_metrics),
+            sum(item['swap_mb'] for item in host_metrics),
+            sorted(host_metrics, key=lambda item: item['pss_mb'], reverse=True)[:5],
+        )
+
+    def _log_workflow_start_blocked(self, source_id: int, reason: str, detail: str) -> None:
+        key = (int(source_id), reason)
+        now = time.monotonic()
+        if now - self.workflow_start_block_log_times.get(key, 0.0) < 30.0:
+            return
+        self.workflow_start_block_log_times[key] = now
+        logger.warning(
+            f"Source host {source_id} 暂缓启动: reason={reason}, {detail}"
+        )
+
+    def _workflow_start_allowed(self, source_id: int, workflows) -> tuple:
+        allowed, reason, retry_at = self.oom_circuit.can_start(source_id)
+        if not allowed:
+            remaining = max(0.0, retry_at - time.monotonic())
+            self._log_workflow_start_blocked(
+                source_id, reason, f"retry_in={remaining:.0f}s"
+            )
+            return False, set(), ()
+
+        if self.shared_inference_service is not None:
+            if not self.shared_inference_service.ensure_running():
+                self._log_workflow_start_blocked(
+                    source_id, 'shared_inference_unavailable', 'service restart failed'
+                )
+                return False, set(), ()
+
+        shared_model_ids, local_model_ids = self._workflow_model_requirements(workflows)
+        stats = self._collect_inference_service_stats()
+        service_model_ids = {
+            item.get('model_id')
+            for item in stats.get('models', [])
+            if item.get('model_id') is not None and item.get('ready')
+        }
+        decision = self.inference_admission.evaluate(
+            source_id,
+            shared_model_ids,
+            local_model_ids=local_model_ids,
+            service_model_ids=service_model_ids,
+        )
+        if not decision.allowed:
+            self._log_workflow_start_blocked(
+                source_id,
+                'inference_admission_rejected',
+                f"decision={decision.reason}, available={decision.available_mb:.0f}MB, "
+                f"reserve={decision.reserve_mb:.0f}MB, "
+                f"estimated_increment={decision.estimated_increment_mb:.0f}MB, "
+                f"new_shared_models={list(decision.new_model_ids)}, "
+                f"local_models={list(decision.local_model_ids)}",
+            )
+            return False, shared_model_ids, local_model_ids
+        return True, shared_model_ids, local_model_ids
 
     def _check_source_health(self, source: VideoSource):
         """
@@ -641,6 +902,7 @@ class Orchestrator:
         logger.info(f"视频源 {source.id} 进入排空状态: {reason}")
         process_info = self.workflow_hosts.pop(source.id, None)
         self.workflow_host_signatures.pop(source.id, None)
+        self.inference_admission.release(source.id)
         if process_info is not None:
             process = process_info.get('process')
             if process is not None and process.poll() is None:
@@ -1286,16 +1548,22 @@ class Orchestrator:
         for source in sources:
             self._stop_source(source)
     
-    def _start_source_host(self, source_id: int, workflows):
+    def _start_source_host(
+        self,
+        source_id: int,
+        workflows,
+        shared_model_ids=None,
+        local_model_ids=(),
+    ):
         try:
             source = VideoSource.get_by_id(source_id)
         except VideoSource.DoesNotExist:
             logger.error(f"视频源 {source_id} 不存在，无法启动 source host")
-            return
+            return False
 
         if source.status not in ('STARTING', 'RUNNING'):
             logger.warning(f"视频源 {source.name} (状态: {source.status}) 未运行，跳过启动 source host")
-            return
+            return False
 
         logger.info(
             f"  -> 正在启动视频源宿主进程 Source={source_id}, "
@@ -1324,6 +1592,7 @@ class Orchestrator:
             def handle_stdout_line(line: str):
                 if line.strip() == f"SOURCE_HOST_READY:{source_id}":
                     ready_event.set()
+                    self.inference_admission.mark_source_ready(source_id)
                     logger.info(f"Source host {source_id} 已完成检测就绪")
 
             # 启动输出读取线程
@@ -1343,6 +1612,9 @@ class Orchestrator:
                 'stdout_reader': stdout_reader,
                 'stderr_reader': stderr_reader,
                 'ready_event': ready_event,
+                'oom_kill_count_at_start': read_cgroup_oom_kill_count(),
+                'shared_model_ids': set(shared_model_ids or ()),
+                'local_model_ids': tuple(local_model_ids or ()),
             }
             self.workflow_host_signatures[source_id] = build_workflow_signature(workflows)
             stdout_reader.start()
@@ -1352,9 +1624,16 @@ class Orchestrator:
                 f"Source host {source_id} 已启动，PID: {workflow_p.pid}, "
                 f"signature={self.workflow_host_signatures[source_id]}"
             )
+            self.inference_admission.commit(
+                source_id,
+                shared_model_ids or (),
+                local_model_ids=local_model_ids or (),
+            )
+            return True
 
         except Exception as e:
             logger.error(f"启动 Source host {source_id} 时发生异常: {e}", exc_info=True)
+            return False
 
     def _stop_source_host(self, source_id: int):
         if source_id not in self.workflow_hosts:
@@ -1372,6 +1651,7 @@ class Orchestrator:
             self.externally_reaped.pop(process.pid, None)
         del self.workflow_hosts[source_id]
         self.workflow_host_signatures.pop(source_id, None)
+        self.inference_admission.release(source_id)
     
     def manage_workflows(self):
         active_groups = self._build_active_workflow_groups()
@@ -1390,18 +1670,38 @@ class Orchestrator:
             running_info = self.workflow_hosts.get(source_id)
 
             if running_info is None:
+                allowed, shared_model_ids, local_model_ids = self._workflow_start_allowed(
+                    source_id, workflows
+                )
+                if not allowed:
+                    continue
                 self._mark_rotation_batch_starting(source_id)
-                self._start_source_host(source_id, workflows)
+                self._start_source_host(
+                    source_id,
+                    workflows,
+                    shared_model_ids=shared_model_ids,
+                    local_model_ids=local_model_ids,
+                )
                 continue
 
             running_signature = self.workflow_host_signatures.get(source_id)
             if running_signature != signature:
+                allowed, shared_model_ids, local_model_ids = self._workflow_start_allowed(
+                    source_id, workflows
+                )
+                if not allowed:
+                    continue
                 logger.info(
                     f"🔄 Source {source_id} 的工作流集合已变更 "
                     f"({running_signature} -> {signature})，重启 source host"
                 )
                 self._stop_source_host(source_id)
-                self._start_source_host(source_id, workflows)
+                self._start_source_host(
+                    source_id,
+                    workflows,
+                    shared_model_ids=shared_model_ids,
+                    local_model_ids=local_model_ids,
+                )
                 self._mark_rotation_batch_starting(
                     source_id,
                     restart_deadline=True,
@@ -1416,9 +1716,44 @@ class Orchestrator:
             process_info = self.workflow_hosts[source_id]
             exit_code = self._get_process_exit_code(process_info['process'])
             if exit_code is not None:
-                logger.warning(
-                    f"🚨 Source host {source_id} 的进程已退出 (退出码:{exit_code})，准备自动重启"
+                current_oom_count = read_cgroup_oom_kill_count()
+                oom_exit = (
+                    exit_code == -signal.SIGKILL
+                    and current_oom_count > process_info.get(
+                        'oom_kill_count_at_start', current_oom_count
+                    )
                 )
+                if oom_exit:
+                    state = self.oom_circuit.record_oom(source_id)
+                    logger.error(
+                        f"Source host {source_id} 被 OOM killer 终止；"
+                        f"failures={state.failures}, "
+                        f"retry_at={state.next_retry_at:.1f}, "
+                        f"circuit_open_until={state.circuit_open_until:.1f}"
+                    )
+                    try:
+                        source = VideoSource.get_by_id(source_id)
+                        self._log_health_event(
+                            source,
+                            'workflow_oom_circuit_open'
+                            if state.circuit_open_until
+                            else 'workflow_oom_backoff',
+                            {
+                                'exit_code': exit_code,
+                                'oom_kill_count': current_oom_count,
+                                'failures': state.failures,
+                                'retry_at_monotonic': state.next_retry_at,
+                                'circuit_open_until_monotonic': state.circuit_open_until,
+                            },
+                            severity='critical',
+                        )
+                    except VideoSource.DoesNotExist:
+                        pass
+                else:
+                    logger.warning(
+                        f"🚨 Source host {source_id} 的进程已退出 "
+                        f"(退出码:{exit_code})，准备自动重启"
+                    )
                 try:
                     stdout, stderr = process_info['process'].communicate(timeout=1)
                     if stderr:
@@ -1429,8 +1764,13 @@ class Orchestrator:
                 self.externally_reaped.pop(process_info['process'].pid, None)
                 del self.workflow_hosts[source_id]
                 self.workflow_host_signatures.pop(source_id, None)
+                self.inference_admission.release(source_id)
+                self.oom_kill_count = max(self.oom_kill_count, current_oom_count)
                 self._mark_rotation_batch_starting(source_id)
-                logger.info(f"✅ Source host {source_id} 已清理进程记录，将在下一轮管理循环中自动重启")
+                logger.info(
+                    f"✅ Source host {source_id} 已清理进程记录，"
+                    f"{'等待 OOM 熔断器放行' if oom_exit else '将在下一轮管理循环中自动重启'}"
+                )
 
     def run(self):
         print("🚀 编排器启动，开始动态管理视频源和工作流...")
@@ -1438,6 +1778,7 @@ class Orchestrator:
         while True:
             self.manage_sources()
             self.manage_workflows()
+            self._refresh_inference_telemetry(time.monotonic())
             time.sleep(1)
 
     def stop(self):
@@ -1457,6 +1798,9 @@ class Orchestrator:
             VideoSource.status.in_(['STARTING', 'RUNNING', 'DRAINING', 'ERROR'])
         ):
             self._stop_source(source)
+
+        if self.shared_inference_service is not None:
+            self.shared_inference_service.stop()
         
         db.close()
         print("所有工作流和视频源已停止。")

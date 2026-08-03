@@ -139,6 +139,33 @@ def workflow_references_algorithm(workflow_data: dict, algorithm_id: int) -> boo
     return False
 
 
+def extract_algorithm_ids(workflow_data: dict) -> Tuple[int, ...]:
+    """Return unique algorithm ids referenced by a workflow in stable order."""
+    if not isinstance(workflow_data, dict):
+        return ()
+    algorithm_ids = []
+    seen = set()
+    for node in workflow_data.get('nodes', []):
+        if get_node_type(node) != 'algorithm':
+            continue
+        data = node.get('data') if isinstance(node, dict) else None
+        values = [node.get(key) for key in ALGORITHM_ID_KEYS]
+        if isinstance(data, dict):
+            values.extend(data.get(key) for key in ALGORITHM_ID_KEYS)
+        for value in values:
+            if value in (None, ''):
+                continue
+            try:
+                normalized = int(value)
+            except (TypeError, ValueError):
+                continue
+            if normalized not in seen:
+                seen.add(normalized)
+                algorithm_ids.append(normalized)
+            break
+    return tuple(algorithm_ids)
+
+
 def validate_single_source_node(workflow_data: dict) -> tuple[bool, str]:
     """校验工作流中必须且只能有一个合法的 source 节点。"""
     if not isinstance(workflow_data, dict):

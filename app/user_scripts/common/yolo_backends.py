@@ -17,9 +17,26 @@ import numpy as np
 from app import logger
 
 try:
-    from ultralytics import YOLO
-except Exception:
+    from app.config import SHARED_INFERENCE_ENABLED
+except ImportError:  # pragma: no cover - standalone adapter tests/templates
+    SHARED_INFERENCE_ENABLED = False
+
+_SHARED_ULTRALYTICS_CLIENT_MODE = (
+    SHARED_INFERENCE_ENABLED
+    and os.getenv("SHARED_INFERENCE_WORKER", "false").lower()
+    not in ("true", "1", "yes", "on")
+)
+
+# Importing Ultralytics also imports PyTorch/CUDA. In shared mode source hosts are
+# clients only, so importing it in every host would retain most of the memory we
+# are trying to eliminate. Only the dedicated model worker imports the runtime.
+if _SHARED_ULTRALYTICS_CLIENT_MODE:
     YOLO = None
+else:
+    try:
+        from ultralytics import YOLO
+    except Exception:
+        YOLO = None
 
 try:
     from rknnlite.api import RKNNLite
@@ -1104,28 +1121,31 @@ class UltralyticsBackend(BaseYoloBackend):
             raise ImportError("当前环境未安装 ultralytics，无法加载 YOLO 模型")
         self.model = YOLO(model_path)
 
-    def infer(self, frame: np.ndarray):
+    @staticmethod
+    def _predict_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
         kwargs = {
             "save": False,
-            "conf": float(self.config.get("confidence", 0.6)),
-            "iou": float(self.config.get("nms_iou", 0.45)),
+            "conf": float(config.get("confidence", 0.6)),
+            "iou": float(config.get("nms_iou", 0.45)),
             "verbose": False,
         }
-        class_filter = self.config.get("class_filter", [])
+        class_filter = config.get("class_filter", [])
         if class_filter:
             kwargs["classes"] = class_filter
+        return kwargs
 
+    @staticmethod
+    def _parse_result(result, config: Dict[str, Any]):
         detections = []
         details = []
-        results = self.model.predict(frame, **kwargs)
-        if results and len(results) > 0:
-            for det in results[0].boxes.data.tolist():
+        if result is not None:
+            for det in result.boxes.data.tolist():
                 x1, y1, x2, y2, conf, cls = det
-                class_name = results[0].names[int(cls)]
+                class_name = result.names[int(cls)]
                 detections.append({
                     "box": (x1, y1, x2, y2),
                     "label": class_name,
-                    "label_name": self.config.get("label_name", class_name),
+                    "label_name": config.get("label_name") or class_name,
                     "class": int(cls),
                     "confidence": float(conf),
                 })
@@ -1137,8 +1157,64 @@ class UltralyticsBackend(BaseYoloBackend):
                 })
 
         return detections, details, {
-            "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            "nms_iou": float(config.get("nms_iou", 0.45)),
         }
+
+    def infer(self, frame: np.ndarray):
+        results = self.model.predict(frame, **self._predict_kwargs(self.config))
+        result = results[0] if results and len(results) > 0 else None
+        return self._parse_result(result, self.config)
+
+    def infer_batch(self, frames: List[np.ndarray], configs: List[Dict[str, Any]]):
+        if not frames:
+            return []
+        if len(frames) != len(configs):
+            raise ValueError("frames/configs batch length mismatch")
+        results = self.model.predict(frames, **self._predict_kwargs(configs[0]))
+        parsed = []
+        for index, config in enumerate(configs):
+            result = results[index] if results and index < len(results) else None
+            parsed.append(self._parse_result(result, config))
+        return parsed
+
+
+class SharedUltralyticsBackend(BaseYoloBackend):
+    """Lightweight proxy to the worker-container shared model service."""
+
+    @property
+    def name(self) -> str:
+        # Preserve the public backend name used by ROI and result consumers.
+        return "ultralytics"
+
+    def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
+        super().__init__(model_path, model_info, config)
+        from app.core.shared_inference import SharedInferenceClient
+
+        self.client = SharedInferenceClient(model_path, model_info, config)
+        self.model = self.client
+
+    def infer(self, frame: np.ndarray):
+        from app.core.shared_inference import SharedInferenceOverloaded
+
+        try:
+            response = self.client.infer(frame, self.config)
+        except SharedInferenceOverloaded as exc:
+            logger.warning(f"共享推理队列已满，丢弃当前分析帧: {exc}")
+            return [], [], {
+                "shared_inference": True,
+                "overloaded": True,
+                "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            }
+        metadata = dict(response.get("metadata") or {})
+        metadata["shared_inference"] = True
+        metadata["model_key"] = self.client.model_key
+        return response.get("detections") or [], response.get("details") or [], metadata
+
+    def cleanup(self):
+        if getattr(self, "client", None) is not None:
+            self.client.close()
+            self.client = None
+        self.model = None
 
 
 class RKNNBackend(BaseYoloBackend):
@@ -1284,4 +1360,6 @@ def create_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str
         return RKNNBackend(model_path, model_info, config)
     if backend_name == "onnxruntime":
         return ONNXRuntimeBackend(model_path, model_info, config)
+    if _SHARED_ULTRALYTICS_CLIENT_MODE and config.get("shared_inference_enabled", True):
+        return SharedUltralyticsBackend(model_path, model_info, config)
     return UltralyticsBackend(model_path, model_info, config)

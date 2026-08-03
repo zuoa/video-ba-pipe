@@ -3,6 +3,7 @@ import threading
 from app.core.workflow_executor import WorkflowExecutor
 from app.core.workflow_runtime import (
     build_workflow_signature,
+    extract_algorithm_ids,
     extract_source_id_from_workflow_data,
     normalize_source_node_fields,
     validate_single_source_node,
@@ -69,6 +70,18 @@ def test_workflow_references_algorithm_supports_runtime_and_nested_shapes():
     assert workflow_references_algorithm(workflow_data, 12) is True
     assert workflow_references_algorithm(workflow_data, 19) is True
     assert workflow_references_algorithm(workflow_data, 99) is False
+
+
+def test_extract_algorithm_ids_deduplicates_runtime_and_nested_shapes():
+    workflow_data = {
+        "nodes": [
+            {"type": "algorithm", "dataId": "12"},
+            {"data": {"type": "algorithm", "algorithmId": 19}},
+            {"type": "algorithm", "algorithmId": 12},
+        ]
+    }
+
+    assert extract_algorithm_ids(workflow_data) == (12, 19)
 
 
 def test_validate_single_source_node_rejects_multiple_sources():

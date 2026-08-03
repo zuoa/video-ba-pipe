@@ -162,6 +162,69 @@ SOURCE_RESTART_BACKOFF_MAX_SECONDS = max(30, int(os.getenv('SOURCE_RESTART_BACKO
 # 每个管理周期最多启动的视频源数量，防止批量启动时 ffprobe/硬解通道惊群。
 SOURCE_MAX_CONCURRENT_STARTS = max(1, int(os.getenv('SOURCE_MAX_CONCURRENT_STARTS', '2')))
 
+# ============ 推理内存保护与共享模型服务 ============
+# Source host 被全局 OOM killer 以 SIGKILL 终止后，禁止编排器立即原地重启，
+# 否则会形成“加载模型 -> OOM -> 重启 -> 再加载”的放大循环。
+OOM_CIRCUIT_BREAKER_ENABLED = os.getenv(
+    'OOM_CIRCUIT_BREAKER_ENABLED', 'true'
+).lower() in ('true', '1', 'yes', 'on')
+OOM_CIRCUIT_FAILURE_THRESHOLD = max(
+    1, int(os.getenv('OOM_CIRCUIT_FAILURE_THRESHOLD', '3'))
+)
+OOM_CIRCUIT_OPEN_SECONDS = max(
+    30, int(os.getenv('OOM_CIRCUIT_OPEN_SECONDS', '600'))
+)
+OOM_CIRCUIT_STABLE_RESET_SECONDS = max(
+    60, int(os.getenv('OOM_CIRCUIT_STABLE_RESET_SECONDS', '600'))
+)
+OOM_RESTART_BACKOFF_MAX_SECONDS = max(
+    30, int(os.getenv('OOM_RESTART_BACKOFF_MAX_SECONDS', '300'))
+)
+
+# Ultralytics 模型共享服务。默认关闭以保持通用/开发环境兼容，Jetson compose
+# 显式开启。服务使用 Unix socket + POSIX shared memory 在 source host 间共享模型。
+SHARED_INFERENCE_ENABLED = os.getenv(
+    'SHARED_INFERENCE_ENABLED', 'false'
+).lower() in ('true', '1', 'yes', 'on')
+SHARED_INFERENCE_SOCKET_PATH = os.getenv(
+    'SHARED_INFERENCE_SOCKET_PATH', '/tmp/video-ba-pipe-inference.sock'
+).strip() or '/tmp/video-ba-pipe-inference.sock'
+SHARED_INFERENCE_QUEUE_SIZE = max(
+    1, int(os.getenv('SHARED_INFERENCE_QUEUE_SIZE', '2'))
+)
+SHARED_INFERENCE_BATCH_MAX_SIZE = max(
+    1, int(os.getenv('SHARED_INFERENCE_BATCH_MAX_SIZE', '4'))
+)
+SHARED_INFERENCE_BATCH_WAIT_MS = max(
+    0.0, float(os.getenv('SHARED_INFERENCE_BATCH_WAIT_MS', '5'))
+)
+SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS = max(
+    1.0, float(os.getenv('SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS', '30'))
+)
+SHARED_INFERENCE_IDLE_SECONDS = max(
+    10, int(os.getenv('SHARED_INFERENCE_IDLE_SECONDS', '120'))
+)
+
+# 推理准入只把 RAM 作为容量；Swap 不计入可用容量。新模型尚无实测数据时，
+# 使用保守默认增量，待共享服务产生 PSS 样本后改用观测值。
+INFERENCE_ADMISSION_ENABLED = os.getenv(
+    'INFERENCE_ADMISSION_ENABLED', 'false'
+).lower() in ('true', '1', 'yes', 'on')
+INFERENCE_SYSTEM_RESERVE_MB = max(
+    256, int(os.getenv('INFERENCE_SYSTEM_RESERVE_MB', '2048'))
+)
+INFERENCE_SYSTEM_RESERVE_PERCENT = min(
+    50.0,
+    max(0.0, float(os.getenv('INFERENCE_SYSTEM_RESERVE_PERCENT', '15'))),
+)
+INFERENCE_NEW_MODEL_DEFAULT_MB = max(
+    128, int(os.getenv('INFERENCE_NEW_MODEL_DEFAULT_MB', '1024'))
+)
+INFERENCE_MODEL_MEMORY_MARGIN_PERCENT = min(
+    100.0,
+    max(0.0, float(os.getenv('INFERENCE_MODEL_MEMORY_MARGIN_PERCENT', '25'))),
+)
+
 # 资源剖析日志。默认关闭；打开后会周期性输出关键帧拷贝、编码、workflow耗时。
 RESOURCE_PROFILING_ENABLED = os.getenv('RESOURCE_PROFILING_ENABLED', 'false').lower() in ('true', '1', 'yes')
 RESOURCE_PROFILE_LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv('RESOURCE_PROFILE_LOG_INTERVAL_SECONDS', '30')))

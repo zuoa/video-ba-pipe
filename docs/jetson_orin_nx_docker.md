@@ -142,6 +142,40 @@ sudo reboot
 
 不调整内核参数系统也能稳定运行（超出部分自动软解），该参数只是提升硬解容量上限。
 
+## 共享推理与 OOM 保护
+
+Jetson compose 仅在 worker 容器中默认启用本机共享推理、推理内存准入和
+OOM 熔断。使用 `templates/adaptive_yolo_detector.py` 且实际选择 Ultralytics
+后端时，相同模型由独立模型进程加载一次，各 source host 通过 Unix socket
+和 POSIX shared memory 提交帧；队列满时丢弃分析帧，不继续扩张内存。
+
+`simple_yolo_detector.py`、`yolo_detector.py` 以及直接实例化
+`ultralytics.YOLO` 的自定义脚本仍在各 source host 内加载模型。准入控制会将
+这些模型按 host 和模型配置项逐份计算，不会把同一模型 ID 误判为已共享。
+API 容器保持共享推理关闭，因此算法测试接口不会连接 worker 私有的 `/tmp`
+socket。
+
+关键默认配置：
+
+```text
+SHARED_INFERENCE_ENABLED=true
+SHARED_INFERENCE_QUEUE_SIZE=2
+SHARED_INFERENCE_BATCH_MAX_SIZE=4
+INFERENCE_ADMISSION_ENABLED=true
+INFERENCE_SYSTEM_RESERVE_MB=2048
+OOM_CIRCUIT_BREAKER_ENABLED=true
+OOM_CIRCUIT_FAILURE_THRESHOLD=3
+```
+
+worker 每 30 秒输出一条 `共享推理资源` 和 `Source host 资源` 日志，可检查
+模型进程数量、PSS、Swap、引用数与队列深度。若 source host 被全局 OOM
+killer 终止，日志会显示 `workflow_oom_backoff` 或
+`workflow_oom_circuit_open`，熔断期间不会立即重新加载模型。
+
+紧急回退到旧的每工作流本地模型方式时可设置
+`SHARED_INFERENCE_ENABLED=false`；该模式内存开销较大，不建议在多路 Jetson
+部署中长期使用。
+
 ## 实机验收
 
 先验证 CUDA、运行时库和插件：
