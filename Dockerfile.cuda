@@ -56,10 +56,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 安装到 /usr/local/bin 以覆盖 apt 版 ffmpeg(ffprobe 一并替换)。
 # 如需可复现构建/供应链校验:把 ARG 固定到某个版本 tag,并加 --fail sha256 校验。
 # 下方的 grep 检查是硬保证——若 cuvid 缺失,镜像构建会立即失败而非静默产出坏镜像。
+# 下载用 curl 重试(--retry-all-errors):BtbN 的 latest 发布后偶有 CDN 5xx/中断,
+# 无重试时一次瞬时抖动就会否决整次镜像构建。
 # ============================================
 ARG FFMPEG_CUVID_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
 RUN set -eux; \
-    curl -fsSL "${FFMPEG_CUVID_URL}" -o /tmp/ffmpeg.tar.xz; \
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --retry-connrefused "${FFMPEG_CUVID_URL}" -o /tmp/ffmpeg.tar.xz; \
     mkdir -p /tmp/ffmpeg-extract; \
     tar -xf /tmp/ffmpeg.tar.xz --strip-components=1 -C /tmp/ffmpeg-extract; \
     install -m 0755 /tmp/ffmpeg-extract/bin/ffmpeg  /usr/local/bin/ffmpeg; \
