@@ -12,7 +12,7 @@
 
 2. 后端运行时（runtime）
    - `cpu`：x86 CPU 推理，使用 `Dockerfile.cpu`
-   - `cuda`：x86 NVIDIA GPU 推理，使用 `Dockerfile.cuda`
+   - `cuda`：x86 NVIDIA GPU 推理（NVDEC 硬解），使用 `Dockerfile.cuda`
    - `rk`：RK3588 / NPU 推理，使用 `Dockerfile.rk`
    - `jetson`：Jetson Orin / CUDA 推理与硬解，使用 `Dockerfile.jetson`
 
@@ -29,23 +29,26 @@
 | 参数 | 说明 |
 | --- | --- |
 | `runtime=cpu` | 构建 x86 CPU 后端镜像 |
-| `runtime=cuda` | 构建 x86 CUDA 后端镜像 |
 | `runtime=rk` | 构建 RK3588 ARM64 后端镜像 |
 | `runtime=jetson` | 构建 Jetson Orin ARM64 后端镜像 |
-| `runtime=all` | 同时构建 CPU、CUDA、RK、Jetson 后端镜像 |
+| `runtime=all` | 同时构建 CPU、RK、Jetson 后端镜像 |
+
+X86+CUDA 镜像由独立工作流 `Build X86+CUDA image` 手动触发构建（无参数），
+不在 `Build backend images` 的 `runtime` 选项中。
 
 产物：
 
 | runtime | platform | Dockerfile | 镜像 tag |
 | --- | --- | --- | --- |
 | `cpu` | `linux/amd64` | `Dockerfile.cpu` | `ghcr.io/<owner>/<repo>:cpu` |
-| `cuda` | `linux/amd64` | `Dockerfile.cuda` | `ghcr.io/<owner>/<repo>:cuda` |
+| `cuda`(独立工作流) | `linux/amd64` | `Dockerfile.cuda` | `ghcr.io/<owner>/<repo>:cuda` |
 | `rk` | `linux/arm64` | `Dockerfile.rk` | `ghcr.io/<owner>/<repo>:rk` |
 | `jetson` | `linux/arm64` | `Dockerfile.jetson` | `ghcr.io/<owner>/<repo>:jetson` |
 
 每个镜像还会额外推送一个带 commit 的 tag，例如 `cpu-<commit>`。
 
-push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。CUDA、RK 和 Jetson 镜像通过手动触发构建。
+push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。RK 和 Jetson 镜像通过
+`Build backend images` 手动触发构建；X86+CUDA 镜像通过 `Build X86+CUDA image` 手动触发构建。
 
 ### 前端镜像
 
@@ -90,10 +93,10 @@ RK 后端镜像会通过 `FFMPEG_RK_IMAGE` 复用这个基础镜像里的 `/opt/
 Build backend images -> runtime=cpu
 ```
 
-后端 CUDA：
+后端 X86+CUDA：
 
 ```text
-Build backend images -> runtime=cuda
+Build X86+CUDA image -> Run workflow
 ```
 
 前端：
