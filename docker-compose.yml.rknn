@@ -6,6 +6,17 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# 解码与硬解预算(CMA 探针)共享配置,api 与 worker 通过 YAML anchor 保持一致
+x-hw-decode-environment: &hw-decode-environment
+  VIDEO_DECODER_TYPE: ${VIDEO_DECODER_TYPE:-rk_mpp}
+  HW_DECODE_BUDGET_ENABLED: ${HW_DECODE_BUDGET_ENABLED:-true}
+  HW_DECODE_MIN_SLOTS: ${HW_DECODE_MIN_SLOTS:-1}
+  HW_DECODE_MAX_SLOTS: ${HW_DECODE_MAX_SLOTS:-32}
+  HW_DECODE_CMA_PER_INSTANCE_MB: ${HW_DECODE_CMA_PER_INSTANCE_MB:-16}
+  HW_DECODE_CMA_RESERVE_MB: ${HW_DECODE_CMA_RESERVE_MB:-160}
+  HW_DECODE_SW_FALLBACK_ENABLED: ${HW_DECODE_SW_FALLBACK_ENABLED:-true}
+  HW_DECODE_SW_FALLBACK_MAX: ${HW_DECODE_SW_FALLBACK_MAX:-0}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -36,58 +47,59 @@ services:
     
     # 环境变量
     environment:
-      - PATH=/opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      - LD_LIBRARY_PATH=/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
-      - COMPANY_NAME=${COMPANY_NAME:-码全科技}
-      - DB_BACKEND=${DB_BACKEND:-postgres}
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_PORT=${DB_PORT:-5432}
-      - DB_NAME=${DB_NAME:-video_ba_pipe}
-      - DB_USER=${DB_USER:-video_ba_pipe}
-      - DB_PASSWORD=${DB_PASSWORD:-video_ba_pipe}
-      - DB_SSLMODE=${DB_SSLMODE:-disable}
-      - FRAME_SAVE_PATH=/data/frames
-      - VIDEO_SAVE_PATH=/data/videos
-      - VIDEO_SOURCE_PATH=/data/video_sources
-      - MODEL_SAVE_PATH=/data/models
-      - HF_USE_MIRROR=${HF_USE_MIRROR:-false}
-      - HF_MIRROR_ENDPOINT=${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
-      - HF_DOWNLOAD_TIMEOUT_SECONDS=${HF_DOWNLOAD_TIMEOUT_SECONDS:-120}
-      - HF_TOKEN=${HF_TOKEN:-}
-      - USER_SCRIPTS_ROOT=/data/user_scripts
-      - SNAPSHOT_PATH=/data/snapshots
-      - VIDEO_FRAME_PIXEL_FORMAT=${VIDEO_FRAME_PIXEL_FORMAT:-nv12}
-      - IS_EXTREME_DECODE_MODE=${IS_EXTREME_DECODE_MODE:-true}
-      - DECODER_OUTPUT_QUEUE_SIZE=${DECODER_OUTPUT_QUEUE_SIZE:-2}
-      - ANALYSIS_TARGET_FPS=${ANALYSIS_TARGET_FPS:-2}
-      - ANALYSIS_BUFFER_SECONDS=${ANALYSIS_BUFFER_SECONDS:-3}
-      - RECORDING_ENABLED=${RECORDING_ENABLED:-false}
-      - PRE_ALERT_DURATION=${PRE_ALERT_DURATION:-15}
-      - POST_ALERT_DURATION=${POST_ALERT_DURATION:-15}
-      - RECORDING_FPS=${RECORDING_FPS:-3}
-      - RECORDING_BUFFER_DURATION=${RECORDING_BUFFER_DURATION:-32}
-      - RECORDING_JPEG_QUALITY=${RECORDING_JPEG_QUALITY:-80}
-      - WORKFLOW_ZERO_COPY_FRAMES=${WORKFLOW_ZERO_COPY_FRAMES:-false}
-      - SOURCE_HOST_WORKFLOW_NODE_WORKERS=${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
-      - RESOURCE_PROFILING_ENABLED=${RESOURCE_PROFILING_ENABLED:-false}
-      - ALERT_SUPPRESSION_DURATION=60
-      - ALERT_IMAGE_CLEANUP_ENABLED=true
-      - ALERT_IMAGE_RETENTION_DAYS=7
-      - WINDOW_DETECTION_RETENTION_HOURS=24
-      - ALERT_IMAGE_MAX_STORAGE_GB=${ALERT_IMAGE_MAX_STORAGE_GB:-10}
-      - ALERT_VIDEO_MAX_STORAGE_GB=${ALERT_VIDEO_MAX_STORAGE_GB:-20}
-      - ALERT_IMAGE_MIN_FREE_GB=${ALERT_IMAGE_MIN_FREE_GB:-10}
-      - MEDIA_CLEANUP_INTERVAL_SECONDS=${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
-      - RABBITMQ_ENABLED=true
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=admin123
-      - RABBITMQ_VHOST=/
-      - RABBITMQ_ALERT_QUEUE=video_alerts
-      - RABBITMQ_ALERT_EXCHANGE=video_alerts
-      - RABBITMQ_ALERT_ROUTING_KEY=alert
-    
+      <<: *hw-decode-environment
+      PATH: /opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
+      COMPANY_NAME: ${COMPANY_NAME:-码全科技}
+      DB_BACKEND: ${DB_BACKEND:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-video_ba_pipe}
+      DB_USER: ${DB_USER:-video_ba_pipe}
+      DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      FRAME_SAVE_PATH: /data/frames
+      VIDEO_SAVE_PATH: /data/videos
+      VIDEO_SOURCE_PATH: /data/video_sources
+      MODEL_SAVE_PATH: /data/models
+      HF_USE_MIRROR: ${HF_USE_MIRROR:-false}
+      HF_MIRROR_ENDPOINT: ${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
+      HF_DOWNLOAD_TIMEOUT_SECONDS: ${HF_DOWNLOAD_TIMEOUT_SECONDS:-120}
+      HF_TOKEN: ${HF_TOKEN:-}
+      USER_SCRIPTS_ROOT: /data/user_scripts
+      SNAPSHOT_PATH: /data/snapshots
+      VIDEO_FRAME_PIXEL_FORMAT: ${VIDEO_FRAME_PIXEL_FORMAT:-nv12}
+      IS_EXTREME_DECODE_MODE: ${IS_EXTREME_DECODE_MODE:-true}
+      DECODER_OUTPUT_QUEUE_SIZE: ${DECODER_OUTPUT_QUEUE_SIZE:-2}
+      ANALYSIS_TARGET_FPS: ${ANALYSIS_TARGET_FPS:-2}
+      ANALYSIS_BUFFER_SECONDS: ${ANALYSIS_BUFFER_SECONDS:-3}
+      RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
+      PRE_ALERT_DURATION: ${PRE_ALERT_DURATION:-15}
+      POST_ALERT_DURATION: ${POST_ALERT_DURATION:-15}
+      RECORDING_FPS: ${RECORDING_FPS:-3}
+      RECORDING_BUFFER_DURATION: ${RECORDING_BUFFER_DURATION:-32}
+      RECORDING_JPEG_QUALITY: ${RECORDING_JPEG_QUALITY:-80}
+      WORKFLOW_ZERO_COPY_FRAMES: ${WORKFLOW_ZERO_COPY_FRAMES:-false}
+      SOURCE_HOST_WORKFLOW_NODE_WORKERS: ${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
+      RESOURCE_PROFILING_ENABLED: ${RESOURCE_PROFILING_ENABLED:-false}
+      ALERT_SUPPRESSION_DURATION: "60"
+      ALERT_IMAGE_CLEANUP_ENABLED: "true"
+      ALERT_IMAGE_RETENTION_DAYS: "7"
+      WINDOW_DETECTION_RETENTION_HOURS: "24"
+      ALERT_IMAGE_MAX_STORAGE_GB: ${ALERT_IMAGE_MAX_STORAGE_GB:-10}
+      ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
+      ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
+      MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
+      RABBITMQ_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_VHOST: /
+      RABBITMQ_ALERT_QUEUE: video_alerts
+      RABBITMQ_ALERT_EXCHANGE: video_alerts
+      RABBITMQ_ALERT_ROUTING_KEY: alert
+
     # 数据卷挂载
     volumes:
       - ./data:/data
@@ -119,53 +131,53 @@ services:
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     environment:
-      - PATH=/opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      - LD_LIBRARY_PATH=/opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
-      - DB_BACKEND=${DB_BACKEND:-postgres}
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_PORT=${DB_PORT:-5432}
-      - DB_NAME=${DB_NAME:-video_ba_pipe}
-      - DB_USER=${DB_USER:-video_ba_pipe}
-      - DB_PASSWORD=${DB_PASSWORD:-video_ba_pipe}
-      - DB_SSLMODE=${DB_SSLMODE:-disable}
-      - FRAME_SAVE_PATH=/data/frames
-      - VIDEO_SAVE_PATH=/data/videos
-      - VIDEO_SOURCE_PATH=/data/video_sources
-      - MODEL_SAVE_PATH=/data/models
-      - USER_SCRIPTS_ROOT=/data/user_scripts
-      - SNAPSHOT_PATH=/data/snapshots
-      - VIDEO_DECODER_TYPE=rk_mpp
-      - VIDEO_FRAME_PIXEL_FORMAT=${VIDEO_FRAME_PIXEL_FORMAT:-nv12}
-      - IS_EXTREME_DECODE_MODE=${IS_EXTREME_DECODE_MODE:-true}
-      - DECODER_OUTPUT_QUEUE_SIZE=${DECODER_OUTPUT_QUEUE_SIZE:-2}
-      - ANALYSIS_TARGET_FPS=${ANALYSIS_TARGET_FPS:-2}
-      - ANALYSIS_BUFFER_SECONDS=${ANALYSIS_BUFFER_SECONDS:-3}
-      - RECORDING_ENABLED=${RECORDING_ENABLED:-false}
-      - PRE_ALERT_DURATION=${PRE_ALERT_DURATION:-15}
-      - POST_ALERT_DURATION=${POST_ALERT_DURATION:-15}
-      - RECORDING_FPS=${RECORDING_FPS:-3}
-      - RECORDING_BUFFER_DURATION=${RECORDING_BUFFER_DURATION:-32}
-      - RECORDING_JPEG_QUALITY=${RECORDING_JPEG_QUALITY:-80}
-      - WORKFLOW_ZERO_COPY_FRAMES=${WORKFLOW_ZERO_COPY_FRAMES:-false}
-      - SOURCE_HOST_WORKFLOW_NODE_WORKERS=${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
-      - RESOURCE_PROFILING_ENABLED=${RESOURCE_PROFILING_ENABLED:-false}
-      - ALERT_SUPPRESSION_DURATION=60
-      - ALERT_IMAGE_CLEANUP_ENABLED=true
-      - ALERT_IMAGE_RETENTION_DAYS=7
-      - WINDOW_DETECTION_RETENTION_HOURS=24
-      - ALERT_IMAGE_MAX_STORAGE_GB=${ALERT_IMAGE_MAX_STORAGE_GB:-10}
-      - ALERT_VIDEO_MAX_STORAGE_GB=${ALERT_VIDEO_MAX_STORAGE_GB:-20}
-      - ALERT_IMAGE_MIN_FREE_GB=${ALERT_IMAGE_MIN_FREE_GB:-10}
-      - MEDIA_CLEANUP_INTERVAL_SECONDS=${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
-      - RABBITMQ_ENABLED=true
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=admin123
-      - RABBITMQ_VHOST=/
-      - RABBITMQ_ALERT_QUEUE=video_alerts
-      - RABBITMQ_ALERT_EXCHANGE=video_alerts
-      - RABBITMQ_ALERT_ROUTING_KEY=alert
+      <<: *hw-decode-environment
+      PATH: /opt/ffmpeg/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib:/opt/ffmpeg/lib64:/opt/rknn/lib:/usr/local/lib:/usr/lib/aarch64-linux-gnu
+      DB_BACKEND: ${DB_BACKEND:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-video_ba_pipe}
+      DB_USER: ${DB_USER:-video_ba_pipe}
+      DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      FRAME_SAVE_PATH: /data/frames
+      VIDEO_SAVE_PATH: /data/videos
+      VIDEO_SOURCE_PATH: /data/video_sources
+      MODEL_SAVE_PATH: /data/models
+      USER_SCRIPTS_ROOT: /data/user_scripts
+      SNAPSHOT_PATH: /data/snapshots
+      VIDEO_FRAME_PIXEL_FORMAT: ${VIDEO_FRAME_PIXEL_FORMAT:-nv12}
+      IS_EXTREME_DECODE_MODE: ${IS_EXTREME_DECODE_MODE:-true}
+      DECODER_OUTPUT_QUEUE_SIZE: ${DECODER_OUTPUT_QUEUE_SIZE:-2}
+      ANALYSIS_TARGET_FPS: ${ANALYSIS_TARGET_FPS:-2}
+      ANALYSIS_BUFFER_SECONDS: ${ANALYSIS_BUFFER_SECONDS:-3}
+      RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
+      PRE_ALERT_DURATION: ${PRE_ALERT_DURATION:-15}
+      POST_ALERT_DURATION: ${POST_ALERT_DURATION:-15}
+      RECORDING_FPS: ${RECORDING_FPS:-3}
+      RECORDING_BUFFER_DURATION: ${RECORDING_BUFFER_DURATION:-32}
+      RECORDING_JPEG_QUALITY: ${RECORDING_JPEG_QUALITY:-80}
+      WORKFLOW_ZERO_COPY_FRAMES: ${WORKFLOW_ZERO_COPY_FRAMES:-false}
+      SOURCE_HOST_WORKFLOW_NODE_WORKERS: ${SOURCE_HOST_WORKFLOW_NODE_WORKERS:-0}
+      RESOURCE_PROFILING_ENABLED: ${RESOURCE_PROFILING_ENABLED:-false}
+      ALERT_SUPPRESSION_DURATION: "60"
+      ALERT_IMAGE_CLEANUP_ENABLED: "true"
+      ALERT_IMAGE_RETENTION_DAYS: "7"
+      WINDOW_DETECTION_RETENTION_HOURS: "24"
+      ALERT_IMAGE_MAX_STORAGE_GB: ${ALERT_IMAGE_MAX_STORAGE_GB:-10}
+      ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
+      ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
+      MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
+      RABBITMQ_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_VHOST: /
+      RABBITMQ_ALERT_QUEUE: video_alerts
+      RABBITMQ_ALERT_EXCHANGE: video_alerts
+      RABBITMQ_ALERT_ROUTING_KEY: alert
     volumes:
       - ./data:/data
       - /opt/rknn:/opt/rknn:ro
