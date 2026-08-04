@@ -235,6 +235,9 @@ def _model_worker_main(
 class _PendingResult:
     event: threading.Event
     response: Optional[Dict[str, Any]] = None
+    # 该请求所属的 model key;用于 worker 启动失败时把对应 pending 请求立即置败,
+    # 而不是让首个请求傻等满超时被误报成 inference_timeout。
+    key: str = ""
 
 
 @dataclass
@@ -380,6 +383,7 @@ class _ModelRegistry:
     def submit(self, key: str, request: Dict[str, Any], timeout: float) -> Dict[str, Any]:
         request_id = request["request_id"]
         pending = _PendingResult(threading.Event())
+        pending.key = key
         with self.lock:
             slot = self.slots.get(key)
             if slot is None:
@@ -465,10 +469,21 @@ class _ModelRegistry:
             kind = response.get("kind")
             if kind in ("worker_ready", "worker_start_failed"):
                 with self.lock:
-                    slot = self.slots.get(response.get("key"))
+                    key = response.get("key")
+                    slot = self.slots.get(key)
                     if slot is not None:
                         slot.ready = kind == "worker_ready"
                         slot.start_error = response.get("error")
+                    if kind == "worker_start_failed":
+                        # worker 起不来时,已入队但永远不会被处理的请求必须立即置败,
+                        # 否则首个请求会傻等满超时被误报成 inference_timeout,
+                        # 而真实的启动错误(如 ultralytics/torch import 失败)被吞掉。
+                        error = response.get("error") or "model_worker_start_failed"
+                        for rid, pending in list(self.pending.items()):
+                            if pending.key == key:
+                                pending.response = {"ok": False, "error": error}
+                                pending.event.set()
+                                self.pending.pop(rid, None)
                 continue
             request_id = response.get("request_id")
             with self.lock:

@@ -33,11 +33,16 @@ _SHARED_ULTRALYTICS_CLIENT_MODE = (
 # are trying to eliminate. Only the dedicated model worker imports the runtime.
 if _SHARED_ULTRALYTICS_CLIENT_MODE:
     YOLO = None
+    ULTRALYTICS_IMPORT_ERROR = None  # 客户端模式:按设计跳过,非导入失败
 else:
     try:
         from ultralytics import YOLO
-    except Exception:
+        ULTRALYTICS_IMPORT_ERROR = None
+    except Exception as exc:
+        # 不要用裸 except 吞掉真实异常(曾导致 libcudnn.so.9 缺失被误报成
+        # "未安装 ultralytics")。保留原始异常,UltralyticsBackend 抛错时透出。
         YOLO = None
+        ULTRALYTICS_IMPORT_ERROR = exc
 
 try:
     from rknnlite.api import RKNNLite
@@ -1119,7 +1124,22 @@ class UltralyticsBackend(BaseYoloBackend):
     def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model_path, model_info, config)
         if YOLO is None:
-            raise ImportError("当前环境未安装 ultralytics，无法加载 YOLO 模型")
+            if _SHARED_ULTRALYTICS_CLIENT_MODE:
+                # 客户端进程按设计不本地加载 ultralytics;走到这里说明本应委托给
+                # model worker 的节点错误地走了本地加载路径(多见于 create_backend
+                # 的 shared 分支未命中),请检查 SHARED_INFERENCE_WORKER 配置。
+                raise ImportError(
+                    "当前进程为共享推理客户端，按设计不本地加载 ultralytics"
+                    "（若此处被触发，请检查 SHARED_INFERENCE_WORKER / "
+                    "create_backend 的 shared 分支是否生效）"
+                )
+            # 非客户端模式:已尝试本地 import ultralytics 但失败。透出真实异常,
+            # 而不是笼统的"未安装"(曾掩盖 libcudnn.so.9 缺失这类环境问题)。
+            raise ImportError(
+                "加载 ultralytics 失败：已尝试本地 import 但抛出异常。"
+                f"真实异常: {type(ULTRALYTICS_IMPORT_ERROR).__name__}"
+                f": {ULTRALYTICS_IMPORT_ERROR}"
+            ) from ULTRALYTICS_IMPORT_ERROR
         self.model = YOLO(model_path)
 
     @staticmethod

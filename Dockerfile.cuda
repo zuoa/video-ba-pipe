@@ -74,7 +74,14 @@ RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # 先安装PyTorch（CUDA版本）
 # 使用CUDA 11.8对应的PyTorch版本
-RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# 必须钉版到 2.3.x:cu118 索引上 2.4.0+ 的 wheel 改用 cuDNN 9(libcudnn.so.9),
+# 而本镜像基础层 nvidia/cuda:11.8.0-cudnn8 只提供 cuDNN 8(libcudnn.so.8),
+# 不钉版会把 torch 拉到最新的 2.5.1(cuDNN 9),import torch 即报
+# "libcudnn.so.9: cannot open shared object file"。2.3.1 是最后一个 cuDNN 8 的
+# cu118 release,与基础层、paddlepaddle-gpu(cuDNN 8) 三者一致。
+# 注意:requirements.txt 里的 ultralytics 声明的是 torch>=1.8(下限),
+# 后续 `pip install -r requirements.txt` 不会把 torch 顶回 2.5.x,钉版安全。
+RUN pip3 install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu118
 
 # 复制依赖文件
 COPY requirements.txt .
