@@ -176,6 +176,6 @@ docker buildx build --platform=linux/arm64 \
 | 部署方式 | 后端镜像 | 前端镜像 | compose 文件 |
 | --- | --- | --- | --- |
 | x86 CPU | `ghcr.io/<owner>/<repo>:cpu` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml` |
-| x86 CUDA | `ghcr.io/<owner>/<repo>:cuda` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.cuda` |
+| x86 CUDA | `ghcr.io/<owner>/<repo>:cuda` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.x86+cuda` |
 | RK3588 | `ghcr.io/<owner>/<repo>:rk` | `ghcr.io/<owner>/<repo>-frontend:rk` | `docker-compose.yml.rknn` |
 | Jetson Orin NX | `ghcr.io/<owner>/<repo>:jetson` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `docker-compose.yml.jetson` |

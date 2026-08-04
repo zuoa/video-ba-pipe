@@ -98,9 +98,9 @@ python app/web/webapp.py
 docker build -f Dockerfile.cpu -t video-ba-pipe:cpu .
 docker-compose up
 
-# CUDA/GPU version
+# X86 + CUDA/GPU version
 docker build -f Dockerfile.cuda -t video-ba-pipe:cuda .
-docker-compose -f docker-compose.yml.cuda up
+docker compose -f docker-compose.yml.x86+cuda up
 
 # View logs
 docker logs video-ba-pipe-cpu -f

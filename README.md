@@ -31,13 +31,17 @@ docker compose -f docker-compose.yml up -d
 如需改用外部 PostgreSQL，可在 `.env` 中覆盖 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。
 页面 Header 默认显示公司名称“码全科技”；可在 `.env` 中通过 `COMPANY_NAME` 修改。
 
-### 2) CUDA/GPU 部署
+### 2) X86 + CUDA/GPU 部署
 
 ```bash
-docker compose -f docker-compose.yml.cuda up -d
+docker compose -f docker-compose.yml.x86+cuda up -d
 ```
 
 要求：宿主机已安装 NVIDIA 驱动与 Docker NVIDIA Runtime。
+
+> 注意：自 `docker-compose.yml.x86+cuda` 起，该编排默认 `VIDEO_DECODER_TYPE=ffmpeg_nvdec`（NVDEC 硬解，
+> 并发路数由硬解预算器按 NVML 解码利用率自动调节）；旧版 `docker-compose.yml.cuda` 默认为软解。
+> 如需保持软解，在 `.env` 中设置 `VIDEO_DECODER_TYPE=ffmpeg_sw`。
 
 ### 3) RK3588/NPU 部署
 
@@ -154,7 +158,7 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 ├── frontend/             # 前端管理界面（UmiJS + React）
 ├── docs/                 # 部署和集成文档
 ├── docker-compose.yml
-├── docker-compose.yml.cuda
+├── docker-compose.yml.x86+cuda
 ├── docker-compose.yml.jetson
 ├── docker-compose.yml.rknn
 └── env.example

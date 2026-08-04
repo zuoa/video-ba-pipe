@@ -1,6 +1,9 @@
 # ============================================
-# Video BA Pipe - CUDA/GPU 版本
-# 适用于支持NVIDIA GPU的生产环境
+# Video BA Pipe - X86 + CUDA/GPU 版本
+# 适用于 X86 服务器 + NVIDIA GPU 的生产环境
+# 配套编排文件: docker-compose.yml.x86+cuda
+# 内置 NVDEC 硬解预算(NVML 利用率闸门 + GPU 型号查表,
+# 依赖 requirements.txt 中的 pynvml)
 # ============================================
 
 # 使用官方NVIDIA CUDA基础镜像
@@ -97,5 +100,5 @@ ENTRYPOINT ["./entrypoint.sh"]
 # 标签信息
 LABEL maintainer="Video BA Pipe Team" \
       version="1.0" \
-      description="Video Behavior Analysis Pipeline - CUDA/GPU Version" \
+      description="Video Behavior Analysis Pipeline - X86 + CUDA/GPU Version" \
       gpu.enabled="true"

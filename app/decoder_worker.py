@@ -33,11 +33,13 @@ from app.config import (
     HEALTH_MONITOR_ENABLED,
     RESOURCE_PROFILING_ENABLED,
     RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
+    HW_DECODE_NV_GPU_INDEX,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
+from app.core.hw_decode_budget import NVDEC_DECODER_TYPES
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
 from app.core.utils import save_frame
@@ -231,6 +233,12 @@ class DecoderWorker:
                     )
                 ),
             }
+            if decoder_type.lower() in NVDEC_DECODER_TYPES:
+                # NVDEC 解码 GPU 与硬解预算探针监控的 GPU 保持一致
+                # （HW_DECODE_NV_GPU_INDEX ↔ ffmpeg -hwaccel_device）
+                decoder_kwargs['device_id'] = int(
+                    self.decoder_config.get('device_id', HW_DECODE_NV_GPU_INDEX)
+                )
             if decoder_type.lower() in {'jetson_gst', 'jetson', 'nvv4l2'}:
                 source_fps = int(source.source_fps) if source is not None else 0
                 output_fps = (

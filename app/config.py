@@ -135,8 +135,9 @@ FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES = max(
 DECODER_OUTPUT_QUEUE_SIZE = max(1, int(os.getenv('DECODER_OUTPUT_QUEUE_SIZE', '5')))
 
 # ============ 硬解资源准入与重启退避 ============
-# 硬解准入控制器总开关。启用后，硬解解码器按可用硬件资源（CMA）自适应发放并发槽位，
-# 拿不到槽位的源自动软解兜底或等待，避免 NVDEC 资源耗尽导致的崩溃-重启风暴。
+# 硬解准入控制器总开关。启用后，硬解解码器按可用硬件资源自适应发放并发槽位
+# （Jetson/RK 依据 CMA 余量；X86+CUDA 依据 NVDEC 解码引擎利用率 + GPU 型号查表估算），
+# 拿不到槽位的源自动软解兜底或等待，避免硬解资源耗尽导致的崩溃-重启风暴。
 HW_DECODE_BUDGET_ENABLED = os.getenv('HW_DECODE_BUDGET_ENABLED', 'true').lower() in ('true', '1', 'yes')
 
 # 每路硬解码器占用的 CMA 估算（MB）。Jetson Orin 上 1080p 以下 nvv4l2decoder 实测约 12MB。
@@ -155,6 +156,20 @@ HW_DECODE_SW_FALLBACK_MAX = max(0, int(os.getenv('HW_DECODE_SW_FALLBACK_MAX', '0
 
 # 软解兜底源自动升级回硬解的检查间隔（秒）。
 HW_DECODE_UPGRADE_INTERVAL_SECONDS = max(10, int(os.getenv('HW_DECODE_UPGRADE_INTERVAL_SECONDS', '60')))
+
+# ---- X86 + CUDA(NVDEC)容量探针 ----
+# NVDEC 解码引擎利用率闸门（%）。达到该值后不再发放新硬解槽位，已运行的路数不受影响。
+HW_DECODE_NV_UTIL_THRESHOLD = max(50, min(99, int(os.getenv('HW_DECODE_NV_UTIL_THRESHOLD', '85'))))
+
+# 每路 NVDEC 解码器占用的显存估算（MB），以及必须为推理等其他负载保留的空闲显存（MB）。
+HW_DECODE_NV_VRAM_PER_INSTANCE_MB = max(16, int(os.getenv('HW_DECODE_NV_VRAM_PER_INSTANCE_MB', '128')))
+HW_DECODE_NV_VRAM_RESERVE_MB = max(0, int(os.getenv('HW_DECODE_NV_VRAM_RESERVE_MB', '1024')))
+
+# NVDEC 解码使用的 GPU 序号（与 ffmpeg -hwaccel_device 对应）。
+HW_DECODE_NV_GPU_INDEX = max(0, int(os.getenv('HW_DECODE_NV_GPU_INDEX', '0')))
+
+# NVDEC 初始槽位估算覆盖值（0=按 GPU 型号查表自动估算；>0 时跳过查表）。
+HW_DECODE_NV_INITIAL_SLOTS = max(0, int(os.getenv('HW_DECODE_NV_INITIAL_SLOTS', '0')))
 
 # 解码器重启退避上限（秒）。初始退避按失败类别区分（流类 30s / 崩溃类 5s），指数增长到该上限。
 SOURCE_RESTART_BACKOFF_MAX_SECONDS = max(30, int(os.getenv('SOURCE_RESTART_BACKOFF_MAX_SECONDS', '300')))

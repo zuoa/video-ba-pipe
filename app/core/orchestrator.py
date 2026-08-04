@@ -34,6 +34,11 @@ from app.config import (
     HW_DECODE_CMA_RESERVE_MB,
     HW_DECODE_MIN_SLOTS,
     HW_DECODE_MAX_SLOTS,
+    HW_DECODE_NV_GPU_INDEX,
+    HW_DECODE_NV_INITIAL_SLOTS,
+    HW_DECODE_NV_UTIL_THRESHOLD,
+    HW_DECODE_NV_VRAM_PER_INSTANCE_MB,
+    HW_DECODE_NV_VRAM_RESERVE_MB,
     HW_DECODE_SW_FALLBACK_ENABLED,
     HW_DECODE_SW_FALLBACK_MAX,
     HW_DECODE_UPGRADE_INTERVAL_SECONDS,
@@ -56,6 +61,7 @@ from app.core.hw_decode_budget import (
     HW_DECODER_TYPES,
     SW_FALLBACK_DECODER_TYPE,
     HwDecodeBudget,
+    build_capacity_probe,
 )
 from app.core.inference_budget import (
     InferenceAdmissionController,
@@ -269,11 +275,20 @@ class Orchestrator:
             if self.effective_inference_config.shared_inference_enabled
             else None
         )
-        # 硬解资源准入控制器（仅在使用硬解解码器时生效）
+        # 硬解资源准入控制器（仅在使用硬解解码器时生效）；
+        # 容量依据按解码器类型选择探针:NVDEC → NVML 利用率+型号查表,其余 → CMA
         self.hw_budget = HwDecodeBudget(
             enabled=HW_DECODE_BUDGET_ENABLED and VIDEO_DECODER_TYPE in HW_DECODER_TYPES,
-            per_instance_mb=HW_DECODE_CMA_PER_INSTANCE_MB,
-            reserve_mb=HW_DECODE_CMA_RESERVE_MB,
+            probe=build_capacity_probe(
+                VIDEO_DECODER_TYPE,
+                nv_gpu_index=HW_DECODE_NV_GPU_INDEX,
+                nv_util_threshold=HW_DECODE_NV_UTIL_THRESHOLD,
+                nv_vram_per_instance_mb=HW_DECODE_NV_VRAM_PER_INSTANCE_MB,
+                nv_vram_reserve_mb=HW_DECODE_NV_VRAM_RESERVE_MB,
+                nv_initial_slots=HW_DECODE_NV_INITIAL_SLOTS,
+                cma_per_instance_mb=HW_DECODE_CMA_PER_INSTANCE_MB,
+                cma_reserve_mb=HW_DECODE_CMA_RESERVE_MB,
+            ),
             min_slots=HW_DECODE_MIN_SLOTS,
             max_slots=HW_DECODE_MAX_SLOTS,
             sw_fallback_enabled=HW_DECODE_SW_FALLBACK_ENABLED,

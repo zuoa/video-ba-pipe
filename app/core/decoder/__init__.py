@@ -5,6 +5,25 @@ from app.core.decoder.jetson import JetsonGStreamerDecoder
 from app.core.decoder.rk import FFmpegRKMPPDecoder
 from app.core.decoder.vt import FFmpegVTDecoder
 
+# 解码器类型注册表（模块级,便于外部做一致性校验,如硬解预算的 NVDEC 别名集）
+DECODER_REGISTRY = {
+    'ffmpeg_nvdec': FFmpegNVDECDecoder,
+    'nvdec': FFmpegNVDECDecoder,
+    'ffmpeg_sw': AsyncSoftwareDecoder,
+    'ffmpeg': AsyncSoftwareDecoder,
+    'opencv': OpenCVDecoder,
+    'pynvcodec': PyNvCodecDecoder,
+    'gstreamer': GStreamerNVDecoder,
+    'jetson_gst': JetsonGStreamerDecoder,
+    'jetson': JetsonGStreamerDecoder,
+    'nvv4l2': JetsonGStreamerDecoder,
+    'ffmpeg_videotoolbox': FFmpegVTDecoder,
+    'vtdec': FFmpegVTDecoder,
+    'ffmpeg_rkmpp': FFmpegRKMPPDecoder,
+    'rk_mpp': FFmpegRKMPPDecoder,
+    'rkmpp': FFmpegRKMPPDecoder,
+}
+
 
 class DecoderFactory:
     """解码器工厂"""
@@ -32,23 +51,7 @@ class DecoderFactory:
         Returns:
             解码器实例
         """
-        decoders = {
-            'ffmpeg_nvdec': FFmpegNVDECDecoder,
-            'nvdec': FFmpegNVDECDecoder,
-            'ffmpeg_sw': AsyncSoftwareDecoder,  # <--- 更新为新的异步解码器
-            'ffmpeg': AsyncSoftwareDecoder,  # <--- 更新为新的异步解码器
-            'opencv': OpenCVDecoder,
-            'pynvcodec': PyNvCodecDecoder,
-            'gstreamer': GStreamerNVDecoder,
-            'jetson_gst': JetsonGStreamerDecoder,
-            'jetson': JetsonGStreamerDecoder,
-            'nvv4l2': JetsonGStreamerDecoder,
-            'ffmpeg_videotoolbox': FFmpegVTDecoder,  # <--- 添加这一行
-            'vtdec': FFmpegVTDecoder,  # <--- 添加这一行 (作为简称)
-            'ffmpeg_rkmpp': FFmpegRKMPPDecoder,
-            'rk_mpp': FFmpegRKMPPDecoder,
-            'rkmpp': FFmpegRKMPPDecoder,
-        }
+        decoders = DECODER_REGISTRY
 
         decoder_class = decoders.get(decoder_type.lower())
         if not decoder_class:
