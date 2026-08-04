@@ -112,7 +112,11 @@ services:
     # 数据卷挂载
     volumes:
       - ./data:/data
-    
+      # 只读挂载宿主机 DRM 节点,消除 ONNX Runtime 启动时
+      # device_discovery.cc 读取 /sys/class/drm/card0/device/vendor 失败的告警
+      # (NVIDIA Container Runtime 不会注入 /sys/class/drm,故需显式挂载)
+      - /sys/class/drm:/sys/class/drm:ro
+
     # 端口映射
     ports:
       - "5002:5002"
@@ -153,7 +157,7 @@ services:
     restart: unless-stopped
     init: true
     shm_size: '8gb'
-    entrypoint: ["python", "main.py"]
+    entrypoint: ["python3", "main.py"]
     gpus: all
     environment:
       # 解码与硬解预算(NVDEC),与 app 共享同一 anchor
@@ -194,6 +198,8 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./data:/data
+      # 只读挂载宿主机 DRM 节点,消除 ONNX Runtime device_discovery 告警(同 app)
+      - /sys/class/drm:/sys/class/drm:ro
     networks:
       - video-ba-network
     logging:

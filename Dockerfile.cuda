@@ -46,6 +46,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ============================================
+# 安装带 cuvid/NVDEC 的 ffmpeg (BtbN 静态构建)
+# 说明: stock Ubuntu apt 版 ffmpeg 未编译 --enable-cuvid/--enable-nvdec,
+# 导致 NVDEC 解码器(app/core/decoder/nv.py 里的 h264_cuvid)启动即报
+# "Unknown decoder 'h264_cuvid'" 退出码1 → orchestrator 分类为 clean 循环重启。
+# BtbN 的 linux64-gpl 构建通过 ffnvcodec 头编译了 cuvid/nvdec/nvenc,
+# 运行时由 NVIDIA Container Runtime 的 `video` 能力注入的 libnvcuvid.so 提供。
+# 安装到 /usr/local/bin 以覆盖 apt 版 ffmpeg(ffprobe 一并替换)。
+# 如需可复现构建/供应链校验:把 ARG 固定到某个版本 tag,并加 --fail sha256 校验。
+# 下方的 grep 检查是硬保证——若 cuvid 缺失,镜像构建会立即失败而非静默产出坏镜像。
+# ============================================
+ARG FFMPEG_CUVID_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+RUN set -eux; \
+    curl -fsSL "${FFMPEG_CUVID_URL}" -o /tmp/ffmpeg.tar.xz; \
+    mkdir -p /tmp/ffmpeg-extract; \
+    tar -xf /tmp/ffmpeg.tar.xz --strip-components=1 -C /tmp/ffmpeg-extract; \
+    install -m 0755 /tmp/ffmpeg-extract/bin/ffmpeg  /usr/local/bin/ffmpeg; \
+    install -m 0755 /tmp/ffmpeg-extract/bin/ffprobe /usr/local/bin/ffprobe; \
+    rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-extract; \
+    /usr/local/bin/ffmpeg -hide_banner -decoders  | grep -q 'h264_cuvid'; \
+    /usr/local/bin/ffmpeg -hide_banner -hwaccels | grep -qw cuda; \
+    /usr/local/bin/ffmpeg -version | head -n1
+
 # 升级pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
