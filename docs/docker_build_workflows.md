@@ -29,12 +29,11 @@
 | 参数 | 说明 |
 | --- | --- |
 | `runtime=cpu` | 构建 x86 CPU 后端镜像 |
-| `runtime=rk` | 构建 RK3588 ARM64 后端镜像 |
 | `runtime=jetson` | 构建 Jetson Orin ARM64 后端镜像 |
-| `runtime=all` | 同时构建 CPU、RK、Jetson 后端镜像 |
+| `runtime=all` | 同时构建 CPU、Jetson 后端镜像 |
 
-X86+CUDA 镜像由独立工作流 `Build X86+CUDA image` 手动触发构建（无参数），
-不在 `Build backend images` 的 `runtime` 选项中。
+X86+CUDA 与 RKNN 镜像分别由独立工作流 `Build X86+CUDA image`、`Build RKNN image`
+手动触发构建，不在 `Build backend images` 的 `runtime` 选项中。
 
 产物：
 
@@ -42,13 +41,14 @@ X86+CUDA 镜像由独立工作流 `Build X86+CUDA image` 手动触发构建（�
 | --- | --- | --- | --- |
 | `cpu` | `linux/amd64` | `Dockerfile.cpu` | `ghcr.io/<owner>/<repo>:cpu` |
 | `cuda`(独立工作流) | `linux/amd64` | `Dockerfile.cuda` | `ghcr.io/<owner>/<repo>:cuda` |
-| `rk` | `linux/arm64` | `Dockerfile.rk` | `ghcr.io/<owner>/<repo>:rk` |
+| `rk`(独立工作流) | `linux/arm64` | `Dockerfile.rk` | `ghcr.io/<owner>/<repo>:rk` |
 | `jetson` | `linux/arm64` | `Dockerfile.jetson` | `ghcr.io/<owner>/<repo>:jetson` |
 
 每个镜像还会额外推送一个带 commit 的 tag，例如 `cpu-<commit>`。
 
-push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。RK 和 Jetson 镜像通过
-`Build backend images` 手动触发构建；X86+CUDA 镜像通过 `Build X86+CUDA image` 手动触发构建。
+push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。Jetson 镜像通过
+`Build backend images`（或 `Build Jetson image`）手动触发构建；X86+CUDA 与 RKNN 镜像分别通过
+`Build X86+CUDA image`、`Build RKNN image` 手动触发构建。
 
 ### 前端镜像
 
@@ -144,7 +144,7 @@ docker buildx build --platform=linux/amd64 \
 推荐顺序：
 
 1. 运行 `Build and publish RK3588 FFmpeg image` 构建 RK FFmpeg 基础镜像。
-2. 运行 `Build backend images`，选择 `runtime=rk` 构建 RK 后端镜像。
+2. 运行 `Build RKNN image` 构建 RK 后端镜像（可填写 torch/onnxruntime/rknn wheel 与 FFmpeg RK 基础镜像参数）。
 3. 运行 `Build frontend images`，选择 `platform=linux/arm64` 构建 RK 前端镜像。
 
 RK 的 wheel、FFmpeg 包、NPU runtime 挂载等细节见 `docs/rk3588_docker.md`。
