@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # 其他工具
     wget \
     curl \
+    # BtbN FFmpeg 发布包是 .tar.xz；精简 Ubuntu/CUDA 基础镜像不内置 xz
+    xz-utils \
     git \
     postgresql-client \
     && apt-get clean \
@@ -62,14 +64,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG FFMPEG_CUVID_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
 RUN set -eux; \
     curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --retry-connrefused "${FFMPEG_CUVID_URL}" -o /tmp/ffmpeg.tar.xz; \
+    test -s /tmp/ffmpeg.tar.xz; \
+    xz --test /tmp/ffmpeg.tar.xz; \
     mkdir -p /tmp/ffmpeg-extract; \
-    tar -xf /tmp/ffmpeg.tar.xz --strip-components=1 -C /tmp/ffmpeg-extract; \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=1 -C /tmp/ffmpeg-extract; \
+    test -x /tmp/ffmpeg-extract/bin/ffmpeg; \
+    test -x /tmp/ffmpeg-extract/bin/ffprobe; \
     install -m 0755 /tmp/ffmpeg-extract/bin/ffmpeg  /usr/local/bin/ffmpeg; \
     install -m 0755 /tmp/ffmpeg-extract/bin/ffprobe /usr/local/bin/ffprobe; \
     rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-extract; \
-    /usr/local/bin/ffmpeg -hide_banner -decoders  | grep -q 'h264_cuvid'; \
-    /usr/local/bin/ffmpeg -hide_banner -hwaccels | grep -qw cuda; \
-    /usr/local/bin/ffmpeg -version | head -n1
+    /usr/local/bin/ffmpeg -hide_banner -decoders > /tmp/ffmpeg-decoders.txt; \
+    grep -q 'h264_cuvid' /tmp/ffmpeg-decoders.txt; \
+    /usr/local/bin/ffmpeg -hide_banner -hwaccels > /tmp/ffmpeg-hwaccels.txt; \
+    grep -qx 'cuda' /tmp/ffmpeg-hwaccels.txt; \
+    rm -f /tmp/ffmpeg-decoders.txt /tmp/ffmpeg-hwaccels.txt; \
+    /usr/local/bin/ffmpeg -version | sed -n '1p'
 
 # 升级pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
