@@ -1,4 +1,19 @@
+.workflow-browser {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.workflow-browser__tree {
+  position: sticky;
+  top: 92px;
+  height: calc(100vh - 116px);
+  min-height: 520px;
+}
+
 .workflow-table-wrapper {
+  min-width: 0;
   background: var(--app-surface-strong);
   border: 1px solid var(--app-line-soft);
   border-radius: var(--app-radius-m);
@@ -58,6 +73,14 @@
   max-width: 100%;
 }
 
+.workflow-template-filter {
+  width: 210px;
+}
+
+.workflow-tree-trigger {
+  display: none;
+}
+
 /* 批量操作栏 */
 .batch-actions-alert {
   margin: 16px 24px;
@@ -73,6 +96,37 @@
 .batch-actions-alert .ant-alert-message {
   font-size: 14px;
   color: var(--app-text);
+}
+
+.batch-action-bar {
+  position: sticky;
+  top: 76px;
+  z-index: 10;
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 16px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid rgba(53, 106, 146, 0.25);
+  border-radius: var(--app-radius-s);
+  background: rgba(237, 245, 250, 0.97);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.batch-action-bar__selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.batch-action-bar__all {
+  color: var(--app-info);
+  font-size: 12px;
 }
 
 /* 表格样式 */
@@ -214,6 +268,48 @@
     flex: 1;
     min-width: 0;
   }
+}
+
+@media (max-width: 1100px) {
+  .workflow-browser {
+    display: block;
+  }
+
+  .workflow-browser__tree {
+    display: none;
+  }
+
+  .workflow-tree-trigger {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 820px) {
+  .batch-action-bar {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-action-bar__selection {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workflow-template-filter,
+  .workflow-search {
+    width: 100%;
+  }
+}
+
+.workflow-tree-drawer .ant-drawer-body {
+  padding: 12px;
+  background: var(--app-bg-soft);
+}
+
+.workflow-tree-drawer .workflow-source-tree {
+  border: 0;
+  box-shadow: none;
 }
 
 /* 复选框样式 - 增强可见度 */

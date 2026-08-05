@@ -14,12 +14,16 @@ import {
   deactivateWorkflow,
   getVideoSources,
   batchCopyWorkflow,
+  batchActivateWorkflows,
+  batchDeactivateWorkflows,
+  batchDeleteWorkflows,
 } from '@/services/api';
 import type { Workflow } from '@/services/api';
 import { PageHeader, useAppConfirm } from '@/components/common';
 import WorkflowTable from './components/WorkflowTable';
 import WorkflowForm from './components/WorkflowForm';
 import CopyWorkflowModal from './components/CopyWorkflowModal';
+import BatchConfigDrawer from './components/BatchConfigDrawer';
 import './index.css';
 
 export default function Workflows() {
@@ -32,6 +36,7 @@ export default function Workflows() {
   const [copyingWorkflow, setCopyingWorkflow] = useState<any>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
+  const [batchConfigWorkflows, setBatchConfigWorkflows] = useState<Workflow[]>([]);
   const confirmAction = useAppConfirm();
 
   const loadWorkflows = useCallback(async () => {
@@ -149,6 +154,47 @@ export default function Workflows() {
     setCopyModalVisible(true);
   };
 
+  const handleBatchActivate = async (ids: number[]) => {
+    try {
+      const result: any = await batchActivateWorkflows(ids);
+      const failedCount = result?.failed?.length || 0;
+      message.success(`已激活 ${result?.activated || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+      await loadWorkflows();
+    } catch (error: any) {
+      message.error(error?.data?.error || error?.message || '批量激活失败');
+    }
+  };
+
+  const handleBatchDeactivate = async (ids: number[]) => {
+    try {
+      const result: any = await batchDeactivateWorkflows(ids);
+      const failedCount = result?.failed?.length || 0;
+      message.success(`已停用 ${result?.deactivated || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+      await loadWorkflows();
+    } catch (error: any) {
+      message.error(error?.data?.error || error?.message || '批量停用失败');
+    }
+  };
+
+  const handleBatchDelete = (ids: number[]) => {
+    confirmAction({
+      title: '批量删除编排',
+      objectName: `${ids.length} 个算法编排`,
+      description: '删除后，所选编排和节点配置将无法恢复。',
+      onConfirm: async () => {
+        try {
+          const result: any = await batchDeleteWorkflows(ids);
+          const failedCount = result?.failed?.length || 0;
+          message.success(`已删除 ${result?.deleted || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+          await loadWorkflows();
+        } catch (error: any) {
+          message.error(error?.data?.error || error?.message || '批量删除失败');
+          throw error;
+        }
+      },
+    });
+  };
+
   const handleCopyConfirm = async (sourceIds: number[]) => {
     try {
       const result = await batchCopyWorkflow(copyingWorkflow.id, sourceIds);
@@ -205,6 +251,10 @@ export default function Workflows() {
         onActivate={handleActivate}
         onDeactivate={handleDeactivate}
         onCopy={handleCopy}
+        onBatchActivate={handleBatchActivate}
+        onBatchDeactivate={handleBatchDeactivate}
+        onBatchDelete={handleBatchDelete}
+        onBatchConfig={setBatchConfigWorkflows}
       />
 
       <WorkflowForm
@@ -224,6 +274,13 @@ export default function Workflows() {
           setCopyModalVisible(false);
           setCopyingWorkflow(null);
         }}
+      />
+
+      <BatchConfigDrawer
+        open={batchConfigWorkflows.length > 0}
+        workflows={batchConfigWorkflows}
+        onClose={() => setBatchConfigWorkflows([])}
+        onApplied={loadWorkflows}
       />
 
     </div>

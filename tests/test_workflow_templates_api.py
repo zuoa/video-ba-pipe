@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 import pytest
 from flask import Flask
@@ -163,3 +164,265 @@ def test_changing_derived_workflow_source_preserves_uniqueness(workflow_api):
     )
     assert conflict.status_code == 409
     assert conflict.get_json()['code'] == 'duplicate_template_source'
+
+
+def _batch_config_graph(source_id):
+    weekly_schedule = {
+        str(day): [{'start': '00:00', 'end': '23:59'}]
+        for day in range(1, 8)
+    }
+    return {
+        'nodes': [
+            {
+                'id': 'source-node',
+                'type': 'source',
+                'name': '视频源',
+                'dataId': source_id,
+                'videoSourceId': source_id,
+            },
+            {
+                'id': 'algorithm-node',
+                'type': 'algorithm',
+                'name': '人员检测',
+                'dataId': 12,
+                'config': {'confidence': 0.5, 'interval_seconds': 1},
+            },
+            {
+                'id': 'alert-node',
+                'type': 'alert',
+                'name': '输出告警',
+                'data': {
+                    'triggerCondition': {'enable': False},
+                    'suppression': {'enable': False},
+                },
+            },
+            {
+                'id': 'time-node',
+                'type': 'time_schedule',
+                'name': '启用时间',
+                'data': {'weeklySchedule': weekly_schedule},
+            },
+        ],
+        'connections': [],
+    }
+
+
+def _create_batch_config_workflow(source, *, name='批量配置测试'):
+    return Workflow.create(
+        name=name,
+        description='',
+        workflow_data=json.dumps(_batch_config_graph(source.id)),
+        is_active=True,
+        is_template=False,
+        video_source=source,
+        config_version=1,
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        created_by='template-owner',
+    )
+
+
+def test_batch_config_preview_and_apply_are_field_scoped(workflow_api):
+    client, headers, source = workflow_api
+    workflow = _create_batch_config_workflow(source)
+    payload = {
+        'workflow_ids': [workflow.id],
+        'expected_versions': {str(workflow.id): 1},
+        'targets': [{
+            'workflow_ids': [workflow.id],
+            'node_id': 'algorithm-node',
+            'node_type': 'algorithm',
+            'changes': {'confidence': 0.7, 'interval_seconds': 2.5},
+        }],
+        'dry_run': True,
+    }
+
+    preview = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+    assert preview.status_code == 200
+    assert preview.get_json()['summary'] == {
+        'workflow_count': 1,
+        'active_count': 1,
+        'node_change_count': 1,
+    }
+    workflow = Workflow.get_by_id(workflow.id)
+    assert workflow.config_version == 1
+    assert workflow.data_dict['nodes'][1]['config']['confidence'] == 0.5
+
+    payload['dry_run'] = False
+    applied = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+    assert applied.status_code == 200
+    workflow = Workflow.get_by_id(workflow.id)
+    config = workflow.data_dict['nodes'][1]['config']
+    assert config['confidence'] == 0.7
+    assert config['confidence_override_enabled'] is True
+    assert config['interval_seconds'] == 2.5
+    assert workflow.data_dict['nodes'][0]['dataId'] == source.id
+    assert workflow.config_version == 2
+
+
+def test_batch_config_validation_failure_is_atomic(workflow_api):
+    client, headers, source = workflow_api
+    first = _create_batch_config_workflow(source, name='第一条')
+    second_source = VideoSource.create(
+        name='Second',
+        source_code='second-001',
+        source_url='rtsp://example/second',
+        created_by='template-owner',
+    )
+    second = _create_batch_config_workflow(second_source, name='第二条')
+    payload = {
+        'workflow_ids': [first.id, second.id],
+        'expected_versions': {str(first.id): 1, str(second.id): 1},
+        'targets': [
+            {
+                'workflow_ids': [first.id],
+                'node_id': 'algorithm-node',
+                'node_type': 'algorithm',
+                'changes': {'confidence': 0.9},
+            },
+            {
+                'workflow_ids': [second.id],
+                'node_id': 'missing-node',
+                'node_type': 'algorithm',
+                'changes': {'confidence': 0.9},
+            },
+        ],
+        'dry_run': False,
+    }
+
+    response = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+    assert response.status_code == 400
+    assert Workflow.get_by_id(first.id).data_dict['nodes'][1]['config']['confidence'] == 0.5
+    assert Workflow.get_by_id(first.id).config_version == 1
+    assert Workflow.get_by_id(second.id).config_version == 1
+
+
+def test_batch_config_rejects_stale_version(workflow_api):
+    client, headers, source = workflow_api
+    workflow = _create_batch_config_workflow(source)
+    payload = {
+        'workflow_ids': [workflow.id],
+        'expected_versions': {str(workflow.id): 0},
+        'targets': [{
+            'workflow_ids': [workflow.id],
+            'node_id': 'alert-node',
+            'node_type': 'alert',
+            'changes': {'suppression': {'enable': True, 'seconds': 120}},
+        }],
+        'dry_run': False,
+    }
+
+    response = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+    assert response.status_code == 409
+    assert response.get_json()['failures'][0]['code'] == 'version_conflict'
+    assert Workflow.get_by_id(workflow.id).config_version == 1
+
+
+def test_batch_config_updates_alert_and_weekly_schedule(workflow_api):
+    client, headers, source = workflow_api
+    workflow = _create_batch_config_workflow(source)
+    weekday_schedule = {str(day): [] for day in range(1, 8)}
+    weekday_schedule['1'] = [{'start': '08:00', 'end': '18:00'}]
+    payload = {
+        'workflow_ids': [workflow.id],
+        'expected_versions': {str(workflow.id): 1},
+        'targets': [
+            {
+                'workflow_ids': [workflow.id],
+                'node_id': 'alert-node',
+                'node_type': 'alert',
+                'changes': {
+                    'trigger_condition': {
+                        'enable': True,
+                        'window_size': 20,
+                        'mode': 'count',
+                        'threshold': 3,
+                    },
+                    'suppression': {'enable': True, 'seconds': 90},
+                },
+            },
+            {
+                'workflow_ids': [workflow.id],
+                'node_id': 'time-node',
+                'node_type': 'time_schedule',
+                'changes': {'weekly_schedule': weekday_schedule},
+            },
+        ],
+        'dry_run': False,
+    }
+
+    response = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+    assert response.status_code == 200
+    nodes = {node['id']: node for node in Workflow.get_by_id(workflow.id).data_dict['nodes']}
+    assert nodes['alert-node']['data']['triggerCondition']['threshold'] == 3
+    assert nodes['alert-node']['data']['suppression']['seconds'] == 90
+    assert nodes['time-node']['data']['weeklySchedule'] == weekday_schedule
+
+
+def test_batch_config_concurrent_update_is_preserved_and_rolls_back_batch(
+    workflow_api,
+    monkeypatch,
+):
+    client, headers, source = workflow_api
+    first = _create_batch_config_workflow(source, name='事务中的第一条')
+    second_source = VideoSource.create(
+        name='Concurrent',
+        source_code='concurrent-001',
+        source_url='rtsp://example/concurrent',
+        created_by='template-owner',
+    )
+    second = _create_batch_config_workflow(second_source, name='被并发修改的第二条')
+    original_apply = workflows_api.apply_batch_node_changes
+    call_count = 0
+
+    def apply_with_concurrent_update(*args, **kwargs):
+        nonlocal call_count
+        result = original_apply(*args, **kwargs)
+        call_count += 1
+        if call_count == 2:
+            concurrent_data = second.data_dict
+            concurrent_data['nodes'][1]['config']['confidence'] = 0.6
+            (
+                Workflow.update(
+                    workflow_data=json.dumps(concurrent_data),
+                    config_version=2,
+                )
+                .where(Workflow.id == second.id)
+                .execute()
+            )
+        return result
+
+    monkeypatch.setattr(
+        workflows_api,
+        'apply_batch_node_changes',
+        apply_with_concurrent_update,
+    )
+    payload = {
+        'workflow_ids': [first.id, second.id],
+        'expected_versions': {str(first.id): 1, str(second.id): 1},
+        'targets': [
+            {
+                'workflow_ids': [first.id],
+                'node_id': 'algorithm-node',
+                'node_type': 'algorithm',
+                'changes': {'confidence': 0.9},
+            },
+            {
+                'workflow_ids': [second.id],
+                'node_id': 'algorithm-node',
+                'node_type': 'algorithm',
+                'changes': {'confidence': 0.9},
+            },
+        ],
+        'dry_run': False,
+    }
+
+    response = client.post('/api/workflows/batch-config', json=payload, headers=headers)
+
+    assert response.status_code == 409
+    first_after = Workflow.get_by_id(first.id)
+    second_after = Workflow.get_by_id(second.id)
+    assert first_after.config_version == 1
+    assert first_after.data_dict['nodes'][1]['config']['confidence'] == 0.5
+    assert second_after.config_version == 2
+    assert second_after.data_dict['nodes'][1]['config']['confidence'] == 0.6

@@ -8,7 +8,7 @@ from copy import deepcopy
 from flask import jsonify, request
 from peewee import IntegrityError
 
-from app.core.database_models import db, Workflow, WorkflowNode, VideoSource, Algorithm
+from app.core.database_models import db, Workflow, VideoSource, Algorithm
 from app.core.workflow_runtime import (
     build_template_workflow_data,
     extract_source_id_from_workflow_data,
@@ -23,6 +23,10 @@ from app.core.webhook_workflow_config import (
     validate_workflow_webhook_nodes,
 )
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
+from app.core.workflow_batch_config import (
+    BatchConfigValidationError,
+    apply_batch_node_changes,
+)
 from app.config import SNAPSHOT_SAVE_PATH
 from app.core.ocr_runtime import is_ocr_runtime_available
 from app.web.api.auth import (
@@ -109,6 +113,7 @@ def register_workflows_api(app):
             'source_template_id': workflow.source_template_id,
             'source_template_name': source_template_name,
             'video_source_id': workflow.video_source_id,
+            'config_version': workflow.config_version,
             'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
             'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
             'created_by': workflow.created_by,
@@ -807,6 +812,186 @@ def register_workflows_api(app):
 
         except Exception as e:
             app.logger.error(f"批量激活工作流失败: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/workflows/batch-config', methods=['POST'])
+    @require_auth
+    def batch_config_workflows():
+        """Preview or atomically apply field-scoped configuration changes."""
+        try:
+            data = request.json or {}
+            workflow_ids = data.get('workflow_ids') or []
+            targets = data.get('targets') or []
+            expected_versions = data.get('expected_versions') or {}
+            dry_run = data.get('dry_run') is not False
+
+            if not isinstance(workflow_ids, list) or not workflow_ids:
+                return jsonify({'error': '请选择要配置的编排'}), 400
+            if not isinstance(targets, list) or not targets:
+                return jsonify({'error': '至少选择一个要应用的参数'}), 400
+            if not isinstance(expected_versions, dict):
+                return jsonify({'error': 'expected_versions 格式无效'}), 400
+            try:
+                normalized_ids = [int(workflow_id) for workflow_id in workflow_ids]
+            except (TypeError, ValueError):
+                return jsonify({'error': 'workflow_ids 格式无效'}), 400
+            if len(normalized_ids) != len(set(normalized_ids)):
+                return jsonify({'error': 'workflow_ids 包含重复项'}), 400
+            selected_ids = set(normalized_ids)
+
+            workflows_by_id = {}
+            pending_data = {}
+            change_details = []
+            failures = []
+
+            for workflow_id in normalized_ids:
+                try:
+                    workflow = Workflow.get_by_id(workflow_id)
+                except Workflow.DoesNotExist:
+                    failures.append({'workflow_id': workflow_id, 'error': '编排不存在'})
+                    continue
+                owner_response = require_resource_owner(workflow)
+                if owner_response:
+                    return owner_response
+                if workflow.is_template:
+                    failures.append({'workflow_id': workflow_id, 'error': '编排模板不可批量配置'})
+                    continue
+                expected = expected_versions.get(str(workflow_id), expected_versions.get(workflow_id))
+                if expected is None or int(expected) != workflow.config_version:
+                    failures.append({
+                        'workflow_id': workflow_id,
+                        'error': '配置已发生变化，请刷新后重试',
+                        'code': 'version_conflict',
+                    })
+                    continue
+                workflows_by_id[workflow_id] = workflow
+                pending_data[workflow_id] = workflow.data_dict
+
+            seen_targets = set()
+            for target in targets:
+                if not isinstance(target, dict):
+                    failures.append({'error': '目标节点配置格式无效'})
+                    continue
+                target_ids = target.get('workflow_ids') or []
+                node_id = str(target.get('node_id') or '')
+                node_type = target.get('node_type')
+                changes = target.get('changes')
+                if not target_ids or not node_id:
+                    failures.append({'error': '目标节点缺少 workflow_ids 或 node_id'})
+                    continue
+                for raw_id in target_ids:
+                    try:
+                        workflow_id = int(raw_id)
+                    except (TypeError, ValueError):
+                        failures.append({'error': f'目标编排 ID 无效: {raw_id}'})
+                        continue
+                    if workflow_id not in selected_ids:
+                        failures.append({'workflow_id': workflow_id, 'error': '目标不在已选编排中'})
+                        continue
+                    target_key = (workflow_id, node_id)
+                    if target_key in seen_targets:
+                        failures.append({'workflow_id': workflow_id, 'error': f'节点 {node_id} 被重复配置'})
+                        continue
+                    seen_targets.add(target_key)
+                    if workflow_id not in pending_data:
+                        continue
+                    try:
+                        patched, changed_fields, node_name = apply_batch_node_changes(
+                            pending_data[workflow_id],
+                            node_id=node_id,
+                            node_type=node_type,
+                            changes=changes,
+                        )
+                        pending_data[workflow_id] = patched
+                        change_details.append({
+                            'workflow_id': workflow_id,
+                            'workflow_name': workflows_by_id[workflow_id].name,
+                            'node_id': node_id,
+                            'node_name': node_name,
+                            'node_type': node_type,
+                            'fields': changed_fields,
+                            'is_active': workflows_by_id[workflow_id].is_active,
+                        })
+                    except BatchConfigValidationError as exc:
+                        failures.append({'workflow_id': workflow_id, 'node_id': node_id, 'error': str(exc)})
+
+            targeted_workflow_ids = {item['workflow_id'] for item in change_details}
+            missing_targets = selected_ids - targeted_workflow_ids
+            for workflow_id in sorted(missing_targets):
+                if workflow_id in workflows_by_id:
+                    failures.append({'workflow_id': workflow_id, 'error': '没有匹配到可配置节点'})
+
+            for workflow_id in sorted(targeted_workflow_ids):
+                workflow_data = pending_data[workflow_id]
+                is_valid, error_message = validate_single_source_node(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+
+            if failures:
+                status = 409 if any(item.get('code') == 'version_conflict' for item in failures) else 400
+                return jsonify({'error': '批量配置预检失败', 'failures': failures}), status
+
+            summary = {
+                'workflow_count': len(targeted_workflow_ids),
+                'active_count': sum(
+                    1 for workflow_id in targeted_workflow_ids
+                    if workflows_by_id[workflow_id].is_active
+                ),
+                'node_change_count': len(change_details),
+            }
+            if dry_run:
+                return jsonify({
+                    'success': True,
+                    'dry_run': True,
+                    'summary': summary,
+                    'changes': change_details,
+                })
+
+            with db.atomic():
+                for workflow_id in sorted(targeted_workflow_ids):
+                    expected = expected_versions.get(str(workflow_id), expected_versions.get(workflow_id))
+                    updated_count = (
+                        Workflow.update(
+                            workflow_data=json.dumps(pending_data[workflow_id]),
+                            config_version=Workflow.config_version + 1,
+                            updated_at=datetime.now(),
+                        )
+                        .where(
+                            (Workflow.id == workflow_id)
+                            & (Workflow.config_version == int(expected))
+                        )
+                        .execute()
+                    )
+                    if updated_count != 1:
+                        raise BatchConfigValidationError(
+                            f'编排 {workflows_by_id[workflow_id].name} 配置已发生变化，请刷新后重试'
+                        )
+
+            return jsonify({
+                'success': True,
+                'dry_run': False,
+                'summary': summary,
+                'changes': change_details,
+                'message': f"已更新 {summary['workflow_count']} 个编排",
+            })
+        except BatchConfigValidationError as exc:
+            return jsonify({'error': str(exc)}), 409
+        except (TypeError, ValueError) as exc:
+            return jsonify({'error': str(exc)}), 400
+        except Exception as e:
+            app.logger.error(f"批量配置工作流失败: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/workflows/batch-deactivate', methods=['POST'])

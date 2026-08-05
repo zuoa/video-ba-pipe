@@ -267,6 +267,7 @@ export interface Workflow {
   source_template_id?: number | null;
   source_template_name?: string | null;
   video_source_id?: number | null;
+  config_version: number;
   created_at?: string | null;
   updated_at?: string | null;
   created_by?: string;
@@ -358,6 +359,45 @@ export async function batchDeleteWorkflows(workflowIds: number[]) {
   return request('/api/workflows/batch-delete', {
     method: 'POST',
     data: { workflow_ids: workflowIds },
+  });
+}
+
+export interface WorkflowBatchConfigTarget {
+  workflow_ids: number[];
+  node_id: string;
+  node_type: 'algorithm' | 'alert' | 'time_schedule';
+  changes: Record<string, any>;
+}
+
+export interface WorkflowBatchConfigResponse {
+  success: boolean;
+  dry_run: boolean;
+  summary: {
+    workflow_count: number;
+    active_count: number;
+    node_change_count: number;
+  };
+  changes: Array<{
+    workflow_id: number;
+    workflow_name: string;
+    node_id: string;
+    node_name: string;
+    node_type: string;
+    fields: string[];
+    is_active: boolean;
+  }>;
+  message?: string;
+}
+
+export async function batchConfigWorkflows(data: {
+  workflow_ids: number[];
+  expected_versions: Record<string, number>;
+  targets: WorkflowBatchConfigTarget[];
+  dry_run: boolean;
+}) {
+  return request<WorkflowBatchConfigResponse>('/api/workflows/batch-config', {
+    method: 'POST',
+    data,
   });
 }
 

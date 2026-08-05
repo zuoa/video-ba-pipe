@@ -1,0 +1,104 @@
+.workflow-source-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 18px 14px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: var(--app-radius-m);
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.workflow-source-tree__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.workflow-source-tree__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--app-on-solid);
+  background: var(--app-accent);
+}
+
+.workflow-source-tree__heading div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.workflow-source-tree__heading strong {
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.workflow-source-tree__heading span:last-child {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.workflow-source-tree .ant-tree {
+  overflow: auto;
+  background: transparent;
+}
+
+.workflow-source-tree .ant-tree-treenode {
+  width: 100%;
+  padding: 2px 0;
+}
+
+.workflow-source-tree .ant-tree-node-content-wrapper {
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 8px !important;
+  border-radius: 9px;
+  transition: background-color var(--app-motion-fast) ease;
+}
+
+.workflow-source-tree .ant-tree-title {
+  display: block;
+  width: 100%;
+}
+
+.workflow-source-tree .ant-tree-node-selected {
+  background: var(--app-accent-soft) !important;
+}
+
+.workflow-tree-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workflow-tree-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-tree-title b {
+  min-width: 24px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.workflow-tree-title.is-empty {
+  color: var(--app-control-disabled-text);
+}
+
+.workflow-tree-root {
+  font-weight: 650;
+}
