@@ -313,6 +313,15 @@ RECORDING_COMPRESSED_MAX_BYTES = int(os.getenv('RECORDING_COMPRESSED_MAX_BYTES',
 # 告警抑制时长（秒）- 同一任务的同一算法在此时间内不会重复预警
 ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '10'))
 
+# ============ 平台节点身份（集群 / MQ 来源标识）============
+# 当前实例的唯一编码。集群或多盒子部署时必须保证全局唯一（如 box-01、edge-sh-03）。
+# 留空时按以下优先级解析（见 app/core/node_identity.py）：
+#   1) 持久化文件 NODE_ID_FILE（首次启动自动生成 UUID 并写入，保证重启不变）；
+#   2) 文件不可写时回退到 hostname。
+# 推荐在 .env 中显式设置 NODE_ID，便于集群可读与可追溯。
+NODE_ID = (os.getenv('NODE_ID') or '').strip()
+NODE_ID_FILE = _resolve_data_path('NODE_ID_FILE', 'node_id.json')
+
 # ============ RabbitMQ配置 ============
 # RabbitMQ服务器地址
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', '10.0.4.15')
@@ -328,7 +337,9 @@ RABBITMQ_ALERT_ROUTING_KEY = os.getenv('RABBITMQ_ALERT_ROUTING_KEY', 'alert')
 
 # Topic模式配置
 RABBITMQ_EXCHANGE_TYPE = os.getenv('RABBITMQ_EXCHANGE_TYPE', 'topic')  # topic 或 direct
-RABBITMQ_ALERT_TOPIC_PATTERN = os.getenv('RABBITMQ_ALERT_TOPIC_PATTERN', 'video.alert.*')
+# 队列绑定用的 routing_key 通配模式。routing_key 形如 video.alert.{node_id}.{alert_type}，
+# 故默认用 'video.alert.#' 匹配所有节点与类型；如需按节点订阅可设为 video.alert.{node_id}.*。
+RABBITMQ_ALERT_TOPIC_PATTERN = os.getenv('RABBITMQ_ALERT_TOPIC_PATTERN', 'video.alert.#')
 
 # RabbitMQ连接超时设置（秒）
 RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30'))

@@ -26,6 +26,7 @@ from app.config import (
     RABBITMQ_ALERT_ROUTING_KEY, RABBITMQ_CONNECTION_TIMEOUT, RABBITMQ_ENABLED,
     RABBITMQ_EXCHANGE_TYPE, RABBITMQ_ALERT_TOPIC_PATTERN
 )
+from app.core.node_identity import get_hostname, get_node_id
 from app.core.public_media_config import build_public_media_url, get_public_media_config
 
 logger = logging.getLogger(__name__)
@@ -165,9 +166,12 @@ class RabbitMQPublisher:
             
             # 根据预警类型生成routing key
             if RABBITMQ_EXCHANGE_TYPE == 'topic':
-                # Topic模式：根据预警类型生成具体的routing key
+                # Topic模式：routing_key 形如 video.alert.{node_id}.{alert_type}，
+                # 消费端可按节点订阅（video.alert.{node_id}.*）或全量订阅（video.alert.#）。
+                # node_id 防御性去 '.'，避免破坏 routing_key 分段。
                 alert_type = alert_data.get('alert_type', 'unknown').lower()
-                routing_key = f"video.alert.{alert_type}"
+                node_id = str(alert_data.get('node_id') or 'unknown').replace('.', '-')
+                routing_key = f"video.alert.{node_id}.{alert_type}"
             else:
                 # Direct模式：使用配置的routing key
                 routing_key = RABBITMQ_ALERT_ROUTING_KEY
@@ -238,8 +242,14 @@ def format_alert_message(alert) -> Dict[str, Any]:
         Dict[str, Any]: 格式化后的预警消息
     """
     media_config = get_public_media_config()
+    node_id = get_node_id()
     message = {
         'alert_id': alert.id,
+        # 集群下 alert_id（DB 自增）会跨机器撞号，external_alert_id 全局唯一，供消费端去重
+        'external_alert_id': f"{node_id}-{alert.id}",
+        # 来源机器标识，集群/MQ 推送时用于区分是哪台盒子发出的
+        'node_id': node_id,
+        'host': get_hostname(),
         'source_id': alert.video_source.id,
         'source_name': alert.video_source.name,
         'source_code': alert.video_source.source_code,
