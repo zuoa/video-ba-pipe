@@ -15,6 +15,7 @@ import {
   getVideoSources,
   batchCopyWorkflow,
 } from '@/services/api';
+import type { Workflow } from '@/services/api';
 import { PageHeader, useAppConfirm } from '@/components/common';
 import WorkflowTable from './components/WorkflowTable';
 import WorkflowForm from './components/WorkflowForm';
@@ -22,7 +23,7 @@ import CopyWorkflowModal from './components/CopyWorkflowModal';
 import './index.css';
 
 export default function Workflows() {
-  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
   const [editorVisible, setEditorVisible] = useState(false);
@@ -64,12 +65,12 @@ export default function Workflows() {
     setFormVisible(true);
   };
 
-  const handleEdit = (record: any) => {
+  const handleEdit = (record: Workflow) => {
     setEditingWorkflow(record);
     setFormVisible(true);
   };
 
-  const handleOpenEditor = (record: any) => {
+  const handleOpenEditor = (record: Workflow) => {
     setSelectedWorkflow(record);
     setEditorVisible(true);
   };
@@ -85,8 +86,8 @@ export default function Workflows() {
           await deleteWorkflow(id);
           message.success('工作流删除成功');
           loadWorkflows();
-        } catch (error) {
-          message.error('删除失败');
+        } catch (error: any) {
+          message.error(error?.data?.error || error?.message || '删除失败');
         }
       },
     });
@@ -143,7 +144,7 @@ export default function Workflows() {
     }
   };
 
-  const handleCopy = (workflow: any) => {
+  const handleCopy = (workflow: Workflow) => {
     setCopyingWorkflow(workflow);
     setCopyModalVisible(true);
   };
@@ -152,7 +153,7 @@ export default function Workflows() {
     try {
       const result = await batchCopyWorkflow(copyingWorkflow.id, sourceIds);
 
-      const { created, errors, summary } = result as any;
+      const { errors, summary } = result;
 
       if (summary && summary.success > 0) {
         message.success(
@@ -168,7 +169,7 @@ export default function Workflows() {
       setCopyModalVisible(false);
       setCopyingWorkflow(null);
     } catch (error: any) {
-      message.error(error.message || '复制失败');
+      message.error(error?.data?.error || error?.message || '复制失败');
       throw error;
     }
   };
@@ -216,6 +217,7 @@ export default function Workflows() {
       <CopyWorkflowModal
         visible={copyModalVisible}
         workflow={copyingWorkflow}
+        workflows={workflows}
         videoSources={videoSources}
         onCopy={handleCopyConfirm}
         onCancel={() => {

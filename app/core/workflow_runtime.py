@@ -5,6 +5,25 @@ from typing import Iterable, Optional, Tuple
 SOURCE_NODE_TYPES = {'source', 'videosource', 'video_source'}
 SOURCE_ID_KEYS = ('dataId', 'data_id', 'videoSourceId', 'video_source_id')
 ALGORITHM_ID_KEYS = ('dataId', 'data_id', 'algorithmId', 'algorithm_id')
+TEMPLATE_SOURCE_NODE_ID = 'template-video-source'
+
+
+def build_template_workflow_data() -> dict:
+    """创建带未绑定视频源占位节点的模板初始图。"""
+    return {
+        'nodes': [{
+            'id': TEMPLATE_SOURCE_NODE_ID,
+            'type': 'source',
+            'name': '视频源（复制时绑定）',
+            'x': 80,
+            'y': 160,
+            'dataId': None,
+            'videoSourceId': None,
+            'videoSourceName': None,
+            'videoSourceCode': None,
+        }],
+        'connections': [],
+    }
 
 
 def get_node_type(node: dict) -> str:
@@ -186,6 +205,26 @@ def validate_single_source_node(workflow_data: dict) -> tuple[bool, str]:
         return False, "视频源节点缺少 dataId"
     if source_id is None:
         return False, "视频源节点 dataId 非法"
+
+    return True, ""
+
+
+def validate_template_source_node(workflow_data: dict) -> tuple[bool, str]:
+    """校验模板必须有且只能有一个未绑定的视频源占位节点。"""
+    if not isinstance(workflow_data, dict):
+        return False, "workflow_data 必须是对象"
+
+    nodes = workflow_data.get('nodes', [])
+    if not isinstance(nodes, list):
+        return False, "workflow_data.nodes 必须是数组"
+
+    source_nodes = [node for node in nodes if is_source_node(node)]
+    if not source_nodes:
+        return False, "编排模板必须包含一个视频源占位节点"
+    if len(source_nodes) > 1:
+        return False, "编排模板只允许包含一个视频源占位节点"
+    if _source_node_has_any_id_value(source_nodes[0]):
+        return False, "编排模板的视频源节点必须保持未绑定状态"
 
     return True, ""
 

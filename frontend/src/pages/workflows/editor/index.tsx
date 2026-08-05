@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'umi';
-import { Space, message, Spin } from 'antd';
+import { Space, message, Spin, Tag } from 'antd';
 import Button from '@/components/common/AppButton';
 import AppEmptyState from '@/components/common/AppEmptyState';
 import {
@@ -9,6 +9,7 @@ import {
   ExperimentOutlined,
   DeleteOutlined,
   ArrowLeftOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import ReactFlow, {
   Node,
@@ -134,8 +135,9 @@ export default function WorkflowEditorPage() {
                   ? {
                       ...node.data,
                       algorithmType: node.data.algorithmType || currentAlgorithm?.algorithm_type || 'script',
+                      isTemplate: Boolean(data.is_template),
                     }
-                  : node.data,
+                  : { ...node.data, isTemplate: Boolean(data.is_template) },
               };
             }
 
@@ -149,6 +151,7 @@ export default function WorkflowEditorPage() {
               icon: node.icon,
               color: node.color,
               config: node.config || node.data?.config,
+              isTemplate: Boolean(data.is_template),
             };
 
             if (nodeType === 'algorithm') {
@@ -526,6 +529,16 @@ export default function WorkflowEditorPage() {
         if (!silent) {
           message.error(errorMsg);
         }
+        return false;
+      }
+      const sourceNode = sourceNodes[0];
+      const sourceId = sourceNode.data?.dataId ?? sourceNode.data?.videoSourceId;
+      if (workflow?.is_template && sourceId != null && sourceId !== '') {
+        if (!silent) message.error('编排模板的视频源节点必须保持未绑定状态');
+        return false;
+      }
+      if (!workflow?.is_template && (sourceId == null || sourceId === '')) {
+        if (!silent) message.error('请选择视频源');
         return false;
       }
 
@@ -910,8 +923,15 @@ export default function WorkflowEditorPage() {
           </Button>
           <div className="header-content">
             <h3 className="header-title">{workflow?.name || '算法编排编辑器'}</h3>
-            <p className="header-subtitle">拖拽组件到画布，连线配置算法编排</p>
+            <p className="header-subtitle">
+              {workflow?.is_template ? '配置可复用结构，视频源将在复制时绑定' : '拖拽组件到画布，连线配置算法编排'}
+            </p>
           </div>
+          {workflow?.is_template ? (
+            <Tag color="purple" icon={<FileTextOutlined />} className="editor-template-tag">
+              编排模板 · 不调度
+            </Tag>
+          ) : null}
         </div>
         <div className="header-right">
           <Space size="small">
@@ -999,6 +1019,7 @@ export default function WorkflowEditorPage() {
                 vlConfig={vlConfig}
                 edges={edges}
                 nodes={nodes}
+                isTemplate={Boolean(workflow?.is_template)}
                 onUpdate={handleUpdateNode}
                 onDelete={handleDeleteNode}
               />

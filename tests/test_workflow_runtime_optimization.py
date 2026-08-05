@@ -2,11 +2,13 @@ import threading
 
 from app.core.workflow_executor import WorkflowExecutor
 from app.core.workflow_runtime import (
+    build_template_workflow_data,
     build_workflow_signature,
     extract_algorithm_ids,
     extract_source_id_from_workflow_data,
     normalize_source_node_fields,
     validate_single_source_node,
+    validate_template_source_node,
     workflow_configs_equivalent,
     workflow_references_algorithm,
 )
@@ -115,6 +117,27 @@ def test_validate_single_source_node_accepts_source_id_from_nested_legacy_data()
 
     assert is_valid is True
     assert error_message == ""
+
+
+def test_template_workflow_uses_one_unbound_source_placeholder():
+    workflow_data = build_template_workflow_data()
+
+    is_valid, error_message = validate_template_source_node(workflow_data)
+
+    assert is_valid is True
+    assert error_message == ""
+    assert len(workflow_data["nodes"]) == 1
+    assert extract_source_id_from_workflow_data(workflow_data) is None
+
+
+def test_template_source_validation_rejects_bound_source():
+    workflow_data = build_template_workflow_data()
+    workflow_data["nodes"][0]["dataId"] = 7
+
+    is_valid, error_message = validate_template_source_node(workflow_data)
+
+    assert is_valid is False
+    assert "未绑定" in error_message
 
 
 def test_normalize_source_node_fields_syncs_runtime_and_display_fields():

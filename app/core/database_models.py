@@ -193,6 +193,19 @@ class Workflow(BaseModel):
     description = pw.TextField(null=True)    # 描述
     workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
     is_active = pw.BooleanField(default=False)  # 是否激活
+    is_template = pw.BooleanField(default=False, index=True)  # 是否为编排模板
+    source_template = pw.ForeignKeyField(
+        'self',
+        backref='derived_workflows',
+        null=True,
+        on_delete='RESTRICT',
+    )  # 派生编排的来源模板
+    video_source = pw.ForeignKeyField(
+        VideoSource,
+        backref='workflows',
+        null=True,
+        on_delete='SET NULL',
+    )  # 从 workflow_data 同步的视频源，用于筛选和唯一约束
     config_version = pw.IntegerField(default=1)  # 配置版本号（每次修改递增，用于检测变更）
     created_at = pw.DateTimeField()
     updated_at = pw.DateTimeField()
@@ -200,6 +213,9 @@ class Workflow(BaseModel):
 
     class Meta:
         table_name = 'workflows'
+        indexes = (
+            (('source_template', 'video_source'), True),
+        )
 
     @property
     def data_dict(self):

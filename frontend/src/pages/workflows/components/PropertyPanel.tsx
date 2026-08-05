@@ -34,6 +34,7 @@ export interface PropertyPanelProps {
   vlConfig?: any;
   edges?: any[];
   nodes?: any[];
+  isTemplate?: boolean;
   onUpdate: (data: any) => void;
   onDelete: () => void;
 }
@@ -46,6 +47,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   vlConfig,
   edges = [],
   nodes = [],
+  isTemplate = false,
   onUpdate,
   onDelete,
 }) => {
@@ -541,6 +543,17 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
     switch (nodeType) {
       case 'videoSource':
       case 'source':
+        if (isTemplate) {
+          return (
+            <div className="info-box template-source-info">
+              <InfoCircleOutlined />
+              <div>
+                <Text strong>视频源占位节点</Text>
+                <div>模板无需选择具体视频源，复制为普通编排时自动绑定。</div>
+              </div>
+            </div>
+          );
+        }
         // 获取当前选中的视频源
         const currentSourceId = node.data.dataId ?? node.data.videoSourceId;
         const currentSource = videoSources.find(s => String(s.id) === String(currentSourceId));

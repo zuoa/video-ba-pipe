@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Checkbox, Space, Typography, Alert, Divider } from 'antd';
 import Button from '@/components/common/AppButton';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
@@ -10,6 +10,7 @@ const { Text, Paragraph } = Typography;
 export interface CopyWorkflowModalProps {
   visible: boolean;
   workflow: any;
+  workflows: any[];
   videoSources: any[];
   onCopy: (sourceIds: number[]) => Promise<void>;
   onCancel: () => void;
@@ -18,12 +19,31 @@ export interface CopyWorkflowModalProps {
 const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
   visible,
   workflow,
+  workflows,
   videoSources,
   onCopy,
   onCancel,
 }) => {
   const [selectedSourceIds, setSelectedSourceIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const existingBySourceId = useMemo(() => {
+    const entries = workflows
+      .filter((item) => item.source_template_id === workflow?.id && item.video_source_id != null)
+      .map((item) => [Number(item.video_source_id), item] as const);
+    return new Map(entries);
+  }, [workflow?.id, workflows]);
+
+  const availableSources = useMemo(
+    () => videoSources.filter((source) => !existingBySourceId.has(Number(source.id))),
+    [existingBySourceId, videoSources],
+  );
+
+  useEffect(() => {
+    if (!visible) {
+      setSelectedSourceIds([]);
+    }
+  }, [visible, workflow?.id]);
 
   const handleSourceChange = (sourceId: number, checked: boolean) => {
     if (checked) {
@@ -35,7 +55,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedSourceIds(videoSources.map((s) => s.id));
+      setSelectedSourceIds(availableSources.map((s) => s.id));
     } else {
       setSelectedSourceIds([]);
     }
@@ -55,8 +75,8 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
     }
   };
 
-  const isAllSelected = videoSources.length > 0 && selectedSourceIds.length === videoSources.length;
-  const isIndeterminate = selectedSourceIds.length > 0 && selectedSourceIds.length < videoSources.length;
+  const isAllSelected = availableSources.length > 0 && selectedSourceIds.length === availableSources.length;
+  const isIndeterminate = selectedSourceIds.length > 0 && selectedSourceIds.length < availableSources.length;
 
   return (
     <AppModal
@@ -107,14 +127,14 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
         </Paragraph>
 
         {/* 全选选项 */}
-        {videoSources.length > 0 && (
+        {availableSources.length > 0 && (
           <div className="select-all-section">
             <Checkbox
               checked={isAllSelected}
               indeterminate={isIndeterminate}
               onChange={(e) => handleSelectAll(e.target.checked)}
             >
-              <Text strong>全选 ({videoSources.length} 个视频源)</Text>
+              <Text strong>全选可用视频源 ({availableSources.length} 个)</Text>
             </Checkbox>
             <Divider style={{ margin: '12px 0' }} />
           </div>
@@ -128,13 +148,15 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
             <Space direction="vertical" style={{ width: '100%' }} size={8}>
               {videoSources.map((source) => {
                 const isSelected = selectedSourceIds.includes(source.id);
+                const existingWorkflow = existingBySourceId.get(Number(source.id));
                 return (
                   <div
                     key={source.id}
-                    className={`video-source-item ${isSelected ? 'selected' : ''}`}
+                    className={`video-source-item ${isSelected ? 'selected' : ''} ${existingWorkflow ? 'disabled' : ''}`}
                   >
                     <Checkbox
                       checked={isSelected}
+                      disabled={Boolean(existingWorkflow)}
                       onChange={(e) => handleSourceChange(source.id, e.target.checked)}
                     >
                       <Space>
@@ -146,7 +168,9 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
                     </Checkbox>
                     <div className="source-details">
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {source.source_code}
+                        {existingWorkflow
+                          ? `已创建：${existingWorkflow.name}`
+                          : source.source_code}
                       </Text>
                     </div>
                   </div>

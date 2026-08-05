@@ -21,6 +21,10 @@
   gap: 16px;
 }
 
+.filter-left > .ant-space {
+  flex-wrap: wrap;
+}
+
 .filter-item {
   display: flex;
   align-items: center;
@@ -96,6 +100,15 @@
   background: #fafbfc;
 }
 
+.workflow-table .ant-table-tbody > tr.workflow-template-row > td {
+  background: #faf8ff;
+  border-bottom-color: #e9ddff;
+}
+
+.workflow-table .ant-table-tbody > tr.workflow-template-row:hover > td {
+  background: #f4efff;
+}
+
 /* 选中行的样式 */
 .workflow-table .ant-table-tbody > tr.ant-table-row-selected > td {
   background: var(--app-info-soft) !important;
@@ -144,6 +157,10 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
+.name-icon-template {
+  background: linear-gradient(135deg, #531dab 0%, #722ed1 100%);
+}
+
 .name-content {
   flex: 1;
   min-width: 0;
@@ -181,6 +198,22 @@
 .status-inactive {
   color: #8c8c8c;
   font-weight: 400;
+}
+
+.status-template,
+.muted-cell {
+  color: var(--app-text-muted);
+}
+
+@media (max-width: 768px) {
+  .filter-item {
+    width: 100%;
+  }
+
+  .filter-item .ant-select {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* 复选框样式 - 增强可见度 */

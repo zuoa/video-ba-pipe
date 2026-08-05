@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useDeferredValue, useMemo, useState } from 'react';
 import { Table, Space, Tag, Select, Badge, Input, Alert } from 'antd';
 import Button from '@/components/common/AppButton';
 import AppToolbar from '@/components/common/AppToolbar';
@@ -13,6 +13,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   CopyOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import './WorkflowTable.css';
 
@@ -49,23 +50,35 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
 }) => {
   const navigate = useNavigate();
   const [filterSource, setFilterSource] = useState<number | undefined>();
+  const [filterType, setFilterType] = useState<'template' | 'workflow' | undefined>();
+  const [filterTemplate, setFilterTemplate] = useState<number | 'direct' | undefined>();
   const [searchText, setSearchText] = useState('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const deferredSearchText = useDeferredValue(searchText.trim().toLowerCase());
 
-  const filteredWorkflows = workflows.filter((workflow) => {
-    // 从 workflow_data 中获取视频源 ID
+  const templates = useMemo(
+    () => workflows.filter((workflow) => workflow.is_template),
+    [workflows],
+  );
+
+  const filteredWorkflows = useMemo(() => workflows.filter((workflow) => {
     const workflowData = workflow.workflow_data || {};
     const nodes = workflowData.nodes || [];
     const sourceNode = nodes.find((node: any) => node.type === 'source');
-    const workflowSourceId = sourceNode?.dataId;
+    const workflowSourceId = workflow.video_source_id ?? sourceNode?.dataId;
 
-    const matchSource = filterSource === undefined || workflowSourceId === filterSource;
-    const matchSearch =
-      !searchText ||
-      workflow.name?.toLowerCase().includes(searchText.toLowerCase()) ||
-      workflow.description?.toLowerCase().includes(searchText.toLowerCase());
-    return matchSource && matchSearch;
-  });
+    const matchSource = filterSource === undefined || Number(workflowSourceId) === filterSource;
+    const matchType = filterType === undefined
+      || (filterType === 'template' ? workflow.is_template : !workflow.is_template);
+    const matchTemplate = filterTemplate === undefined
+      || (filterTemplate === 'direct'
+        ? !workflow.is_template && workflow.source_template_id == null
+        : workflow.source_template_id === filterTemplate);
+    const matchSearch = !deferredSearchText
+      || workflow.name?.toLowerCase().includes(deferredSearchText)
+      || workflow.description?.toLowerCase().includes(deferredSearchText);
+    return matchSource && matchType && matchTemplate && matchSearch;
+  }), [deferredSearchText, filterSource, filterTemplate, filterType, workflows]);
 
   const handleBatchActivate = () => {
     if (selectedRowKeys.length === 0) return;
@@ -113,14 +126,24 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
       ),
     },
     {
+      title: '类型',
+      key: 'workflow_type',
+      width: 110,
+      render: (_: any, record: any) => record.is_template ? (
+        <Tag color="purple" icon={<FileTextOutlined />}>模板</Tag>
+      ) : (
+        <Tag color="blue" icon={<ApartmentOutlined />}>普通编排</Tag>
+      ),
+    },
+    {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
       width: 280,
       render: (name: string, record: any) => (
         <div className="name-cell">
-          <div className="name-icon">
-            <ApartmentOutlined />
+          <div className={`name-icon ${record.is_template ? 'name-icon-template' : ''}`}>
+            {record.is_template ? <FileTextOutlined /> : <ApartmentOutlined />}
           </div>
           <div className="name-content">
             <div className="name-text">{name || '未命名'}</div>
@@ -143,8 +166,13 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
         // 查找类型为 'source' 的节点
         const sourceNode = nodes.find((node: any) => node.type === 'source');
 
-        if (sourceNode && sourceNode.dataId) {
-          const sourceId = sourceNode.dataId;
+        if (record.is_template) {
+          return <Tag color="purple">复制时绑定</Tag>;
+        }
+
+        const normalizedSourceId = record.video_source_id ?? sourceNode?.dataId;
+        if (normalizedSourceId) {
+          const sourceId = normalizedSourceId;
           const source = videoSources.find((s) => String(s.id) === String(sourceId));
           return source ? (
             <Tag color="blue" className="source-tag">
@@ -159,11 +187,29 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
       },
     },
     {
+      title: '来源模板',
+      key: 'source_template',
+      width: 180,
+      render: (_: any, record: any) => {
+        if (record.is_template) return <span className="muted-cell">模板本身</span>;
+        if (record.source_template_id) {
+          return (
+            <Tag color="geekblue">
+              {record.source_template_name || `模板 #${record.source_template_id}`}
+            </Tag>
+          );
+        }
+        return <span className="muted-cell">自主创建</span>;
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
       width: 120,
-      render: (isActive: boolean) => (
+      render: (isActive: boolean, record: any) => record.is_template ? (
+        <Badge status="default" text={<span className="status-template">不调度</span>} />
+      ) : (
         <Badge
           status={isActive ? 'processing' : 'default'}
           text={
@@ -205,7 +251,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
           >
             编排
           </Button>
-          {onCopy && (
+          {onCopy && record.is_template && (
             <Button
               size="small"
               icon={<CopyOutlined />}
@@ -223,7 +269,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
           >
             编辑
           </Button>
-          {record.is_active ? (
+          {!record.is_template && (record.is_active ? (
             <Button
               size="small"
               icon={<PauseCircleOutlined />}
@@ -242,7 +288,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
             >
               激活
             </Button>
-          )}
+          ))}
           <Button
             size="small"
             icon={<DeleteOutlined />}
@@ -261,6 +307,10 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
     },
+    getCheckboxProps: (record: any) => ({
+      disabled: record.is_template,
+      name: record.is_template ? '编排模板不参与批量运行操作' : record.name,
+    }),
   };
 
   return (
@@ -280,6 +330,37 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
         <div className="filter-left">
           <Space size="middle">
             <div className="filter-item">
+              <span className="filter-label">类型</span>
+              <Select
+                placeholder="全部类型"
+                allowClear
+                style={{ width: 140 }}
+                value={filterType}
+                onChange={setFilterType}
+                options={[
+                  { label: '编排模板', value: 'template' },
+                  { label: '普通编排', value: 'workflow' },
+                ]}
+              />
+            </div>
+            <div className="filter-item">
+              <span className="filter-label">来源模板</span>
+              <Select
+                placeholder="全部来源"
+                allowClear
+                style={{ width: 200 }}
+                value={filterTemplate}
+                onChange={setFilterTemplate}
+              >
+                <Select.Option value="direct">自主创建</Select.Option>
+                {templates.map((template) => (
+                  <Select.Option key={template.id} value={template.id}>
+                    {template.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+            <div className="filter-item">
               <FilterOutlined className="filter-icon" />
               <span className="filter-label">按视频源筛选</span>
               <Select
@@ -296,7 +377,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
                 ))}
               </Select>
             </div>
-            {filterSource !== undefined && (
+            {(filterSource !== undefined || filterType !== undefined || filterTemplate !== undefined) && (
               <div className="filter-info">
                 显示 <span className="filter-count">{filteredWorkflows.length}</span> 个算法编排
               </div>
@@ -360,6 +441,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
         rowKey="id"
         loading={loading}
         rowSelection={rowSelection}
+        rowClassName={(record) => record.is_template ? 'workflow-template-row' : ''}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,

@@ -254,12 +254,51 @@ export async function deleteUser(id: number) {
 }
 
 // 工作流
+export interface Workflow {
+  id: number;
+  name: string;
+  description?: string | null;
+  workflow_data: {
+    nodes?: any[];
+    connections?: any[];
+  };
+  is_active: boolean;
+  is_template: boolean;
+  source_template_id?: number | null;
+  source_template_name?: string | null;
+  video_source_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by?: string;
+}
+
+export interface BatchCopyWorkflowResponse {
+  success: boolean;
+  template: { id: number; name: string };
+  created: Array<{
+    workflow_id: number;
+    source_id: number;
+    name: string;
+    source_name: string;
+    source_template_id: number;
+  }>;
+  errors: Array<{
+    source_id: number;
+    code?: string;
+    error: string;
+    existing_workflow_id?: number | null;
+    existing_workflow_name?: string | null;
+  }>;
+  summary: { total: number; success: number; failed: number };
+  error?: string;
+}
+
 export async function getWorkflows() {
-  return request('/api/workflows');
+  return request<Workflow[]>('/api/workflows');
 }
 
 export async function getWorkflow(id: number) {
-  return request(`/api/workflows/${id}`);
+  return request<Workflow>(`/api/workflows/${id}`);
 }
 
 export async function createWorkflow(data: any) {
@@ -295,7 +334,7 @@ export async function deactivateWorkflow(id: number) {
 }
 
 export async function batchCopyWorkflow(workflowId: number, sourceIds: number[]) {
-  return request(`/api/workflows/${workflowId}/batch-copy`, {
+  return request<BatchCopyWorkflowResponse>(`/api/workflows/${workflowId}/batch-copy`, {
     method: 'POST',
     data: { source_ids: sourceIds },
   });

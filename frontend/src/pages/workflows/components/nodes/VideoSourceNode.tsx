@@ -29,10 +29,17 @@ const VideoSourceNode = ({ data }: any) => {
 
   // 如果配置了视频源，显示详细信息
   const renderSourceInfo = () => {
+    if (data.isTemplate) {
+      return (
+        <div className="node-meta template-source-placeholder">
+          <span className="meta-label">复制时绑定视频源</span>
+        </div>
+      );
+    }
     if (!isConfigured) {
       return (
         <div className="node-meta" style={{ color: '#ff4d4f' }}>
-          <span className="meta-label">⚠️ 未配置视频源</span>
+          <span className="meta-label">未配置视频源</span>
         </div>
       );
     }

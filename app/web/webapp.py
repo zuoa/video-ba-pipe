@@ -144,7 +144,9 @@ def _bump_active_workflows_for_algorithm(algorithm_id):
     """让 orchestrator 发现算法依赖变化并重启对应的活动 source host。"""
     affected_ids = []
     now = datetime.now()
-    query = Workflow.select().where(Workflow.is_active == True)
+    query = Workflow.select().where(
+        (Workflow.is_active == True) & (Workflow.is_template == False)
+    )
     for workflow in query:
         if not workflow_references_algorithm(workflow.data_dict, algorithm_id):
             continue
@@ -257,7 +259,9 @@ def get_system_source_rotation_config():
     config = get_source_rotation_config()
     active_source_ids = {
         extract_source_id_from_workflow_data(workflow.data_dict)
-        for workflow in Workflow.select().where(Workflow.is_active == True)
+        for workflow in Workflow.select().where(
+            (Workflow.is_active == True) & (Workflow.is_template == False)
+        )
     }
     active_source_ids.discard(None)
     eligible_source_count = VideoSource.select().where(

@@ -278,3 +278,7 @@
 .alert-level-critical {
   color: #722ed1;
 }
+.template-source-placeholder {
+  color: #531dab;
+  background: #f9f0ff;
+}

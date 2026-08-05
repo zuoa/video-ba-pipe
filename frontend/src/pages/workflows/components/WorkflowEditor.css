@@ -257,3 +257,7 @@
     padding-inline: 10px;
   }
 }
+.editor-template-tag {
+  margin-left: 12px;
+  white-space: nowrap;
+}

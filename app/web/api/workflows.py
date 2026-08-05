@@ -6,12 +6,15 @@ import re
 from datetime import datetime
 from copy import deepcopy
 from flask import jsonify, request
+from peewee import IntegrityError
 
-from app.core.database_models import Workflow, WorkflowNode, VideoSource, Algorithm
+from app.core.database_models import db, Workflow, WorkflowNode, VideoSource, Algorithm
 from app.core.workflow_runtime import (
+    build_template_workflow_data,
     extract_source_id_from_workflow_data,
     normalize_source_node_fields,
     validate_single_source_node,
+    validate_template_source_node,
     workflow_configs_equivalent,
 )
 from app.core.webhook_workflow_config import (
@@ -90,15 +93,42 @@ def register_workflows_api(app):
     """注册工作流管理 API 路由"""
 
     def serialize_workflow(workflow):
+        source_template_name = None
+        if workflow.source_template_id is not None:
+            try:
+                source_template_name = workflow.source_template.name
+            except Workflow.DoesNotExist:
+                source_template_name = None
         return {
             'id': workflow.id,
             'name': workflow.name,
             'description': workflow.description,
             'workflow_data': mask_workflow_webhook_secrets(workflow.data_dict),
             'is_active': workflow.is_active,
+            'is_template': workflow.is_template,
+            'source_template_id': workflow.source_template_id,
+            'source_template_name': source_template_name,
+            'video_source_id': workflow.video_source_id,
             'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
             'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
             'created_by': workflow.created_by,
+        }
+
+    def find_template_source_duplicate(template_id, source_id, exclude_workflow_id=None):
+        query = Workflow.select().where(
+            (Workflow.source_template == template_id)
+            & (Workflow.video_source == source_id)
+        )
+        if exclude_workflow_id is not None:
+            query = query.where(Workflow.id != exclude_workflow_id)
+        return query.first()
+
+    def duplicate_template_source_response(existing_workflow):
+        return {
+            'code': 'duplicate_template_source',
+            'error': '该模板已为此视频源创建过编排',
+            'existing_workflow_id': existing_workflow.id if existing_workflow else None,
+            'existing_workflow_name': existing_workflow.name if existing_workflow else None,
         }
 
     def get_algorithm_label_name(algorithm):
@@ -162,9 +192,23 @@ def register_workflows_api(app):
             if not data.get('name'):
                 return jsonify({'error': '缺少必填字段: name'}), 400
             
-            workflow_data = deepcopy(data.get('workflow_data', {}))
+            is_template = bool(data.get('is_template', False))
+            if data.get('source_template_id') is not None:
+                return jsonify({'error': '来源模板只能通过模板复制接口设置'}), 400
+
+            raw_workflow_data = data.get('workflow_data')
+            workflow_data = (
+                build_template_workflow_data()
+                if is_template and not raw_workflow_data
+                else deepcopy(raw_workflow_data or {})
+            )
+            if is_template:
+                is_valid, error_message = validate_template_source_node(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
             source_id = extract_source_id_from_workflow_data(workflow_data) if workflow_data else None
-            if source_id is not None:
+            source = None
+            if not is_template and source_id is not None:
                 try:
                     source = VideoSource.get_by_id(source_id)
                 except VideoSource.DoesNotExist:
@@ -187,7 +231,10 @@ def register_workflows_api(app):
                 name=data['name'],
                 description=data.get('description', ''),
                 workflow_data=json.dumps(workflow_data),
-                is_active=data.get('is_active', False),
+                is_active=False if is_template else data.get('is_active', False),
+                is_template=is_template,
+                source_template=None,
+                video_source=None if is_template else source,
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
                 created_by=current_username('admin')
@@ -212,6 +259,11 @@ def register_workflows_api(app):
                 return owner_response
             data = request.json
 
+            if 'is_template' in data and bool(data['is_template']) != workflow.is_template:
+                return jsonify({'error': '编排类型创建后不可修改'}), 400
+            if 'source_template_id' in data:
+                return jsonify({'error': '来源模板不可修改'}), 400
+
             need_version_bump = False
 
             if 'name' in data:
@@ -222,24 +274,37 @@ def register_workflows_api(app):
                 existing_workflow_data = workflow.data_dict
                 workflow_data = deepcopy(data['workflow_data']) if isinstance(data['workflow_data'], dict) else data['workflow_data']
                 workflow_data = merge_workflow_webhook_secrets(existing_workflow_data, workflow_data)
-                is_valid, error_message = validate_single_source_node(workflow_data)
+                validator = validate_template_source_node if workflow.is_template else validate_single_source_node
+                is_valid, error_message = validator(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
 
                 source_id = extract_source_id_from_workflow_data(workflow_data)
-                if source_id is None:
-                    return jsonify({'error': '视频源节点 dataId 非法'}), 400
+                source = None
+                if not workflow.is_template:
+                    if source_id is None:
+                        return jsonify({'error': '视频源节点 dataId 非法'}), 400
+                    try:
+                        source = VideoSource.get_by_id(source_id)
+                    except VideoSource.DoesNotExist:
+                        return jsonify({'error': f'视频源不存在: {source_id}'}), 400
 
-                try:
-                    source = VideoSource.get_by_id(source_id)
-                except VideoSource.DoesNotExist:
-                    return jsonify({'error': f'视频源不存在: {source_id}'}), 400
+                    owner_response = require_resource_owner(source)
+                    if owner_response:
+                        return owner_response
 
-                owner_response = require_resource_owner(source)
-                if owner_response:
-                    return owner_response
-
-                workflow_data = normalize_source_node_fields(workflow_data, source)
+                    duplicate = (
+                        find_template_source_duplicate(
+                            workflow.source_template_id,
+                            source.id,
+                            exclude_workflow_id=workflow.id,
+                        )
+                        if workflow.source_template_id is not None
+                        else None
+                    )
+                    if duplicate:
+                        return jsonify(duplicate_template_source_response(duplicate)), 409
+                    workflow_data = normalize_source_node_fields(workflow_data, source)
                 is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
@@ -259,8 +324,11 @@ def register_workflows_api(app):
 
                 if workflow.workflow_data != workflow_data_str:
                     workflow.workflow_data = workflow_data_str
+                workflow.video_source = source
 
             if 'is_active' in data:
+                if workflow.is_template and data['is_active']:
+                    return jsonify({'error': '编排模板不可激活'}), 400
                 workflow.is_active = data['is_active']
 
             # 如果工作流配置变更，递增版本号
@@ -270,7 +338,19 @@ def register_workflows_api(app):
                 app.logger.info(f"工作流 {id} 配置版本号: {old_version} -> {workflow.config_version}")
 
             workflow.updated_at = datetime.now()
-            workflow.save()
+            try:
+                workflow.save()
+            except IntegrityError:
+                duplicate = (
+                    find_template_source_duplicate(
+                        workflow.source_template_id,
+                        workflow.video_source_id,
+                        exclude_workflow_id=workflow.id,
+                    )
+                    if workflow.source_template_id and workflow.video_source_id
+                    else None
+                )
+                return jsonify(duplicate_template_source_response(duplicate)), 409
 
             return jsonify({
                 'message': '工作流更新成功',
@@ -291,7 +371,24 @@ def register_workflows_api(app):
             owner_response = require_resource_owner(workflow)
             if owner_response:
                 return owner_response
-            workflow.delete_instance(recursive=True)
+            if workflow.is_template:
+                derived = Workflow.select().where(Workflow.source_template == workflow.id).first()
+                if derived:
+                    return jsonify({
+                        'error': '该模板已有派生编排，不能删除',
+                        'code': 'template_in_use',
+                        'existing_workflow_id': derived.id,
+                        'existing_workflow_name': derived.name,
+                    }), 409
+            try:
+                workflow.delete_instance(recursive=True)
+            except IntegrityError:
+                if not workflow.is_template:
+                    raise
+                return jsonify({
+                    'error': '该模板已有派生编排，不能删除',
+                    'code': 'template_in_use',
+                }), 409
             return jsonify({'message': '工作流删除成功'})
         except Workflow.DoesNotExist:
             return jsonify({'error': '工作流不存在'}), 404
@@ -308,6 +405,8 @@ def register_workflows_api(app):
             owner_response = require_resource_owner(workflow)
             if owner_response:
                 return owner_response
+            if workflow.is_template:
+                return jsonify({'error': '编排模板不可激活'}), 400
             workflow_data = workflow.data_dict
 
             is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
@@ -564,7 +663,12 @@ def register_workflows_api(app):
             owner_response = require_resource_owner(template)
             if owner_response:
                 return owner_response
+            if not template.is_template:
+                return jsonify({'error': '只有编排模板可以复制'}), 400
             template_data = template.data_dict
+            is_valid, error_message = validate_template_source_node(template_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
 
             results = []
             errors = []
@@ -576,34 +680,51 @@ def register_workflows_api(app):
                     if source_owner_response:
                         raise PermissionError('Forbidden')
 
+                    duplicate = find_template_source_duplicate(template.id, source.id)
+                    if duplicate:
+                        errors.append({
+                            'source_id': source.id,
+                            **duplicate_template_source_response(duplicate),
+                        })
+                        continue
+
                     # 深拷贝 workflow_data
                     new_data = deepcopy(template_data)
-                    is_valid, error_message = validate_single_source_node(new_data)
-                    if not is_valid:
-                        raise ValueError(error_message)
-
                     new_data = normalize_source_node_fields(new_data, source)
 
                     # 生成名称
                     name = generate_workflow_name(source, new_data, template.name)
 
                     # 创建新工作流（默认不激活）
-                    new_workflow = Workflow.create(
-                        name=name,
-                        description=f"从 '{template.name}' 复制",
-                        workflow_data=json.dumps(new_data),
-                        is_active=False,  # 默认不激活
-                        created_at=datetime.now(),
-                        updated_at=datetime.now(),
-                        created_by=current_username('admin')
-                    )
+                    try:
+                        with db.atomic():
+                            new_workflow = Workflow.create(
+                                name=name,
+                                description=f"从模板 '{template.name}' 复制",
+                                workflow_data=json.dumps(new_data),
+                                is_active=False,
+                                is_template=False,
+                                source_template=template,
+                                video_source=source,
+                                created_at=datetime.now(),
+                                updated_at=datetime.now(),
+                                created_by=current_username('admin')
+                            )
+                    except IntegrityError:
+                        duplicate = find_template_source_duplicate(template.id, source.id)
+                        errors.append({
+                            'source_id': source.id,
+                            **duplicate_template_source_response(duplicate),
+                        })
+                        continue
 
                     results.append({
                         'workflow_id': new_workflow.id,
                         'source_id': source.id,
                         'name': name,
                         'source_name': source.name,
-                        'is_active': False
+                        'is_active': False,
+                        'source_template_id': template.id,
                     })
 
                 except Exception as e:
@@ -612,7 +733,7 @@ def register_workflows_api(app):
                         'error': str(e)
                     })
 
-            return jsonify({
+            response = {
                 'success': True,
                 'template': {
                     'id': template.id,
@@ -625,7 +746,14 @@ def register_workflows_api(app):
                     'success': len(results),
                     'failed': len(errors)
                 }
-            })
+            }
+            if not results and errors and all(
+                item.get('code') == 'duplicate_template_source' for item in errors
+            ):
+                response['success'] = False
+                response['error'] = '所选视频源均已从该模板创建过编排'
+                return jsonify(response), 409
+            return jsonify(response)
 
         except Workflow.DoesNotExist:
             return jsonify({'error': '工作流不存在'}), 404
@@ -655,6 +783,8 @@ def register_workflows_api(app):
                     owner_response = require_resource_owner(workflow)
                     if owner_response:
                         raise PermissionError('Forbidden')
+                    if workflow.is_template:
+                        raise ValueError('编排模板不可激活')
                     is_valid, error_message = validate_workflow_time_schedule_nodes(workflow.data_dict)
                     if not is_valid:
                         raise ValueError(error_message)
@@ -740,6 +870,14 @@ def register_workflows_api(app):
                     owner_response = require_resource_owner(workflow)
                     if owner_response:
                         raise PermissionError('Forbidden')
+                    if workflow.is_template:
+                        derived = Workflow.select().where(
+                            Workflow.source_template == workflow.id
+                        ).first()
+                        if derived:
+                            raise ValueError(
+                                f"模板已有派生编排: {derived.name} (ID={derived.id})"
+                            )
                     workflow.delete_instance(recursive=True)
                     success_count += 1
                 except Exception as e:

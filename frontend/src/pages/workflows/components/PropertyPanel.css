@@ -379,3 +379,9 @@
   gap: 8px;
   padding: 6px 0;
 }
+.template-source-info {
+  align-items: flex-start;
+  background: #f9f5ff;
+  border-color: #d3adf7;
+  color: #531dab;
+}

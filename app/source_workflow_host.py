@@ -167,7 +167,9 @@ class SourceWorkflowHost:
 
     def _load_workflows(self):
         workflows = []
-        for workflow in Workflow.select().where(Workflow.is_active == True):
+        for workflow in Workflow.select().where(
+            (Workflow.is_active == True) & (Workflow.is_template == False)
+        ):
             workflow_data = workflow.data_dict
             if extract_source_id_from_workflow_data(workflow_data) != self.source_id:
                 continue

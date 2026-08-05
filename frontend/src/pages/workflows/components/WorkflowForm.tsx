@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input } from 'antd';
+import { Alert, Form, Input, Radio } from 'antd';
 import Button from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
 import './WorkflowForm.css';
@@ -28,9 +28,11 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
         form.setFieldsValue({
           name: editingWorkflow.name,
           description: editingWorkflow.description || '',
+          is_template: editingWorkflow.is_template || false,
         });
       } else {
         form.resetFields();
+        form.setFieldValue('is_template', false);
       }
     }
   }, [visible, editingWorkflow, form]);
@@ -77,6 +79,27 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
         layout="vertical"
         className="workflow-form"
       >
+        {editingWorkflow ? (
+          <Alert
+            type={editingWorkflow.is_template ? 'info' : 'success'}
+            showIcon
+            message={editingWorkflow.is_template ? '编排模板' : '普通编排'}
+            description="编排类型创建后不可修改"
+            className="workflow-type-alert"
+          />
+        ) : (
+          <Form.Item
+            label="编排类型"
+            name="is_template"
+            rules={[{ required: true, message: '请选择编排类型' }]}
+          >
+            <Radio.Group className="workflow-type-options">
+              <Radio.Button value={false}>普通编排</Radio.Button>
+              <Radio.Button value={true}>编排模板</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+        )}
+
         <Form.Item
           label="算法编排名称"
           name="name"

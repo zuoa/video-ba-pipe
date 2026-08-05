@@ -691,7 +691,9 @@ class Orchestrator:
 
     def _build_active_workflow_groups(self):
         groups = {}
-        for workflow in Workflow.select().where(Workflow.is_active == True):
+        for workflow in Workflow.select().where(
+            (Workflow.is_active == True) & (Workflow.is_template == False)
+        ):
             source_id = self._extract_source_id(workflow)
             if source_id is None:
                 logger.warning(f"工作流 {workflow.id} 没有合法视频源节点，跳过 host 分组")

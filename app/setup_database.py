@@ -23,6 +23,10 @@ def ensure_default_admin_user():
 def setup_database():
     # 连接数据库并创建表
     db.connect(reuse_if_open=True)
+    # 旧库必须先补工作流列，再让 Peewee 为新模型创建索引。
+    # SQLite 会把不存在的双引号索引列当成表达式，之后再补列会造成 schema 异常。
+    if db.table_exists(Workflow._meta.table_name):
+        _ensure_workflow_columns()
     # 创建所有数据库表，按依赖顺序
     db.create_tables([
         # 基础表
@@ -52,7 +56,9 @@ def setup_database():
     _ensure_ownership_columns()
     _ensure_video_source_columns()
     _ensure_model_columns()
+    _ensure_workflow_columns()
     _normalize_existing_records()
+    _ensure_workflow_indexes()
 
     ensure_default_admin_user()
 
@@ -242,6 +248,25 @@ def _normalize_existing_records():
     Workflow.update(created_by='admin').where(
         (Workflow.created_by.is_null(True)) | (Workflow.created_by == '')
     ).execute()
+    # video_source_id 是 workflow_data 的规范化索引字段，运行配置仍以 JSON 图为准。
+    from app.core.workflow_runtime import extract_source_id_from_workflow_data
+    existing_source_ids = {
+        source.id for source in VideoSource.select(VideoSource.id)
+    }
+    for workflow in Workflow.select():
+        source_id = None if workflow.is_template else extract_source_id_from_workflow_data(workflow.data_dict)
+        # 视频源删除后，JSON 中可能仍保留旧 ID；不可把悬空引用重新写入外键列。
+        if source_id not in existing_source_ids:
+            source_id = None
+        updates = {}
+        if workflow.video_source_id != source_id:
+            updates['video_source'] = source_id
+        if workflow.is_template and workflow.is_active:
+            updates['is_active'] = False
+        if workflow.is_template and workflow.source_template_id is not None:
+            updates['source_template'] = None
+        if updates:
+            Workflow.update(**updates).where(Workflow.id == workflow.id).execute()
     ExternalApi.update(created_by='admin').where(
         (ExternalApi.created_by.is_null(True)) | (ExternalApi.created_by == '')
     ).execute()
@@ -304,6 +329,39 @@ def _ensure_text_column(table_name: str, column_name: str, default_value: str):
         f"ALTER TABLE {table_name} "
         f"ADD COLUMN {column_name} VARCHAR(255) DEFAULT '{escaped_default}'"
     )
+
+
+def _ensure_workflow_columns():
+    table_name = Workflow._meta.table_name
+    if not _column_exists(table_name, 'is_template'):
+        db.execute_sql(
+            f"ALTER TABLE {table_name} "
+            "ADD COLUMN is_template BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    for column_name in ('source_template_id', 'video_source_id'):
+        if not _column_exists(table_name, column_name):
+            db.execute_sql(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} INTEGER NULL"
+            )
+
+
+def _ensure_workflow_indexes():
+    table_name = Workflow._meta.table_name
+    indexes = db.get_indexes(table_name)
+    if not any(tuple(index.columns) == ('is_template',) for index in indexes):
+        db.execute_sql(
+            f"CREATE INDEX IF NOT EXISTS {table_name}_is_template "
+            f"ON {table_name} (is_template)"
+        )
+    if not any(
+        index.unique
+        and tuple(index.columns) == ('source_template_id', 'video_source_id')
+        for index in indexes
+    ):
+        db.execute_sql(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {table_name}_template_source_unique "
+            f"ON {table_name} (source_template_id, video_source_id)"
+        )
 
 
 def _ensure_ownership_columns():
