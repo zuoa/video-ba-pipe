@@ -207,6 +207,28 @@ export async function testOpsNotificationConfig(data: OpsNotificationConfig) {
   });
 }
 
+export interface PublicMediaConfig {
+  public_base_url: string;
+  public_base_url_override?: string;
+  sign_media_urls: boolean;
+  media_url_ttl_hours: number;
+  signing_available?: boolean;
+  config_source?: string;
+}
+
+export async function getPublicMediaConfig() {
+  return request<{ success: boolean; config: PublicMediaConfig }>(
+    '/api/system/public-media-config',
+  );
+}
+
+export async function updatePublicMediaConfig(data: PublicMediaConfig) {
+  return request('/api/system/public-media-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }

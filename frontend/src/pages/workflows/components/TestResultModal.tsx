@@ -170,6 +170,12 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
             </div>
           )}
 
+          {nodeType === 'webhook' && testResult.data?.delivery_status && (
+            <div className="node-metric" style={{ color: testResult.data.delivery_status === 'preview' ? '#13c2c2' : '#8c8c8c', fontSize: '11px' }}>
+              <span>{testResult.data.delivery_status === 'preview' ? '✓ 已生成推送预览' : '未推送'}</span>
+            </div>
+          )}
+
           {testResult.data?.message && (
             <div className="node-message">{testResult.data.message}</div>
           )}
@@ -484,6 +490,14 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                                 </div>
                               )}
                             </Space>
+                          </Descriptions.Item>
+                        )}
+
+                        {selectedNode.data?.nodeType === 'webhook' && selectedNode.data.testResult.data?.request_preview && (
+                          <Descriptions.Item label="Webhook 请求预览">
+                            <pre style={{ margin: 0, maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                              {JSON.stringify(selectedNode.data.testResult.data.request_preview, null, 2)}
+                            </pre>
                           </Descriptions.Item>
                         )}
 

@@ -16,6 +16,12 @@ x-jetson-environment: &jetson-environment
   DB_USER: ${DB_USER:-video_ba_pipe}
   DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
   DB_SSLMODE: ${DB_SSLMODE:-disable}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+  MEDIA_URL_SIGNING_ENABLED: ${MEDIA_URL_SIGNING_ENABLED:-true}
+  MEDIA_URL_TTL_HOURS: ${MEDIA_URL_TTL_HOURS:-24}
+  MEDIA_URL_SIGNING_SECRET: ${MEDIA_URL_SIGNING_SECRET:-}
+  JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+  WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-oapi.dingtalk.com,api.day.app}
   FRAME_SAVE_PATH: /data/frames
   VIDEO_SAVE_PATH: /data/videos
   VIDEO_SOURCE_PATH: /data/video_sources

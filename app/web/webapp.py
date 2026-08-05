@@ -45,6 +45,13 @@ from app.core.ops_notification_config import (
     normalize_ops_notification_config,
     save_ops_notification_config,
 )
+from app.core.public_media_config import (
+    add_public_media_urls_to_detection_images,
+    build_public_media_url,
+    get_public_media_config,
+    save_public_media_config,
+    verify_public_media_signature,
+)
 from app.core.inference_resource_config import (
     detect_inference_capabilities,
     effective_inference_resource_config,
@@ -454,6 +461,35 @@ def test_system_ops_notification_config():
     except Exception as exc:
         app.logger.error(f"发送钉钉测试通知失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 502
+
+
+@app.route('/api/system/public-media-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_public_media_config():
+    config = get_public_media_config()
+    return jsonify({'success': True, 'config': config.to_dict()})
+
+
+@app.route('/api/system/public-media-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_public_media_config():
+    try:
+        config = save_public_media_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(),
+            'message': '公共媒体访问配置已更新',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新公共媒体访问配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
@@ -1287,6 +1323,7 @@ def get_alerts():
     # 获取分页数据
     alerts = query.order_by(Alert.alert_time.desc()).limit(per_page).offset(offset)
     
+    media_config = get_public_media_config()
     return jsonify({
         'data': [{
             'id': a.id,
@@ -1298,11 +1335,17 @@ def get_alerts():
             'alert_type': a.alert_type,
             'alert_message': a.alert_message,
             'alert_image': a.alert_image,
+            'alert_image_url': build_public_media_url('image', a.alert_image, config=media_config),
             'alert_image_ori': a.alert_image_ori,
+            'alert_image_ori_url': build_public_media_url('image', a.alert_image_ori, config=media_config),
             'alert_video': a.alert_video,
+            'alert_video_url': build_public_media_url('video', a.alert_video, config=media_config),
             'detection_count': a.detection_count,
             'window_stats': a.window_stats,
-            'detection_images': a.detection_images,
+            'detection_images': add_public_media_urls_to_detection_images(
+                a.detection_images,
+                config=media_config,
+            ),
             'created_by': a.created_by,
         } for a in alerts],
         'pagination': {
@@ -1566,6 +1609,13 @@ def get_image(file_path):
         # 检查基础路径是否被允许
         if base_type not in allowed_bases:
             abort(403, description="Access to this directory is not allowed")
+
+        if base_type == 'frames' and not verify_public_media_signature(
+            request.path,
+            request.args.get('expires'),
+            request.args.get('signature'),
+        ):
+            abort(403, description="Media URL signature is missing, invalid, or expired")
             
         base_path = allowed_bases[base_type]
         
@@ -1609,6 +1659,13 @@ def get_video(file_path):
     支持 Range 请求以便视频播放器可以 seek
     """
     try:
+        if not verify_public_media_signature(
+            request.path,
+            request.args.get('expires'),
+            request.args.get('signature'),
+        ):
+            abort(403, description="Media URL signature is missing, invalid, or expired")
+
         normalized_path = (file_path or '').replace('\\', '/').strip()
         normalized_path = normalized_path.lstrip('/')
 

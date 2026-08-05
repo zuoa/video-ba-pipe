@@ -42,7 +42,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
   if (!visible) return null;
 
   // 解析检测图片
-  const detectionImages: Array<{ image_path: string; detection_time?: string }> = [];
+  const detectionImages: Array<{ image_path: string; image_url?: string; detection_time?: string }> = [];
   if (alert.detection_images) {
     if (typeof alert.detection_images === 'string') {
       try {
@@ -54,6 +54,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
             } else if (item?.image_path) {
               detectionImages.push({
                 image_path: item.image_path,
+                image_url: item.image_url,
                 detection_time: item.detection_time
               });
             }
@@ -69,6 +70,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
         } else if (item?.image_path) {
           detectionImages.push({
             image_path: item.image_path,
+            image_url: item.image_url,
             detection_time: item.detection_time
           });
         }
@@ -152,7 +154,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
           </div>
 
           {/* 告警图片 */}
-          {alert.alert_image && (
+          {(alert.alert_image_url || alert.alert_image) && (
             <div className="detail-section">
               <h3 className="section-title">
                 <FileImageOutlined />
@@ -160,7 +162,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </h3>
               <div className="detail-image-container">
                 <img
-                  src={`/api/image/frames/${alert.alert_image}`}
+                  src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
                   alt="告警图片"
                   className="detail-image"
                 />
@@ -169,7 +171,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
           )}
 
           {/* 原始图片 */}
-          {alert.alert_image_ori && (
+          {(alert.alert_image_ori_url || alert.alert_image_ori) && (
             <div className="detail-section">
               <h3 className="section-title">
                 <FileImageOutlined />
@@ -177,7 +179,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </h3>
               <div className="detail-image-container">
                 <img
-                  src={`/api/image/frames/${alert.alert_image_ori}`}
+                  src={alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`}
                   alt="原始图片"
                   className="detail-image"
                 />
@@ -196,7 +198,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                 {detectionImages.map((img, idx) => (
                   <div key={idx} className="detection-image-item">
                     <img
-                      src={`/api/image/frames/${img.image_path}`}
+                      src={img.image_url || `/api/image/frames/${img.image_path}`}
                       alt={`检测图片 ${idx + 1}`}
                       className="detection-image"
                     />
@@ -252,7 +254,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </h3>
               <div className="video-link">
                 <a
-                  href={buildAlertVideoUrl(alert.alert_video)}
+                  href={alert.alert_video_url || buildAlertVideoUrl(alert.alert_video)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="video-link-button"
@@ -567,10 +569,10 @@ const AlertWallPage: React.FC = () => {
             {/* 图片展示区 */}
             <div className="main-display-image">
               {mainAlert ? (
-                mainAlert.alert_image && !imageError ? (
+                (mainAlert.alert_image_url || mainAlert.alert_image) && !imageError ? (
                   <img
                     key={mainAlert.id}
-                    src={`/api/image/frames/${mainAlert.alert_image}`}
+                    src={mainAlert.alert_image_url || `/api/image/frames/${mainAlert.alert_image}`}
                     alt="Alert"
                     className={`main-image ${isNewAlert && !isManualSelect ? 'alert-switch-animation with-animation' : ''}`}
                     onError={handleImageError}
@@ -624,9 +626,9 @@ const AlertWallPage: React.FC = () => {
                       onClick={() => selectAlert(index)}
                     >
                       <div className="alert-item-content">
-                        {alert.alert_image ? (
+                        {alert.alert_image_url || alert.alert_image ? (
                           <img
-                            src={`/api/image/frames/${alert.alert_image}`}
+                            src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
                             alt=""
                             className="alert-thumbnail"
                             onError={(e) => {

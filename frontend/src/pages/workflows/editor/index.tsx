@@ -57,7 +57,6 @@ export default function WorkflowEditorPage() {
   // 当 selectedNode 变化时，同步更新 ref
   useEffect(() => {
     console.log('🔄 [EDITOR] useEffect: selectedNode 变化');
-    console.log('📝 [EDITOR] 新的 selectedNode:', selectedNode);
     selectedNodeRef.current = selectedNode;
     console.log('📌 [EDITOR] selectedNodeRef.current 已更新:', {
       是否存在: !!selectedNodeRef.current,
@@ -442,10 +441,34 @@ export default function WorkflowEditorPage() {
     }
   };
 
-  const onConnect = (params: Connection) => setEdges((eds) => addEdge({
-    ...params,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
-  }, eds));
+  const onConnect = (params: Connection) => {
+    const sourceNode = nodes.find((item) => item.id === params.source);
+    const targetNode = nodes.find((item) => item.id === params.target);
+    const sourceType = sourceNode?.data?.type || sourceNode?.type;
+    const targetType = targetNode?.data?.type || targetNode?.type;
+
+    if (sourceType === 'webhook') {
+      message.warning('Webhook 是终端节点，不能连接下游节点');
+      return;
+    }
+    if (targetType === 'webhook' && sourceType !== 'alert') {
+      message.warning('Webhook 只能直接连接告警输出节点');
+      return;
+    }
+    if (sourceType === 'alert' && targetType !== 'webhook') {
+      message.warning('告警输出节点的下游只能是 Webhook 推送节点');
+      return;
+    }
+    if (targetType === 'webhook' && edges.some((edge) => edge.target === params.target)) {
+      message.warning('Webhook 只能连接一个告警输出节点');
+      return;
+    }
+
+    setEdges((currentEdges) => addEdge({
+      ...params,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
+    }, currentEdges));
+  };
 
   const onNodeClick = (_: any, node: Node) => {
     setSelectedNode(node);
@@ -747,7 +770,6 @@ export default function WorkflowEditorPage() {
 
     // 使用 ref 而不是 state，防止闭包陷阱
     const currentNode = selectedNodeRef.current;
-    console.log('🔍 [EDITOR] currentNode 值:', currentNode);
 
     if (!currentNode) {
       console.warn('⚠️ [EDITOR] currentNode 为空，无法更新');
@@ -760,9 +782,7 @@ export default function WorkflowEditorPage() {
     console.log('🔒 [EDITOR] 设置 isUpdatingNodeRef.current = true');
 
     console.log('🔄 [EDITOR] handleUpdateNode 开始执行');
-    console.log('📥 [EDITOR] 更新数据:', updatedData);
     console.log('📍 [EDITOR] 当前节点ID:', currentNode.id);
-    console.log('📦 [EDITOR] 当前节点data:', currentNode.data);
 
     // 打印所有当前节点的videoSourceId
     console.log('📊 [EDITOR] 所有当前节点的videoSourceId:',
@@ -944,6 +964,7 @@ export default function WorkflowEditorPage() {
                   case 'condition': return '#faad14';
                   case 'roi': return '#fa8c16';
                   case 'alert': return '#f5222d';
+                  case 'webhook': return '#13c2c2';
                   default: return '#d9d9d9';
                 }
               }}

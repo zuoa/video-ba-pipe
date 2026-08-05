@@ -177,32 +177,32 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
   const mediaItems: MediaItem[] = [];
 
-  if (alert.alert_image) {
+  if (alert.alert_image_url || alert.alert_image) {
     mediaItems.push({
       key: 'alert-image',
       label: '告警截图',
       type: 'image',
-      src: `/api/image/frames/${alert.alert_image}`,
+      src: alert.alert_image_url || `/api/image/frames/${alert.alert_image}`,
       previewTitle: '告警截图',
     });
   }
 
-  if (alert.alert_video) {
+  if (alert.alert_video_url || alert.alert_video) {
     mediaItems.push({
       key: 'alert-video',
       label: '告警视频',
       type: 'video',
-      srcCandidates: buildAlertVideoUrls(alert.alert_video),
+      srcCandidates: alert.alert_video_url ? [alert.alert_video_url] : buildAlertVideoUrls(alert.alert_video),
       rawPath: alert.alert_video,
     });
   }
 
-  if (alert.alert_image_ori) {
+  if (alert.alert_image_ori_url || alert.alert_image_ori) {
     mediaItems.push({
       key: 'origin-image',
       label: '原始画面',
       type: 'image',
-      src: `/api/image/frames/${alert.alert_image_ori}`,
+      src: alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`,
       previewTitle: '原始画面',
     });
   }
@@ -411,7 +411,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                 <div key={`${img.image_path}-${index}`} className="alertDetail__sequenceCard">
                   <div className="alertDetail__sequenceThumb">
                     <Image
-                      src={`/api/image/frames/${img.image_path}`}
+                      src={img.image_url || `/api/image/frames/${img.image_path}`}
                       alt={`检测 ${index + 1}`}
                       preview={{
                         title: `第 ${index + 1} 次检测`,

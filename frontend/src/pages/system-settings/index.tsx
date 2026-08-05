@@ -12,6 +12,7 @@ import {
   SyncOutlined,
   ThunderboltOutlined,
   VideoCameraOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import {
@@ -19,14 +20,17 @@ import {
   getInferenceResourceConfig,
   getRecordingStorageConfig,
   getOpsNotificationConfig,
+  getPublicMediaConfig,
   getVlConfig,
   RecordingStorageUsage,
   InferenceResourceResponse,
+  PublicMediaConfig,
   testOpsNotificationConfig,
   updateSourceRotationConfig,
   updateInferenceResourceConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
+  updatePublicMediaConfig,
   updateVlConfig,
 } from '@/services/api';
 import './index.css';
@@ -36,6 +40,7 @@ const SystemSettingsPage: React.FC = () => {
   const [rotationForm] = Form.useForm();
   const [recordingForm] = Form.useForm();
   const [opsForm] = Form.useForm();
+  const [publicMediaForm] = Form.useForm();
   const [inferenceForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,11 +48,13 @@ const SystemSettingsPage: React.FC = () => {
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
   const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
+  const [publicMediaConfig, setPublicMediaConfig] = useState<PublicMediaConfig | null>(null);
   const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
   const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
   const imageMaxGb = Form.useWatch('image_max_gb', recordingForm) ?? 10;
   const rotationEnabled = Form.useWatch('enabled', rotationForm) ?? false;
   const opsEnabled = Form.useWatch('enabled', opsForm) ?? false;
+  const mediaSigningEnabled = Form.useWatch('sign_media_urls', publicMediaForm) ?? true;
   const alertGrowthEnabled = Form.useWatch('notify_alert_growth', opsForm) ?? true;
   const sharedInferenceEnabled = Form.useWatch('shared_inference_enabled', inferenceForm) ?? false;
   const inferenceAdmissionEnabled = Form.useWatch('inference_admission_enabled', inferenceForm) ?? false;
@@ -69,12 +76,13 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
         getRecordingStorageConfig(),
         getOpsNotificationConfig(),
         getInferenceResourceConfig(),
+        getPublicMediaConfig(),
       ]);
       vlForm.setFieldsValue({
         enabled: vlResponse?.config?.enabled ?? false,
@@ -93,6 +101,8 @@ const SystemSettingsPage: React.FC = () => {
       setStorageUsage(recordingResponse.usage);
       opsForm.setFieldsValue(opsResponse.config);
       inferenceForm.setFieldsValue(inferenceResponse.config);
+      publicMediaForm.setFieldsValue(publicMediaResponse.config);
+      setPublicMediaConfig(publicMediaResponse.config);
       setInferenceResource(inferenceResponse);
     } catch (error: any) {
       message.error(`加载系统配置失败: ${error.message}`);
@@ -122,12 +132,13 @@ const SystemSettingsPage: React.FC = () => {
 
   const handleSave = async () => {
     try {
-      const [vlValues, rotationValues, recordingValues, opsValues, inferenceValues] = await Promise.all([
+      const [vlValues, rotationValues, recordingValues, opsValues, inferenceValues, publicMediaValues] = await Promise.all([
         vlForm.validateFields(),
         rotationForm.validateFields(),
         recordingForm.validateFields(),
         opsForm.validateFields(),
         inferenceForm.validateFields(),
+        publicMediaForm.validateFields(),
       ]);
       setSaving(true);
       const [, , , , inferenceResponse] = await Promise.all([
@@ -136,6 +147,7 @@ const SystemSettingsPage: React.FC = () => {
         updateRecordingStorageConfig(recordingValues),
         updateOpsNotificationConfig(opsValues),
         updateInferenceResourceConfig(inferenceValues),
+        updatePublicMediaConfig(publicMediaValues),
       ]);
       setInferenceResource(inferenceResponse);
       message.success('系统配置已保存');
@@ -449,6 +461,50 @@ const SystemSettingsPage: React.FC = () => {
                 </div>
               </div>
             ) : null}
+          </Card>
+
+          <Card
+            className="system-settings-card system-settings-card-wide"
+            title={<span><GlobalOutlined /> 公共访问与媒体链接</span>}
+            extra={(
+              <span className="inference-config-source">
+                {publicMediaConfig?.public_base_url_override ? '系统设置覆盖' : '环境变量回退'}
+              </span>
+            )}
+          >
+            <Alert
+              type="info"
+              showIcon
+              className="system-settings-alert"
+              message="用于 Webhook、RabbitMQ 和告警 API 输出可直接访问的媒体地址"
+              description="节点未单独覆盖 Host 时使用这里的全局地址。开启签名后，告警图片和录像链接会携带过期时间与签名。"
+            />
+
+            <Form form={publicMediaForm} layout="vertical">
+              <div className="system-settings-form-grid">
+                <Form.Item
+                  className="system-settings-field-span-2"
+                  label="公共访问地址"
+                  name="public_base_url_override"
+                  rules={[{ type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}
+                  extra={`例如 https://video.example.com；留空时继承环境变量。当前生效：${publicMediaConfig?.public_base_url || '仅相对路径'}`}
+                >
+                  <Input placeholder="https://video.example.com" />
+                </Form.Item>
+
+                <Form.Item label="生成签名媒体 URL" name="sign_media_urls" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+
+                <Form.Item
+                  label="链接有效期（小时）"
+                  name="media_url_ttl_hours"
+                  rules={[{ required: mediaSigningEnabled, message: '请输入链接有效期' }]}
+                >
+                  <InputNumber min={1} max={720} precision={0} disabled={!mediaSigningEnabled} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+            </Form>
           </Card>
 
           <Card

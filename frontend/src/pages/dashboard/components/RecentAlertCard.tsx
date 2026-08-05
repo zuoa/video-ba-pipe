@@ -15,6 +15,7 @@ export interface Alert {
   alert_message: string;
   alert_time: string;
   alert_image?: string;
+  alert_image_url?: string;
   alert_video?: string;
   detection_count?: number;
 }
@@ -99,9 +100,8 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
               : `视频源 #${alert.task_id}`;
             const typeConfig = getAlertTypeConfig(alert.alert_type);
             const time = dayjs(alert.alert_time).format('MM-DD HH:mm');
-            const imageUrl = alert.alert_image
-              ? `/api/image/frames/${alert.alert_image}`
-              : '';
+            const imageUrl = alert.alert_image_url
+              || (alert.alert_image ? `/api/image/frames/${alert.alert_image}` : '');
 
             return (
               <div

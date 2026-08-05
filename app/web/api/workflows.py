@@ -14,6 +14,11 @@ from app.core.workflow_runtime import (
     validate_single_source_node,
     workflow_configs_equivalent,
 )
+from app.core.webhook_workflow_config import (
+    mask_workflow_webhook_secrets,
+    merge_workflow_webhook_secrets,
+    validate_workflow_webhook_nodes,
+)
 from app.config import SNAPSHOT_SAVE_PATH
 from app.core.ocr_runtime import is_ocr_runtime_available
 from app.web.api.auth import (
@@ -88,7 +93,7 @@ def register_workflows_api(app):
             'id': workflow.id,
             'name': workflow.name,
             'description': workflow.description,
-            'workflow_data': workflow.data_dict,
+            'workflow_data': mask_workflow_webhook_secrets(workflow.data_dict),
             'is_active': workflow.is_active,
             'created_at': workflow.created_at.isoformat() if workflow.created_at else None,
             'updated_at': workflow.updated_at.isoformat() if workflow.updated_at else None,
@@ -127,7 +132,7 @@ def register_workflows_api(app):
             owner_response = require_resource_owner(workflow)
             if owner_response:
                 return owner_response
-            data_dict = workflow.data_dict
+            data_dict = mask_workflow_webhook_secrets(workflow.data_dict)
             
             # 确保 workflow_data 包含必需的字段
             if 'nodes' not in data_dict:
@@ -136,8 +141,6 @@ def register_workflows_api(app):
                 data_dict['connections'] = []
             
             app.logger.info(f"加载工作流 {id} 数据: nodes={len(data_dict.get('nodes', []))}, connections={len(data_dict.get('connections', []))}")
-            app.logger.debug(f"原始数据: {workflow.workflow_data[:500] if workflow.workflow_data else 'None'}")
-            
             return jsonify({
                 **serialize_workflow(workflow),
                 'workflow_data': data_dict,
@@ -170,6 +173,9 @@ def register_workflows_api(app):
                     return owner_response
                 workflow_data = normalize_source_node_fields(workflow_data, source)
             is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
+            is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
 
@@ -211,6 +217,7 @@ def register_workflows_api(app):
             if 'workflow_data' in data:
                 existing_workflow_data = workflow.data_dict
                 workflow_data = deepcopy(data['workflow_data']) if isinstance(data['workflow_data'], dict) else data['workflow_data']
+                workflow_data = merge_workflow_webhook_secrets(existing_workflow_data, workflow_data)
                 is_valid, error_message = validate_single_source_node(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
@@ -232,9 +239,11 @@ def register_workflows_api(app):
                 is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
+                is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
                 workflow_data_str = json.dumps(workflow_data)
                 app.logger.info(f"保存工作流 {id} 数据: nodes={len(workflow_data.get('nodes', []))}, connections={len(workflow_data.get('connections', []))}")
-                app.logger.debug(f"工作流数据内容: {workflow_data_str[:500]}")
 
                 # 只有运行时有效配置变化才递增版本号；展示字段刷新不触发重启
                 if not workflow_configs_equivalent(existing_workflow_data, workflow_data):

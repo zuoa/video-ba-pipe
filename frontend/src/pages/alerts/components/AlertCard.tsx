@@ -101,10 +101,10 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
       styles={{ body: { padding: 0 } }}
       cover={(
         <div className="alert-card-media">
-          {alert.alert_image ? (
+          {alert.alert_image_url || alert.alert_image ? (
             <img
               alt={`${taskName}的${alertTypeLabel}告警画面`}
-              src={`/api/image/frames/${alert.alert_image}`}
+              src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
               loading="lazy"
               decoding="async"
               className="alert-card-image"

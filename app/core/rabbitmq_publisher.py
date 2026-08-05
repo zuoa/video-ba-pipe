@@ -26,6 +26,7 @@ from app.config import (
     RABBITMQ_ALERT_ROUTING_KEY, RABBITMQ_CONNECTION_TIMEOUT, RABBITMQ_ENABLED,
     RABBITMQ_EXCHANGE_TYPE, RABBITMQ_ALERT_TOPIC_PATTERN
 )
+from app.core.public_media_config import build_public_media_url, get_public_media_config
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,7 @@ def format_alert_message(alert) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: 格式化后的预警消息
     """
+    media_config = get_public_media_config()
     message = {
         'alert_id': alert.id,
         'source_id': alert.video_source.id,
@@ -245,8 +247,11 @@ def format_alert_message(alert) -> Dict[str, Any]:
         'alert_type': alert.alert_type,
         'alert_message': alert.alert_message,
         'alert_image': alert.alert_image,
+        'alert_image_url': build_public_media_url('image', alert.alert_image, config=media_config),
         'alert_image_ori': alert.alert_image_ori,
+        'alert_image_ori_url': build_public_media_url('image', alert.alert_image_ori, config=media_config),
         'alert_video': alert.alert_video,
+        'alert_video_url': build_public_media_url('video', alert.alert_video, config=media_config),
         'timestamp': time.time(),
         'source': 'video-ba-pipe'
     }

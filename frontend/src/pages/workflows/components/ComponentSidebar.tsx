@@ -12,6 +12,7 @@ import {
   ApiOutlined,
   RobotOutlined,
   FileSearchOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
@@ -360,6 +361,43 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               <div className="component-content">
                 <div className="component-label">告警输出</div>
                 <div className="component-description">发送告警</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'webhook',
+              nodeType: 'webhook',
+              label: 'Webhook 推送',
+              description: '推送真实告警事件',
+              icon: <SendOutlined />,
+              color: '#13c2c2',
+              config: {
+                provider: 'generic',
+                endpoint_url: '',
+                headers: [],
+                title_template: '【{{alert.level}}】{{alert.type}}',
+                body_template: '{{alert.message}}',
+                payload_template: {},
+                include_media_urls: true,
+                public_base_url: '',
+                timeout_seconds: 5,
+                max_attempts: 3,
+                retry_backoff_seconds: 1,
+                provider_options: {},
+              },
+            })}
+            style={{ borderColor: '#13c2c2' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#08979c' }}>
+                <SendOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">Webhook 推送</div>
+                <div className="component-description">连接告警输出，异步推送事件</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>

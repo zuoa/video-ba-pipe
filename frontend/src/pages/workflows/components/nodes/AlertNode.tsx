@@ -32,6 +32,7 @@ const AlertNode = ({ data }: any) => {
   return (
     <div className="custom-node alert-node">
       <Handle type="target" position={Position.Left} id="input" className="node-handle" />
+      <Handle type="source" position={Position.Right} id="output" className="node-handle" />
       <div className="node-header">
         <BellOutlined className="node-icon" />
         <span className="node-title">{data.label}</span>

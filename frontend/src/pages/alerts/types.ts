@@ -10,8 +10,11 @@ export interface Alert {
   alert_time: string;
   detection_count: number;
   alert_image?: string;
+  alert_image_url?: string;
   alert_image_ori?: string;
+  alert_image_ori_url?: string;
   alert_video?: string;
+  alert_video_url?: string;
   detection_images?: string | DetectionImage[];
   window_stats?: string | WindowStats;
 }
@@ -25,6 +28,9 @@ export interface Workflow {
 
 export interface DetectionImage {
   image_path: string;
+  image_url?: string;
+  image_ori_path?: string;
+  image_ori_url?: string;
   detection_time?: string;
   timestamp?: number;
 }

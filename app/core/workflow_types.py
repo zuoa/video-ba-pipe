@@ -163,6 +163,12 @@ class ExternalApiNodeData(NodeContext):
     config: Optional[Dict[str, Any]] = None
 
 
+@dataclass
+class WebhookNodeData(NodeContext):
+    node_type: str = "webhook"
+    config: Optional[Dict[str, Any]] = None
+
+
 def create_node_data(node_dict: Dict) -> NodeContext:
     node_type = node_dict.get('type')
     node_id = node_dict.get('id')
@@ -178,6 +184,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'alert': AlertNodeData,
         'function': FunctionNodeData,
         'external_api': ExternalApiNodeData,
+        'webhook': WebhookNodeData,
     }
 
     node_class = node_classes.get(node_type)
@@ -214,6 +221,12 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             data_id=data_id,
             interval_seconds=config.get('interval_seconds'),
             config=config
+        )
+    elif node_type == 'webhook':
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            config=node_dict.get('config', {}) or {}
         )
     elif node_type == 'source':
         return node_class(

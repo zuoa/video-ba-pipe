@@ -5,6 +5,7 @@ import ROINode from './ROINode';
 import AlertNode from './AlertNode';
 import FunctionNode from './FunctionNode';
 import ExternalApiNode from './ExternalApiNode';
+import WebhookNode from './WebhookNode';
 
 export const nodeTypes = {
   videoSource: VideoSourceNode,
@@ -14,6 +15,7 @@ export const nodeTypes = {
   roi: ROINode,
   alert: AlertNode,
   function: FunctionNode,
+  webhook: WebhookNode,
 };
 
 export const getNodeTypes = () => nodeTypes;
@@ -26,4 +28,5 @@ export {
   AlertNode,
   FunctionNode,
   ExternalApiNode,
+  WebhookNode,
 };

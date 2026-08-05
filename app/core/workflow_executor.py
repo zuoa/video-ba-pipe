@@ -13,6 +13,7 @@ import requests
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from multiprocessing import resource_tracker
 from typing import Collection, Dict, List, Any, Optional
 
@@ -60,8 +61,16 @@ from app.core.storage_pressure import (
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
 from app.core.execution_log_collector import ExecutionLogCollector
+from app.core.webhook_notifier import (
+    apply_public_media_urls,
+    build_alert_webhook_event,
+    prepare_webhook_request,
+    validate_webhook_config,
+    webhook_dispatcher,
+)
+from app.core.public_media_config import build_public_media_url
 
 try:
     from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi
@@ -313,6 +322,7 @@ class WorkflowExecutor:
             'alert': self._handle_output_node,
             'function': self._handle_function_node,
             'external_api': self._handle_external_api_node,
+            'webhook': self._handle_webhook_node,
         }
 
         self._build_execution_graph()
@@ -920,10 +930,10 @@ class WorkflowExecutor:
         注意：不包含 alert 和 output 节点，因为它们会由上游节点通过 _execute_branch 自动执行
         """
         levels = []
-        # 排除会被自动执行的节点（alert, output）
+        # 排除会被上游分支自动执行的终端节点（alert, output, webhook）
         remaining_nodes = {
             node_id for node_id in self.nodes.keys()
-            if not isinstance(self.nodes[node_id], (OutputNodeData, AlertNodeData))
+            if not isinstance(self.nodes[node_id], (OutputNodeData, AlertNodeData, WebhookNodeData))
         }
         level_indegrees = self._calculate_node_indegrees_for_subset(remaining_nodes)
 
@@ -972,7 +982,8 @@ class WorkflowExecutor:
             'function': 3,
             'condition': 4,
             'output': 5,
-            'alert': 5
+            'alert': 5,
+            'webhook': 6,
         }
         return priority_map.get(node.node_type, 999)
 
@@ -1897,6 +1908,74 @@ class WorkflowExecutor:
         self._execute_output(node_id, context)
         return context
 
+    def _handle_webhook_node(self, node_id, context):
+        """Queue a real alert event, or render a side-effect-free test preview."""
+        node = self.nodes.get(node_id)
+        if not isinstance(node, WebhookNodeData):
+            raise ValueError(f"节点 {node_id} 不是 Webhook 节点")
+
+        upstream_ids = [
+            conn.get('from') or conn.get('from_node_id')
+            for conn in self.connections
+            if (conn.get('to') or conn.get('to_node_id')) == node_id
+        ]
+        if len(upstream_ids) != 1:
+            raise ValueError("Webhook 节点必须且只能连接一个告警输出节点")
+        upstream_id = upstream_ids[0]
+        if not isinstance(self.nodes.get(upstream_id), AlertNodeData):
+            raise ValueError("Webhook 节点只能直接连接告警输出节点")
+
+        with self._state_lock:
+            upstream_result = dict(self.node_results_cache.get(upstream_id) or {})
+
+        if not upstream_result.get('alert_triggered'):
+            cache_data = {
+                'delivery_status': 'skipped',
+                'provider': (node.config or {}).get('provider', 'generic'),
+                'trigger_reason': upstream_result.get('trigger_reason') or '上游告警未触发',
+            }
+            with self._state_lock:
+                self.node_results_cache[node_id] = cache_data
+            return context
+
+        alert_event = upstream_result.get('alert_event')
+        if not isinstance(alert_event, dict):
+            raise ValueError("上游告警节点未产生标准告警事件")
+
+        config = validate_webhook_config(node.config or {})
+        event = apply_public_media_urls(
+            alert_event,
+            public_base_url=config.get('public_base_url', ''),
+            include_media_urls=config.get('include_media_urls', True) is not False,
+        )
+        prepared = prepare_webhook_request(config, event)
+
+        if self.test_mode:
+            preview_payload = self._to_jsonable(prepared.payload)
+            if config['provider'] == 'bark' and isinstance(preview_payload, dict):
+                preview_payload['device_key'] = '******'
+            cache_data = {
+                'delivery_status': 'preview',
+                'provider': config['provider'],
+                'event': event,
+                'request_preview': {
+                    'method': 'POST',
+                    'payload': preview_payload,
+                },
+            }
+        else:
+            queued = webhook_dispatcher.submit(config, event)
+            cache_data = {
+                'delivery_status': 'queued' if queued else 'dropped',
+                'provider': config['provider'],
+                'event_id': event.get('event_id'),
+                'trigger_reason': '已加入异步推送队列' if queued else '推送队列已满',
+            }
+
+        with self._state_lock:
+            self.node_results_cache[node_id] = cache_data
+        return context
+
     def _handle_function_node(self, node_id, context):
         """处理函数节点：直接调用内置函数，不依赖 self.algorithms"""
         frame = context.get('frame')
@@ -2393,7 +2472,8 @@ class WorkflowExecutor:
                 self._execute_level_nodes(level_nodes, context, executor)
 
     def _cache_output_result(self, node_id: str, alert_triggered: bool, detection_count: int, trigger_reason: str,
-                             result_image: Optional[str] = None, upstream_node_id: Optional[str] = None):
+                             result_image: Optional[str] = None, upstream_node_id: Optional[str] = None,
+                             alert_event: Optional[Dict[str, Any]] = None):
         """缓存输出节点结果，供测试结果汇总使用"""
         cache_data = {
             'alert_triggered': bool(alert_triggered),
@@ -2405,6 +2485,8 @@ class WorkflowExecutor:
             cache_data['result_image'] = result_image
         if upstream_node_id:
             cache_data['upstream_node_id'] = upstream_node_id
+        if alert_event is not None:
+            cache_data['alert_event'] = alert_event
 
         with self._state_lock:
             self.node_results_cache[node_id] = cache_data
@@ -2562,7 +2644,7 @@ class WorkflowExecutor:
                 return None
 
             if os.path.exists(abs_path):
-                return f"/api/image/frames/{rel_path}"
+                return build_public_media_url('image', rel_path)
         except Exception as e:
             logger.warning(f"[Workflow-{self.workflow_id}] 生成测试可视化图片失败: {e}")
 
@@ -3154,6 +3236,17 @@ class WorkflowExecutor:
                 "已达到停录像水位，本次告警不录像"
             )
 
+        # 缓存标准事件供下游 Webhook 节点消费。绝对媒体 URL 在每个 Webhook
+        # 节点执行时按其 public_base_url 独立补齐。
+        alert_event = self._to_jsonable(build_alert_webhook_event(alert, result))
+        self._cache_output_result(
+            node_id=node_id,
+            alert_triggered=True,
+            detection_count=detection_count,
+            trigger_reason='满足触发条件并创建告警',
+            alert_event=alert_event,
+        )
+
         # 发布到 RabbitMQ
         try:
             alert_message = format_alert_message(alert)
@@ -3680,6 +3773,29 @@ class WorkflowExecutor:
                 }
             }
 
+        elif node_type == 'webhook':
+            with self._state_lock:
+                cached_webhook_result = dict(self.node_results_cache.get(node_id) or {})
+            status = cached_webhook_result.get('delivery_status', 'skipped')
+            status_messages = {
+                'preview': 'Webhook 测试预览已生成（未发送网络请求）',
+                'queued': 'Webhook 已加入异步推送队列',
+                'dropped': 'Webhook 推送队列已满，事件已丢弃',
+                'skipped': '上游告警未触发，Webhook 已跳过',
+            }
+            return {
+                'message': status_messages.get(status, f'Webhook 状态: {status}'),
+                'delivery_status': status,
+                'provider': cached_webhook_result.get('provider', 'generic'),
+                'event': cached_webhook_result.get('event'),
+                'request_preview': cached_webhook_result.get('request_preview'),
+                'debug_info': {
+                    'delivery_status': status,
+                    'trigger_reason': cached_webhook_result.get('trigger_reason'),
+                    'network_request_sent': not self.test_mode and status == 'queued',
+                },
+            }
+
         else:
             return {'message': f'未知节点类型: {node_type}'}
 
@@ -3809,13 +3925,12 @@ class WorkflowExecutor:
                     }
                 )
 
+        alert_type = alert_node.alert_type or "detection"
+        alert_level = alert_node.alert_level or "info"
+        alert_message = self._compose_alert_message(alert_node, log_collector, alert_log_scope)
+
         # 记录测试日志
         if log_collector:
-            alert_type = alert_node.alert_type or "detection"
-            alert_level = alert_node.alert_level or "info"
-
-            alert_message = self._compose_alert_message(alert_node, log_collector, alert_log_scope)
-
             # 记录告警消息（测试模式）
             log_collector.add_info(
                 node_id,
@@ -3829,3 +3944,57 @@ class WorkflowExecutor:
             )
 
             logger.info(f"[Workflow-{self.workflow_id}] Alert 节点 {node_id} 测试消息: {alert_message[:200] if alert_message else 'None'}...")
+
+        if has_detection:
+            source_node_data = next(
+                (item for item in self.workflow_data.get('nodes', []) if item.get('type') == 'source'),
+                {},
+            )
+            image_path = result_image
+            marker = '/api/image/frames/'
+            if image_path and marker in image_path:
+                image_path = image_path.split(marker, 1)[1].split('?', 1)[0]
+            alert_event = {
+                'schema_version': '1.0',
+                'event_id': f'test-alert:{self.workflow_id}:{node_id}',
+                'event_type': 'alert.created',
+                'occurred_at': datetime.now().isoformat(),
+                'source': {
+                    'id': source_node_data.get('dataId'),
+                    'name': source_node_data.get('videoSourceName') or '',
+                    'code': source_node_data.get('videoSourceCode') or '',
+                },
+                'workflow': {
+                    'id': self.workflow_id,
+                    'name': getattr(self.workflow, 'name', '') or '',
+                },
+                'alert': {
+                    'id': None,
+                    'type': alert_type,
+                    'level': alert_level,
+                    'message': alert_message,
+                    'detection_count': detection_count,
+                },
+                'detection': {
+                    'has_detection': True,
+                    'detections': self._to_jsonable(result.get('detections', [])),
+                    'metadata': self._to_jsonable(result.get('metadata', {})),
+                },
+                'media': {
+                    'image_path': image_path,
+                    'image_url': None,
+                    'original_image_path': None,
+                    'original_image_url': None,
+                    'video_path': None,
+                    'video_url': None,
+                },
+            }
+            self._cache_output_result(
+                node_id=node_id,
+                alert_triggered=True,
+                detection_count=detection_count,
+                trigger_reason='测试模式：按上游条件判断触发',
+                result_image=result_image,
+                upstream_node_id=upstream_node_id,
+                alert_event=alert_event,
+            )

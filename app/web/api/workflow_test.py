@@ -19,6 +19,11 @@ from app import logger
 from app.config import FRAME_SAVE_PATH, VIDEO_SAVE_PATH
 from app.core.database_models import Workflow, VideoSource, WorkflowTestResult
 from app.core.workflow_executor import WorkflowExecutor
+from app.core.public_media_config import (
+    add_public_media_urls_to_detection_images,
+    build_public_media_url,
+    get_public_media_config,
+)
 from app.web.api.auth import require_auth, require_resource_owner, apply_owner_scope, is_admin_user
 
 
@@ -141,7 +146,8 @@ def _normalize_frame_rel_path(image_path: Optional[str]) -> Optional[str]:
     marker = '/api/image/frames/'
     idx = image_path.find(marker)
     if idx >= 0:
-        return image_path[idx + len(marker):]
+        relative = image_path[idx + len(marker):]
+        return relative.split('?', 1)[0]
     return image_path.lstrip('/')
 
 
@@ -584,6 +590,7 @@ def register_workflow_test_api(app):
             records = query.order_by(WorkflowTestResult.test_time.desc()).limit(per_page).offset(offset)
 
             data = []
+            media_config = get_public_media_config()
             for r in records:
                 workflow = r.workflow
                 source = r.video_source
@@ -599,10 +606,16 @@ def register_workflow_test_api(app):
                     'alert_level': r.alert_level,
                     'alert_message': r.alert_message,
                     'alert_image': r.alert_image,
+                    'alert_image_url': build_public_media_url('image', r.alert_image, config=media_config),
                     'alert_image_ori': r.alert_image_ori,
+                    'alert_image_ori_url': build_public_media_url('image', r.alert_image_ori, config=media_config),
                     'alert_video': r.alert_video,
+                    'alert_video_url': build_public_media_url('video', r.alert_video, config=media_config),
                     'detection_count': r.detection_count,
-                    'detection_images': r.detection_images,
+                    'detection_images': add_public_media_urls_to_detection_images(
+                        r.detection_images,
+                        config=media_config,
+                    ),
                     'window_stats': r.window_stats,
                     'media_type': r.media_type,
                     'success': r.success,

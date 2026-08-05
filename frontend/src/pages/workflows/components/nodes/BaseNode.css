@@ -173,6 +173,15 @@
   color: #722ed1;
 }
 
+.webhook-node {
+  border-color: #13c2c2;
+  background: linear-gradient(135deg, #f0fffe 0%, #ffffff 72%);
+}
+
+.webhook-node .node-icon {
+  color: #08979c;
+}
+
 .custom-node.alert-node {
   border-color: #f5222d !important;
   background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%) !important;

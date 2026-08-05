@@ -58,7 +58,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   // 保存上一个节点的ID，用于检测节点切换
   const lastNodeIdRef = useRef<string | undefined>(node?.id);
 
-  console.log('PropertyPanel render, node:', node);
   console.log('Available videoSources:', videoSources);
   console.log('onUpdate 函数:', onUpdate);
   console.log('onUpdate 函数名:', onUpdate.name);
@@ -71,8 +70,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
       console.log('🔄 PropertyPanel useEffect 触发');
       console.log('📦 节点类型:', nodeType);
-      console.log('📋 节点数据:', node.data);
-      console.log('🔧 节点 config:', node.data?.config);
       console.log('🎥 videoSourceId:', node.data.videoSourceId, 'videoSourceName:', node.data.videoSourceName);
       console.log('🚫 isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
 
@@ -85,7 +82,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
       // 获取当前表单值，检查表单是否已经有值
       const currentFormValues = form.getFieldsValue();
-      console.log('📝 当前表单值:', currentFormValues);
 
       // 对于视频源节点，如果表单中已经有 videoSourceId，且与 node.data 中的一致，说明是同一次渲染，不需要重新初始化
       if ((nodeType === 'videoSource' || nodeType === 'source') && currentFormValues.videoSourceId !== undefined) {
@@ -152,6 +148,24 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           null,
           2,
         );
+      } else if (nodeType === 'webhook') {
+        const providerOptions = nodeConfig.provider_options || {};
+        formValues.webhookProvider = nodeConfig.provider || 'generic';
+        formValues.webhookEndpointUrl = nodeConfig.endpoint_url || '';
+        formValues.webhookTitleTemplate = nodeConfig.title_template || '【{{alert.level}}】{{alert.type}}';
+        formValues.webhookBodyTemplate = nodeConfig.body_template || '{{alert.message}}';
+        formValues.webhookIncludeMediaUrls = nodeConfig.include_media_urls !== false;
+        formValues.webhookPublicBaseUrl = nodeConfig.public_base_url || '';
+        formValues.webhookTimeoutSeconds = nodeConfig.timeout_seconds || 5;
+        formValues.webhookMaxAttempts = nodeConfig.max_attempts || 3;
+        formValues.webhookRetryBackoffSeconds = nodeConfig.retry_backoff_seconds || 1;
+        formValues.webhookHeaders = JSON.stringify(nodeConfig.headers || [], null, 2);
+        formValues.webhookPayloadTemplate = JSON.stringify(nodeConfig.payload_template || {}, null, 2);
+        formValues.webhookSigningSecret = '';
+        formValues.webhookBarkDeviceKey = '';
+        formValues.webhookBarkGroup = providerOptions.group || 'VideoBA';
+        formValues.webhookBarkSound = providerOptions.sound || '';
+        formValues.webhookBarkLevel = providerOptions.level || 'active';
       } else if (nodeType === 'function') {
         // 从 config 中读取函数配置
         const config = node.data?.config || {};
@@ -256,8 +270,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
     try {
       const values = await form.validateFields();
 
-      console.log('🔧 handleUpdate - 表单验证值:', values);
-      console.log('🔧 handleUpdate - 当前节点数据:', node.data);
 
       // 处理算法节点的窗口检测配置
       const updatedData: any = { ...values };
@@ -343,6 +355,37 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.includeUpstreamResults;
         delete updatedData.payloadTemplate;
         delete updatedData.outputMapping;
+      } else if (nodeType === 'webhook') {
+        const config = { ...(node.data?.config || {}) };
+        const providerOptions = { ...(config.provider_options || {}) };
+
+        config.provider = values.webhookProvider || 'generic';
+        config.endpoint_url = (values.webhookEndpointUrl || '').trim();
+        config.title_template = values.webhookTitleTemplate || '【{{alert.level}}】{{alert.type}}';
+        config.body_template = values.webhookBodyTemplate || '{{alert.message}}';
+        config.include_media_urls = values.webhookIncludeMediaUrls !== false;
+        config.public_base_url = (values.webhookPublicBaseUrl || '').trim();
+        config.timeout_seconds = values.webhookTimeoutSeconds || 5;
+        config.max_attempts = values.webhookMaxAttempts || 3;
+        config.retry_backoff_seconds = values.webhookRetryBackoffSeconds || 1;
+        config.headers = values.webhookHeaders ? JSON.parse(values.webhookHeaders) : [];
+        config.payload_template = values.webhookPayloadTemplate ? JSON.parse(values.webhookPayloadTemplate) : {};
+
+        if ((values.webhookSigningSecret || '').trim()) {
+          providerOptions.signing_secret = values.webhookSigningSecret.trim();
+        }
+        if ((values.webhookBarkDeviceKey || '').trim()) {
+          providerOptions.device_key = values.webhookBarkDeviceKey.trim();
+        }
+        providerOptions.group = values.webhookBarkGroup || 'VideoBA';
+        providerOptions.sound = values.webhookBarkSound || '';
+        providerOptions.level = values.webhookBarkLevel || 'active';
+        config.provider_options = providerOptions;
+        updatedData.config = config;
+
+        Object.keys(updatedData)
+          .filter((key) => key.startsWith('webhook'))
+          .forEach((key) => delete updatedData[key]);
       } else if (nodeType === 'alert') {
         // Alert 节点：保存触发条件和抑制配置
 
@@ -470,7 +513,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         updatedData.caseSensitive = values.caseSensitive === true;
       }
 
-      console.log('📤 准备调用onUpdate, 更新数据:', updatedData);
       onUpdate(updatedData);
     } catch (error) {
       console.error('❌ Form validation failed:', error);
@@ -788,6 +830,180 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             </div>
           </>
         );
+
+      case 'webhook': {
+        const webhookConfig = node.data?.config || {};
+        const providerOptions = webhookConfig.provider_options || {};
+        const endpointConfigured = Boolean(webhookConfig.endpoint_url || webhookConfig.endpoint_url_configured);
+        const signingSecretConfigured = Boolean(providerOptions.signing_secret || providerOptions.signing_secret_configured);
+        const barkKeyConfigured = Boolean(providerOptions.device_key || providerOptions.device_key_configured);
+        const validateJson = (expected: 'object' | 'array') => (_: any, value: string) => {
+          try {
+            const parsed = JSON.parse(value || (expected === 'array' ? '[]' : '{}'));
+            const valid = expected === 'array'
+              ? Array.isArray(parsed)
+              : Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
+            return valid
+              ? Promise.resolve()
+              : Promise.reject(new Error(expected === 'array' ? '必须是 JSON 数组' : '必须是 JSON 对象'));
+          } catch {
+            return Promise.reject(new Error('JSON 格式无效'));
+          }
+        };
+
+        return (
+          <>
+            <div className="info-box" style={{ marginBottom: 16 }}>
+              <InfoCircleOutlined />
+              <span>仅在上游告警真正落库后异步推送；工作流测试只生成预览，不访问外部端点。</span>
+            </div>
+
+            <Form.Item label="协议" name="webhookProvider">
+              <Select>
+                <Option value="generic">通用 JSON Webhook</Option>
+                <Option value="dingtalk">钉钉自定义机器人</Option>
+                <Option value="bark">Bark</Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="端点地址"
+              name="webhookEndpointUrl"
+              rules={[{
+                validator: (_, value) => value || (
+                  endpointConfigured
+                  && (form.getFieldValue('webhookProvider') || 'generic') === (webhookConfig.provider || 'generic')
+                )
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('请输入 Webhook 端点地址')),
+              }]}
+              extra={endpointConfigured && !webhookConfig.endpoint_url
+                ? `已配置：${webhookConfig.endpoint_display || '******'}；留空保持原值`
+                : '仅支持 HTTP/HTTPS；钉钉必须使用官方机器人地址'}
+            >
+              <Input.Password placeholder={endpointConfigured ? '留空保持已配置地址' : 'https://...'} />
+            </Form.Item>
+
+            <Form.Item noStyle shouldUpdate={(previous, current) => previous.webhookProvider !== current.webhookProvider}>
+              {({ getFieldValue }) => {
+                const provider = getFieldValue('webhookProvider') || 'generic';
+                if (provider === 'dingtalk') {
+                  return (
+                    <Form.Item
+                      label="加签密钥"
+                      name="webhookSigningSecret"
+                      extra={signingSecretConfigured ? '已配置；留空保持原值' : '可选，对应钉钉机器人 SEC 密钥'}
+                    >
+                      <Input.Password placeholder={signingSecretConfigured ? '留空保持原值' : 'SEC...'} />
+                    </Form.Item>
+                  );
+                }
+                if (provider === 'bark') {
+                  return (
+                    <>
+                      <Form.Item
+                        label="Device Key"
+                        name="webhookBarkDeviceKey"
+                        rules={[{
+                          validator: (_, value) => value || barkKeyConfigured
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('请输入 Bark Device Key')),
+                        }]}
+                        extra={barkKeyConfigured ? '已配置；留空保持原值' : undefined}
+                      >
+                        <Input.Password placeholder={barkKeyConfigured ? '留空保持原值' : 'Bark Device Key'} />
+                      </Form.Item>
+                      <Form.Item label="通知分组" name="webhookBarkGroup">
+                        <Input placeholder="VideoBA" />
+                      </Form.Item>
+                      <Form.Item label="中断级别" name="webhookBarkLevel">
+                        <Select>
+                          <Option value="active">active</Option>
+                          <Option value="timeSensitive">timeSensitive</Option>
+                          <Option value="passive">passive</Option>
+                          <Option value="critical">critical</Option>
+                        </Select>
+                      </Form.Item>
+                      <Form.Item label="提示音" name="webhookBarkSound">
+                        <Input placeholder="可选，例如 alarm" />
+                      </Form.Item>
+                    </>
+                  );
+                }
+                return null;
+              }}
+            </Form.Item>
+
+            <div className="form-divider" />
+
+            <Form.Item label="标题模板" name="webhookTitleTemplate">
+              <Input placeholder="【{{alert.level}}】{{alert.type}}" />
+            </Form.Item>
+            <Form.Item
+              label="正文模板"
+              name="webhookBodyTemplate"
+              extra="支持 {{alert.message}}、{{source.name}}、{{detection.detections}} 等点路径占位符"
+            >
+              <TextArea rows={4} />
+            </Form.Item>
+            <Form.Item label="附带媒体 URL" name="webhookIncludeMediaUrls" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label="媒体公共基地址"
+              name="webhookPublicBaseUrl"
+              extra="可选节点级覆盖；留空时继承系统设置中的全局公共访问地址"
+            >
+              <Input placeholder="https://video.example.com" />
+            </Form.Item>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">投递策略</span>
+              </div>
+              <Form.Item label="单次超时（秒）" name="webhookTimeoutSeconds">
+                <InputNumber min={1} max={30} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item label="最多尝试次数" name="webhookMaxAttempts">
+                <InputNumber min={1} max={5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item label="初始退避（秒）" name="webhookRetryBackoffSeconds">
+                <InputNumber min={0.1} max={30} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">高级请求配置</span>
+              </div>
+              <Form.Item
+                label="请求头"
+                name="webhookHeaders"
+                rules={[{ validator: validateJson('array') }]}
+                extra={'JSON 数组：[{"name":"Authorization","value":"Bearer ...","sensitive":true}]'}
+              >
+                <TextArea rows={6} />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(previous, current) => previous.webhookProvider !== current.webhookProvider}>
+                {({ getFieldValue }) => getFieldValue('webhookProvider') === 'generic' ? (
+                  <Form.Item
+                    label="请求体模板"
+                    name="webhookPayloadTemplate"
+                    rules={[{ validator: validateJson('object') }]}
+                    extra="留空对象时发送完整标准事件；支持模板占位符"
+                  >
+                    <TextArea rows={8} placeholder='{"event_id":"{{event_id}}","alert":"{{alert}}"}' />
+                  </Form.Item>
+                ) : null}
+              </Form.Item>
+            </div>
+          </>
+        );
+      }
 
       case 'condition': {
         const upstreamOcrNodes = edges
