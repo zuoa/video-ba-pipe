@@ -104,6 +104,11 @@ RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.0.0 \
       -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ \
     && pip3 install --no-cache-dir -r requirements.ocr.txt
 
+# Build 阶段即验证 PyTorch/cuDNN/Ultralytics 的动态库闭包。这里不要求存在
+# NVIDIA 驱动或可见 GPU，只验证 import，避免把 libcudnn.so 版本不匹配的
+# 镜像成功推送后才在共享模型子进程中循环超时。
+RUN python3 -c "import torch; from ultralytics import YOLO; print('torch=' + torch.__version__ + ', cuda=' + str(torch.version.cuda) + ', ultralytics_import=ok')"
+
 # 复制应用代码
 COPY app/ /app/app/
 COPY scripts/ /app/scripts/

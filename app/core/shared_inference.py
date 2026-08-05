@@ -18,8 +18,9 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Client, Listener
 from typing import Any, Dict, Optional
@@ -39,6 +40,7 @@ from app.config import (
     SHARED_INFERENCE_QUEUE_SIZE,
     SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS,
     SHARED_INFERENCE_SOCKET_PATH,
+    SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS,
 )
 from app.core.inference_budget import (
     read_cgroup_oom_kill_count,
@@ -112,6 +114,7 @@ def _model_worker_main(
     result_queue,
 ) -> None:
     os.environ["SHARED_INFERENCE_WORKER"] = "true"
+    startup_started_at = time.monotonic()
     try:
         from app.user_scripts.common.yolo_backends import UltralyticsBackend
 
@@ -125,16 +128,30 @@ def _model_worker_main(
             "classes": {},
         }
         backend = UltralyticsBackend(spec["model_path"], model_info, base_config)
+
+        # YOLO(model_path) does not necessarily initialize CUDA or move all
+        # weights to the target device.  Complete one warm-up before announcing
+        # readiness so the first real frame is governed only by the steady-state
+        # inference timeout.
+        warmup_height = max(1, int(spec.get("input_height") or 640))
+        warmup_width = max(1, int(spec.get("input_width") or 640))
+        warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)
+        backend.infer(warmup_frame)
+        predictor = getattr(backend.model, "predictor", None)
+        device = getattr(predictor, "device", None)
         result_queue.put({
             "kind": "worker_ready",
             "key": model_key(spec),
             "pid": os.getpid(),
+            "startup_time_ms": (time.monotonic() - startup_started_at) * 1000.0,
+            "device": str(device) if device is not None else None,
         })
     except Exception as exc:
         result_queue.put({
             "kind": "worker_start_failed",
             "key": model_key(spec),
             "error": f"{type(exc).__name__}: {exc}",
+            "traceback": traceback.format_exc(),
         })
         return
 
@@ -250,7 +267,10 @@ class _ModelSlot:
     references: int = 0
     idle_since: Optional[float] = None
     ready: bool = False
+    ready_event: threading.Event = field(default_factory=threading.Event)
     start_error: Optional[str] = None
+    startup_time_ms: Optional[float] = None
+    device: Optional[str] = None
     oom_kill_count_at_start: int = 0
     oom_failures: int = 0
     last_oom_at: Optional[float] = None
@@ -361,10 +381,23 @@ class _ModelRegistry:
             slot = self.slots.get(key)
             if slot is None:
                 slot = self._new_slot(spec, config)
+            elif slot.start_error:
+                # Preserve the actual import/model-load failure. Restarting the
+                # dead process first would discard start_error and turn every
+                # following frame into another opaque inference_timeout.
+                return {"ok": False, "error": slot.start_error}
             elif not slot.process.is_alive():
                 retry_response = self._observe_dead_slot(slot)
                 if retry_response is not None:
                     return retry_response
+                if not slot.ready and slot.oom_failures == 0:
+                    return {
+                        "ok": False,
+                        "error": (
+                            "model_worker_start_exited:"
+                            f"exitcode={slot.process.exitcode}"
+                        ),
+                    }
                 slot = self._restart_dead_slot(slot)
             slot.references += 1
             slot.idle_since = None
@@ -380,21 +413,60 @@ class _ModelRegistry:
                 slot.idle_since = time.monotonic()
             return {"ok": True, "released": True, "references": slot.references}
 
-    def submit(self, key: str, request: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+    def submit(
+        self,
+        key: str,
+        request: Dict[str, Any],
+        timeout: float,
+        startup_timeout: float = SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS,
+    ) -> Dict[str, Any]:
         request_id = request["request_id"]
         pending = _PendingResult(threading.Event())
         pending.key = key
+
+        # A slot is published immediately after Process.start(), while importing
+        # PyTorch, loading weights and CUDA warm-up happen inside that process.
+        # Do not charge that cold-start time to the per-frame inference timeout.
         with self.lock:
             slot = self.slots.get(key)
             if slot is None:
                 return {"ok": False, "error": "model_worker_unavailable"}
+            if slot.start_error:
+                return {"ok": False, "error": slot.start_error}
             if not slot.process.is_alive():
                 retry_response = self._observe_dead_slot(slot)
                 if retry_response is not None:
                     return retry_response
+                if not slot.ready and slot.oom_failures == 0:
+                    return {
+                        "ok": False,
+                        "error": (
+                            "model_worker_start_exited:"
+                            f"exitcode={slot.process.exitcode}"
+                        ),
+                    }
                 slot = self._restart_dead_slot(slot)
+            ready_event = slot.ready_event
+
+        if not ready_event.wait(timeout=max(0.1, float(startup_timeout))):
+            with self.lock:
+                current_slot = self.slots.get(key)
+                if current_slot is not slot:
+                    return {"ok": False, "error": "model_worker_restarted"}
+                if slot.start_error:
+                    return {"ok": False, "error": slot.start_error}
+                if not slot.process.is_alive():
+                    return {"ok": False, "error": "model_worker_unavailable"}
+            return {"ok": False, "error": "model_worker_start_timeout"}
+
+        with self.lock:
+            current_slot = self.slots.get(key)
+            if current_slot is not slot:
+                return {"ok": False, "error": "model_worker_restarted"}
             if slot.start_error:
                 return {"ok": False, "error": slot.start_error}
+            if not slot.ready:
+                return {"ok": False, "error": "model_worker_unavailable"}
             self.pending[request_id] = pending
             try:
                 slot.request_queue.put_nowait(request)
@@ -474,11 +546,23 @@ class _ModelRegistry:
                     if slot is not None:
                         slot.ready = kind == "worker_ready"
                         slot.start_error = response.get("error")
+                        slot.startup_time_ms = response.get("startup_time_ms")
+                        slot.device = response.get("device")
+                        slot.ready_event.set()
                     if kind == "worker_start_failed":
                         # worker 起不来时,已入队但永远不会被处理的请求必须立即置败,
                         # 否则首个请求会傻等满超时被误报成 inference_timeout,
                         # 而真实的启动错误(如 ultralytics/torch import 失败)被吞掉。
                         error = response.get("error") or "model_worker_start_failed"
+                        failure_traceback = response.get("traceback")
+                        print(
+                            "[SharedInference] 模型子进程启动失败: "
+                            f"model_key={key}, error={error}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        if failure_traceback:
+                            print(failure_traceback, file=sys.stderr, flush=True)
                         for rid, pending in list(self.pending.items()):
                             if pending.key == key:
                                 pending.response = {"ok": False, "error": error}
@@ -536,8 +620,11 @@ class _ModelRegistry:
                     "model_path": slot.spec.get("model_path"),
                     "pid": slot.process.pid,
                     "alive": slot.process.is_alive(),
+                    "exitcode": slot.process.exitcode,
                     "ready": slot.ready,
                     "start_error": slot.start_error,
+                    "startup_time_ms": slot.startup_time_ms,
+                    "device": slot.device,
                     "references": slot.references,
                     "queue_depth": queue_depth,
                     **memory_metrics,
@@ -610,6 +697,10 @@ class SharedInferenceServer:
                         request["model_key"],
                         request["request"],
                         request.get("timeout", SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS),
+                        request.get(
+                            "startup_timeout",
+                            SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS,
+                        ),
                     )
                 else:
                     response = {"ok": False, "error": f"unsupported_action:{action}"}
@@ -663,9 +754,11 @@ class SharedInferenceClient:
         *,
         socket_path: str = SHARED_INFERENCE_SOCKET_PATH,
         timeout: float = SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS,
+        startup_timeout: float = SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS,
     ):
         self.socket_path = socket_path
         self.timeout = float(timeout)
+        self.startup_timeout = float(startup_timeout)
         self.spec = build_model_spec(model_path, model_info, config)
         self.config = _inference_config(config)
         self.connection = None
@@ -709,6 +802,7 @@ class SharedInferenceClient:
                         "model_key": self.model_key,
                         "request": request,
                         "timeout": self.timeout,
+                        "startup_timeout": self.startup_timeout,
                     })
                     response = self.connection.recv()
                 except (EOFError, BrokenPipeError, ConnectionResetError, OSError):
@@ -722,6 +816,7 @@ class SharedInferenceClient:
                         "model_key": self.model_key,
                         "request": request,
                         "timeout": self.timeout,
+                        "startup_timeout": self.startup_timeout,
                     })
                     response = self.connection.recv()
             if response.get("overloaded"):

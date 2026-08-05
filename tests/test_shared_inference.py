@@ -1,4 +1,5 @@
 import os
+import time
 
 import app.core.shared_inference as shared_inference_module
 from app.core.shared_inference import _ModelRegistry, build_model_spec, model_key
@@ -22,6 +23,19 @@ def _fake_worker(spec, base_config, request_queue, result_queue):
             "details": [],
             "metadata": {"fake": True},
         })
+
+
+def _slow_start_worker(spec, base_config, request_queue, result_queue):
+    time.sleep(0.35)
+    _fake_worker(spec, base_config, request_queue, result_queue)
+
+
+def _failed_start_worker(spec, _base_config, _request_queue, result_queue):
+    result_queue.put({
+        "kind": "worker_start_failed",
+        "key": model_key(spec),
+        "error": "ImportError: missing CUDA runtime",
+    })
 
 
 def test_model_key_changes_when_model_file_changes(tmp_path):
@@ -55,6 +69,64 @@ def test_registry_reuses_one_worker_for_same_model(tmp_path):
         )
         assert response["ok"] is True
         assert response["detections"] == [{"label": "fake"}]
+    finally:
+        registry.close()
+
+
+def test_model_startup_wait_is_not_charged_to_inference_timeout(tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 12})
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        worker_target=_slow_start_worker,
+    )
+    try:
+        acquired = registry.acquire(spec, {})
+        started_at = time.monotonic()
+        response = registry.submit(
+            acquired["model_key"],
+            {"request_id": "cold-start-request"},
+            timeout=0.2,
+            startup_timeout=2,
+        )
+
+        assert response["ok"] is True
+        assert time.monotonic() - started_at >= 0.3
+    finally:
+        registry.close()
+
+
+def test_model_start_failure_interrupts_startup_wait(tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 13})
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        worker_target=_failed_start_worker,
+    )
+    try:
+        acquired = registry.acquire(spec, {})
+        started_at = time.monotonic()
+        response = registry.submit(
+            acquired["model_key"],
+            {"request_id": "failed-start-request"},
+            timeout=0.2,
+            startup_timeout=2,
+        )
+
+        assert response == {
+            "ok": False,
+            "error": "ImportError: missing CUDA runtime",
+        }
+        assert time.monotonic() - started_at < 1
+
+        failed_pid = registry.slots[acquired["model_key"]].process.pid
+        reacquired = registry.acquire(spec, {})
+        assert reacquired == response
+        assert registry.slots[acquired["model_key"]].process.pid == failed_pid
     finally:
         registry.close()
 

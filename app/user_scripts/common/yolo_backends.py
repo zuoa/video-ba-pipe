@@ -51,10 +51,25 @@ except Exception as exc:
     RKNNLite = None
     RKNNLITE_IMPORT_ERROR = exc
 
-try:
-    import onnxruntime as ort
-except Exception:
-    ort = None
+# ONNX Runtime performs device discovery during import.  Shared Ultralytics
+# workers never use it, so importing it eagerly both delays model readiness and
+# emits irrelevant /sys/class/drm warnings on NVIDIA-only containers.
+ort = None
+ONNXRUNTIME_IMPORT_ERROR = None
+
+
+def _load_onnxruntime():
+    global ort, ONNXRUNTIME_IMPORT_ERROR
+    if ort is not None:
+        return ort
+    if ONNXRUNTIME_IMPORT_ERROR is not None:
+        return None
+    try:
+        import onnxruntime as loaded_ort
+        ort = loaded_ort
+    except Exception as exc:
+        ONNXRUNTIME_IMPORT_ERROR = exc
+    return ort
 
 
 def parse_classes(model_info: Dict[str, Any]) -> Dict[int, str]:
@@ -1319,12 +1334,19 @@ class ONNXRuntimeBackend(BaseYoloBackend):
 
     def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model_path, model_info, config)
-        if ort is None:
-            raise ImportError("当前环境未安装 onnxruntime，无法加载 .onnx 模型")
+        runtime = _load_onnxruntime()
+        if runtime is None:
+            detail = (
+                f"。真实异常: {type(ONNXRUNTIME_IMPORT_ERROR).__name__}: "
+                f"{ONNXRUNTIME_IMPORT_ERROR}"
+                if ONNXRUNTIME_IMPORT_ERROR is not None
+                else ""
+            )
+            raise ImportError(f"当前环境无法加载 onnxruntime{detail}")
 
         provider_name = config.get("onnx_provider") or config.get("onnx_execution_provider")
         providers = [provider_name] if provider_name else None
-        self.session = ort.InferenceSession(model_path, providers=providers)
+        self.session = runtime.InferenceSession(model_path, providers=providers)
         self.model = self.session
         self.input_name = self.session.get_inputs()[0].name
         self.input_shape = self.session.get_inputs()[0].shape

@@ -474,6 +474,8 @@ class Orchestrator:
                 "pid": item.get("pid"),
                 "alive": item.get("alive"),
                 "ready": item.get("ready"),
+                "device": item.get("device"),
+                "startup_time_ms": item.get("startup_time_ms"),
                 "pss_mb": item.get("pss_mb"),
                 "rss_mb": item.get("rss_mb"),
                 "references": item.get("references"),
@@ -822,6 +824,12 @@ class Orchestrator:
                     {
                         'model_id': item.get('model_id'),
                         'pid': item.get('pid'),
+                        'device': item.get('device'),
+                        'startup_time_ms': (
+                            round(item['startup_time_ms'], 1)
+                            if item.get('startup_time_ms') is not None
+                            else None
+                        ),
                         'pss_mb': round(item['pss_mb'], 1) if item.get('pss_mb') else None,
                         'references': item.get('references'),
                         'queue_depth': item.get('queue_depth'),

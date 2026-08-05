@@ -170,6 +170,8 @@ services:
       <<: *hw-decode-environment
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      # CUDA/PyTorch 冷启动与稳态单帧推理使用独立超时。
+      SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS: ${SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS:-180}
       DB_BACKEND: ${DB_BACKEND:-postgres}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}

@@ -217,6 +217,12 @@ SHARED_INFERENCE_BATCH_WAIT_MS = max(
 SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS = max(
     1.0, float(os.getenv('SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS', '30'))
 )
+# 模型子进程首次 import PyTorch、加载权重并完成 CUDA warm-up，通常明显慢于
+# 稳态单帧推理。启动等待必须与请求超时分开，否则冷启动会被误报成
+# inference_timeout，客户端随即释放该帧的共享内存。
+SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS = max(
+    1.0, float(os.getenv('SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS', '180'))
+)
 SHARED_INFERENCE_IDLE_SECONDS = max(
     10, int(os.getenv('SHARED_INFERENCE_IDLE_SECONDS', '120'))
 )
