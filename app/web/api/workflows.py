@@ -19,6 +19,7 @@ from app.core.webhook_workflow_config import (
     merge_workflow_webhook_secrets,
     validate_workflow_webhook_nodes,
 )
+from app.core.time_schedule import validate_workflow_time_schedule_nodes
 from app.config import SNAPSHOT_SAVE_PATH
 from app.core.ocr_runtime import is_ocr_runtime_available
 from app.web.api.auth import (
@@ -178,6 +179,9 @@ def register_workflows_api(app):
             is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
+            is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
 
             workflow = Workflow.create(
                 name=data['name'],
@@ -242,6 +246,9 @@ def register_workflows_api(app):
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
+                is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
                 workflow_data_str = json.dumps(workflow_data)
                 app.logger.info(f"保存工作流 {id} 数据: nodes={len(workflow_data.get('nodes', []))}, connections={len(workflow_data.get('connections', []))}")
 
@@ -302,6 +309,10 @@ def register_workflows_api(app):
             if owner_response:
                 return owner_response
             workflow_data = workflow.data_dict
+
+            is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
             
             # 这里可以添加逻辑：根据工作流配置创建实际的Task和Algorithm关联
             # 暂时只是标记为激活
@@ -644,6 +655,9 @@ def register_workflows_api(app):
                     owner_response = require_resource_owner(workflow)
                     if owner_response:
                         raise PermissionError('Forbidden')
+                    is_valid, error_message = validate_workflow_time_schedule_nodes(workflow.data_dict)
+                    if not is_valid:
+                        raise ValueError(error_message)
                     workflow.is_active = True
                     workflow.updated_at = datetime.now()
                     workflow.save()

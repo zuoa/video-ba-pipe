@@ -31,6 +31,7 @@ import PropertyPanel from '../components/PropertyPanel';
 import TestPanel from '../components/TestPanel';
 import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig, getAlgorithms, getExternalApis } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
+import { createDefaultWeeklySchedule, normalizeWeeklySchedule } from '../utils/timeSchedule';
 import '../components/WorkflowEditor.css';
 
 export default function WorkflowEditorPage() {
@@ -115,6 +116,7 @@ export default function WorkflowEditorPage() {
                             originalType === 'external_api' ? 'externalApi' :
                             originalType === 'function' ? 'function' :
                             originalType === 'condition' ? 'condition' :
+                            originalType === 'time_schedule' ? 'timeSchedule' :
                             originalType === 'roi' ? 'roi' :
                             originalType === 'alert' ? 'alert' :
                             originalType === 'output' ? 'alert' :
@@ -138,7 +140,7 @@ export default function WorkflowEditorPage() {
             }
 
             const nodeData: any = {
-              type: node.type,
+              type: nodeType,
               subtype: node.subtype,
               label: node.name || '未命名节点',
               description: node.description,
@@ -199,6 +201,9 @@ export default function WorkflowEditorPage() {
                   targetCount: nodeData.targetCount,
                   comparisonType: nodeData.comparisonType,
                 });
+              }
+              if (nodeType === 'timeSchedule') {
+                nodeData.weeklySchedule = normalizeWeeklySchedule(node.data.weeklySchedule);
               }
               // Function 节点：读取 functionName, threshold, operator, dimension, input_nodes
               if (nodeType === 'function') {
@@ -537,6 +542,8 @@ export default function WorkflowEditorPage() {
           ? 'source'
           : nodeType === 'externalApi'
             ? 'external_api'
+            : nodeType === 'timeSchedule'
+              ? 'time_schedule'
             : nodeType;
 
         const saveData: any = {
@@ -646,6 +653,10 @@ export default function WorkflowEditorPage() {
             targetCount: saveData.data.targetCount,
             comparisonType: saveData.data.comparisonType,
           });
+        } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
+          saveData.data = {
+            weeklySchedule: normalizeWeeklySchedule(node.data?.weeklySchedule),
+          };
         } else {
           saveData.dataId = node.data?.dataId;
           saveData.algorithmId = node.data?.algorithmId || null;
@@ -754,6 +765,9 @@ export default function WorkflowEditorPage() {
         vlValidation: nodeData.vlValidation,
         externalApiName: nodeData.externalApiName,
         executionMode: nodeData.config?.execution_mode || 'sync',
+        weeklySchedule: nodeData.type === 'timeSchedule'
+          ? (nodeData.weeklySchedule || createDefaultWeeklySchedule())
+          : undefined,
         // ROI 节点初始化空的 roiRegions 数组
         ...(nodeData.type === 'roi' ? { roiRegions: [] } : {}),
       },
@@ -962,6 +976,7 @@ export default function WorkflowEditorPage() {
                   case 'externalApi': return '#1677ff';
                   case 'function': return '#722ed1';
                   case 'condition': return '#faad14';
+                  case 'timeSchedule': return '#2f54eb';
                   case 'roi': return '#fa8c16';
                   case 'alert': return '#f5222d';
                   case 'webhook': return '#13c2c2';

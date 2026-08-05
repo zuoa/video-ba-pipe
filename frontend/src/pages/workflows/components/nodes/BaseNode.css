@@ -130,6 +130,33 @@
   color: #faad14;
 }
 
+.time-schedule-node {
+  border-color: #597ef7;
+  background:
+    linear-gradient(135deg, rgba(89, 126, 247, 0.08), transparent 58%),
+    #fff;
+}
+
+.time-schedule-node .node-icon {
+  color: #2f54eb;
+}
+
+.time-schedule-handle {
+  background: #2f54eb;
+}
+
+.time-schedule-node-summary {
+  margin-bottom: 7px;
+  padding: 5px 8px;
+  border: 1px solid #adc6ff;
+  border-radius: 4px;
+  color: #1d39c4;
+  background: #f0f5ff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
 .node-branches {
   display: flex;
   gap: 8px;

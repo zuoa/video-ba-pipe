@@ -13,6 +13,13 @@ import {
 import { getNodeTypes } from './nodes';
 import VideoSourceSelector from './VideoSourceSelector';
 import ROIDrawer, { ROIRegion } from './ROIDrawer';
+import TimeScheduleEditor from './TimeScheduleEditor';
+import {
+  createDefaultWeeklySchedule,
+  normalizeWeeklySchedule,
+  WEEKDAYS,
+  WeeklySchedule,
+} from '../utils/timeSchedule';
 import './PropertyPanel.css';
 
 const { TextArea } = Input;
@@ -190,6 +197,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.keywordLogic = node.data.keywordLogic || node.data.keyword_logic || 'any';
         formValues.regexPattern = node.data.regexPattern || node.data.regex_pattern || '';
         formValues.caseSensitive = node.data.caseSensitive ?? node.data.case_sensitive ?? false;
+      } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
+        formValues.weeklySchedule = node.data.weeklySchedule
+          ? normalizeWeeklySchedule(node.data.weeklySchedule)
+          : createDefaultWeeklySchedule();
       } else if (nodeType === 'roi') {
         formValues.roiMode = node.data.roiMode || 'postFilter';
       } else if (nodeType === 'alert') {
@@ -511,6 +522,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         updatedData.keywordLogic = values.keywordLogic || 'any';
         updatedData.regexPattern = values.regexPattern || '';
         updatedData.caseSensitive = values.caseSensitive === true;
+      } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
+        updatedData.weeklySchedule = normalizeWeeklySchedule(values.weeklySchedule);
       }
 
       onUpdate(updatedData);
@@ -1134,6 +1147,43 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
       }
+
+      case 'timeSchedule':
+      case 'time_schedule':
+        return (
+          <>
+            <div className="info-box" style={{ marginBottom: 16, background: '#f0f5ff', borderColor: '#adc6ff', color: '#1d39c4' }}>
+              <InfoCircleOutlined />
+              <span>按服务器本地时区判断。起止分钟均包含，跨日时段请拆成两天配置。</span>
+            </div>
+            <Form.Item
+              label="每周启用时段"
+              name="weeklySchedule"
+              rules={[{
+                validator: (_, rawValue: WeeklySchedule) => {
+                  const schedule = normalizeWeeklySchedule(rawValue);
+                  let periodCount = 0;
+                  for (const { key, label } of WEEKDAYS) {
+                    for (const period of schedule[key]) {
+                      periodCount += 1;
+                      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(period.start || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(period.end || '')) {
+                        return Promise.reject(new Error(`${label}存在未填写或格式错误的时间`));
+                      }
+                      if (period.start > period.end) {
+                        return Promise.reject(new Error(`${label}存在跨日时段，请拆成两天配置`));
+                      }
+                    }
+                  }
+                  return periodCount > 0
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('至少需要配置一个启用时段'));
+                },
+              }]}
+            >
+              <TimeScheduleEditor />
+            </Form.Item>
+          </>
+        );
 
       case 'function':
         // 自动识别上游算法节点

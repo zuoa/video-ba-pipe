@@ -13,10 +13,12 @@ import {
   RobotOutlined,
   FileSearchOutlined,
   SendOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
 import './ComponentSidebar.css';
+import { createDefaultWeeklySchedule } from '../utils/timeSchedule';
 
 export interface ComponentSidebarProps {
   onAddNode: (nodeData: any) => void;
@@ -245,6 +247,30 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               <div className="component-content">
                 <div className="component-label">检测条件</div>
                 <div className="component-description">是/否检测到</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'timeSchedule',
+              nodeType: 'timeSchedule',
+              label: '时间启用区间',
+              description: '命中时段才继续',
+              icon: <ClockCircleOutlined />,
+              color: '#2f54eb',
+              weeklySchedule: createDefaultWeeklySchedule(),
+            })}
+            style={{ borderColor: '#597ef7' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#2f54eb' }}>
+                <ClockCircleOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">时间启用区间</div>
+                <div className="component-description">按星期与时段控制流程</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>

@@ -61,7 +61,8 @@ from app.core.storage_pressure import (
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
+from app.core.time_schedule import evaluate_weekly_schedule
 from app.core.execution_log_collector import ExecutionLogCollector
 from app.core.webhook_notifier import (
     apply_public_media_urls,
@@ -316,6 +317,7 @@ class WorkflowExecutor:
             'source': self._handle_source_node,
             'algorithm': self._handle_algorithm_node,
             'condition': self._handle_condition_node,
+            'time_schedule': self._handle_time_schedule_node,
             'output': self._handle_output_node,
             'roi_draw': self._handle_roi_draw_node,
             'roi': self._handle_roi_draw_node,  # 支持前后端两种类型名称
@@ -981,6 +983,7 @@ class WorkflowExecutor:
             'external_api': 2,
             'function': 3,
             'condition': 4,
+            'time_schedule': 4,
             'output': 5,
             'alert': 5,
             'webhook': 6,
@@ -1843,6 +1846,112 @@ class WorkflowExecutor:
 
         return context
 
+    def _handle_time_schedule_node(self, node_id, context):
+        """Pass the branch only when the current server-local minute is enabled."""
+        node = self.nodes.get(node_id)
+        if not isinstance(node, TimeScheduleNodeData):
+            return context
+
+        schedule_results = context.get('_time_schedule_results', {})
+        outcome = schedule_results.get(node_id)
+        if outcome is None:
+            now = context.get('_time_schedule_now') or datetime.now().astimezone()
+            enabled, matched_period = evaluate_weekly_schedule(node.weekly_schedule, now)
+            outcome = {
+                'enabled': enabled,
+                'matched_period': matched_period,
+                'current_time': now.isoformat(),
+                'weekday': now.isoweekday(),
+            }
+
+        with self._state_lock:
+            self.node_results_cache[node_id] = dict(outcome)
+
+        enabled = bool(outcome.get('enabled'))
+        matched_period = outcome.get('matched_period')
+        log_collector = context.get('log_collector')
+        if log_collector:
+            if matched_period:
+                detail = f"，命中 {matched_period['start']}–{matched_period['end']}"
+            else:
+                detail = ""
+            log_collector.add_info(
+                node_id,
+                f"时间启用区间{'通过' if enabled else '未通过'}{detail}",
+                metadata={
+                    **outcome,
+                    'event_type': 'time_schedule',
+                },
+            )
+
+        logger.debug(
+            f"[Workflow-{self.workflow_id}] 时间节点 {node_id}: "
+            f"enabled={enabled}, current_time={outcome.get('current_time')}, "
+            f"matched_period={matched_period}"
+        )
+        return context if enabled else None
+
+    def _prepare_time_schedule_gates(self, context):
+        """Evaluate schedule gates once and identify exclusively blocked descendants."""
+        schedule_nodes = {
+            node_id: node
+            for node_id, node in self.nodes.items()
+            if isinstance(node, TimeScheduleNodeData)
+        }
+        if not schedule_nodes:
+            return
+
+        now = context.get('_time_schedule_now') or datetime.now().astimezone()
+        context['_time_schedule_now'] = now
+
+        schedule_results = {}
+        disabled_gate_ids = set()
+        for node_id, node in schedule_nodes.items():
+            enabled, matched_period = evaluate_weekly_schedule(node.weekly_schedule, now)
+            schedule_results[node_id] = {
+                'enabled': enabled,
+                'matched_period': matched_period,
+                'current_time': now.isoformat(),
+                'weekday': now.isoweekday(),
+            }
+            if not enabled:
+                disabled_gate_ids.add(node_id)
+
+        context['_time_schedule_results'] = schedule_results
+        if not disabled_gate_ids:
+            context['_time_schedule_blocked_nodes'] = set()
+            return
+
+        blocked_candidates = set()
+        pending = list(disabled_gate_ids)
+        visited = set(disabled_gate_ids)
+        while pending:
+            current = pending.pop()
+            for next_info in self.execution_graph.get(current, []):
+                next_id = next_info['target']
+                blocked_candidates.add(next_id)
+                if next_id not in visited:
+                    visited.add(next_id)
+                    pending.append(next_id)
+
+        source_ids = [
+            node_id for node_id, node in self.nodes.items()
+            if isinstance(node, SourceNodeData)
+        ]
+        active_reachable = set(source_ids)
+        pending = list(source_ids)
+        while pending:
+            current = pending.pop()
+            if current in disabled_gate_ids:
+                continue
+            for next_info in self.execution_graph.get(current, []):
+                next_id = next_info['target']
+                if next_id not in active_reachable:
+                    active_reachable.add(next_id)
+                    pending.append(next_id)
+
+        context['_time_schedule_blocked_nodes'] = blocked_candidates - active_reachable
+
     @staticmethod
     def _evaluate_ocr_text_condition(node, upstream_results):
         source_node_id = node.source_node_id
@@ -2236,6 +2345,12 @@ class WorkflowExecutor:
             logger.warning(f"[Workflow-{self.workflow_id}] 节点 {node_id} 不在 self.nodes 中，可用节点: {list(self.nodes.keys())}")
             return None
 
+        if node_id in context.get('_time_schedule_blocked_nodes', set()):
+            logger.debug(
+                f"[Workflow-{self.workflow_id}] 节点 {node_id} 位于未启用的时间分支，跳过执行"
+            )
+            return None
+
         if not self._should_execute_node(node_id):
             # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
             if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData))
@@ -2456,6 +2571,7 @@ class WorkflowExecutor:
         """
         按拓扑层级执行所有节点
         """
+        self._prepare_time_schedule_gates(context)
         levels = self._build_topology_levels()
         logger.debug(f"[Workflow-{self.workflow_id}] 共有 {len(levels)} 个拓扑层级，开始按层级执行...")
 
@@ -3729,6 +3845,20 @@ class WorkflowExecutor:
                     'would_pass': condition_passed,
                     'condition_result': '通过' if condition_passed else '未通过'
                 }
+            }
+
+        elif node_type == 'time_schedule':
+            with self._state_lock:
+                cached = dict(self.node_results_cache.get(node_id, {}))
+            enabled = bool(cached.get('enabled'))
+            matched_period = cached.get('matched_period')
+            return {
+                'message': f"时间启用区间 - {'✓ 通过' if enabled else '✗ 未通过'}",
+                'schedule_enabled': enabled,
+                'current_time': cached.get('current_time'),
+                'weekday': cached.get('weekday'),
+                'matched_period': matched_period,
+                'debug_info': cached,
             }
 
         # Alert 节点

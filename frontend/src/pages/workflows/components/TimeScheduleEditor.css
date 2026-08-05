@@ -1,0 +1,57 @@
+.time-schedule-editor {
+  border: 1px solid #d6e4ff;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8faff;
+}
+
+.time-schedule-day {
+  padding: 10px;
+  border-bottom: 1px solid #e6edff;
+}
+
+.time-schedule-day:last-child {
+  border-bottom: 0;
+}
+
+.time-schedule-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.time-schedule-day-label {
+  color: #1d39c4;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.time-schedule-periods {
+  display: grid;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.time-schedule-periods .ant-input {
+  min-width: 0;
+  padding-inline: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-schedule-separator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-block: 1px solid #d9d9d9;
+  color: #8c8c8c;
+  background: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.time-schedule-disabled {
+  margin-top: 4px;
+  color: #bfbfbf;
+  font-size: 12px;
+}

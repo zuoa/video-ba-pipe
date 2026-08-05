@@ -6,6 +6,7 @@ import AlertNode from './AlertNode';
 import FunctionNode from './FunctionNode';
 import ExternalApiNode from './ExternalApiNode';
 import WebhookNode from './WebhookNode';
+import TimeScheduleNode from './TimeScheduleNode';
 
 export const nodeTypes = {
   videoSource: VideoSourceNode,
@@ -16,6 +17,7 @@ export const nodeTypes = {
   alert: AlertNode,
   function: FunctionNode,
   webhook: WebhookNode,
+  timeSchedule: TimeScheduleNode,
 };
 
 export const getNodeTypes = () => nodeTypes;
@@ -29,4 +31,5 @@ export {
   FunctionNode,
   ExternalApiNode,
   WebhookNode,
+  TimeScheduleNode,
 };

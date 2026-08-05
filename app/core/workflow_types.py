@@ -60,6 +60,12 @@ class ConditionNodeData(NodeContext):
     regex_pattern: str = ""
     case_sensitive: bool = False
 
+
+@dataclass
+class TimeScheduleNodeData(NodeContext):
+    node_type: str = "time_schedule"
+    weekly_schedule: Dict[str, List[Dict[str, str]]] = field(default_factory=dict)
+
 @dataclass
 class RoiDrawNodeData(NodeContext):
     node_type: str = "roi_draw"
@@ -178,6 +184,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'source': SourceNodeData,
         'algorithm': AlgorithmNodeData,
         'condition': ConditionNodeData,
+        'time_schedule': TimeScheduleNodeData,
         'output': OutputNodeData,
         'roi_draw': RoiDrawNodeData,
         'roi': RoiDrawNodeData,
@@ -253,6 +260,12 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             keyword_logic=data.get('keywordLogic') or data.get('keyword_logic', 'any'),
             regex_pattern=data.get('regexPattern') or data.get('regex_pattern', ''),
             case_sensitive=bool(data.get('caseSensitive') if 'caseSensitive' in data else data.get('case_sensitive', False)),
+        )
+    elif node_type == 'time_schedule':
+        return node_class(
+            node_type=node_type,
+            node_id=node_id,
+            weekly_schedule=data.get('weeklySchedule') or data.get('weekly_schedule') or {},
         )
     elif node_type in ('roi_draw', 'roi'):  # 支持前后端两种类型名称
         # 从 data 读取新的数据格式（支持驼峰和蛇形两种命名）
