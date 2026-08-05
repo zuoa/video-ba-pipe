@@ -60,6 +60,15 @@ docker compose -f docker-compose.yml.jetson up -d
 
 要求：目标设备运行 JetPack 6.2.1 / L4T 36.4.4，并已安装 Docker NVIDIA Runtime。后端使用独立的 `:jetson` ARM64 镜像，CUDA 推理由 NVIDIA PyTorch iGPU 运行时提供，H.264/H.265 默认使用 `nvv4l2decoder` 硬解；启动视频源时会用 `ffprobe` 探测并保存实际编码。前端复用通用 `:arm64` 镜像。Super 功耗模式需在宿主机刷机和 `nvpmodel` 配置中启用。
 
+所有 Compose 部署都会先运行一次性 `db-init` 服务。该服务完成事务化数据库迁移后，API 和 worker 才会启动；迁移失败时业务容器保持停止，避免在不完整 schema 上继续提供服务。排查部署门禁可使用：
+
+```bash
+docker compose -f docker-compose.yml.x86+cuda ps
+docker compose -f docker-compose.yml.x86+cuda logs db-init
+```
+
+其他硬件部署将命令中的 Compose 文件替换为对应的 `.yml` 文件。
+
 ## 访问地址
 
 - 前端：`http://localhost:8080`
@@ -75,8 +84,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 本地直跑默认使用 SQLite 初始化数据库
-python app/setup_database.py
+# 本地直跑默认使用 SQLite；必须先完成数据库初始化
+python3 -m app.setup_database
 
 # 终端 1：启动 worker
 python app/main.py

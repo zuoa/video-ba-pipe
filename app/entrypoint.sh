@@ -15,10 +15,7 @@ done
 echo "PostgreSQL is up."
 
 echo "Initializing database..."
-# 确保 FLASK_APP 环境变量已设置，或者在 flask 命令中指定 --app
-# 例如: export FLASK_APP=your_application_module:create_app()
-# 或者: flask --app your_application_module:create_app() init-db
-#flask init-db
+python3 -m app.setup_database
 
 
 echo "Starting scheduler..."

@@ -1,9 +1,103 @@
+from contextlib import contextmanager
+import logging
+import os
+import time
+
+import peewee as pw
+
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, SourceHealthLog,
     SystemSetting, ExternalApi
 )
+
+
+logger = logging.getLogger(__name__)
+
+# Stable, application-specific PostgreSQL advisory-lock key ("VBPIPEDB").
+# A session lock is used so every DDL/DML statement in the schema bootstrap is
+# protected even if a helper opens a nested transaction.
+_SCHEMA_LOCK_ID = 0x5642504950454442
+_SCHEMA_LOCK_POLL_SECONDS = 0.25
+
+_DATABASE_MODELS = (
+    Algorithm,
+    VideoSource,
+    ExternalApi,
+    Alert,
+    ScriptVersion,
+    Hook,
+    AlgorithmHook,
+    ScriptExecutionLog,
+    MLModel,
+    Workflow,
+    WorkflowNode,
+    WorkflowConnection,
+    WorkflowTestResult,
+    User,
+    SourceHealthLog,
+    SystemSetting,
+)
+
+
+def _schema_lock_timeout_seconds() -> float:
+    raw_value = os.getenv('DB_SCHEMA_LOCK_TIMEOUT_SECONDS', '120')
+    try:
+        return max(1.0, float(raw_value))
+    except ValueError as exc:
+        raise ValueError(
+            'DB_SCHEMA_LOCK_TIMEOUT_SECONDS must be a number greater than zero'
+        ) from exc
+
+
+def _execute_boolean_query(sql: str, params: tuple) -> bool:
+    cursor = db.execute_sql(sql, params)
+    try:
+        row = cursor.fetchone()
+        return bool(row and row[0])
+    finally:
+        cursor.close()
+
+
+@contextmanager
+def _database_schema_lock():
+    """Serialize PostgreSQL schema initialization across all processes."""
+    if not isinstance(db, pw.PostgresqlDatabase):
+        yield
+        return
+
+    timeout_seconds = _schema_lock_timeout_seconds()
+    deadline = time.monotonic() + timeout_seconds
+    acquired = False
+
+    while not acquired:
+        acquired = _execute_boolean_query(
+            'SELECT pg_try_advisory_lock(%s)',
+            (_SCHEMA_LOCK_ID,),
+        )
+        if acquired:
+            break
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                'Timed out waiting for the PostgreSQL database schema lock '
+                f'after {timeout_seconds:g} seconds'
+            )
+        time.sleep(_SCHEMA_LOCK_POLL_SECONDS)
+
+    try:
+        yield
+    finally:
+        try:
+            unlocked = _execute_boolean_query(
+                'SELECT pg_advisory_unlock(%s)',
+                (_SCHEMA_LOCK_ID,),
+            )
+            if not unlocked:
+                logger.error('PostgreSQL database schema lock was not held during release')
+        except Exception:
+            # Closing the connection below also releases a session advisory lock.
+            logger.exception('Failed to explicitly release the database schema lock')
 
 
 def ensure_default_admin_user():
@@ -21,38 +115,67 @@ def ensure_default_admin_user():
 
 
 def setup_database():
-    # 连接数据库并创建表
+    """Apply the complete schema bootstrap atomically and idempotently."""
     db.connect(reuse_if_open=True)
+    try:
+        with _database_schema_lock():
+            # PostgreSQL supports transactional DDL. SQLite also keeps these
+            # schema changes transactional, so a failure cannot leave half of
+            # the expected tables behind.
+            with db.atomic():
+                _apply_schema_changes()
+    finally:
+        if not db.is_closed():
+            db.close()
+
+    logger.info('Database schema initialization completed successfully')
+    print('数据库已使用 Peewee 模型初始化。')
+
+
+def verify_database_schema():
+    """Fail fast when a runtime process sees an incomplete database schema."""
+    db.connect(reuse_if_open=True)
+    try:
+        missing_tables = [
+            model._meta.table_name
+            for model in _DATABASE_MODELS
+            if not db.table_exists(model._meta.table_name)
+        ]
+        if missing_tables:
+            raise RuntimeError(
+                'Database schema is incomplete; missing tables: '
+                f'{", ".join(sorted(missing_tables))}. '
+                'Run `python3 -m app.setup_database` before starting services.'
+            )
+
+        missing_columns = []
+        for model in _DATABASE_MODELS:
+            table_name = model._meta.table_name
+            actual_columns = {column.name for column in db.get_columns(table_name)}
+            expected_columns = {
+                field.column_name for field in model._meta.sorted_fields
+            }
+            for column_name in sorted(expected_columns - actual_columns):
+                missing_columns.append(f'{table_name}.{column_name}')
+
+        if missing_columns:
+            raise RuntimeError(
+                'Database schema is incomplete; missing columns: '
+                f'{", ".join(missing_columns)}. '
+                'Run `python3 -m app.setup_database` before starting services.'
+            )
+    finally:
+        if not db.is_closed():
+            db.close()
+
+
+def _apply_schema_changes():
     # 旧库必须先补工作流列，再让 Peewee 为新模型创建索引。
     # SQLite 会把不存在的双引号索引列当成表达式，之后再补列会造成 schema 异常。
     if db.table_exists(Workflow._meta.table_name):
         _ensure_workflow_columns()
     # 创建所有数据库表，按依赖顺序
-    db.create_tables([
-        # 基础表
-        Algorithm,
-        VideoSource,
-        ExternalApi,
-        Alert,
-        # 脚本支持相关表
-        ScriptVersion,
-        Hook,
-        AlgorithmHook,
-        ScriptExecutionLog,
-        # 模型管理表
-        MLModel,
-        # 工作流表
-        Workflow,
-        WorkflowNode,
-        WorkflowConnection,
-        WorkflowTestResult,
-        # 用户表
-        User,
-        # 健康监控表
-        SourceHealthLog,
-        # 系统设置表
-        SystemSetting
-    ], safe=True)
+    db.create_tables(_DATABASE_MODELS, safe=True)
     _ensure_ownership_columns()
     _ensure_video_source_columns()
     _ensure_model_columns()
@@ -232,11 +355,6 @@ def setup_database():
     #         "priority" :1
     #     }
     # )
-
-    if not db.is_closed():
-        db.close()
-    print(f"数据库已使用 Peewee 模型初始化。")
-
 
 def _normalize_existing_records():
     Algorithm.update(created_by='admin').where(

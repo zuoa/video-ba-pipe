@@ -74,7 +74,7 @@ from app.core.algorithm import BaseAlgorithm
 from app.core.window_detector import get_window_detector
 from app.core.video_probe import normalize_video_codec
 from app.core.system_metrics import collect_system_metrics
-from app.setup_database import setup_database
+from app.setup_database import verify_database_schema
 from app.version import get_app_version
 from app.branding import get_company_name
 
@@ -95,13 +95,30 @@ def close_db_connection(_exception):
     if not db.is_closed():
         db.close()
 
-# 初始化数据库（如果不存在则创建所有表）
+# 数据库迁移由独立 db-init 阶段执行；Web 进程只校验，不在多 worker 中修改 schema。
 try:
-    setup_database()
-    app.logger.info("数据库初始化完成")
+    verify_database_schema()
+    app.logger.info("数据库结构校验完成")
 except Exception as e:
-    app.logger.error(f"数据库初始化失败: {e}")
-    # 不阻止应用启动,让应用继续运行并在后续操作中报告错误
+    # 数据库结构不完整时继续提供 HTTP 服务会把启动故障扩散为随机 500，
+    # 并可能让后台任务写入半迁移状态。让进程失败，由编排器按策略重启。
+    app.logger.exception("数据库初始化失败，拒绝启动: %s", e)
+    raise
+
+
+@app.route('/api/health/ready', methods=['GET'])
+def readiness_probe():
+    """Report readiness only while the API can execute a database query."""
+    try:
+        cursor = db.execute_sql('SELECT 1')
+        try:
+            cursor.fetchone()
+        finally:
+            cursor.close()
+    except Exception:
+        app.logger.warning('Readiness probe failed: database is unavailable', exc_info=True)
+        return jsonify({'status': 'unavailable'}), 503
+    return jsonify({'status': 'ready'})
 
 # ========== 注册认证API ==========
 from app.web.api.auth import (
