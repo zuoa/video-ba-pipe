@@ -21,10 +21,10 @@ except ImportError:  # pragma: no cover - optional dependency in test/runtime su
         pass
 
 from app.config import (
-    RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD, 
-    RABBITMQ_VHOST, RABBITMQ_ALERT_QUEUE, RABBITMQ_ALERT_EXCHANGE,
+    RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD,
+    RABBITMQ_VHOST, RABBITMQ_ALERT_EXCHANGE,
     RABBITMQ_ALERT_ROUTING_KEY, RABBITMQ_CONNECTION_TIMEOUT, RABBITMQ_ENABLED,
-    RABBITMQ_EXCHANGE_TYPE, RABBITMQ_ALERT_TOPIC_PATTERN
+    RABBITMQ_EXCHANGE_TYPE
 )
 from app.core.node_identity import get_hostname, get_node_id
 from app.core.public_media_config import build_public_media_url, get_public_media_config
@@ -72,34 +72,16 @@ class RabbitMQPublisher:
             self.connection = pika.BlockingConnection(parameters)
             self.channel = self.connection.channel()
             
-            # 声明交换机（支持topic和direct模式）
+            # 只声明交换机：消费队列由消费端自行声明并绑定。
+            # 生产者不应声明自己的消费队列——否则在无消费者时消息会无限堆积，
+            # 最终耗尽 broker 内存/磁盘。对无队列绑定的消息，broker 会直接丢弃，
+            # 消费端连上后自行声明队列即可正常接收（参见 scripts/*_consumer*.py）。
             self.channel.exchange_declare(
                 exchange=RABBITMQ_ALERT_EXCHANGE,
                 exchange_type=RABBITMQ_EXCHANGE_TYPE,
                 durable=True
             )
-            
-            self.channel.queue_declare(
-                queue=RABBITMQ_ALERT_QUEUE,
-                durable=True
-            )
-            
-            # 绑定队列到交换机
-            if RABBITMQ_EXCHANGE_TYPE == 'topic':
-                # Topic模式：使用通配符模式绑定
-                self.channel.queue_bind(
-                    exchange=RABBITMQ_ALERT_EXCHANGE,
-                    queue=RABBITMQ_ALERT_QUEUE,
-                    routing_key=RABBITMQ_ALERT_TOPIC_PATTERN
-                )
-            else:
-                # Direct模式：使用精确匹配
-                self.channel.queue_bind(
-                    exchange=RABBITMQ_ALERT_EXCHANGE,
-                    queue=RABBITMQ_ALERT_QUEUE,
-                    routing_key=RABBITMQ_ALERT_ROUTING_KEY
-                )
-            
+
             self.connected = True
             logger.info(f"成功连接到RabbitMQ服务器 {RABBITMQ_HOST}:{RABBITMQ_PORT}")
             return True

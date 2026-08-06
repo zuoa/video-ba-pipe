@@ -1,11 +1,12 @@
 import React from 'react';
-import { Table, Space, Image } from 'antd';
+import { Table, Space, Image, Tooltip } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
   EditOutlined,
   DeleteOutlined,
   EyeOutlined,
   VideoCameraOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { StatusBadge, SwitchBadge } from '@/components/common';
 import './SourceTable.css';
@@ -16,6 +17,8 @@ export interface SourceTableProps {
   onEdit: (source: any) => void;
   onDelete: (id: number) => void;
   onPreview: (source: any) => void;
+  onRefreshStatus: (source: any) => void;
+  refreshingId: number | null;
 }
 
 const SourceTable: React.FC<SourceTableProps> = ({
@@ -24,6 +27,8 @@ const SourceTable: React.FC<SourceTableProps> = ({
   onEdit,
   onDelete,
   onPreview,
+  onRefreshStatus,
+  refreshingId,
 }) => {
   const columns = [
     {
@@ -58,8 +63,22 @@ const SourceTable: React.FC<SourceTableProps> = ({
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 140,
-      render: (status: string) => <StatusBadge status={status} />,
+      width: 180,
+      render: (status: string, record: any) => (
+        <Space size={6}>
+          <StatusBadge status={status} />
+          <Tooltip title="重新探测状态">
+            <Button
+              type="text"
+              size="small"
+              className="action-btn refresh-status-btn"
+              icon={<ReloadOutlined />}
+              loading={refreshingId === record.id}
+              onClick={() => onRefreshStatus(record)}
+            />
+          </Tooltip>
+        </Space>
+      ),
     },
     {
       title: '启用',

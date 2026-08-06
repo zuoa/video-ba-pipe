@@ -518,6 +518,10 @@ export async function deleteVideoSource(id: number) {
   });
 }
 
+export async function getSourceHealth(id: number) {
+  return request(`/api/video-sources/${id}/health`);
+}
+
 export async function getSourceImportProviders() {
   return request('/api/source-import/providers');
 }

@@ -11,11 +11,13 @@ import {
   createVideoSource,
   updateVideoSource,
   deleteVideoSource,
+  getSourceHealth,
 } from '@/services/api';
 import { PageHeader, ImagePreview, useAppConfirm } from '@/components/common';
 import SourceForm from './components/SourceForm';
 import ImportSourcesModal from './components/ImportSourcesModal';
 import SourceTable from './components/SourceTable';
+import SourceHealthModal from './components/SourceHealthModal';
 import './index.css';
 
 export default function VideoSources() {
@@ -26,6 +28,9 @@ export default function VideoSources() {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<any>(null);
   const [previewSource, setPreviewSource] = useState<any>(null);
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [healthModalVisible, setHealthModalVisible] = useState(false);
+  const [healthDetail, setHealthDetail] = useState<any>(null);
   const confirmAction = useAppConfirm();
 
   const loadSources = useCallback(async () => {
@@ -100,6 +105,21 @@ export default function VideoSources() {
     setPreviewVisible(true);
   };
 
+  const handleRefreshStatus = async (source: any) => {
+    setRefreshingId(source.id);
+    try {
+      const detail = await getSourceHealth(source.id);
+      setHealthDetail({ ...detail, _name: source.name });
+      setHealthModalVisible(true);
+      // 探测同时顺手刷新列表里的 DB status
+      loadSources();
+    } catch (error) {
+      message.error('探测状态失败');
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
   return (
     <div className="video-sources-page">
       <PageHeader
@@ -137,6 +157,8 @@ export default function VideoSources() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onPreview={handlePreview}
+        onRefreshStatus={handleRefreshStatus}
+        refreshingId={refreshingId}
       />
 
       <SourceForm
@@ -157,6 +179,12 @@ export default function VideoSources() {
         src={`/api/image/snapshots/${previewSource?.source_code}.jpg`}
         title={previewSource?.name}
         onClose={() => setPreviewVisible(false)}
+      />
+
+      <SourceHealthModal
+        open={healthModalVisible}
+        detail={healthDetail}
+        onClose={() => setHealthModalVisible(false)}
       />
     </div>
   );
