@@ -3363,15 +3363,18 @@ class WorkflowExecutor:
             alert_event=alert_event,
         )
 
-        # 发布到 RabbitMQ
-        try:
-            alert_message = format_alert_message(alert)
-            if publish_alert_to_rabbitmq(alert_message):
-                logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到RabbitMQ: {alert.id}")
-            else:
-                logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到RabbitMQ失败: {alert.id}")
-        except Exception as e:
-            logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到RabbitMQ时发生错误: {e}")
+        # 发布到 RabbitMQ（受告警节点 publish_to_mq 开关控制；全局开关在系统设置中配置）
+        if not getattr(alert_node, 'publish_to_mq', True):
+            logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 已关闭 MQ 输出，跳过 RabbitMQ 发布: {alert.id}")
+        else:
+            try:
+                alert_message = format_alert_message(alert)
+                if publish_alert_to_rabbitmq(alert_message):
+                    logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到RabbitMQ: {alert.id}")
+                else:
+                    logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到RabbitMQ失败: {alert.id}")
+            except Exception as e:
+                logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到RabbitMQ时发生错误: {e}")
 
     def test_execute(self, test_frame: np.ndarray, test_image_bgr: np.ndarray = None):
         """

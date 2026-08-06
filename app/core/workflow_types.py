@@ -150,6 +150,13 @@ class AlertNodeData(NodeContext):
     - 'summary': 汇总格式（按级别分组）
     """
 
+    publish_to_mq: bool = True
+    """
+    是否将该节点的告警输出到 RabbitMQ 消息队列。
+    仅在告警真正触发（通过触发条件、抑制期、VL 核验之后）时生效。
+    默认 True；关闭后该节点告警不会推送 MQ（全局 RabbitMQ 开关仍由系统设置控制）。
+    """
+
 OutputNodeData = AlertNodeData  # Output节点与Alert节点配置相同
 
 @dataclass
@@ -285,6 +292,12 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         trigger_condition = data.get('triggerCondition') or data.get('trigger_condition')
         suppression = data.get('suppression')
         vl_validation = data.get('vlValidation') or data.get('vl_validation')
+        # 布尔字段不能用 `or` 串联（False 会被覆盖），需显式回退到默认值 True
+        publish_to_mq = data.get('publishToMq')
+        if publish_to_mq is None:
+            publish_to_mq = data.get('publish_to_mq')
+        if publish_to_mq is None:
+            publish_to_mq = True
 
         return node_class(
             node_type=node_type,
@@ -295,7 +308,8 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             message_format=message_format,
             trigger_condition=trigger_condition,
             suppression=suppression,
-            vl_validation=vl_validation
+            vl_validation=vl_validation,
+            publish_to_mq=publish_to_mq
         )
     else:
         return node_class(

@@ -242,6 +242,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.suppressionSeconds = 60;
         }
 
+        // 读取 MQ 输出开关（默认开启）
+        formValues.publishToMq = node.data.publishToMq !== false;
+
         const vlValidation = node.data.vlValidation;
         formValues.vlValidationEnable = vlConfigReady && vlValidation?.enable === true;
         formValues.vlValidationPromptTemplate = vlValidation?.promptTemplate || vlValidation?.prompt_template || '';
@@ -441,6 +444,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             ? (values.vlValidationPromptTemplate || '').trim()
             : '',
         };
+
+        // 保存 MQ 输出开关（默认开启）
+        updatedData.publishToMq = values.publishToMq !== false;
 
         // 清理临时字段
         delete updatedData.triggerConditionEnable;
@@ -1774,6 +1780,22 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                     </Form.Item>
                   );
                 }}
+              </Form.Item>
+            </div>
+
+            {/* 消息队列输出（RabbitMQ） */}
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">消息队列输出（RabbitMQ）</span>
+              </div>
+
+              <Form.Item
+                label="输出到 RabbitMQ"
+                name="publishToMq"
+                extra="开启后，该节点告警在真正触发（通过触发条件、抑制期、VL 核验）后会推送到 RabbitMQ，且需在系统设置中启用全局 RabbitMQ。关闭后该节点告警不再推送 MQ，但告警记录与录像不受影响。"
+                valuePropName="checked"
+              >
+                <Switch />
               </Form.Item>
             </div>
           </>
