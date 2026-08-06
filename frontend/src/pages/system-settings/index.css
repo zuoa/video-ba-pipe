@@ -24,6 +24,24 @@
   grid-column: 1 / -1;
 }
 
+.system-settings-tabs {
+  margin-top: 4px;
+}
+
+/* 页签内容区只放一张卡片，去掉卡片在网格布局下的多余外边距 */
+.system-settings-tabs .system-settings-card {
+  margin: 0;
+}
+
+.system-settings-tabs .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+
+/* 页签较多时允许横向滚动，避免窄屏下换行挤压 */
+.system-settings-tabs .ant-tabs-nav-list {
+  flex-wrap: nowrap;
+}
+
 .inference-resource-card {
   overflow: hidden;
 }

@@ -229,6 +229,41 @@ export async function updatePublicMediaConfig(data: PublicMediaConfig) {
   });
 }
 
+export interface RabbitMqConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  password_configured?: boolean;
+  vhost: string;
+  alert_queue: string;
+  alert_exchange: string;
+  alert_routing_key: string;
+  exchange_type: 'topic' | 'direct';
+  connection_timeout_seconds: number;
+}
+
+export async function getRabbitMqConfig() {
+  return request<{ success: boolean; config: RabbitMqConfig }>(
+    '/api/system/rabbitmq-config',
+  );
+}
+
+export async function updateRabbitMqConfig(data: Partial<RabbitMqConfig>) {
+  return request('/api/system/rabbitmq-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
+export async function testRabbitMqConfig(data: Partial<RabbitMqConfig>) {
+  return request('/api/system/rabbitmq-config/test', {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function getUsers() {
   return request('/api/auth/users');
 }

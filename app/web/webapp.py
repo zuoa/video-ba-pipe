@@ -28,7 +28,17 @@ from app.config import (
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
 )
-from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.rabbitmq_publisher import (
+    format_alert_message,
+    publish_alert_to_rabbitmq,
+    reload_rabbitmq_publisher,
+)
+from app.core.rabbitmq_config import (
+    get_rabbitmq_config,
+    normalize_rabbitmq_config,
+    save_rabbitmq_config,
+    test_rabbitmq_connection,
+)
 from app.core.vl_validator import get_vl_service_config, save_vl_service_config
 from app.core.source_rotation import (
     get_source_rotation_config,
@@ -511,6 +521,58 @@ def update_system_public_media_config():
     except Exception as exc:
         app.logger.error(f"更新公共媒体访问配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/rabbitmq-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_rabbitmq_config():
+    config = get_rabbitmq_config()
+    return jsonify({'success': True, 'config': config.to_dict(include_password=False)})
+
+
+@app.route('/api/system/rabbitmq-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_rabbitmq_config():
+    try:
+        config = save_rabbitmq_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        # 断开旧连接，使下次发布按新配置重建链路
+        reload_rabbitmq_publisher()
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(include_password=False),
+            'message': 'RabbitMQ 配置已更新，下次发布告警时按新配置连接',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新 RabbitMQ 配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/rabbitmq-config/test', methods=['POST'])
+@require_auth
+@require_admin
+def test_system_rabbitmq_config():
+    try:
+        existing = get_rabbitmq_config()
+        # 表单中密码为空时复用已保存的密码，便于只改 host 时也能测试
+        config = normalize_rabbitmq_config(
+            request.json or {},
+            existing_password=existing.password,
+        )
+        ok, detail = test_rabbitmq_connection(config)
+        if ok:
+            return jsonify({'success': True, 'message': detail})
+        return jsonify({'success': False, 'error': detail}), 502
+    except Exception as exc:
+        app.logger.error(f"测试 RabbitMQ 连接失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 502
+
 
 # Algorithm API
 @app.route('/api/algorithms', methods=['GET'])
