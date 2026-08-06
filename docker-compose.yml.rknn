@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -178,6 +176,10 @@ services:
     container_name: video-ba-pipe-worker
     restart: unless-stopped
     init: true
+    # 需要 privileged:RKNNLite init_runtime 会读 /proc/device-tree/compatible 确认平台,
+    # 该路径是 /sys/firmware/devicetree/base 的软链,而 Docker 默认 mask 了 /sys/firmware,
+    # 普通挂载无法绕过(bind 到软链路径无效),只能用 privileged 解除 mask。
+    privileged: true
     shm_size: '8gb'
     entrypoint: ["python", "main.py"]
     environment:
@@ -186,6 +188,9 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/data
       - /opt/rknn:/opt/rknn:ro
+      # rknnlite 在容器内按硬编码路径 /usr/lib/librknnrt.so 加载运行时库,
+      # 镜像未内置该库,需把宿主机 librknnrt.so 映射进来(否则 init_runtime 报找不到动态库)。
+      - /usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -196,8 +201,6 @@ services:
       - /dev/mpp_service:/dev/mpp_service
       - /dev/rga:/dev/rga
       - /dev/video0:/dev/video0
-      - /dev/video-dec0:/dev/video-dec0
-      - /dev/video-enc0:/dev/video-enc0
     networks:
       - video-ba-network
 
