@@ -34,6 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     postgresql-client \
+    # slim 镜像不含 /usr/share/zoneinfo，补 tzdata 让 ENV TZ=Asia/Shanghai 生效
+    # （否则 glibc 退回 compose 挂载的宿主机 /etc/localtime，多为 UTC → 时间差 8h）。
+    tzdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -82,6 +85,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 WORKDIR /app/app
 
 ENV TZ=Asia/Shanghai
+# 装了 tzdata 后 TZ=Asia/Shanghai 即生效；再软链 /etc/localtime 作双保险
+# （运行时会被 compose 只读挂载的宿主机 /etc/localtime 覆盖，但不影响 TZ 解析）。
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV PYTHONPATH="/app:$PYTHONPATH"
 
 # 设置入口点
