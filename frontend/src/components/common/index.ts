@@ -26,5 +26,7 @@ export type { AppToolbarProps } from './AppToolbar';
 export { default as AppEmptyState } from './AppEmptyState';
 export type { AppEmptyStateProps } from './AppEmptyState';
 
+export { default as ErrorBoundary } from './ErrorBoundary';
+
 export { useAppConfirm } from './AppConfirm';
 export type { AppConfirmOptions } from './AppConfirm';

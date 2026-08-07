@@ -24,7 +24,7 @@ const STATUS_TONES: Record<string, SemanticTone | 'muted'> = {
 };
 
 export interface StatusBadgeProps {
-  status: string;
+  status?: string;
   text?: string;
   size?: 'small' | 'default' | 'large';
   tone?: SemanticTone | 'muted';
@@ -38,12 +38,14 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
   tone,
   showIcon = true,
 }) => {
-  const displayText = text || STATUS_LABELS[status] || status;
-  const resolvedTone = tone ?? STATUS_TONES[status] ?? 'muted';
+  // status 在「仅用 tone+text」的场景（如健康汇总）可能不传，这里兜底，避免 toLowerCase 抛错导致整页白屏
+  const safeStatus = status || 'unknown';
+  const displayText = text || STATUS_LABELS[safeStatus] || status || '';
+  const resolvedTone = tone ?? STATUS_TONES[safeStatus] ?? 'muted';
 
   return (
     <span
-      className={`status-badge status-badge-${size} status-badge--${resolvedTone} status-badge-${status.toLowerCase()} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
+      className={`status-badge status-badge-${size} status-badge--${resolvedTone} status-badge-${safeStatus.toLowerCase()} ${ANIMATED_STATUSES.has(status) ? 'status-animated' : ''}`}
     >
       {showIcon ? <span className="status-icon" aria-hidden="true" /> : null}
       {displayText}

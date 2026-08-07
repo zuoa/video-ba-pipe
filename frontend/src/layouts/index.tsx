@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, useLocation } from '@umijs/max';
 import Header from '@/components/Header';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 export default function Layout() {
   const location = useLocation();
@@ -8,7 +9,11 @@ export default function Layout() {
     location.pathname === '/login' || location.pathname === '/alert-wall';
 
   if (isStandalonePage) {
-    return <Outlet />;
+    return (
+      <ErrorBoundary>
+        <Outlet />
+      </ErrorBoundary>
+    );
   }
 
   return (
@@ -16,7 +21,9 @@ export default function Layout() {
       <Header />
       <main className="app-shell__main">
         <div className="app-shell__content">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
     </div>
