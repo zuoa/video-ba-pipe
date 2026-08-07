@@ -345,7 +345,9 @@ RABBITMQ_ALERT_TOPIC_PATTERN = os.getenv('RABBITMQ_ALERT_TOPIC_PATTERN', 'video.
 RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30'))
 
 # 是否启用RabbitMQ预警发布
-RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'true').lower() in ('true', '1', 'yes')
+# 默认 false：broker 相关功能默认关闭，避免 DB 读取失败回退到 env 时误启用，
+# 也与系统设置 UI（首次无配置行时显示关闭）保持一致。需要启用请在 .env/compose 显式置 true。
+RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
 # ============ 健康监控配置 ============
 # 是否启用健康监控

@@ -8,7 +8,7 @@ password 为敏感字段，读取时脱敏（to_dict(include_password=False)）�
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -116,14 +116,20 @@ def normalize_rabbitmq_config(
 
 
 def get_rabbitmq_config() -> RabbitMqConfig:
-    """读取持久化配置；DB 不可用时回退到环境变量默认值。"""
+    """读取持久化配置；DB 不可用或无配置行时默认不启用。
+
+    关键：回退分支强制 enabled=False（不沿用环境变量默认值）。否则在
+    RABBITMQ_ENABLED=true 的部署里，worker 进程一旦 DB 读取失败就会回退成
+    "已启用"，出现"系统设置里已关闭却仍在尝试发送"的问题。DB 不可读时，
+    宁可不发，也不要误发。
+    """
     try:
         record = SystemSetting.get_or_none(SystemSetting.key == RABBITMQ_SETTING_KEY)
         if record and record.value:
             return normalize_rabbitmq_config(json.loads(record.value))
     except Exception as exc:
-        logger.warning(f"读取 RabbitMQ 配置失败，使用环境默认值: {exc}")
-    return RabbitMqConfig()
+        logger.warning(f"读取 RabbitMQ 配置失败，回退为未启用: {exc}")
+    return replace(RabbitMqConfig(), enabled=False)
 
 
 def save_rabbitmq_config(
