@@ -143,6 +143,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/data
       - /opt/rknn:/opt/rknn:ro
+      # 仪表盘 NPU 负载采集：只读挂载宿主 debugfs 以读取 /sys/kernel/debug/rknpu/load（非特权容器即可，该文件全局可读）
+      - /sys/kernel/debug:/sys/kernel/debug:ro
 
     depends_on:
       db-init:

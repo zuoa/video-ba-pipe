@@ -328,6 +328,48 @@ def _collect_jetson_gpu() -> List[Dict[str, Any]]:
     }]
 
 
+def _collect_rk_npu() -> List[Dict[str, Any]]:
+    """采集 RK3588 NPU 各核负载。
+
+    数据源：内核 debugfs `/sys/kernel/debug/rknpu/load`，格式形如
+    `NPU load:  Core0: 12%, Core1:  0%, Core2:  0%,`（三核百分比）。
+    该文件存在即视为 RK NPU 平台——无需读 /proc/device-tree（后者软链到被 mask
+    的 /sys/firmware，需 privileged 才能访问）。文件不可读（非 RK 板，或容器未
+    挂载 debugfs）时返回空列表，仪表盘自动不渲染 NPU 卡片。
+
+    容器侧前置条件：api(web) 服务需以只读方式挂载宿主 debugfs，即在 compose 里加
+    `- /sys/kernel/debug:/sys/kernel/debug:ro`（非特权即可，rknpu/load 全局可读）。
+    """
+    load_path = Path("/sys/kernel/debug/rknpu/load")
+    try:
+        raw = load_path.read_text(errors="ignore")
+    except OSError:
+        return []
+
+    import re
+    cores = [float(match) for match in re.findall(r"Core\d+\s*:\s*(\d+(?:\.\d+)?)", raw)]
+    if not cores:
+        return []
+
+    return [{
+        "index": 0,
+        "name": "RK3588 NPU",
+        "vendor": "Rockchip",
+        "usage_percent": round(max(cores), 1),  # 取最忙的一核作为总体占用
+        "core_load_percent": [round(core, 1) for core in cores],
+        "memory_total_bytes": None,
+        "memory_used_bytes": None,
+        "memory_usage_percent": None,
+        "temperature_c": None,
+        "power_watts": None,
+    }]
+
+
+def _collect_npus() -> List[Dict[str, Any]]:
+    """采集 NPU（目前仅 RK3588），供仪表盘展示。后续可在此分发其它 NPU 后端。"""
+    return _collect_rk_npu()
+
+
 def _parse_capacity_bytes(value: Any) -> Optional[int]:
     if not isinstance(value, str):
         return None
@@ -420,4 +462,5 @@ def collect_system_metrics() -> Dict[str, Any]:
         "disks": _collect_disks(),
         "network": _collect_network(),
         "gpus": _collect_gpus(),
+        "npus": _collect_npus(),
     }

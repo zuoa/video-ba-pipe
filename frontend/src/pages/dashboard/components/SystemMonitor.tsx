@@ -55,6 +55,19 @@ export interface GpuMetrics {
   power_watts?: number | null;
 }
 
+export interface NpuMetrics {
+  index: number;
+  name: string;
+  vendor: string;
+  usage_percent?: number | null;
+  core_load_percent?: number[] | null;
+  memory_total_bytes?: number | null;
+  memory_used_bytes?: number | null;
+  memory_usage_percent?: number | null;
+  temperature_c?: number | null;
+  power_watts?: number | null;
+}
+
 export interface SystemMetrics {
   timestamp: number;
   hostname: string;
@@ -65,6 +78,7 @@ export interface SystemMetrics {
   disks: DiskMetrics[];
   network: NetworkMetrics;
   gpus: GpuMetrics[];
+  npus: NpuMetrics[];
 }
 
 interface SystemMonitorProps {
@@ -190,7 +204,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
 
       <div
         className="system-monitor__grid"
-        style={{ '--system-metric-count': 4 + metrics.gpus.length } as React.CSSProperties}
+        style={{ '--system-metric-count': 4 + metrics.gpus.length + metrics.npus.length } as React.CSSProperties}
       >
         <article className="system-metric-card">
           <MetricCardHeader
@@ -303,6 +317,41 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
                 <span>
                   <small>功耗</small>
                   {gpu.power_watts.toFixed(1)} W
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ))}
+
+        {metrics.npus.map((npu) => (
+          <article key={`${npu.vendor}-npu-${npu.index}-${npu.name}`} className="system-gpu-card">
+            <div className="system-gpu-card__heading">
+              <div>
+                <small>{npu.vendor} · NPU {npu.index}</small>
+                <h3>{npu.name}</h3>
+              </div>
+              <strong>{npu.usage_percent === null || npu.usage_percent === undefined
+                ? '在线'
+                : `${npu.usage_percent.toFixed(1)}%`}</strong>
+            </div>
+            <UsageBar value={npu.usage_percent} label={`${npu.name} NPU 使用率`} />
+            <div className="system-gpu-card__stats">
+              {npu.core_load_percent && npu.core_load_percent.length ? (
+                <span>
+                  <small>各核负载</small>
+                  {npu.core_load_percent.map((c) => `${c.toFixed(0)}%`).join(' / ')}
+                </span>
+              ) : null}
+              {npu.memory_total_bytes ? (
+                <span>
+                  <small>显存</small>
+                  {formatBytes(npu.memory_used_bytes)} / {formatBytes(npu.memory_total_bytes)}
+                </span>
+              ) : null}
+              {npu.temperature_c !== null && npu.temperature_c !== undefined ? (
+                <span>
+                  <small>温度</small>
+                  {npu.temperature_c.toFixed(1)}°C
                 </span>
               ) : null}
             </div>
