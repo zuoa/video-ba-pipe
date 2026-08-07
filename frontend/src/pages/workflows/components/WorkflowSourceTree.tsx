@@ -3,7 +3,6 @@ import { Input, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import {
   ApartmentOutlined,
-  FileTextOutlined,
   FolderOpenOutlined,
   VideoCameraOutlined,
   WarningOutlined,
@@ -37,13 +36,9 @@ const WorkflowSourceTree: React.FC<WorkflowSourceTreeProps> = ({
 
   const counts = useMemo(() => {
     const sourceCounts = new Map<number, number>();
-    let templateCount = 0;
     let unboundCount = 0;
     workflows.forEach((workflow) => {
-      if (workflow.is_template) {
-        templateCount += 1;
-        return;
-      }
+      if (workflow.is_template) return; // 模板在独立分区展示，不参与视频源计数
       const sourceId = getSourceId(workflow);
       if (sourceId == null) {
         unboundCount += 1;
@@ -51,7 +46,7 @@ const WorkflowSourceTree: React.FC<WorkflowSourceTreeProps> = ({
         sourceCounts.set(sourceId, (sourceCounts.get(sourceId) || 0) + 1);
       }
     });
-    return { sourceCounts, templateCount, unboundCount };
+    return { sourceCounts, unboundCount };
   }, [workflows]);
 
   const treeData = useMemo<DataNode[]>(() => {
@@ -59,13 +54,6 @@ const WorkflowSourceTree: React.FC<WorkflowSourceTreeProps> = ({
       !deferredSearch || String(source.name || '').toLowerCase().includes(deferredSearch)
     ));
     const children: DataNode[] = [];
-    if (!deferredSearch || '编排模板'.includes(deferredSearch)) {
-      children.push({
-        key: 'templates',
-        icon: <FileTextOutlined />,
-        title: <span className="workflow-tree-title"><span>编排模板</span><b>{counts.templateCount}</b></span>,
-      });
-    }
     matchingSources.forEach((source) => {
       const count = counts.sourceCounts.get(Number(source.id)) || 0;
       children.push({

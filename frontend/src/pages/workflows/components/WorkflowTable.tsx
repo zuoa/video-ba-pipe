@@ -60,6 +60,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   const [sourceDrawerOpen, setSourceDrawerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [templatePage, setTemplatePage] = useState(1);
   const deferredSearchText = useDeferredValue(searchText.trim().toLowerCase());
 
   const templates = useMemo(
@@ -78,14 +79,23 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
     return matchTemplate && matchSearch;
   }), [deferredSearchText, filterTemplate, workflows]);
 
-  const filteredWorkflows = useMemo(() => toolbarFilteredWorkflows.filter((workflow) => {
-    if (treeKey === 'all') return true;
-    if (treeKey === 'templates') return workflow.is_template;
+  // 编排模板单独成区：仅受搜索框影响（模板无视频源，不参与来源模板/视频源树筛选）
+  const templateRows = useMemo(() => workflows.filter((workflow) => {
+    if (!workflow.is_template) return false;
+    if (!deferredSearchText) return true;
+    return workflow.name?.toLowerCase().includes(deferredSearchText)
+      || workflow.description?.toLowerCase().includes(deferredSearchText);
+  }), [workflows, deferredSearchText]);
+
+  // 运行中的编排（非模板）：受搜索 + 来源模板 + 视频源树影响
+  const instanceRows = useMemo(() => toolbarFilteredWorkflows.filter((workflow) => {
+    if (workflow.is_template) return false;
+    if (treeKey === 'all' || treeKey === 'templates') return true; // 'templates' 节点已移除，兜底按全部实例处理
     const workflowData = workflow.workflow_data || {};
     const sourceNode = workflowData.nodes?.find((node: any) => node.type === 'source');
     const sourceId = workflow.video_source_id ?? sourceNode?.dataId;
-    if (treeKey === 'unbound') return !workflow.is_template && (sourceId == null || sourceId === '');
-    return !workflow.is_template && Number(sourceId) === Number(treeKey.split(':')[1]);
+    if (treeKey === 'unbound') return sourceId == null || sourceId === '';
+    return Number(sourceId) === Number(treeKey.split(':')[1]);
   }), [toolbarFilteredWorkflows, treeKey]);
 
   const selectedWorkflows = useMemo(() => {
@@ -94,13 +104,14 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   }, [selectedRowKeys, workflows]);
 
   const selectableFilteredIds = useMemo(
-    () => filteredWorkflows.filter((workflow) => !workflow.is_template).map((workflow) => workflow.id),
-    [filteredWorkflows],
+    () => instanceRows.map((workflow) => workflow.id),
+    [instanceRows],
   );
 
   useEffect(() => {
     setSelectedRowKeys([]);
     setCurrentPage(1);
+    setTemplatePage(1);
   }, [deferredSearchText, filterTemplate, treeKey]);
 
   const handleBatchActivate = () => {
@@ -344,7 +355,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
 
   const tree = (
     <WorkflowSourceTree
-      workflows={toolbarFilteredWorkflows}
+      workflows={toolbarFilteredWorkflows.filter((workflow) => !workflow.is_template)}
       videoSources={videoSources}
       selectedKey={treeKey}
       onSelect={handleTreeSelect}
@@ -357,7 +368,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
       <section className="workflow-table-wrapper">
         <AppToolbar
           className="filter-bar"
-          summary={<span className="filter-info">显示 <span className="filter-count">{filteredWorkflows.length}</span> 个算法编排</span>}
+          summary={<span className="filter-info">运行编排 <span className="filter-count">{instanceRows.length}</span> 个 · 模板 <span className="filter-count">{templateRows.length}</span> 个</span>}
           actions={(
             <Search
               placeholder="搜索名称或描述"
@@ -388,45 +399,80 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
           </div>
         </AppToolbar>
 
-        {selectedRowKeys.length > 0 ? (
-          <div className="batch-action-bar" role="region" aria-label="批量操作">
-            <div className="batch-action-bar__selection">
-              <span>已选择 <strong>{selectedRowKeys.length}</strong> 个编排</span>
-              {selectedRowKeys.length < selectableFilteredIds.length ? (
-                <Button type="link" size="small" onClick={() => setSelectedRowKeys(selectableFilteredIds)}>选择筛选出的全部 {selectableFilteredIds.length} 条</Button>
-              ) : selectableFilteredIds.length > 0 ? <span className="batch-action-bar__all">已选择全部筛选结果</span> : null}
+        <section className="workflow-table-section">
+          <div className="workflow-section-header">
+            <div className="workflow-section-header__title">
+              <FileTextOutlined />
+              <span>编排模板</span>
             </div>
-            <Space size="small" wrap>
-              {onBatchConfig ? <Button type="primary" size="small" icon={<ControlOutlined />} onClick={() => onBatchConfig(selectedWorkflows)}>批量配置</Button> : null}
-              <Button size="small" icon={<PlayCircleOutlined />} onClick={handleBatchActivate}>批量激活</Button>
-              <Button size="small" icon={<PauseCircleOutlined />} onClick={handleBatchDeactivate}>批量停用</Button>
-              <Button size="small" danger icon={<DeleteOutlined />} onClick={handleBatchDelete}>批量删除</Button>
-              <Button size="small" icon={<CloseOutlined />} onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-            </Space>
+            <span className="workflow-section-header__count">共 {templateRows.length} 个模板</span>
           </div>
-        ) : null}
+          <Table
+            dataSource={templateRows}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1550 }}
+            pagination={templateRows.length > pageSize ? {
+              current: templatePage,
+              pageSize,
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (page) => setTemplatePage(page),
+            } : false}
+            locale={{ emptyText: '暂无编排模板（新建算法编排时可选「编排模板」类型）' }}
+            className="workflow-table"
+          />
+        </section>
 
-        <Table
-          dataSource={filteredWorkflows}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          rowSelection={rowSelection}
-          rowClassName={(record) => record.is_template ? 'workflow-template-row' : ''}
-          scroll={{ x: 1550 }}
-          pagination={{
-            current: currentPage,
-            pageSize,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (page, size) => {
-              setCurrentPage(page);
-              setPageSize(size);
-            },
-          }}
-          className="workflow-table"
-        />
+        <section className="workflow-table-section">
+          <div className="workflow-section-header">
+            <div className="workflow-section-header__title">
+              <ApartmentOutlined />
+              <span>运行中的编排</span>
+            </div>
+            <span className="workflow-section-header__count">共 {instanceRows.length} 个编排</span>
+          </div>
+
+          {selectedRowKeys.length > 0 ? (
+            <div className="batch-action-bar" role="region" aria-label="批量操作">
+              <div className="batch-action-bar__selection">
+                <span>已选择 <strong>{selectedRowKeys.length}</strong> 个编排</span>
+                {selectedRowKeys.length < selectableFilteredIds.length ? (
+                  <Button type="link" size="small" onClick={() => setSelectedRowKeys(selectableFilteredIds)}>选择筛选出的全部 {selectableFilteredIds.length} 条</Button>
+                ) : selectableFilteredIds.length > 0 ? <span className="batch-action-bar__all">已选择全部筛选结果</span> : null}
+              </div>
+              <Space size="small" wrap>
+                {onBatchConfig ? <Button type="primary" size="small" icon={<ControlOutlined />} onClick={() => onBatchConfig(selectedWorkflows)}>批量配置</Button> : null}
+                <Button size="small" icon={<PlayCircleOutlined />} onClick={handleBatchActivate}>批量激活</Button>
+                <Button size="small" icon={<PauseCircleOutlined />} onClick={handleBatchDeactivate}>批量停用</Button>
+                <Button size="small" danger icon={<DeleteOutlined />} onClick={handleBatchDelete}>批量删除</Button>
+                <Button size="small" icon={<CloseOutlined />} onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+              </Space>
+            </div>
+          ) : null}
+
+          <Table
+            dataSource={instanceRows}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            rowSelection={rowSelection}
+            scroll={{ x: 1550 }}
+            pagination={{
+              current: currentPage,
+              pageSize,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (page, size) => {
+                setCurrentPage(page);
+                setPageSize(size);
+              },
+            }}
+            locale={{ emptyText: '暂无运行中的编排' }}
+            className="workflow-table"
+          />
+        </section>
       </section>
 
       <Drawer title="按视频源筛选" placement="left" width={300} open={sourceDrawerOpen} onClose={() => setSourceDrawerOpen(false)} className="workflow-tree-drawer">

@@ -407,3 +407,31 @@
   color: #8c8c8c;
   font-size: 14px;
 }
+
+/* 模板 / 运行编排 分区 */
+.workflow-table-section + .workflow-table-section {
+  border-top: 1px solid var(--app-line-soft);
+}
+
+.workflow-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--app-surface-muted);
+  border-bottom: 1px solid var(--app-line-soft);
+}
+
+.workflow-section-header__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.workflow-section-header__count {
+  font-size: 13px;
+  color: var(--app-text-muted);
+}
