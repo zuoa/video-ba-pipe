@@ -318,19 +318,19 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="平台不支持时自动降级，不阻止本地推理。">
                         <Switch />
                       </Form.Item>
-                      <Form.Item label="请求队列长度" name="queue_size" rules={[{ required: true, message: '请输入队列长度' }]}>
+                      <Form.Item label="请求队列长度" name="queue_size" rules={[{ required: sharedInferenceEnabled, message: '请输入队列长度' }]}>
                         <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="最大批量" name="batch_max_size" rules={[{ required: true, message: '请输入最大批量' }]}>
+                      <Form.Item label="最大批量" name="batch_max_size" rules={[{ required: sharedInferenceEnabled, message: '请输入最大批量' }]}>
                         <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="批量等待（毫秒）" name="batch_wait_ms" rules={[{ required: true, message: '请输入批量等待时间' }]}>
+                      <Form.Item label="批量等待（毫秒）" name="batch_wait_ms" rules={[{ required: sharedInferenceEnabled, message: '请输入批量等待时间' }]}>
                         <InputNumber min={0} max={1000} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="请求超时（秒）" name="request_timeout_seconds" rules={[{ required: true, message: '请输入请求超时' }]}>
+                      <Form.Item label="请求超时（秒）" name="request_timeout_seconds" rules={[{ required: sharedInferenceEnabled, message: '请输入请求超时' }]}>
                         <InputNumber min={1} max={1800} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="模型空闲回收（秒）" name="model_idle_seconds" rules={[{ required: true, message: '请输入空闲回收时间' }]}>
+                      <Form.Item label="模型空闲回收（秒）" name="model_idle_seconds" rules={[{ required: sharedInferenceEnabled, message: '请输入空闲回收时间' }]}>
                         <InputNumber min={10} max={86400} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
@@ -340,16 +340,16 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item label="启用内存准入" name="inference_admission_enabled" valuePropName="checked">
                         <Switch />
                       </Form.Item>
-                      <Form.Item label="保留内存（MB）" name="system_reserve_mb" rules={[{ required: true, message: '请输入保留内存' }]}>
+                      <Form.Item label="保留内存（MB）" name="system_reserve_mb" rules={[{ required: inferenceAdmissionEnabled, message: '请输入保留内存' }]}>
                         <InputNumber min={256} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="保留内存比例（%）" name="system_reserve_percent" extra="MB 与比例取较大值。" rules={[{ required: true, message: '请输入保留比例' }]}>
+                      <Form.Item label="保留内存比例（%）" name="system_reserve_percent" extra="MB 与比例取较大值。" rules={[{ required: inferenceAdmissionEnabled, message: '请输入保留比例' }]}>
                         <InputNumber min={0} max={50} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="新模型预估（MB）" name="new_model_default_mb" rules={[{ required: true, message: '请输入模型预估内存' }]}>
+                      <Form.Item label="新模型预估（MB）" name="new_model_default_mb" rules={[{ required: inferenceAdmissionEnabled, message: '请输入模型预估内存' }]}>
                         <InputNumber min={128} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="模型内存余量（%）" name="model_memory_margin_percent" rules={[{ required: true, message: '请输入模型内存余量' }]}>
+                      <Form.Item label="模型内存余量（%）" name="model_memory_margin_percent" rules={[{ required: inferenceAdmissionEnabled, message: '请输入模型内存余量' }]}>
                         <InputNumber min={0} max={100} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
@@ -359,16 +359,16 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item label="启用 OOM 熔断" name="oom_circuit_breaker_enabled" valuePropName="checked" extra="非 Linux/cgroup 平台自动降级。">
                         <Switch />
                       </Form.Item>
-                      <Form.Item label="熔断失败次数" name="oom_failure_threshold" rules={[{ required: true, message: '请输入失败次数' }]}>
+                      <Form.Item label="熔断失败次数" name="oom_failure_threshold" rules={[{ required: oomCircuitEnabled, message: '请输入失败次数' }]}>
                         <InputNumber min={1} max={100} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="熔断持续（秒）" name="oom_circuit_open_seconds" rules={[{ required: true, message: '请输入熔断时间' }]}>
+                      <Form.Item label="熔断持续（秒）" name="oom_circuit_open_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入熔断时间' }]}>
                         <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="稳定恢复（秒）" name="oom_stable_reset_seconds" rules={[{ required: true, message: '请输入恢复时间' }]}>
+                      <Form.Item label="稳定恢复（秒）" name="oom_stable_reset_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入恢复时间' }]}>
                         <InputNumber min={60} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="最大退避（秒）" name="oom_restart_backoff_max_seconds" rules={[{ required: true, message: '请输入最大退避时间' }]}>
+                      <Form.Item label="最大退避（秒）" name="oom_restart_backoff_max_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入最大退避时间' }]}>
                         <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
@@ -420,7 +420,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="录像帧率（FPS）"
                         name="recording_fps"
-                        rules={[{ required: true, message: '请输入录像帧率' }]}
+                        rules={[{ required: recordingEnabled, message: '请输入录像帧率' }]}
                       >
                         <InputNumber min={1} max={30} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -428,7 +428,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="告警前录像（秒）"
                         name="pre_alert_seconds"
-                        rules={[{ required: true, message: '请输入告警前录像时长' }]}
+                        rules={[{ required: recordingEnabled, message: '请输入告警前录像时长' }]}
                       >
                         <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -436,7 +436,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="告警后录像（秒）"
                         name="post_alert_seconds"
-                        rules={[{ required: true, message: '请输入告警后录像时长' }]}
+                        rules={[{ required: recordingEnabled, message: '请输入告警后录像时长' }]}
                       >
                         <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -760,7 +760,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="统计窗口（分钟）"
                         name="alert_growth_window_minutes"
-                        rules={[{ required: true, message: '请输入统计窗口' }]}
+                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: '请输入统计窗口' }]}
                       >
                         <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -768,7 +768,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="窗口告警阈值（条）"
                         name="alert_growth_threshold"
-                        rules={[{ required: true, message: '请输入告警阈值' }]}
+                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: '请输入告警阈值' }]}
                       >
                         <InputNumber min={1} max={1000000} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -776,7 +776,7 @@ const SystemSettingsPage: React.FC = () => {
                       <Form.Item
                         label="相同事件冷却（分钟）"
                         name="cooldown_minutes"
-                        rules={[{ required: true, message: '请输入通知冷却时间' }]}
+                        rules={[{ required: opsEnabled, message: '请输入通知冷却时间' }]}
                       >
                         <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -813,7 +813,7 @@ const SystemSettingsPage: React.FC = () => {
                     <Form.Item
                       label="每批检测路数"
                       name="batch_size"
-                      rules={[{ required: true, message: '请输入每批检测路数' }]}
+                      rules={[{ required: rotationEnabled, message: '请输入每批检测路数' }]}
                     >
                       <InputNumber min={1} precision={0} disabled={!rotationEnabled} style={{ width: '100%' }} />
                     </Form.Item>
@@ -822,7 +822,7 @@ const SystemSettingsPage: React.FC = () => {
                       label="单批检测时长（秒）"
                       name="dwell_seconds"
                       extra="最短 10 秒；RTSP 建链和模型加载时间不计入检测时长。"
-                      rules={[{ required: true, message: '请输入单批检测时长' }]}
+                      rules={[{ required: rotationEnabled, message: '请输入单批检测时长' }]}
                     >
                       <InputNumber min={10} precision={0} disabled={!rotationEnabled} style={{ width: '100%' }} />
                     </Form.Item>
