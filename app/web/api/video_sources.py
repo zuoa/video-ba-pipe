@@ -1,6 +1,23 @@
 from flask import jsonify, request
 from app.core.database_models import VideoSource
 from app.core.video_probe import normalize_video_codec
+from app.core.mediamtx_client import mediamtx_client
+
+
+def _sync_mediamtx_create(source):
+    """创建/更新视频源后，尽力同步 MediaMTX 按需拉流路径（失败不影响业务）。"""
+    try:
+        mediamtx_client.register_path(source.source_code, source.source_url)
+    except Exception as e:
+        app.logger.warning(f"MediaMTX 注册路径失败（忽略）source={source.source_code}: {e}")
+
+
+def _sync_mediamtx_delete(source_code):
+    """删除视频源后，尽力注销 MediaMTX 路径（失败不影响业务）。"""
+    try:
+        mediamtx_client.unregister_path(source_code)
+    except Exception as e:
+        app.logger.warning(f"MediaMTX 注销路径失败（忽略）source={source_code}: {e}")
 
 
 def register_video_sources_api(app):
@@ -64,6 +81,7 @@ def register_video_sources_api(app):
                 status=data.get('status', 'STOPPED'),
                 decoder_pid=data.get('decoder_pid')
             )
+            _sync_mediamtx_create(source)
             return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
         except Exception as e:
             return jsonify({'error': str(e)}), 400
@@ -75,6 +93,7 @@ def register_video_sources_api(app):
             data = request.json
             source.name = data.get('name', source.name)
             source.enabled = data.get('enabled', source.enabled)
+            previous_source_code = source.source_code
             source.source_code = data.get('source_code', source.source_code)
             previous_source_url = source.source_url
             source.source_url = data.get('source_url', source.source_url)
@@ -91,7 +110,13 @@ def register_video_sources_api(app):
             source.status = data.get('status', source.status)
             source.decoder_pid = data.get('decoder_pid', source.decoder_pid)
             source.save()
-            
+
+            # 同步 MediaMTX：source_code 变更则注销旧路径；code 或 url 变更则注册新路径
+            if source.source_code != previous_source_code:
+                _sync_mediamtx_delete(previous_source_code)
+            if source.source_code != previous_source_code or source.source_url != previous_source_url:
+                _sync_mediamtx_create(source)
+
             return jsonify({'message': '视频源更新成功'})
         except VideoSource.DoesNotExist:
             return jsonify({'error': '视频源不存在'}), 404
@@ -100,7 +125,9 @@ def register_video_sources_api(app):
     def delete_video_source(id):
         try:
             source = VideoSource.get_by_id(id)
+            deleted_source_code = source.source_code
             source.delete_instance(recursive=True)
+            _sync_mediamtx_delete(deleted_source_code)
             return jsonify({'message': '视频源删除成功'})
         except VideoSource.DoesNotExist:
             return jsonify({'error': '视频源不存在'}), 404

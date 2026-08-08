@@ -557,6 +557,15 @@ export async function getSourceHealth(id: number) {
   return request(`/api/video-sources/${id}/health`);
 }
 
+// ===== 实时预览（WebRTC / MediaMTX + 最新检测帧）=====
+export async function getPreviewConfig() {
+  return request('/api/preview/config');
+}
+
+export async function ensurePreviewPath(sourceId: number) {
+  return request(`/api/preview/ensure/${sourceId}`, { method: 'POST' });
+}
+
 export async function getSourceImportProviders() {
   return request('/api/source-import/providers');
 }

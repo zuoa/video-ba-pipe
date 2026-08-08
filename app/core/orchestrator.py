@@ -96,6 +96,7 @@ from app.core.source_rotation import (
     get_source_rotation_config,
     normalize_source_rotation_config,
 )
+from app.core.mediamtx_client import mediamtx_client
 from app.core.video_probe import (
     VideoCodecProbeError,
     normalize_video_codec,
@@ -217,6 +218,8 @@ class Orchestrator:
         self.desired_source_ids = set()
         self.recording_config = get_recording_storage_config()
         self.last_recording_config_refresh_at = 0.0
+        # MediaMTX 路径周期同步节流时间戳
+        self._last_mediamtx_sync_at = 0.0
 
         # 重启退避状态: source_id -> {'failures', 'fail_class', 'next_retry_at'}
         self.source_backoff = {}
@@ -1599,10 +1602,48 @@ class Orchestrator:
 
         self._finalize_source_stop(source)
 
+    def _maybe_sync_mediamtx_paths(self, now: float):
+        """周期性（约 60s）把 DB 中所有启用视频源同步到 MediaMTX，保证其重启后状态自愈。
+
+        - MediaMTX 未启用/不可达时为 no-op。
+        - 注册的是按需拉流路径(sourceOnDemand)，本身不触发拉流。
+        """
+        if now - self._last_mediamtx_sync_at < 60.0:
+            return
+        self._last_mediamtx_sync_at = now
+        if not mediamtx_client.enabled or not mediamtx_client.is_available():
+            return
+        try:
+            desired = {
+                s.source_code: s.source_url
+                for s in VideoSource.select().where(
+                    (VideoSource.enabled == True) & (VideoSource.source_code.is_null(False))
+                )
+                if s.source_code
+            }
+        except Exception as exc:
+            logger.warning(f"[Orchestrator] 读取视频源列表用于 MediaMTX 同步失败: {exc}")
+            return
+
+        # 注册/更新
+        for code, url in desired.items():
+            mediamtx_client.register_path(code, url)
+        # 清理 DB 中已不存在的路径
+        try:
+            existing = set(mediamtx_client.list_path_names())
+        except Exception:
+            existing = set()
+        for code in existing - set(desired.keys()):
+            # 跳过 MediaMTX 内置/兜底路径
+            if code in ('all_others', 'all', 'any', 'oproxy'):
+                continue
+            mediamtx_client.unregister_path(code)
+
     def manage_sources(self):
         self._poll_draining_sources()
         now = time.monotonic()
         self._refresh_recording_config(now)
+        self._maybe_sync_mediamtx_paths(now)
         self.desired_source_ids = self._update_rotation_schedule(now)
 
         # 启动限流:每个周期最多启动 SOURCE_MAX_CONCURRENT_STARTS 个源，

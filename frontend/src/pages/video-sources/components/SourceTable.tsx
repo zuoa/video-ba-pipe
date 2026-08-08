@@ -4,7 +4,7 @@ import Button from '@/components/common/AppButton';
 import {
   EditOutlined,
   DeleteOutlined,
-  EyeOutlined,
+  CameraOutlined,
   VideoCameraOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -17,6 +17,8 @@ export interface SourceTableProps {
   onEdit: (source: any) => void;
   onDelete: (id: number) => void;
   onPreview: (source: any) => void;
+  onLivePreview: (source: any) => void;
+  webrtcEnabled: boolean;
   onRefreshStatus: (source: any) => void;
   refreshingId: number | null;
 }
@@ -27,6 +29,8 @@ const SourceTable: React.FC<SourceTableProps> = ({
   onEdit,
   onDelete,
   onPreview,
+  onLivePreview,
+  webrtcEnabled,
   onRefreshStatus,
   refreshingId,
 }) => {
@@ -107,15 +111,30 @@ const SourceTable: React.FC<SourceTableProps> = ({
               {record.source_code}
             </div>
           </div>
-          <Button
-            type="text"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => onPreview(record)}
-            className="preview-btn"
-          >
-            预览
-          </Button>
+          <div className="source-preview-actions">
+            <Tooltip title="WebRTC 实时画面（按需拉流）">
+              <Button
+                type="text"
+                size="small"
+                icon={<VideoCameraOutlined />}
+                onClick={() => onLivePreview(record)}
+                className="live-preview-btn"
+                disabled={!webrtcEnabled}
+              >
+                <span className="live-label">实时预览</span>
+                {webrtcEnabled && <span className="live-dot" />}
+              </Button>
+            </Tooltip>
+            <Button
+              type="text"
+              size="small"
+              icon={<CameraOutlined />}
+              onClick={() => onPreview(record)}
+              className="detection-frame-btn"
+            >
+              最新检测帧
+            </Button>
+          </div>
         </div>
       ),
     },

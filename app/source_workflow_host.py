@@ -23,6 +23,7 @@ from app.config import (
     VIDEO_FRAME_PIXEL_FORMAT,
     WORKFLOW_ZERO_COPY_FRAMES,
     SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS,
+    DETECTION_SNAPSHOT_SAVE_PATH,
 )
 from app.core.database_models import VideoSource, Workflow
 from app.core.ringbuffer import VideoRingBuffer
@@ -45,12 +46,14 @@ class WorkflowRunner:
         executor: WorkflowExecutor,
         node_executor=None,
         max_consecutive_errors: int = WORKFLOW_MAX_CONSECUTIVE_ERRORS,
+        source_code: str = None,
     ):
         self.workflow = workflow
         self.workflow_id = workflow.id
         self.executor = executor
         self.node_executor = node_executor
         self.max_consecutive_errors = max_consecutive_errors
+        self.source_code = source_code
         self._condition = threading.Condition()
         self._pending_frame = None
         self._pending_timestamp = None
@@ -128,6 +131,7 @@ class WorkflowRunner:
                     frame_nv12,
                     frame_timestamp,
                     executor=self.node_executor,
+                    source_code=self.source_code,
                 )
                 self._consecutive_errors = 0
             except Exception as exc:
@@ -197,7 +201,12 @@ class SourceWorkflowHost:
             self._schedule_workflow_retry(workflow, exc)
             return False
 
-        runner = WorkflowRunner(workflow, executor, node_executor=self.node_executor)
+        runner = WorkflowRunner(
+            workflow,
+            executor,
+            node_executor=self.node_executor,
+            source_code=self.source.source_code,
+        )
         runner.start()
         self.runners[workflow_id] = runner
         self.failed_workflows.pop(workflow_id, None)
@@ -409,6 +418,17 @@ class SourceWorkflowHost:
                     exc_info=True,
                 )
             self.node_executor = None
+
+        # 源 host 停止后删除「最新检测帧」快照，让前端干净地回退到原始快照。
+        try:
+            code = self.source.source_code
+            safe_code = "".join(c for c in str(code) if c not in ('/', '\\', '\x00')).strip()
+            if safe_code:
+                snap = os.path.join(DETECTION_SNAPSHOT_SAVE_PATH, f"{safe_code}.jpg")
+                if os.path.exists(snap):
+                    os.remove(snap)
+        except Exception as exc:
+            logger.debug(f"[SourceHost:{self.source_id}] 清理检测帧快照失败（忽略）: {exc}")
 
     def signal_handler(self, signum, frame):
         logger.info(f"[SourceHost:{self.source_id}] 收到信号 {signum}，准备停止")

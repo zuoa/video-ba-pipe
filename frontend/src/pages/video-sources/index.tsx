@@ -12,12 +12,16 @@ import {
   updateVideoSource,
   deleteVideoSource,
   getSourceHealth,
+  getPreviewConfig,
+  ensurePreviewPath,
 } from '@/services/api';
-import { PageHeader, ImagePreview, useAppConfirm } from '@/components/common';
+import { PageHeader, useAppConfirm } from '@/components/common';
 import SourceForm from './components/SourceForm';
 import ImportSourcesModal from './components/ImportSourcesModal';
 import SourceTable from './components/SourceTable';
 import SourceHealthModal from './components/SourceHealthModal';
+import DetectionFrameModal from './components/DetectionFrameModal';
+import WebRtcPreviewModal from './components/WebRtcPreviewModal';
 import './index.css';
 
 export default function VideoSources() {
@@ -26,12 +30,29 @@ export default function VideoSources() {
   const [modalVisible, setModalVisible] = useState(false);
   const [importVisible, setImportVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [livePreviewVisible, setLivePreviewVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<any>(null);
   const [previewSource, setPreviewSource] = useState<any>(null);
+  const [livePreviewSource, setLivePreviewSource] = useState<any>(null);
+  const [previewConfig, setPreviewConfig] = useState<any>({ webrtc_enabled: false });
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const [healthModalVisible, setHealthModalVisible] = useState(false);
   const [healthDetail, setHealthDetail] = useState<any>(null);
   const confirmAction = useAppConfirm();
+
+  const loadPreviewConfig = useCallback(async () => {
+    try {
+      const cfg = await getPreviewConfig();
+      setPreviewConfig(cfg || { webrtc_enabled: false });
+    } catch (error) {
+      // 拉取失败时保持禁用，不弹错误打扰用户
+      setPreviewConfig({ webrtc_enabled: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPreviewConfig();
+  }, [loadPreviewConfig]);
 
   const loadSources = useCallback(async () => {
     setLoading(true);
@@ -105,6 +126,21 @@ export default function VideoSources() {
     setPreviewVisible(true);
   };
 
+  const handleLivePreview = async (source: any) => {
+    if (!previewConfig?.webrtc_enabled) {
+      message.warning('未启用 WebRTC 实时预览，请在系统配置中开启 MediaMTX');
+      return;
+    }
+    setLivePreviewSource(source);
+    setLivePreviewVisible(true);
+    // 懒注册兜底：确保 MediaMTX 已有该源的按需拉流路径
+    try {
+      await ensurePreviewPath(source.id);
+    } catch (error) {
+      // 注册失败不强制关闭，播放器内会给出连接错误
+    }
+  };
+
   const handleRefreshStatus = async (source: any) => {
     setRefreshingId(source.id);
     try {
@@ -157,6 +193,8 @@ export default function VideoSources() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onPreview={handlePreview}
+        onLivePreview={handleLivePreview}
+        webrtcEnabled={!!previewConfig?.webrtc_enabled}
         onRefreshStatus={handleRefreshStatus}
         refreshingId={refreshingId}
       />
@@ -174,11 +212,18 @@ export default function VideoSources() {
         onImported={loadSources}
       />
 
-      <ImagePreview
-        visible={previewVisible}
-        src={`/api/image/snapshots/${previewSource?.source_code}.jpg`}
-        title={previewSource?.name}
+      <DetectionFrameModal
+        open={previewVisible}
+        sourceCode={previewSource?.source_code}
+        name={previewSource?.name}
         onClose={() => setPreviewVisible(false)}
+      />
+
+      <WebRtcPreviewModal
+        open={livePreviewVisible}
+        source={livePreviewSource}
+        previewConfig={previewConfig}
+        onClose={() => setLivePreviewVisible(false)}
       />
 
       <SourceHealthModal
