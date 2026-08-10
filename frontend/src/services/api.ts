@@ -538,6 +538,16 @@ export async function testAlgorithm(algorithmId: number, file: File) {
   });
 }
 
+export async function previewCascadeAlgorithm(cascadeConfig: unknown, file: File) {
+  const formData = new FormData();
+  formData.append('cascade_config', JSON.stringify(cascadeConfig));
+  formData.append('image', file);
+  return request('/api/algorithms/cascade/preview', {
+    method: 'POST',
+    data: formData,
+  });
+}
+
 export async function testAlgorithmWithBase64(algorithmId: number, base64Image: string) {
   // 将 base64 转换为 blob
   const response = await fetch(base64Image);

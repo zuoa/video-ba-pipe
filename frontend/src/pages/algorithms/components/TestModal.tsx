@@ -104,6 +104,17 @@ interface TestResponse {
       detection_groups: number;
       model_names: string[];
     };
+    cascade_checked?: boolean;
+    completed_paths?: number;
+    stage_debug?: Array<{
+      stage_id: string;
+      stage_name: string;
+      status: string;
+      input_count: number;
+      detection_count: number;
+      inference_time_ms: number;
+      error_count: number;
+    }>;
     vl_checked?: boolean;
     vl_reason?: string;
     vl_model?: string;
@@ -389,14 +400,22 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
             }>
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="算法名称">{algorithm.name}</Descriptions.Item>
-                <Descriptions.Item label="算法类型">{algorithm.algorithm_type === 'vl' ? 'VL 语义算法' : '脚本算法'}</Descriptions.Item>
+                <Descriptions.Item label="算法类型">
+                  {algorithm.algorithm_type === 'vl'
+                    ? 'VL 语义算法'
+                    : algorithm.algorithm_type === 'ocr'
+                      ? 'OCR 算法'
+                      : algorithm.algorithm_type === 'cascade'
+                        ? '多阶段检测'
+                        : '脚本算法'}
+                </Descriptions.Item>
                 {algorithm.algorithm_type === 'vl' ? (
                   <Descriptions.Item label="VL 模型">{algorithm.vl_config?.model_name || '-'}</Descriptions.Item>
                 ) : null}
                 <Descriptions.Item label="标签名称">{algorithm.label_name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="检测间隔">{algorithm.interval_seconds} 秒</Descriptions.Item>
                 <Descriptions.Item label="运行超时">{algorithm.runtime_timeout || 30} 秒</Descriptions.Item>
-                {algorithm.algorithm_type === 'vl' ? null : (
+                {algorithm.algorithm_type === 'vl' || algorithm.algorithm_type === 'cascade' ? null : (
                   <Descriptions.Item label="内存限制">{algorithm.memory_limit_mb || 512} MB</Descriptions.Item>
                 )}
               </Descriptions>
@@ -669,6 +688,32 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                       )}
                                     </>
                                   )}
+
+                                  {testResult.metadata.stage_debug?.length ? (
+                                    <>
+                                      <Divider style={{ margin: '12px 0' }}>级联阶段</Divider>
+                                      <Space direction="vertical" style={{ width: '100%' }}>
+                                        {testResult.metadata.stage_debug.map((stage, index) => (
+                                          <Card key={stage.stage_id} size="small">
+                                            <Descriptions size="small" column={2}>
+                                              <Descriptions.Item label={`阶段 ${index + 1}`}>
+                                                {stage.stage_name}
+                                              </Descriptions.Item>
+                                              <Descriptions.Item label="状态">
+                                                <Tag color={stage.status === 'ok' ? 'success' : stage.status === 'failed' ? 'error' : 'warning'}>
+                                                  {stage.status}
+                                                </Tag>
+                                              </Descriptions.Item>
+                                              <Descriptions.Item label="输入候选">{stage.input_count}</Descriptions.Item>
+                                              <Descriptions.Item label="命中目标">{stage.detection_count}</Descriptions.Item>
+                                              <Descriptions.Item label="耗时">{stage.inference_time_ms} ms</Descriptions.Item>
+                                              <Descriptions.Item label="失败候选">{stage.error_count}</Descriptions.Item>
+                                            </Descriptions>
+                                          </Card>
+                                        ))}
+                                      </Space>
+                                    </>
+                                  ) : null}
                                 </div>
                               )
                             }

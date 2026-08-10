@@ -75,6 +75,11 @@
   box-shadow: 0 2px 8px rgba(19, 194, 194, 0.3);
 }
 
+.algorithm-icon.algorithm-icon-cascade {
+  color: #b45309;
+  background: #fef3c7;
+}
+
 .algorithm-content {
   flex: 1;
   min-width: 0;

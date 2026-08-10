@@ -546,7 +546,7 @@ class WorkflowExecutor:
                         full_config.update(algo.config_dict)
 
                         algorithm_type = algo.ext_config.get('algorithm_type') or 'script'
-                        if algorithm_type in ('vl', 'ocr'):
+                        if algorithm_type in ('vl', 'ocr', 'cascade'):
                             full_config.update(algo.ext_config)
 
                         # 合并节点配置（用户在工作流编辑器中配置的，如 models 等）
@@ -566,6 +566,9 @@ class WorkflowExecutor:
                         elif algorithm_type == 'ocr':
                             from app.plugins.ocr_algorithm import OCRAlgorithm
                             self.algorithms[node_id] = OCRAlgorithm(full_config)
+                        elif algorithm_type == 'cascade':
+                            from app.plugins.cascade_algorithm import CascadeAlgorithm
+                            self.algorithms[node_id] = CascadeAlgorithm(full_config)
                         else:
                             self.algorithms[node_id] = ScriptAlgorithm(full_config)
 

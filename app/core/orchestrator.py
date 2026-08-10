@@ -725,6 +725,11 @@ class Orchestrator:
                 return
 
         add(config.get('model_id'))
+        cascade_config = config.get('cascade_config')
+        if isinstance(cascade_config, dict):
+            for stage in cascade_config.get('stages') or []:
+                if isinstance(stage, dict):
+                    add(stage.get('model_id'))
         models = config.get('models')
         if isinstance(models, list):
             for item in models:
@@ -735,6 +740,28 @@ class Orchestrator:
                 if isinstance(item, dict):
                     add(item.get('model_id') or item.get('id'))
         return tuple(model_ids)
+
+    @classmethod
+    def _model_occurrences_from_algorithm_config(cls, config) -> tuple:
+        """Return model occurrences with per-stage inference overrides."""
+        if not isinstance(config, dict):
+            return ()
+        cascade_config = config.get('cascade_config')
+        if isinstance(cascade_config, dict):
+            occurrences = []
+            for stage in cascade_config.get('stages') or []:
+                if not isinstance(stage, dict):
+                    continue
+                try:
+                    model_id = int(stage.get('model_id'))
+                except (TypeError, ValueError):
+                    continue
+                occurrences.append((model_id, dict(stage.get('inference') or {})))
+            return tuple(occurrences)
+        return tuple(
+            (model_id, None)
+            for model_id in cls._model_ids_from_algorithm_config(config)
+        )
 
     @staticmethod
     def _algorithm_id_from_node(node) -> Optional[int]:
@@ -753,13 +780,25 @@ class Orchestrator:
                 continue
         return None
 
-    def _model_uses_shared_ultralytics(self, algorithm, config, model_id: int) -> bool:
+    def _model_uses_shared_ultralytics(
+        self,
+        algorithm,
+        config,
+        model_id: int,
+        inference_config=None,
+    ) -> bool:
         if self.shared_inference_service is None:
             return False
+        ext_config = getattr(algorithm, 'ext_config', {}) or {}
+        algorithm_type = ext_config.get('algorithm_type') or 'script'
         normalized_script = str(algorithm.script_path or '').replace('\\', '/').lstrip('./')
         # Only scripts known to call create_backend are share-compatible. Direct
         # ultralytics.YOLO user scripts remain local and are budgeted per host.
-        if normalized_script != 'templates/adaptive_yolo_detector.py':
+        if algorithm_type == 'cascade':
+            if not isinstance(inference_config, dict):
+                return False
+            config = inference_config
+        elif normalized_script != 'templates/adaptive_yolo_detector.py':
             return False
         backend = str(config.get('backend') or 'auto').strip().lower()
         if backend in ('rknn', 'onnxruntime'):
@@ -794,13 +833,20 @@ class Orchestrator:
                 # Match WorkflowExecutor: algorithm config first, then node config
                 # overrides it. This is the effective model selection at runtime.
                 effective_config = dict(algorithm.config_dict)
+                ext_config = getattr(algorithm, 'ext_config', {}) or {}
+                algorithm_type = ext_config.get('algorithm_type') or 'script'
+                if algorithm_type in ('vl', 'ocr', 'cascade'):
+                    effective_config.update(ext_config)
                 node_config = node.get('config')
                 if isinstance(node_config, dict):
                     effective_config.update(node_config)
-                model_ids = self._model_ids_from_algorithm_config(effective_config)
-                for model_id in model_ids:
+                model_occurrences = self._model_occurrences_from_algorithm_config(effective_config)
+                for model_id, inference_config in model_occurrences:
                     if self._model_uses_shared_ultralytics(
-                        algorithm, effective_config, model_id
+                        algorithm,
+                        effective_config,
+                        model_id,
+                        inference_config=inference_config,
                     ):
                         shared_model_ids.add(model_id)
                     else:

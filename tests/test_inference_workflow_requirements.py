@@ -14,9 +14,10 @@ class FakeWorkflow:
 
 
 class FakeAlgorithm:
-    def __init__(self, script_path, config):
+    def __init__(self, script_path, config, ext_config=None):
         self.script_path = script_path
         self.config_dict = config
+        self.ext_config = ext_config or {}
 
 
 class FakeModel:
@@ -107,6 +108,41 @@ def test_adaptive_local_backend_is_not_assumed_shared(monkeypatch):
 
     assert shared == set()
     assert local == (8,)
+
+
+def test_cascade_repeated_model_is_budgeted_per_stage_backend(monkeypatch):
+    cascade_config = {
+        "stages": [
+            {"id": "first", "model_id": 9, "inference": {"backend": "ultralytics"}},
+            {"id": "second", "model_id": 9, "inference": {"backend": "auto"}},
+        ]
+    }
+    algorithms = {
+        3: FakeAlgorithm(
+            "",
+            {},
+            ext_config={"algorithm_type": "cascade", "cascade_config": cascade_config},
+        ),
+    }
+    models = {9: FakeModel(9, path="/models/model.onnx", framework="onnx")}
+    monkeypatch.setattr(
+        orchestrator_module.Algorithm,
+        "get_by_id",
+        lambda algorithm_id: algorithms[algorithm_id],
+    )
+    monkeypatch.setattr(
+        orchestrator_module.MLModel,
+        "get_by_id",
+        lambda model_id: models[model_id],
+    )
+    workflow = FakeWorkflow([
+        {"id": "algorithm-1", "type": "algorithm", "dataId": 3}
+    ])
+
+    shared, local = _orchestrator()._workflow_model_requirements([workflow])
+
+    assert shared == {9}
+    assert local == (9,)
 
 
 def test_jetson_api_keeps_worker_local_shared_socket_disabled():

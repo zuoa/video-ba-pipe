@@ -76,6 +76,10 @@ from app.core.dingtalk_notifier import (
 )
 from app.core.vl_algorithm_config import normalize_vl_algorithm_config
 from app.core.ocr_algorithm_config import normalize_ocr_algorithm_config
+from app.core.cascade_algorithm_config import (
+    cascade_model_ids,
+    normalize_cascade_algorithm_config,
+)
 from app.core.ocr_runtime import get_ocr_runtime_status, is_ocr_runtime_available
 from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
@@ -172,6 +176,27 @@ def serialize_algorithm(algorithm):
         'runtime_available': algorithm_type != 'ocr' or is_ocr_runtime_available(),
         **ext_config,
     }
+
+
+def _create_algorithm_instance(algorithm_type, full_config):
+    if algorithm_type == 'vl':
+        from app.plugins.vl_algorithm import VLAlgorithm
+        return VLAlgorithm(full_config)
+    if algorithm_type == 'ocr':
+        from app.plugins.ocr_algorithm import OCRAlgorithm
+        return OCRAlgorithm(full_config)
+    if algorithm_type == 'cascade':
+        from app.plugins.cascade_algorithm import CascadeAlgorithm
+        return CascadeAlgorithm(full_config)
+    from app.plugins.script_algorithm import ScriptAlgorithm
+    return ScriptAlgorithm(full_config)
+
+
+def _encode_bgr_jpeg(image):
+    encoded, buffer = cv2.imencode('.jpg', image)
+    if not encoded:
+        raise RuntimeError('无法编码测试结果图片')
+    return f"data:image/jpeg;base64,{base64.b64encode(buffer.tobytes()).decode('utf-8')}"
 
 
 def _bump_active_workflows_for_algorithm(algorithm_id):
@@ -614,8 +639,8 @@ def create_algorithm():
         if not data.get('name'):
             return jsonify({'error': '缺少必填字段: name'}), 400
         algorithm_type = str(data.get('algorithm_type') or 'script').strip().lower()
-        if algorithm_type not in ('script', 'vl', 'ocr'):
-            return jsonify({'error': 'algorithm_type 仅支持 script、vl 或 ocr'}), 400
+        if algorithm_type not in ('script', 'vl', 'ocr', 'cascade'):
+            return jsonify({'error': 'algorithm_type 仅支持 script、vl、ocr 或 cascade'}), 400
         if algorithm_type == 'ocr' and not is_ocr_runtime_available():
             _, runtime_error = get_ocr_runtime_status()
             return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
@@ -642,6 +667,12 @@ def create_algorithm():
         elif algorithm_type == 'ocr':
             ext_config['plugin_module'] = 'ocr_algorithm'
             ext_config['ocr_config'] = normalize_ocr_algorithm_config(data.get('ocr_config'))
+        elif algorithm_type == 'cascade':
+            ext_config['plugin_module'] = 'cascade_algorithm'
+            ext_config['cascade_config'] = normalize_cascade_algorithm_config(
+                data.get('cascade_config')
+            )
+            ext_config['model_ids'] = list(cascade_model_ids(ext_config['cascade_config']))
 
         # 创建算法
         algorithm = Algorithm.create(
@@ -678,8 +709,8 @@ def update_algorithm(id):
             ext_config = {}
         current_type = ext_config.get('algorithm_type') or 'script'
         algorithm_type = str(data.get('algorithm_type') or current_type).strip().lower()
-        if algorithm_type not in ('script', 'vl', 'ocr'):
-            return jsonify({'error': 'algorithm_type 仅支持 script、vl 或 ocr'}), 400
+        if algorithm_type not in ('script', 'vl', 'ocr', 'cascade'):
+            return jsonify({'error': 'algorithm_type 仅支持 script、vl、ocr 或 cascade'}), 400
         if algorithm_type == 'ocr' and not is_ocr_runtime_available():
             _, runtime_error = get_ocr_runtime_status()
             return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
@@ -717,6 +748,9 @@ def update_algorithm(id):
             ext_config['plugin_module'] = data.get('plugin_module') or 'script_algorithm'
             ext_config.pop('vl_config', None)
             ext_config.pop('ocr_config', None)
+            ext_config.pop('cascade_config', None)
+            if current_type == 'cascade' and 'model_ids' not in data:
+                ext_config.pop('model_ids', None)
         elif algorithm_type == 'vl':
             current_vl_config = ext_config.get('vl_config') if current_type == 'vl' else None
             ext_config['plugin_module'] = 'vl_algorithm'
@@ -726,7 +760,9 @@ def update_algorithm(id):
             )
             algorithm.script_path = ''
             ext_config.pop('ocr_config', None)
-        else:
+            ext_config.pop('cascade_config', None)
+            ext_config.pop('model_ids', None)
+        elif algorithm_type == 'ocr':
             current_ocr_config = ext_config.get('ocr_config') if current_type == 'ocr' else None
             ext_config['plugin_module'] = 'ocr_algorithm'
             ext_config['ocr_config'] = normalize_ocr_algorithm_config(
@@ -734,7 +770,20 @@ def update_algorithm(id):
                 current=current_ocr_config,
             )
             ext_config.pop('vl_config', None)
+            ext_config.pop('cascade_config', None)
+            ext_config.pop('model_ids', None)
+        else:
+            current_cascade_config = ext_config.get('cascade_config') if current_type == 'cascade' else None
+            ext_config['plugin_module'] = 'cascade_algorithm'
+            ext_config['cascade_config'] = normalize_cascade_algorithm_config(
+                data.get('cascade_config'),
+                current=current_cascade_config,
+            )
+            ext_config['model_ids'] = list(cascade_model_ids(ext_config['cascade_config']))
             algorithm.script_path = ''
+            algorithm.script_config = '{}'
+            ext_config.pop('vl_config', None)
+            ext_config.pop('ocr_config', None)
 
         algorithm.ext_config_json = json.dumps(ext_config)
         algorithm.updated_at = datetime.now()
@@ -785,6 +834,7 @@ def test_algorithm():
         if not algorithm_id:
             return jsonify({'success': False, 'error': '缺少算法ID'}), 400
         
+        algo_instance = None
         try:
             algorithm_id = int(algorithm_id)
         except ValueError:
@@ -853,15 +903,7 @@ def test_algorithm():
             full_config.update(script_config)
             full_config.update(ext_config)
 
-            if algorithm_type == 'vl':
-                from app.plugins.vl_algorithm import VLAlgorithm
-                algo_instance = VLAlgorithm(full_config)
-            elif algorithm_type == 'ocr':
-                from app.plugins.ocr_algorithm import OCRAlgorithm
-                algo_instance = OCRAlgorithm(full_config)
-            else:
-                from app.plugins.script_algorithm import ScriptAlgorithm
-                algo_instance = ScriptAlgorithm(full_config)
+            algo_instance = _create_algorithm_instance(algorithm_type, full_config)
             
             # 创建算法实例并处理图片
             results = algo_instance.process(image)
@@ -905,6 +947,11 @@ def test_algorithm():
             return jsonify(response_data)
             
         finally:
+            if algo_instance is not None and hasattr(algo_instance, 'cleanup'):
+                try:
+                    algo_instance.cleanup()
+                except Exception:
+                    app.logger.warning('算法测试资源清理失败', exc_info=True)
             # 清理临时上传文件
             if os.path.exists(temp_image_path):
                 os.unlink(temp_image_path)
@@ -912,6 +959,80 @@ def test_algorithm():
     except Exception as e:
         app.logger.error(f"算法测试失败: {str(e)}")
         return jsonify({'success': False, 'error': f'测试失败: {str(e)}'}), 500
+
+
+@app.route('/api/algorithms/cascade/preview', methods=['POST'])
+@require_auth
+def preview_cascade_algorithm():
+    """Test an unsaved cascade configuration against an uploaded image."""
+    if 'image' not in request.files:
+        return jsonify({'success': False, 'error': '没有上传图片'}), 400
+    uploaded = request.files['image']
+    if not uploaded.filename or not str(uploaded.content_type or '').startswith('image/'):
+        return jsonify({'success': False, 'error': '请选择有效图片文件'}), 400
+    try:
+        raw_config = json.loads(request.form.get('cascade_config') or '{}')
+        cascade_config = normalize_cascade_algorithm_config(raw_config)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+    raw_image = np.frombuffer(uploaded.read(), dtype=np.uint8)
+    bgr_image = cv2.imdecode(raw_image, cv2.IMREAD_COLOR)
+    if bgr_image is None:
+        return jsonify({'success': False, 'error': '无法读取图片文件'}), 400
+    image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+    instance = None
+    try:
+        instance = _create_algorithm_instance('cascade', {
+            'id': 'preview',
+            'name': cascade_config['output']['label'],
+            'algorithm_type': 'cascade',
+            'cascade_config': cascade_config,
+            'pixel_format': 'rgb24',
+            'label_name': cascade_config['output']['label'],
+            'label_color': cascade_config['output']['color'],
+        })
+        result = instance.process(image)
+        detections = BaseAlgorithm.normalize_detection_results(result.get('detections', []))
+        metadata = result.get('metadata') or {}
+        result_image = instance.visualize(
+            image,
+            detections,
+            label_color=cascade_config['output']['color'],
+        )
+        stage_previews = []
+        for stage in metadata.get('stage_debug') or []:
+            stage_detections = BaseAlgorithm.normalize_detection_results(stage.get('detections') or [])
+            stage_image = instance.visualize(image, stage_detections, label_color='#1677ff')
+            for crop_box in stage.get('crop_boxes') or []:
+                x1, y1, x2, y2 = [int(value) for value in crop_box[:4]]
+                cv2.rectangle(stage_image, (x1, y1), (x2, y2), (11, 158, 245), 2)
+            stage_previews.append({
+                'stage_id': stage.get('stage_id'),
+                'stage_name': stage.get('stage_name'),
+                'status': stage.get('status'),
+                'input_count': stage.get('input_count'),
+                'detection_count': stage.get('detection_count'),
+                'error_count': stage.get('error_count'),
+                'inference_time_ms': stage.get('inference_time_ms'),
+                'image': _encode_bgr_jpeg(stage_image),
+            })
+        error = metadata.get('error')
+        return jsonify({
+            'success': not bool(error),
+            'error': error,
+            'detection_count': len(detections),
+            'detections': detections,
+            'metadata': metadata,
+            'result_image': _encode_bgr_jpeg(result_image),
+            'stage_previews': stage_previews,
+        })
+    except Exception as exc:
+        app.logger.error('级联算法预览失败: %s', exc, exc_info=True)
+        return jsonify({'success': False, 'error': f'预览失败: {exc}'}), 500
+    finally:
+        if instance is not None:
+            instance.cleanup()
 
 # VideoSource API
 @app.route('/api/video-sources', methods=['GET'])

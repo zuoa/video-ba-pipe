@@ -30,3 +30,18 @@ def test_ext_config_model_ids_reference_is_detected():
     algorithm = _algorithm([], {"model_ids": json.dumps([3, 7])})
 
     assert _algorithm_references_model(algorithm, target.id, target_model=target) is True
+
+
+def test_cascade_stage_model_reference_is_detected():
+    target = SimpleNamespace(id=7, name="SmokeModel")
+    algorithm = _algorithm([], {
+        "algorithm_type": "cascade",
+        "cascade_config": {
+            "stages": [
+                {"id": "person", "model_id": 3},
+                {"id": "smoke", "model_id": 7},
+            ]
+        },
+    })
+
+    assert _algorithm_references_model(algorithm, target.id, target_model=target) is True

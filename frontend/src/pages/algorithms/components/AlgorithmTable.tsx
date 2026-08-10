@@ -8,6 +8,7 @@ import {
   ApiOutlined,
   RobotOutlined,
   FileSearchOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import AppButton from '@/components/common/AppButton';
@@ -16,7 +17,7 @@ import './AlgorithmTable.css';
 export interface Algorithm {
   id: number;
   name: string;
-  algorithm_type?: 'script' | 'vl' | 'ocr';
+  algorithm_type?: 'script' | 'vl' | 'ocr' | 'cascade';
   description?: string;
   script_path: string;
   script_config?: string;
@@ -41,6 +42,10 @@ export interface Algorithm {
     detection_model_id?: number;
     recognition_model_id?: number;
     device?: string;
+  };
+  cascade_config?: {
+    stages?: Array<{ id: string; name: string; model_id: number }>;
+    output?: { label?: string; color?: string };
   };
 }
 
@@ -77,21 +82,23 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       width: 360,
       render: (_: any, record: Algorithm) => (
         <div className="algorithm-info-cell">
-          <div className={`algorithm-icon ${record.algorithm_type === 'vl' ? 'algorithm-icon-vl' : ''}`}>
+          <div className={`algorithm-icon ${record.algorithm_type === 'vl' ? 'algorithm-icon-vl' : ''} ${record.algorithm_type === 'cascade' ? 'algorithm-icon-cascade' : ''}`}>
             {record.algorithm_type === 'vl'
               ? <RobotOutlined />
               : record.algorithm_type === 'ocr'
                 ? <FileSearchOutlined />
+                : record.algorithm_type === 'cascade'
+                  ? <ApartmentOutlined />
                 : <ExperimentOutlined />}
           </div>
           <div className="algorithm-content">
             <div className="algorithm-name">
               {record.name}
               <Tag
-                color={record.algorithm_type === 'vl' ? 'cyan' : record.algorithm_type === 'ocr' ? 'blue' : 'purple'}
+                color={record.algorithm_type === 'vl' ? 'cyan' : record.algorithm_type === 'ocr' ? 'blue' : record.algorithm_type === 'cascade' ? 'gold' : 'purple'}
                 className="algorithm-type-tag"
               >
-                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : '脚本'}
+                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? '多阶段' : '脚本'}
               </Tag>
             </div>
             {record.description && (
@@ -103,6 +110,8 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                   ? record.vl_config?.base_url
                   : record.algorithm_type === 'ocr'
                     ? `运行设备：${record.ocr_config?.device || 'auto'}`
+                    : record.algorithm_type === 'cascade'
+                      ? record.cascade_config?.stages?.map(stage => stage.name).join(' → ')
                     : record.script_path
               }>
                 <code className="algorithm-code">
@@ -111,6 +120,8 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                     ? `${record.vl_config?.model_name || '未配置模型'} · ${record.vl_config?.base_url || '未配置接口'}`
                     : record.algorithm_type === 'ocr'
                       ? `检测模型 #${record.ocr_config?.detection_model_id || '-'} · 识别模型 #${record.ocr_config?.recognition_model_id || '-'}`
+                      : record.algorithm_type === 'cascade'
+                        ? `${record.cascade_config?.stages?.length || 0} 阶段 · ${record.cascade_config?.output?.label || '未配置输出'}`
                       : record.script_path}
                 </code>
               </Tooltip>

@@ -7,6 +7,7 @@
 - 多视频源：支持 RTSP/HTTP/本地文件
 - 可视化工作流：基于节点连接定义分析流程
 - 脚本算法：支持 Python 脚本上传、编辑与测试
+- 多阶段检测：按“主体检测 → 区域内确认”组合 YOLO/ONNX/RKNN 模型
 - 告警闭环：保存告警图片/视频并提供检索
 - 消息集成：可通过 RabbitMQ 发布预警事件
 
@@ -175,6 +176,7 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 
 ## 相关文档
 
+- 多阶段级联检测配置：`docs/cascade_detection.md`
 - Docker 镜像构建说明：`docs/docker_build_workflows.md`
 - Jetson Orin NX Super 镜像与部署：`docs/jetson_orin_nx_docker.md`
 - RK3588 镜像与构建说明：`docs/rk3588_docker.md`

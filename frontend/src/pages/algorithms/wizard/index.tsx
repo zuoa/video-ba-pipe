@@ -32,6 +32,7 @@ import {
   PlusOutlined,
   RobotOutlined,
   FileSearchOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import {
   getScripts,
@@ -43,12 +44,40 @@ import {
   getPluginModules,
 } from '@/services/api';
 import type { Script } from '@/services/api';
+import CascadeEditor, { type CascadeConfig } from './CascadeEditor';
 import './index.css';
 
 const { TextArea } = Input;
 const { Option } = Select;
 
-type AlgorithmType = 'script' | 'vl' | 'ocr';
+type AlgorithmType = 'script' | 'vl' | 'ocr' | 'cascade';
+
+const DEFAULT_CASCADE_CONFIG: CascadeConfig = {
+  version: 1,
+  stages: [
+    {
+      id: 'stage_subject',
+      name: '找到主体',
+      model_id: null,
+      class_ids: [],
+      confidence: 0.6,
+      max_candidates: 20,
+      inference: { backend: 'auto', nms_iou: 0.45 },
+      input: { type: 'frame' },
+    },
+    {
+      id: 'stage_confirm',
+      name: '确认目标',
+      model_id: null,
+      class_ids: [],
+      confidence: 0.6,
+      max_candidates: 20,
+      inference: { backend: 'auto', nms_iou: 0.45 },
+      input: { type: 'parent_boxes', parent_stage_id: 'stage_subject', expand_ratio: 0.1 },
+    },
+  ],
+  output: { label: '复合事件', color: '#ff4d4f' },
+};
 
 interface DetectorPreset extends Script {
   description: string;
@@ -61,9 +90,9 @@ const DETECTOR_PRESETS: readonly DetectorPreset[] = [
     description: '单模型检测，自动适配 Ultralytics、ONNX 和 RKNN 后端',
   },
   {
-    name: '多模型',
+    name: '并行多模型共同确认',
     path: 'templates/yolo_detector.py',
-    description: '组合多个 YOLO 模型，并通过 IOU 匹配共同确认目标',
+    description: '多个模型对同一画面并行推理，通过 IOU 匹配共同确认目标',
   },
 ];
 
@@ -133,6 +162,9 @@ export default function AlgorithmWizard() {
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
   const [editingAlgorithm, setEditingAlgorithm] = useState<any>(null);
   const [algorithmType, setAlgorithmType] = useState<AlgorithmType>('script');
+  const [cascadeConfig, setCascadeConfig] = useState<CascadeConfig>(() => (
+    JSON.parse(JSON.stringify(DEFAULT_CASCADE_CONFIG))
+  ));
   const [ocrRuntimeAvailable, setOcrRuntimeAvailable] = useState(false);
   const [ocrRuntimeError, setOcrRuntimeError] = useState('');
   const [form] = Form.useForm();
@@ -169,7 +201,7 @@ export default function AlgorithmWizard() {
   }, [editId, navigate]);
 
   const loadEditData = async (algorithm: any) => {
-    const currentType: AlgorithmType = ['vl', 'ocr'].includes(algorithm.algorithm_type)
+    const currentType: AlgorithmType = ['vl', 'ocr', 'cascade'].includes(algorithm.algorithm_type)
       ? algorithm.algorithm_type
       : 'script';
     setAlgorithmType(currentType);
@@ -234,6 +266,29 @@ export default function AlgorithmWizard() {
         ocrUnclipRatio: ocrConfig.unclip_ratio,
         ocrLimitSideLen: ocrConfig.limit_side_len,
         ocrRecognitionBatchSize: ocrConfig.recognition_batch_size || 1,
+      });
+      return;
+    }
+
+    if (currentType === 'cascade') {
+      const loadedCascade = algorithm.cascade_config || DEFAULT_CASCADE_CONFIG;
+      setCascadeConfig(loadedCascade);
+      setSelectedDetector({
+        type: 'template',
+        id: null,
+        name: '多阶段检测',
+        description: '按顺序缩小检测范围并形成一个业务结果',
+        scriptPath: '',
+      });
+      setConfigSchema({});
+      form.setFieldsValue({
+        algorithmName: algorithm.name,
+        algorithmDescription: algorithm.description || '',
+        intervalSeconds: algorithm.interval_seconds || 1,
+        enableWindowCheck: algorithm.enable_window_check || false,
+        windowSize: algorithm.window_size || 30,
+        windowMode: algorithm.window_mode || 'ratio',
+        windowThreshold: algorithm.window_threshold || 0.3,
       });
       return;
     }
@@ -367,6 +422,29 @@ export default function AlgorithmWizard() {
     });
   };
 
+  const handleSelectCascade = () => {
+    setAlgorithmType('cascade');
+    setSelectedDetector({
+      type: 'template',
+      id: null,
+      name: '多阶段检测',
+      description: '把多个检测模型按顺序组合成一个业务算法',
+      scriptPath: '',
+    });
+    setConfigSchema({});
+  };
+
+  const validateCascade = (): string | null => {
+    if (cascadeConfig.stages.length < 2) return '多阶段检测至少需要两个阶段';
+    for (let index = 0; index < cascadeConfig.stages.length; index += 1) {
+      const stage = cascadeConfig.stages[index];
+      if (!stage.name.trim()) return `请填写阶段 ${index + 1} 的名称`;
+      if (!stage.model_id) return `请为阶段 ${index + 1} 选择模型`;
+    }
+    if (!cascadeConfig.output.label.trim()) return '请填写最终输出标签';
+    return null;
+  };
+
   const handleNext = async () => {
     if (currentStep === 0) {
       if (!selectedDetector) {
@@ -375,6 +453,13 @@ export default function AlgorithmWizard() {
       }
       setCurrentStep(1);
     } else if (currentStep === 1) {
+      if (algorithmType === 'cascade') {
+        const cascadeError = validateCascade();
+        if (cascadeError) {
+          message.warning(cascadeError);
+          return;
+        }
+      }
       try {
         await form.validateFields();
         setCurrentStep(2);
@@ -502,6 +587,39 @@ export default function AlgorithmWizard() {
         } else {
           await createAlgorithm(data);
           message.success('OCR 算法创建成功！');
+        }
+        navigate('/algorithms');
+        return;
+      }
+
+      if (algorithmType === 'cascade') {
+        const cascadeError = validateCascade();
+        if (cascadeError) {
+          message.error(cascadeError);
+          return;
+        }
+        const data = {
+          name: values.algorithmName,
+          description: values.algorithmDescription,
+          algorithm_type: 'cascade',
+          script_path: '',
+          script_config: '{}',
+          plugin_module: 'cascade_algorithm',
+          interval_seconds: values.intervalSeconds,
+          enable_window_check: values.enableWindowCheck,
+          window_size: values.windowSize,
+          window_mode: values.windowMode,
+          window_threshold: values.windowThreshold,
+          label_name: cascadeConfig.output.label,
+          label_color: cascadeConfig.output.color,
+          cascade_config: cascadeConfig,
+        };
+        if (editingAlgorithm) {
+          await updateAlgorithm(editingAlgorithm.id, data);
+          message.success('多阶段算法更新成功！');
+        } else {
+          await createAlgorithm(data);
+          message.success('多阶段算法创建成功！');
         }
         navigate('/algorithms');
         return;
@@ -636,7 +754,7 @@ export default function AlgorithmWizard() {
           选择算法类型
         </h3>
         <Row gutter={[16, 16]} className="algorithm-type-grid">
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
             <Card
               hoverable
               className={`algorithm-type-card ${algorithmType === 'script' ? 'selected script' : ''}`}
@@ -652,7 +770,7 @@ export default function AlgorithmWizard() {
               </div>
             </Card>
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
             <Card
               hoverable
               className={`algorithm-type-card ${algorithmType === 'vl' ? 'selected vl' : ''}`}
@@ -665,8 +783,21 @@ export default function AlgorithmWizard() {
               </div>
             </Card>
           </Col>
+          <Col xs={24} md={12} lg={6}>
+            <Card
+              hoverable
+              className={`algorithm-type-card ${algorithmType === 'cascade' ? 'selected cascade' : ''}`}
+              onClick={handleSelectCascade}
+            >
+              <ApartmentOutlined className="algorithm-type-icon" />
+              <div>
+                <h4>多阶段检测</h4>
+                <p>先找到主体，再在主体区域内逐步确认目标或行为。</p>
+              </div>
+            </Card>
+          </Col>
           {ocrRuntimeAvailable || editingAlgorithm?.algorithm_type === 'ocr' ? (
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
             <Card
               hoverable
               className={`algorithm-type-card ${algorithmType === 'ocr' ? 'selected ocr' : ''}`}
@@ -741,7 +872,7 @@ export default function AlgorithmWizard() {
             message="统一算法输出"
             description="VL 会把模型回答校验为 detections 和 metadata。语义结果可以不带检测框，但仍能参与条件计数和告警。"
           />
-        ) : (
+        ) : algorithmType === 'ocr' ? (
           <Alert
             className="vl-contract-callout"
             type="info"
@@ -749,12 +880,31 @@ export default function AlgorithmWizard() {
             message="检测与识别两阶段"
             description="OCR 算法需要分别选择文字检测模型和文字识别模型，输出文字、置信度与位置，可连接文字条件节点。"
           />
+        ) : (
+          <Alert
+            className="cascade-contract-callout"
+            type="warning"
+            showIcon
+            message="完整链条才形成业务结果"
+            description="例如人员 → 烟：只有同一个人员区域内检测到烟，才输出吸烟；阶段失败不会降级成误报。"
+          />
         )}
       </div>
     );
   };
 
   const renderStep2 = () => {
+    if (algorithmType === 'cascade') {
+      return (
+        <div className="config-form cascade-config-form">
+          <CascadeEditor
+            models={models}
+            value={cascadeConfig}
+            onChange={setCascadeConfig}
+          />
+        </div>
+      );
+    }
     if (algorithmType === 'vl') {
       return (
         <div className="config-form vl-config-form">
@@ -1340,6 +1490,7 @@ export default function AlgorithmWizard() {
             />
           </Card>
 
+          {algorithmType !== 'cascade' ? (
           <Card title={<Space><SettingOutlined />显示标签</Space>} className="config-card">
             <Row gutter={16}>
               <Col span={12}>
@@ -1366,6 +1517,7 @@ export default function AlgorithmWizard() {
               </Col>
             </Row>
           </Card>
+          ) : null}
         </Form>
     );
   };
@@ -1374,7 +1526,7 @@ export default function AlgorithmWizard() {
     {
       title: '选择类型',
       icon: <ApiOutlined />,
-      description: '选择脚本、VL 或 OCR 算法',
+      description: '选择脚本、多阶段、VL 或 OCR 算法',
     },
     {
       title: '配置参数',
@@ -1383,6 +1535,8 @@ export default function AlgorithmWizard() {
         ? '配置接口、模型与提示词'
         : algorithmType === 'ocr'
           ? '配置 OCR 模型与推理参数'
+          : algorithmType === 'cascade'
+            ? '按顺序配置检测阶段并测试'
           : '配置检测器参数',
     },
     {

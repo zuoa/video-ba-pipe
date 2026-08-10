@@ -448,6 +448,16 @@ def _algorithm_references_model(algorithm, model_id, target_model=None):
         except (TypeError, ValueError):
             pass
 
+    cascade_config = ext_config.get('cascade_config') or {}
+    for stage in cascade_config.get('stages') or []:
+        if not isinstance(stage, dict):
+            continue
+        try:
+            if int(stage.get('model_id')) == target_id:
+                return True
+        except (TypeError, ValueError):
+            continue
+
     config = algorithm.config_dict
     models = config.get('models') or []
     if isinstance(models, dict):

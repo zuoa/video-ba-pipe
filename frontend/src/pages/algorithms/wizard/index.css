@@ -158,6 +158,16 @@
   background: #1677ff;
 }
 
+.algorithm-type-card.selected.cascade {
+  border-color: #d97706;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.12);
+}
+
+.algorithm-type-card.selected.cascade::before {
+  background: #d97706;
+}
+
 .algorithm-type-icon {
   padding: 10px;
   border-radius: 10px;
@@ -179,6 +189,186 @@
 .algorithm-type-card.selected.ocr .algorithm-type-icon {
   color: #0958d9;
   background: #d6e4ff;
+}
+
+.algorithm-type-card.selected.cascade .algorithm-type-icon {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.cascade-editor {
+  display: grid;
+  gap: 20px;
+}
+
+.cascade-rail {
+  position: relative;
+  display: grid;
+  gap: 0;
+}
+
+.cascade-stage-card {
+  border: 1px solid #dbe4ee;
+  border-left: 4px solid #2563eb;
+  box-shadow: 0 8px 24px rgba(30, 64, 175, 0.06);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cascade-stage-card:hover,
+.cascade-stage-card:focus-within {
+  border-color: #93b4e8;
+  border-left-color: #1d4ed8;
+  box-shadow: 0 12px 30px rgba(30, 64, 175, 0.1);
+}
+
+.cascade-stage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.cascade-stage-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cascade-stage-title > div {
+  display: grid;
+  gap: 2px;
+}
+
+.cascade-stage-title strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.cascade-stage-title small {
+  color: #64748b;
+}
+
+.cascade-stage-number {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-weight: 700;
+}
+
+.cascade-drag-handle {
+  color: #94a3b8;
+  cursor: grab;
+  font-size: 18px;
+}
+
+.cascade-connector {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 66px;
+  padding: 13px 16px 10px;
+  color: #92400e;
+}
+
+.cascade-connector::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: #f59e0b;
+}
+
+.cascade-connector::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #f59e0b;
+  border-bottom: 2px solid #f59e0b;
+  transform: rotate(45deg);
+}
+
+.cascade-connector span,
+.cascade-connector small {
+  position: relative;
+  z-index: 1;
+  padding: 0 9px;
+  background: #f8fafc;
+}
+
+.cascade-connector span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cascade-transfer-settings {
+  padding: 14px 16px 0;
+  border: 1px dashed #f2c66d;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.cascade-output-card {
+  border-top: 3px solid #16a34a;
+}
+
+.cascade-preview-card {
+  border-top: 3px solid #d97706;
+}
+
+.cascade-preview-button {
+  margin: 16px 0;
+}
+
+.cascade-preview-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.cascade-preview-result {
+  content-visibility: auto;
+}
+
+.cascade-preview-summary {
+  margin-bottom: 10px;
+  color: #475569;
+  font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .cascade-stage-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cascade-preview-results {
+    grid-template-columns: 1fr;
+  }
+
+  .cascade-connector span,
+  .cascade-connector small {
+    background: #fff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cascade-stage-card {
+    transition: none;
+  }
 }
 
 .algorithm-type-card h4 {
