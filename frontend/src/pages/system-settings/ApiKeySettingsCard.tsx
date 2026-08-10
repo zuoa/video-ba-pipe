@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { history } from '@umijs/max';
 import { Alert, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message } from 'antd';
-import { CopyOutlined, KeyOutlined, PlusOutlined } from '@ant-design/icons';
+import { CopyOutlined, KeyOutlined, PlusOutlined, ReadOutlined } from '@ant-design/icons';
 import Button from '@/components/common/AppButton';
 import {
   createApiKey,
@@ -99,9 +100,14 @@ const ApiKeySettingsCard: React.FC = () => {
           <strong>对外集成密钥</strong>
           <span>通过 X-API-Key 请求头访问 /openapi/v1</span>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-          生成 API Key
-        </Button>
+        <Space>
+          <Button icon={<ReadOutlined />} onClick={() => history.push('/api-docs')}>
+            API 使用说明
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            生成 API Key
+          </Button>
+        </Space>
       </div>
 
       <Table<ManagedApiKey>

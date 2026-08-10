@@ -9,8 +9,9 @@ import secrets
 from copy import deepcopy
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 
-from flask import jsonify, request
+from flask import jsonify, request, send_file
 from peewee import IntegrityError
 
 from app.core.database_models import ApiKey, VideoSource, Workflow, db
@@ -29,6 +30,9 @@ API_KEY_PREFIX = 'vbp_'
 API_INTEGRATION_OWNER = 'api-integration'
 _SAFE_SOURCE_CODE_PATTERN = re.compile(r'^[A-Za-z0-9._~-]+$')
 _INTEGER_STRING_PATTERN = re.compile(r'^[+-]?\d+$')
+
+# docs/ 目录位于仓库根目录(app/web/api/public_api.py 上三级)
+_DOCS_DIR = Path(__file__).resolve().parents[3] / 'docs'
 
 
 def _success(data=None, status=200):
@@ -237,6 +241,35 @@ def register_public_api(app):
         item.enabled = data['enabled']
         item.save(only=[ApiKey.enabled])
         return jsonify({'success': True, 'key': _serialize_api_key(item)})
+
+    def _serve_doc_file(filename, download_name, mimetype):
+        file_path = (_DOCS_DIR / filename).resolve()
+        if not file_path.is_file() or file_path.parent != _DOCS_DIR:
+            return jsonify({'success': False, 'error': '文档文件不存在'}), 404
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=download_name,
+            mimetype=mimetype,
+        )
+
+    @app.route('/api/system/openapi/spec', methods=['GET'])
+    @require_auth
+    def download_openapi_spec():
+        return _serve_doc_file(
+            'openapi.yaml',
+            'video-ba-pipe-openapi.yaml',
+            'application/yaml',
+        )
+
+    @app.route('/api/system/openapi/guide', methods=['GET'])
+    @require_auth
+    def download_openapi_guide():
+        return _serve_doc_file(
+            'openapi_usage.md',
+            'video-ba-pipe-api-usage.md',
+            'text/markdown',
+        )
 
     @app.route('/openapi/v1/video-sources', methods=['POST'])
     @require_api_key

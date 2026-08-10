@@ -1,8 +1,7 @@
 """数据库持久化的 RabbitMQ 预警发布配置。
 
-沿用 recording_storage_config / ops_notification_config 的既定模式：
-dataclass 字段默认值取自 app.config 的环境变量常量，首次无 DB 行时回退到环境变量；
-password 为敏感字段，读取时脱敏（to_dict(include_password=False)），保存时空白则保留旧值。
+字段默认值仅用于初始化系统设置页面，不读取环境变量。password 为敏感字段，
+读取时脱敏（to_dict(include_password=False)），保存时空白则保留旧值。
 """
 
 from __future__ import annotations
@@ -13,19 +12,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from app import logger
-from app.config import (
-    RABBITMQ_ALERT_EXCHANGE,
-    RABBITMQ_ALERT_QUEUE,
-    RABBITMQ_ALERT_ROUTING_KEY,
-    RABBITMQ_CONNECTION_TIMEOUT,
-    RABBITMQ_ENABLED,
-    RABBITMQ_EXCHANGE_TYPE,
-    RABBITMQ_HOST,
-    RABBITMQ_PASSWORD,
-    RABBITMQ_PORT,
-    RABBITMQ_USER,
-    RABBITMQ_VHOST,
-)
 from app.core.database_models import SystemSetting
 
 
@@ -39,17 +25,19 @@ VALID_EXCHANGE_TYPES = ("topic", "direct")
 
 @dataclass(frozen=True)
 class RabbitMqConfig:
-    enabled: bool = RABBITMQ_ENABLED
-    host: str = RABBITMQ_HOST
-    port: int = RABBITMQ_PORT
-    username: str = RABBITMQ_USER
-    password: str = RABBITMQ_PASSWORD
-    vhost: str = RABBITMQ_VHOST
-    alert_queue: str = RABBITMQ_ALERT_QUEUE
-    alert_exchange: str = RABBITMQ_ALERT_EXCHANGE
-    alert_routing_key: str = RABBITMQ_ALERT_ROUTING_KEY
-    exchange_type: str = RABBITMQ_EXCHANGE_TYPE
-    connection_timeout_seconds: int = RABBITMQ_CONNECTION_TIMEOUT
+    # Code defaults only seed the settings page. Runtime values are persisted in
+    # SystemSetting and are never read from environment variables.
+    enabled: bool = False
+    host: str = "rabbitmq"
+    port: int = 5672
+    username: str = "admin"
+    password: str = "admin123"
+    vhost: str = "/"
+    alert_queue: str = "video_alerts"
+    alert_exchange: str = "video_alerts"
+    alert_routing_key: str = "alert"
+    exchange_type: str = "topic"
+    connection_timeout_seconds: int = 30
 
     def to_dict(self, *, include_password: bool = True) -> Dict[str, Any]:
         result = asdict(self)
@@ -116,13 +104,7 @@ def normalize_rabbitmq_config(
 
 
 def get_rabbitmq_config() -> RabbitMqConfig:
-    """读取持久化配置；DB 不可用或无配置行时默认不启用。
-
-    关键：回退分支强制 enabled=False（不沿用环境变量默认值）。否则在
-    RABBITMQ_ENABLED=true 的部署里，worker 进程一旦 DB 读取失败就会回退成
-    "已启用"，出现"系统设置里已关闭却仍在尝试发送"的问题。DB 不可读时，
-    宁可不发，也不要误发。
-    """
+    """读取持久化配置；DB 不可用或无配置行时默认不启用。"""
     try:
         record = SystemSetting.get_or_none(SystemSetting.key == RABBITMQ_SETTING_KEY)
         if record and record.value:

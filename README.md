@@ -9,14 +9,15 @@
 - 脚本算法：支持 Python 脚本上传、编辑与测试
 - 多阶段检测：按“主体检测 → 区域内确认”组合 YOLO/ONNX/RKNN 模型
 - 告警闭环：保存告警图片/视频并提供检索
-- 消息集成：可通过 RabbitMQ 发布预警事件
+- 消息集成：默认通过 MQTT 发布预警事件，也可切换到 RabbitMQ
 
 ## 系统组成
 
 - `api`：Flask + Gunicorn Web API（默认 `5002`）
 - `worker`：视频解码与工作流执行进程
 - `frontend`：前端管理界面（默认 `8080`）
-- `rabbitmq`：可选消息队列（在 CUDA compose 中内置）
+- `mqtt`：内置 Mosquitto Broker（默认主通道）
+- `rabbitmq`：兼容消息队列（CUDA compose 中内置）
 
 ## 快速开始（Docker 推荐）
 
@@ -26,8 +27,11 @@
 docker compose -f docker-compose.yml up -d
 ```
 
-说明：`docker-compose.yml` 默认将 `RABBITMQ_HOST` 设为 `rabbitmq`，但未内置 RabbitMQ 服务。  
-如不使用消息队列，请先把 `api/worker` 的 `RABBITMQ_ENABLED` 改为 `false`，或接入外部 RabbitMQ。  
+消息队列默认关闭。启动后在“系统设置 → 消息队列”中启用并配置 MQTT 或 RabbitMQ；连接参数不使用环境变量。内置 MQTT 地址为 `mqtt:1883`、用户名为 `video-ba`，密码在每个部署首次启动时随机生成并持久化，且默认不向宿主机映射 1883 端口。使用相同 Compose 文件执行以下命令获取密码后填入页面：
+
+```bash
+docker compose exec mqtt cat /mosquitto/secrets/initial-password
+```
 当前 compose 已内置 PostgreSQL，应用默认通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。  
 如需改用外部 PostgreSQL，可在 `.env` 中覆盖 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。
 页面 Header 默认显示公司名称“码全科技”；可在 `.env` 中通过 `COMPANY_NAME` 修改。
@@ -148,7 +152,7 @@ cp env.example .env
 - `RESOURCE_PROFILING_ENABLED`：输出帧拷贝、录制编码、工作流执行等性能埋点
 - `WORKFLOW_ZERO_COPY_FRAMES`：source host 使用共享内存只读视图读取最新帧，减少复制（需确保处理耗时小于缓冲窗口）
 - `SOURCE_HOST_WORKFLOW_NODE_WORKERS`：实时工作流同层节点并行 worker 数，`0` 表示关闭
-- `RABBITMQ_ENABLED`：是否启用 RabbitMQ 发布
+- MQTT / RabbitMQ 连接参数仅通过“系统设置 → 消息队列”配置
 
 ## 资源估算
 
@@ -181,5 +185,5 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 - Jetson Orin NX Super 镜像与部署：`docs/jetson_orin_nx_docker.md`
 - RK3588 镜像与构建说明：`docs/rk3588_docker.md`
 - RK3588 板端部署/排障：`docs/rk_usage_manual.md`
-- RabbitMQ 消息格式与接入：`docs/rabbitmq_integration.md`
+- MQTT / RabbitMQ 消息格式与接入：`docs/message_queue_integration.md`
 - 前端说明：`frontend/README.md`

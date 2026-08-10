@@ -23,19 +23,19 @@ import {
   getRecordingStorageConfig,
   getOpsNotificationConfig,
   getPublicMediaConfig,
-  getRabbitMqConfig,
+  getMessageQueueConfig,
   getVlConfig,
   RecordingStorageUsage,
   InferenceResourceResponse,
   PublicMediaConfig,
   testOpsNotificationConfig,
-  testRabbitMqConfig,
+  testMessageQueueConfig,
   updateSourceRotationConfig,
   updateInferenceResourceConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
   updatePublicMediaConfig,
-  updateRabbitMqConfig,
+  updateMessageQueueConfig,
   updateVlConfig,
 } from '@/services/api';
 import ApiKeySettingsCard from './ApiKeySettingsCard';
@@ -48,7 +48,7 @@ const SystemSettingsPage: React.FC = () => {
   const [opsForm] = Form.useForm();
   const [publicMediaForm] = Form.useForm();
   const [inferenceForm] = Form.useForm();
-  const [rabbitmqForm] = Form.useForm();
+  const [messageQueueForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
@@ -68,7 +68,8 @@ const SystemSettingsPage: React.FC = () => {
   const sharedInferenceEnabled = Form.useWatch('shared_inference_enabled', inferenceForm) ?? false;
   const inferenceAdmissionEnabled = Form.useWatch('inference_admission_enabled', inferenceForm) ?? false;
   const oomCircuitEnabled = Form.useWatch('oom_circuit_breaker_enabled', inferenceForm) ?? false;
-  const rabbitmqEnabled = Form.useWatch('enabled', rabbitmqForm) ?? false;
+  const messageQueueEnabled = Form.useWatch('enabled', messageQueueForm) ?? false;
+  const messageQueueProvider = Form.useWatch('provider', messageQueueForm) ?? 'mqtt';
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
   const dwellSeconds = Form.useWatch('dwell_seconds', rotationForm) ?? 30;
   const estimatedBatches = eligibleSourceCount > 0
@@ -86,14 +87,14 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, rabbitmqResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
         getRecordingStorageConfig(),
         getOpsNotificationConfig(),
         getInferenceResourceConfig(),
         getPublicMediaConfig(),
-        getRabbitMqConfig(),
+        getMessageQueueConfig(),
       ]);
       vlForm.setFieldsValue({
         enabled: vlResponse?.config?.enabled ?? false,
@@ -115,7 +116,7 @@ const SystemSettingsPage: React.FC = () => {
       publicMediaForm.setFieldsValue(publicMediaResponse.config);
       setPublicMediaConfig(publicMediaResponse.config);
       setInferenceResource(inferenceResponse);
-      rabbitmqForm.setFieldsValue(rabbitmqResponse.config);
+      messageQueueForm.setFieldsValue(messageQueueResponse.config);
     } catch (error: any) {
       message.error(`加载系统配置失败: ${error.message}`);
     } finally {
@@ -148,7 +149,7 @@ const SystemSettingsPage: React.FC = () => {
       { key: 'inference', validate: () => inferenceForm.validateFields() },
       { key: 'recording', validate: () => recordingForm.validateFields() },
       { key: 'publicMedia', validate: () => publicMediaForm.validateFields() },
-      { key: 'rabbitmq', validate: () => rabbitmqForm.validateFields() },
+      { key: 'messageQueue', validate: () => messageQueueForm.validateFields() },
       { key: 'ops', validate: () => opsForm.validateFields() },
       { key: 'rotation', validate: () => rotationForm.validateFields() },
       { key: 'vl', validate: () => vlForm.validateFields() },
@@ -164,7 +165,7 @@ const SystemSettingsPage: React.FC = () => {
       inferenceValues,
       recordingValues,
       publicMediaValues,
-      rabbitmqValues,
+      messageQueueValues,
       opsValues,
       rotationValues,
       vlValues,
@@ -178,7 +179,7 @@ const SystemSettingsPage: React.FC = () => {
         updateOpsNotificationConfig(opsValues),
         updateInferenceResourceConfig(inferenceValues),
         updatePublicMediaConfig(publicMediaValues),
-        updateRabbitMqConfig(rabbitmqValues),
+        updateMessageQueueConfig(messageQueueValues),
       ]);
       setInferenceResource(inferenceResponse);
       message.success('系统配置已保存');
@@ -207,12 +208,13 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
-  const handleTestRabbitMq = async () => {
+  const handleTestMessageQueue = async () => {
     try {
       setTestingMq(true);
-      const response = await testRabbitMqConfig(rabbitmqForm.getFieldsValue());
+      const values = await messageQueueForm.validateFields();
+      const response = await testMessageQueueConfig(values);
       if (response?.success) {
-        message.success(response.message || 'RabbitMQ 连接正常');
+        message.success(response.message || '消息队列连接正常');
       } else {
         message.error(response?.error || '测试连接失败');
       }
@@ -541,7 +543,7 @@ const SystemSettingsPage: React.FC = () => {
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="用于 Webhook、RabbitMQ 和告警 API 输出可直接访问的媒体地址"
+                    message="用于 Webhook、消息队列和告警 API 输出可直接访问的媒体地址"
                     description="节点未单独覆盖 Host 时使用这里的全局地址。开启签名后，告警图片和录像链接会携带过期时间与签名。"
                   />
 
@@ -574,121 +576,112 @@ const SystemSettingsPage: React.FC = () => {
               ),
             },
             {
-              key: 'rabbitmq',
+              key: 'messageQueue',
               label: (<span><ApiOutlined /> 消息队列</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><ApiOutlined /> 消息队列 (RabbitMQ)</span>}
+                  title={<span><ApiOutlined /> 消息队列</span>}
                   extra={
                     <Button
                       icon={<ApiOutlined />}
                       loading={testingMq}
-                      onClick={handleTestRabbitMq}
+                      onClick={handleTestMessageQueue}
+                      disabled={!messageQueueEnabled}
                     >
                       测试连接
                     </Button>
                   }
                 >
                   <Alert
-                    type={rabbitmqEnabled ? 'info' : 'warning'}
+                    type={messageQueueEnabled ? 'info' : 'warning'}
                     showIcon
                     className="system-settings-alert"
-                    message={rabbitmqEnabled ? 'RabbitMQ 预警发布已启用' : 'RabbitMQ 预警发布未启用'}
-                    description="启用后，告警会在写入数据库的同时推送到下方交换机。生产者只声明交换机、不声明消费队列；队列名仅作为消费端约定。"
+                    message={messageQueueEnabled ? `${messageQueueProvider.toUpperCase()} 预警发布已启用` : '消息队列预警发布未启用'}
+                    description="系统每次只使用一个提供方。MQTT 为默认通道，RabbitMQ 用于兼容现有消费端。所有连接参数均保存在系统设置中。"
                   />
 
-                  <Form form={rabbitmqForm} layout="vertical">
+                  <Form form={messageQueueForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用 RabbitMQ" name="enabled" valuePropName="checked" extra="关闭后不再尝试建链与发布。">
+                      <Form.Item label="启用消息队列" name="enabled" valuePropName="checked" extra="关闭后不再连接或发布。">
                         <Switch />
                       </Form.Item>
 
                       <Form.Item
-                        label="主机地址"
-                        name="host"
-                        rules={[{ required: rabbitmqEnabled, message: '请输入主机地址' }]}
-                      >
-                        <Input placeholder="rabbitmq 或 10.0.4.15" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="端口"
-                        name="port"
-                        rules={[{ required: rabbitmqEnabled, message: '请输入端口' }]}
-                      >
-                        <InputNumber min={1} max={65535} precision={0} disabled={!rabbitmqEnabled} style={{ width: '100%' }} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="虚拟主机"
-                        name="vhost"
-                        rules={[{ required: rabbitmqEnabled, message: '请输入虚拟主机' }]}
-                      >
-                        <Input placeholder="/" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="用户名"
-                        name="username"
-                        rules={[{ required: rabbitmqEnabled, message: '请输入用户名' }]}
-                      >
-                        <Input placeholder="admin" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="密码"
-                        name="password"
-                        extra="留空则保留已保存的密码，不会清空。"
-                      >
-                        <Input.Password placeholder="请输入密码" autoComplete="new-password" />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="交换机名称"
-                        name="alert_exchange"
-                        rules={[{ required: rabbitmqEnabled, message: '请输入交换机名称' }]}
-                      >
-                        <Input placeholder="video_alerts" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="交换机类型"
-                        name="exchange_type"
-                        rules={[{ required: rabbitmqEnabled, message: '请选择交换机类型' }]}
+                        label="消息队列提供方"
+                        name="provider"
+                        rules={[{ required: true, message: '请选择提供方' }]}
                       >
                         <Select
-                          disabled={!rabbitmqEnabled}
+                          disabled={!messageQueueEnabled}
                           options={[
-                            { value: 'topic', label: 'topic（按节点/类型订阅）' },
-                            { value: 'direct', label: 'direct（按固定 routing key）' },
+                            { value: 'mqtt', label: 'MQTT（推荐）' },
+                            { value: 'rabbitmq', label: 'RabbitMQ（兼容）' },
                           ]}
                         />
                       </Form.Item>
 
-                      <Form.Item
-                        label="Routing Key"
-                        name="alert_routing_key"
-                        extra="仅 direct 模式使用；topic 模式自动生成 video.alert.{节点}.{类型}。"
-                      >
-                        <Input placeholder="alert" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="队列名"
-                        name="alert_queue"
-                        extra="消费端声明的队列名，生产者不声明，仅作约定。"
-                      >
-                        <Input placeholder="video_alerts" disabled={!rabbitmqEnabled} />
-                      </Form.Item>
-
-                      <Form.Item
-                        label="连接超时（秒）"
-                        name="connection_timeout_seconds"
-                        rules={[{ required: true, message: '请输入连接超时' }]}
-                      >
-                        <InputNumber min={1} max={300} precision={0} style={{ width: '100%' }} />
-                      </Form.Item>
+                      {messageQueueProvider === 'mqtt' ? (
+                        <>
+                          <Form.Item label="Broker 主机" name={['mqtt', 'host']} rules={[{ required: messageQueueEnabled, message: '请输入 Broker 主机' }]}>
+                            <Input placeholder="mqtt 或 10.0.4.15" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="端口" name={['mqtt', 'port']} rules={[{ required: messageQueueEnabled, message: '请输入端口' }]}>
+                            <InputNumber min={1} max={65535} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="用户名" name={['mqtt', 'username']} extra="外部 Broker 允许匿名时可以留空。">
+                            <Input placeholder="video-ba" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="密码" name={['mqtt', 'password']} extra="留空则保留已保存的密码。内置 Broker 首次部署可执行 docker compose exec mqtt cat /mosquitto/secrets/initial-password 获取随机密码。">
+                            <Input.Password placeholder="请输入密码" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                          </Form.Item>
+                          <Form.Item label="主题前缀" name={['mqtt', 'topic_prefix']} rules={[{ required: messageQueueEnabled, message: '请输入主题前缀' }]} extra="实际主题：{前缀}/{node_id}/{alert_type}；不允许 + 和 #。">
+                            <Input placeholder="video/alert" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="连接超时（秒）" name={['mqtt', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入连接超时' }]}>
+                            <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="PUBACK 超时（秒）" name={['mqtt', 'publish_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入确认超时' }]}>
+                            <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="Keep Alive（秒）" name={['mqtt', 'keepalive_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入 Keep Alive' }]}>
+                            <InputNumber min={5} max={3600} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </>
+                      ) : (
+                        <>
+                          <Form.Item label="主机地址" name={['rabbitmq', 'host']} rules={[{ required: messageQueueEnabled, message: '请输入主机地址' }]}>
+                            <Input placeholder="rabbitmq 或 10.0.4.15" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="端口" name={['rabbitmq', 'port']} rules={[{ required: messageQueueEnabled, message: '请输入端口' }]}>
+                            <InputNumber min={1} max={65535} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="虚拟主机" name={['rabbitmq', 'vhost']} rules={[{ required: messageQueueEnabled, message: '请输入虚拟主机' }]}>
+                            <Input placeholder="/" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="用户名" name={['rabbitmq', 'username']} rules={[{ required: messageQueueEnabled, message: '请输入用户名' }]}>
+                            <Input placeholder="admin" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="密码" name={['rabbitmq', 'password']} extra="留空则保留已保存的密码。">
+                            <Input.Password placeholder="请输入密码" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                          </Form.Item>
+                          <Form.Item label="交换机名称" name={['rabbitmq', 'alert_exchange']} rules={[{ required: messageQueueEnabled, message: '请输入交换机名称' }]}>
+                            <Input placeholder="video_alerts" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="交换机类型" name={['rabbitmq', 'exchange_type']} rules={[{ required: messageQueueEnabled, message: '请选择交换机类型' }]}>
+                            <Select disabled={!messageQueueEnabled} options={[{ value: 'topic', label: 'topic（按节点/类型订阅）' }, { value: 'direct', label: 'direct（固定 routing key）' }]} />
+                          </Form.Item>
+                          <Form.Item label="Routing Key" name={['rabbitmq', 'alert_routing_key']} extra="仅 direct 模式使用。">
+                            <Input placeholder="alert" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="队列名" name={['rabbitmq', 'alert_queue']} extra="生产者不声明队列，仅作消费端约定。">
+                            <Input placeholder="video_alerts" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+                          <Form.Item label="连接超时（秒）" name={['rabbitmq', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入连接超时' }]}>
+                            <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </>
+                      )}
                     </div>
                   </Form>
                 </Card>

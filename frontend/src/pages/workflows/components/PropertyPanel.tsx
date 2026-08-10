@@ -1783,16 +1783,16 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               </Form.Item>
             </div>
 
-            {/* 消息队列输出（RabbitMQ） */}
+            {/* 消息队列输出 */}
             <div className="config-section">
               <div className="config-section-header">
-                <span className="config-section-title">消息队列输出（RabbitMQ）</span>
+                <span className="config-section-title">消息队列输出</span>
               </div>
 
               <Form.Item
-                label="输出到 RabbitMQ"
+                label="输出到消息队列"
                 name="publishToMq"
-                extra="开启后，该节点告警在真正触发（通过触发条件、抑制期、VL 核验）后会推送到 RabbitMQ，且需在系统设置中启用全局 RabbitMQ。关闭后该节点告警不再推送 MQ，但告警记录与录像不受影响。"
+                extra="开启后，该节点告警在真正触发（通过触发条件、抑制期、VL 核验）后会推送到系统设置中选择的 MQTT 或 RabbitMQ。关闭后告警记录与录像不受影响。"
                 valuePropName="checked"
               >
                 <Switch />

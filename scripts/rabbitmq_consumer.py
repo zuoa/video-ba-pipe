@@ -16,11 +16,20 @@ import pika
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from app.config import (
-    RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD,
-    RABBITMQ_VHOST, RABBITMQ_ALERT_QUEUE, RABBITMQ_ENABLED,
-    RABBITMQ_EXCHANGE_TYPE, RABBITMQ_ALERT_TOPIC_PATTERN
-)
+from app.core.message_queue_config import get_message_queue_config
+from app.core.rabbitmq_config import get_rabbitmq_config
+
+_mq_config = get_message_queue_config()
+_rabbitmq_config = get_rabbitmq_config()
+RABBITMQ_HOST = _rabbitmq_config.host
+RABBITMQ_PORT = _rabbitmq_config.port
+RABBITMQ_USER = _rabbitmq_config.username
+RABBITMQ_PASSWORD = _rabbitmq_config.password
+RABBITMQ_VHOST = _rabbitmq_config.vhost
+RABBITMQ_ALERT_QUEUE = _rabbitmq_config.alert_queue
+RABBITMQ_ENABLED = _mq_config.enabled and _mq_config.provider == "rabbitmq"
+RABBITMQ_EXCHANGE_TYPE = _rabbitmq_config.exchange_type
+RABBITMQ_ALERT_TOPIC_PATTERN = "video.alert.#"
 
 # 配置日志
 logging.basicConfig(

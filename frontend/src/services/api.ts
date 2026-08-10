@@ -63,6 +63,18 @@ export async function setApiKeyEnabled(id: number, enabled: boolean) {
   });
 }
 
+export async function downloadOpenApiSpec() {
+  return request<Blob>('/api/system/openapi/spec', {
+    responseType: 'blob',
+  });
+}
+
+export async function downloadOpenApiGuide() {
+  return request<Blob>('/api/system/openapi/guide', {
+    responseType: 'blob',
+  });
+}
+
 export async function getVlConfig() {
   return request('/api/system/vl-config');
 }
@@ -271,6 +283,45 @@ export interface RabbitMqConfig {
   alert_routing_key: string;
   exchange_type: 'topic' | 'direct';
   connection_timeout_seconds: number;
+}
+
+export interface MqttConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  password_configured?: boolean;
+  topic_prefix: string;
+  connection_timeout_seconds: number;
+  publish_timeout_seconds: number;
+  keepalive_seconds: number;
+}
+
+export interface MessageQueueConfig {
+  enabled: boolean;
+  provider: 'mqtt' | 'rabbitmq';
+  mqtt: MqttConfig;
+  rabbitmq: RabbitMqConfig;
+}
+
+export async function getMessageQueueConfig() {
+  return request<{ success: boolean; config: MessageQueueConfig }>(
+    '/api/system/message-queue-config',
+  );
+}
+
+export async function updateMessageQueueConfig(data: MessageQueueConfig) {
+  return request<{ success: boolean; config: MessageQueueConfig; message?: string }>(
+    '/api/system/message-queue-config',
+    { method: 'PUT', data },
+  );
+}
+
+export async function testMessageQueueConfig(data: MessageQueueConfig) {
+  return request<{ success: boolean; message?: string; error?: string }>(
+    '/api/system/message-queue-config/test',
+    { method: 'POST', data },
+  );
 }
 
 export async function getRabbitMqConfig() {

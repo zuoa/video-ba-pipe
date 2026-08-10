@@ -1,0 +1,134 @@
+.api-docs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.api-docs-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 24px 28px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.api-docs-card__title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.api-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.api-docs-field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.api-docs-card__title + .api-docs-grid .api-docs-field-label,
+.api-docs-field-label:first-of-type {
+  margin-top: 0;
+}
+
+.api-docs-paragraph {
+  margin-bottom: 0 !important;
+}
+
+.api-docs-text {
+  color: #475569;
+  line-height: 1.8;
+}
+
+.api-docs-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #ad6800;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.api-docs-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-docs-flow__step {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #1f2328;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.api-docs-flow__arrow {
+  color: #94a3b8;
+}
+
+.api-docs-endpoint__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-docs-method-tag {
+  margin-inline-end: 0;
+  font-weight: 600;
+}
+
+.api-docs-endpoint__path {
+  font-size: 14px;
+}
+
+.api-docs-endpoint__summary {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.api-docs-response-note {
+  font-weight: 400;
+  color: #6b7280;
+}
+
+.api-docs-code {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.api-docs-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.api-docs-page .ant-table {
+  border-radius: 12px;
+  overflow: hidden;
+}

@@ -20,6 +20,7 @@ import {
   LogoutOutlined,
   TeamOutlined,
   SettingOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 
 const DEFAULT_COMPANY_NAME = '码全科技';
@@ -63,6 +64,11 @@ const Header: React.FC = () => {
   };
 
   const userMenuItems = [
+    {
+      key: 'api-docs',
+      icon: <ReadOutlined />,
+      label: <Link to="/api-docs">API 文档</Link>,
+    },
     ...(user?.role === 'admin' ? [{
       key: 'system-settings',
       icon: <SettingOutlined />,

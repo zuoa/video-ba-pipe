@@ -54,7 +54,8 @@ from app.core.frame_utils import (
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
-from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, format_alert_message
+from app.core.rabbitmq_publisher import format_alert_message
+from app.core.message_queue_publisher import publish_alert_to_mq
 from app.core.recording_storage_config import get_recording_storage_config
 from app.core.storage_pressure import (
     StoragePressure,
@@ -3386,18 +3387,18 @@ class WorkflowExecutor:
             alert_event=alert_event,
         )
 
-        # 发布到 RabbitMQ（受告警节点 publish_to_mq 开关控制；全局开关在系统设置中配置）
+        # 发布到当前消息队列提供方（受节点与系统设置总开关控制）
         if not getattr(alert_node, 'publish_to_mq', True):
-            logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 已关闭 MQ 输出，跳过 RabbitMQ 发布: {alert.id}")
+            logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 已关闭 MQ 输出，跳过消息队列发布: {alert.id}")
         else:
             try:
                 alert_message = format_alert_message(alert)
-                if publish_alert_to_rabbitmq(alert_message):
-                    logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到RabbitMQ: {alert.id}")
+                if publish_alert_to_mq(alert_message):
+                    logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到消息队列: {alert.id}")
                 else:
-                    logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到RabbitMQ失败: {alert.id}")
+                    logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到消息队列失败或未启用: {alert.id}")
             except Exception as e:
-                logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到RabbitMQ时发生错误: {e}")
+                logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到消息队列时发生错误: {e}")
 
     def test_execute(self, test_frame: np.ndarray, test_image_bgr: np.ndarray = None):
         """
@@ -4083,7 +4084,7 @@ class WorkflowExecutor:
         - 不访问 self.video_source（测试模式下为 None）
         - 不创建 Alert 数据库记录
         - 不启动视频录制
-        - 不发布到 RabbitMQ
+        - 不发布到消息队列
         - 只收集日志和模拟触发条件检查
 
         Args:

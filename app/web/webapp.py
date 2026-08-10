@@ -29,10 +29,22 @@ from app.config import (
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
 )
-from app.core.rabbitmq_publisher import (
-    format_alert_message,
-    publish_alert_to_rabbitmq,
-    reload_rabbitmq_publisher,
+from app.core.rabbitmq_publisher import format_alert_message
+from app.core.message_queue_publisher import (
+    publish_alert_to_mq,
+    reload_message_queue_publishers,
+)
+from app.core.message_queue_config import (
+    get_message_queue_config,
+    normalize_message_queue_config,
+    save_message_queue_config,
+)
+from app.core.message_queue_admin import save_legacy_rabbitmq_config
+from app.core.mqtt_config import (
+    get_mqtt_config,
+    normalize_mqtt_config,
+    save_mqtt_config,
+    test_mqtt_connection,
 )
 from app.core.rabbitmq_config import (
     get_rabbitmq_config,
@@ -568,12 +580,14 @@ def get_system_rabbitmq_config():
 @require_admin
 def update_system_rabbitmq_config():
     try:
-        config = save_rabbitmq_config(
-            request.json or {},
-            updated_by=current_username('admin'),
-        )
+        updated_by = current_username('admin')
+        with db.atomic():
+            config = save_legacy_rabbitmq_config(
+                request.json or {},
+                updated_by=updated_by,
+            )
         # 断开旧连接，使下次发布按新配置重建链路
-        reload_rabbitmq_publisher()
+        reload_message_queue_publishers()
         return jsonify({
             'success': True,
             'config': config.to_dict(include_password=False),
@@ -603,6 +617,89 @@ def test_system_rabbitmq_config():
         return jsonify({'success': False, 'error': detail}), 502
     except Exception as exc:
         app.logger.error(f"测试 RabbitMQ 连接失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 502
+
+
+@app.route('/api/system/message-queue-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_message_queue_config():
+    selector = get_message_queue_config()
+    mqtt_config = get_mqtt_config()
+    rabbitmq_config = get_rabbitmq_config()
+    return jsonify({
+        'success': True,
+        'config': {
+            **selector.to_dict(),
+            'mqtt': mqtt_config.to_dict(include_password=False),
+            'rabbitmq': rabbitmq_config.to_dict(include_password=False),
+        },
+    })
+
+
+@app.route('/api/system/message-queue-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_message_queue_config():
+    try:
+        payload = request.json or {}
+        selector = normalize_message_queue_config(payload)
+        mqtt_payload = payload.get('mqtt') or get_mqtt_config().to_dict()
+        rabbitmq_payload = payload.get('rabbitmq') or get_rabbitmq_config().to_dict()
+        rabbitmq_payload = {
+            **rabbitmq_payload,
+            'enabled': selector.enabled and selector.provider == 'rabbitmq',
+        }
+        updated_by = current_username('admin')
+        with db.atomic():
+            mqtt_config = save_mqtt_config(mqtt_payload, updated_by=updated_by)
+            rabbitmq_config = save_rabbitmq_config(rabbitmq_payload, updated_by=updated_by)
+            selector = save_message_queue_config(payload, updated_by=updated_by)
+        reload_message_queue_publishers()
+        return jsonify({
+            'success': True,
+            'config': {
+                **selector.to_dict(),
+                'mqtt': mqtt_config.to_dict(include_password=False),
+                'rabbitmq': rabbitmq_config.to_dict(include_password=False),
+            },
+            'message': '消息队列配置已更新，下次发布时按新配置连接',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新消息队列配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/message-queue-config/test', methods=['POST'])
+@require_auth
+@require_admin
+def test_system_message_queue_config():
+    try:
+        payload = request.json or {}
+        selector = normalize_message_queue_config(payload)
+        if selector.provider == 'mqtt':
+            existing = get_mqtt_config()
+            config = normalize_mqtt_config(
+                payload.get('mqtt') or {},
+                existing_password=existing.password,
+            )
+            ok, detail = test_mqtt_connection(config)
+        else:
+            existing = get_rabbitmq_config()
+            config = normalize_rabbitmq_config(
+                payload.get('rabbitmq') or {},
+                existing_password=existing.password,
+            )
+            ok, detail = test_rabbitmq_connection(config)
+        if ok:
+            return jsonify({'success': True, 'message': detail})
+        return jsonify({'success': False, 'error': detail}), 502
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"测试消息队列连接失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 502
 
 
@@ -1604,15 +1701,15 @@ def create_alert():
 
         alert = Alert.create(**alert_params)
         
-        # 发布预警消息到RabbitMQ
+        # 发布预警消息到当前消息队列提供方
         try:
             alert_message = format_alert_message(alert)
-            if publish_alert_to_rabbitmq(alert_message):
-                print(f"预警消息已成功发布到RabbitMQ: {alert.id}")
+            if publish_alert_to_mq(alert_message):
+                print(f"预警消息已成功发布到消息队列: {alert.id}")
             else:
-                print(f"预警消息发布到RabbitMQ失败: {alert.id}")
+                print(f"预警消息发布到消息队列失败或未启用: {alert.id}")
         except Exception as e:
-            print(f"发布预警消息到RabbitMQ时发生错误: {e}")
+            print(f"发布预警消息到消息队列时发生错误: {e}")
         
         return jsonify({'id': alert.id, 'message': 'Alert created'}), 201
     except Exception as e:

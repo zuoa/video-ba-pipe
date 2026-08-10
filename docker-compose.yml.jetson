@@ -81,15 +81,6 @@ x-jetson-environment: &jetson-environment
   ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
   ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
   MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
-  RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
-  RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
-  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
-  RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
-  RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
-  RABBITMQ_ALERT_QUEUE: ${RABBITMQ_ALERT_QUEUE:-video_alerts}
-  RABBITMQ_ALERT_EXCHANGE: ${RABBITMQ_ALERT_EXCHANGE:-video_alerts}
-  RABBITMQ_ALERT_ROUTING_KEY: ${RABBITMQ_ALERT_ROUTING_KEY:-alert}
   # MediaMTX / WebRTC 实时预览（按需拉流中继，默认关闭）
   MEDIAMTX_ENABLED: ${MEDIAMTX_ENABLED:-false}
   MEDIAMTX_API_HOST: mediamtx
@@ -263,6 +254,39 @@ services:
     logging: *default-logging
 
   # ============================================
+  # MQTT Broker（应用连接参数在系统设置页面配置）
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: video-ba-mqtt-jetson
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ ! -s /mosquitto/secrets/initial-password ]; then
+          umask 077
+          od -An -N24 -tx1 /dev/urandom | tr -d ' \n' > /mosquitto/secrets/initial-password
+        fi
+        mqtt_password="$$(cat /mosquitto/secrets/initial-password)"
+        mosquitto_passwd -b -c /mosquitto/secrets/passwd video-ba "$$mqtt_password"
+        chmod 600 /mosquitto/secrets/initial-password
+        chmod 640 /mosquitto/secrets/passwd
+        unset mqtt_password
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    volumes:
+      - ./deploy/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+      - mqtt-secrets:/mosquitto/secrets
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -u video-ba -P \"$$(cat /mosquitto/secrets/initial-password)\" -t health -m ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # MediaMTX 实时预览中继服务（可选，默认 MEDIAMTX_ENABLED=false）
   # WebRTC(WHEP) 按需拉流：仅当有浏览器观众时才向摄像机拉 RTSP，观众离开自动断开。
   # 多架构镜像(amd64/arm64)，Jetson 可直接使用。
@@ -292,4 +316,8 @@ networks:
 
 volumes:
   postgres-data:
+    driver: local
+  mqtt-data:
+    driver: local
+  mqtt-secrets:
     driver: local

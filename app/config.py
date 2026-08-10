@@ -331,33 +331,6 @@ ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '10'))
 NODE_ID = (os.getenv('NODE_ID') or '').strip()
 NODE_ID_FILE = _resolve_data_path('NODE_ID_FILE', 'node_id.json')
 
-# ============ RabbitMQ配置 ============
-# RabbitMQ服务器地址
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', '10.0.4.15')
-RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
-RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'rabbit')
-RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'cv2025@)@%')
-RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', '/')
-
-# 预警消息队列配置
-RABBITMQ_ALERT_QUEUE = os.getenv('RABBITMQ_ALERT_QUEUE', 'video_alerts')
-RABBITMQ_ALERT_EXCHANGE = os.getenv('RABBITMQ_ALERT_EXCHANGE', 'video_alerts')
-RABBITMQ_ALERT_ROUTING_KEY = os.getenv('RABBITMQ_ALERT_ROUTING_KEY', 'alert')
-
-# Topic模式配置
-RABBITMQ_EXCHANGE_TYPE = os.getenv('RABBITMQ_EXCHANGE_TYPE', 'topic')  # topic 或 direct
-# 队列绑定用的 routing_key 通配模式。routing_key 形如 video.alert.{node_id}.{alert_type}，
-# 故默认用 'video.alert.#' 匹配所有节点与类型；如需按节点订阅可设为 video.alert.{node_id}.*。
-RABBITMQ_ALERT_TOPIC_PATTERN = os.getenv('RABBITMQ_ALERT_TOPIC_PATTERN', 'video.alert.#')
-
-# RabbitMQ连接超时设置（秒）
-RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30'))
-
-# 是否启用RabbitMQ预警发布
-# 默认 false：broker 相关功能默认关闭，避免 DB 读取失败回退到 env 时误启用，
-# 也与系统设置 UI（首次无配置行时显示关闭）保持一致。需要启用请在 .env/compose 显式置 true。
-RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'false').lower() in ('true', '1', 'yes')
-
 # ============ MediaMTX / WebRTC 实时预览 ============
 # 通过部署 MediaMTX 作为「按需拉流」中继，前端用 WebRTC(WHEP) 直接看实时画面。
 # 仅当 MEDIAMTX_ENABLED=true 且 MediaMTX 服务可达时生效；其余情况所有调用安全降级为 no-op。

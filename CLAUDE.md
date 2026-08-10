@@ -121,9 +121,9 @@ Critical settings in `.env` (copy from `env.example`):
 - `HEALTH_MONITOR_ENABLED`: Enable automatic source health checking
 - `NO_FRAME_CRITICAL_THRESHOLD`: Seconds without frames before restart
 
-**RabbitMQ:**
-- `RABBITMQ_ENABLED`: Enable message queue publishing
-- `RABBITMQ_HOST/PORT/USER/PASSWORD`: Connection settings
+**Message queues:**
+- MQTT is the default provider; RabbitMQ remains available for compatibility.
+- Enablement, provider selection, credentials, topics, and exchanges are stored from the System Settings page, not environment variables.
 
 ## Key Implementation Details
 

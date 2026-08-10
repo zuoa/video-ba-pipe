@@ -98,6 +98,12 @@ export default defineConfig({
       icon: 'ApiOutlined',
     },
     {
+      name: 'API 文档',
+      path: '/api-docs',
+      component: './api-docs',
+      icon: 'ReadOutlined',
+    },
+    {
       name: '用户管理',
       path: '/users',
       component: './users',

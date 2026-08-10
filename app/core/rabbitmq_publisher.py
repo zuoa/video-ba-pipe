@@ -6,6 +6,7 @@ RabbitMQ预警发布器模块
 import json
 import logging
 import time
+from dataclasses import asdict
 from typing import Any, Callable, Dict, Optional
 
 try:
@@ -39,6 +40,7 @@ class RabbitMQPublisher:
         self.channel = None
         self.connected = False
         self._config_provider = config_provider or get_rabbitmq_config
+        self._config_fingerprint = None
 
     def _config(self) -> RabbitMqConfig:
         return self._config_provider()
@@ -88,12 +90,14 @@ class RabbitMQPublisher:
             )
 
             self.connected = True
+            self._config_fingerprint = tuple(asdict(config).items())
             logger.info(f"成功连接到RabbitMQ服务器 {config.host}:{config.port}")
             return True
 
         except AMQPConnectionError as e:
             logger.error(f"连接RabbitMQ失败: {e}")
             self.connected = False
+            self._config_fingerprint = None
             return False
         except Exception as e:
             logger.error(f"初始化RabbitMQ连接时发生未知错误: {e}")
@@ -141,6 +145,12 @@ class RabbitMQPublisher:
         if pika is None:
             logger.warning("pika 未安装，跳过 RabbitMQ 预警发布")
             return False
+
+        # 每个进程独立持有连接；配置指纹确保页面保存后所有 worker 都能
+        # 在下一次发布时发现变更并按新参数重连。
+        config_fingerprint = tuple(asdict(config).items())
+        if self._config_fingerprint != config_fingerprint:
+            self.disconnect()
 
         # 检查连接状态，如果断开则尝试重连
         if not self.is_connected():
