@@ -680,6 +680,58 @@ export async function getModel(id: number) {
   return request(`/api/models/${id}`);
 }
 
+export interface ModelQuickSetupResource {
+  id: number;
+  name: string;
+  created: boolean;
+}
+
+export interface ModelQuickSetupPreview {
+  success: boolean;
+  eligible: boolean;
+  reason?: string | null;
+  model: {
+    id: number;
+    name: string;
+    model_type: string;
+    framework: string;
+  };
+  script?: {
+    name: string;
+    path: string;
+    version: string;
+  } | null;
+  defaults: {
+    algorithm_name: string;
+    template_name: string;
+  };
+  existing: {
+    algorithm?: ModelQuickSetupResource | null;
+    workflow_template?: ModelQuickSetupResource | null;
+  };
+}
+
+export interface ModelQuickSetupResult {
+  success: boolean;
+  message: string;
+  algorithm: ModelQuickSetupResource;
+  workflow_template: ModelQuickSetupResource;
+}
+
+export async function getModelQuickSetup(id: number) {
+  return request<ModelQuickSetupPreview>(`/api/models/${id}/quick-setup`);
+}
+
+export async function createModelQuickSetup(
+  id: number,
+  data: { algorithm_name: string; template_name: string },
+) {
+  return request<ModelQuickSetupResult>(`/api/models/${id}/quick-setup`, {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function downloadModelFile(id: number) {
   const response = await fetch(`/api/models/${id}/download`, {
     headers: getAuthHeaders(),

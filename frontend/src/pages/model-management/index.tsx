@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Row, Col, message, Spin } from 'antd';
+import { useNavigate } from '@umijs/max';
 import Button from '@/components/common/AppButton';
 import {
   PlusOutlined,
@@ -12,6 +13,7 @@ import FilterBar from './components/FilterBar';
 import UploadModal from './components/UploadModal';
 import DetailModal from './components/DetailModal';
 import EmptyState from './components/EmptyState';
+import QuickSetupModal from './components/QuickSetupModal';
 import './index.css';
 
 interface Model {
@@ -31,6 +33,10 @@ interface Model {
   usage_count: number;
   download_count: number;
   created_at: string;
+  quick_setup?: {
+    eligible: boolean;
+    reason?: string | null;
+  };
 }
 
 interface ModelFilter {
@@ -41,11 +47,13 @@ interface ModelFilter {
 }
 
 const ModelsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
+  const [quickSetupModel, setQuickSetupModel] = useState<Model | null>(null);
 
   const [filter, setFilter] = useState<ModelFilter>({});
   const [modelTypes, setModelTypes] = useState<string[]>([]);
@@ -192,6 +200,11 @@ const ModelsPage: React.FC = () => {
                 model={model}
                 onView={showDetail}
                 onDelete={handleDelete}
+                onQuickSetup={setQuickSetupModel}
+                onConfigure={(item) => {
+                  message.info(item.quick_setup?.reason || '请在完整向导中选择适合该模型的脚本');
+                  navigate('/algorithms/wizard');
+                }}
               />
             </Col>
           ))}
@@ -208,6 +221,13 @@ const ModelsPage: React.FC = () => {
         visible={detailModalVisible}
         model={selectedModel}
         onClose={() => setDetailModalVisible(false)}
+      />
+
+      <QuickSetupModal
+        visible={Boolean(quickSetupModel)}
+        model={quickSetupModel}
+        onClose={() => setQuickSetupModel(null)}
+        onCreated={loadModels}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 """
 模型管理API
 """
+import ast
 import os
 import sys
 import json
@@ -10,17 +11,25 @@ import stat
 import tarfile
 import tempfile
 import zipfile
+from copy import deepcopy
 from datetime import datetime
+from functools import lru_cache
 from urllib.parse import urlparse, unquote, quote
 
 import requests
 from flask import Blueprint, request, jsonify, send_file, current_app, after_this_request
+from peewee import IntegrityError
 from werkzeug.utils import secure_filename
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.core.database_models import MLModel, Algorithm, db
+from app.core.database_models import MLModel, Algorithm, Workflow, db
+from app.core.script_loader import get_script_loader
+from app.core.workflow_runtime import (
+    build_template_workflow_data,
+    validate_template_source_node,
+)
 from app.config import (
     HF_DOWNLOAD_TIMEOUT_SECONDS,
     HF_MIRROR_ENDPOINT,
@@ -77,6 +86,9 @@ EXTENSION_MODEL_HINTS = {
 }
 
 HF_OFFICIAL_ENDPOINT = 'https://huggingface.co'
+QUICK_SETUP_SCRIPT_PATH = 'templates/adaptive_yolo_detector.py'
+QUICK_SETUP_MARKER_KEY = 'quick_create'
+QUICK_SETUP_LABEL_COLOR = '#52c41a'
 
 
 def _parse_boolean(value, default=False):
@@ -473,8 +485,278 @@ def _algorithms_referencing_model(model_id):
     ]
 
 
+def _normalized_filter_values(values):
+    if not isinstance(values, list):
+        return set()
+    return {str(value).strip().lower() for value in values if str(value).strip()}
+
+
+@lru_cache(maxsize=1)
+def _load_quick_setup_metadata():
+    """Read the built-in script metadata literal without importing the script."""
+    file_path = get_script_loader().resolve_path(QUICK_SETUP_SCRIPT_PATH)
+    with open(file_path, 'r', encoding='utf-8') as script_file:
+        tree = ast.parse(script_file.read(), filename=file_path)
+    for node in tree.body:
+        value_node = None
+        if isinstance(node, ast.Assign):
+            if any(isinstance(target, ast.Name) and target.id == 'SCRIPT_METADATA' for target in node.targets):
+                value_node = node.value
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == 'SCRIPT_METADATA':
+                value_node = node.value
+        if value_node is not None:
+            metadata = ast.literal_eval(value_node)
+            return metadata if isinstance(metadata, dict) else {}
+    return {}
+
+
+def _quick_setup_definition(model):
+    """Resolve quick-setup defaults from the generic script without executing it."""
+    try:
+        metadata = _load_quick_setup_metadata()
+    except Exception as exc:
+        logger.error(f'读取快速创建脚本元数据失败: {exc}')
+        return {
+            'eligible': False,
+            'reason': '通用检测脚本当前不可用',
+            'script': None,
+            'script_config': {},
+            'performance': {},
+        }
+
+    schema = metadata.get('config_schema') if isinstance(metadata, dict) else None
+    schema = schema if isinstance(schema, dict) else {}
+    model_field = schema.get('model_id')
+    if not isinstance(model_field, dict) or model_field.get('type') != 'model_select':
+        return {
+            'eligible': False,
+            'reason': '通用检测脚本缺少单模型配置',
+            'script': None,
+            'script_config': {},
+            'performance': {},
+        }
+
+    filters = model_field.get('filters') if isinstance(model_field.get('filters'), dict) else {}
+    allowed_types = _normalized_filter_values(filters.get('model_type'))
+    allowed_frameworks = _normalized_filter_values(filters.get('framework'))
+    model_type = str(model.model_type or '').strip().lower()
+    framework = str(model.framework or '').strip().lower()
+
+    reason = None
+    if not model.enabled:
+        reason = '模型已禁用，请先启用模型'
+    elif allowed_types and model_type not in allowed_types:
+        reason = f'模型类型 {model.model_type} 不受通用检测脚本支持'
+    elif allowed_frameworks and framework not in allowed_frameworks:
+        reason = f'模型框架 {model.framework} 不受通用检测脚本支持'
+
+    script_config = {'model_id': model.id}
+    missing_required = []
+    for field_name, field_schema in schema.items():
+        if field_name == 'model_id' or not isinstance(field_schema, dict):
+            continue
+        if 'default' in field_schema:
+            script_config[field_name] = deepcopy(field_schema['default'])
+        elif field_schema.get('required'):
+            missing_required.append(field_schema.get('label') or field_name)
+
+    if not reason and missing_required:
+        reason = f"通用脚本仍需配置: {', '.join(missing_required)}"
+
+    performance = metadata.get('performance') if isinstance(metadata.get('performance'), dict) else {}
+    return {
+        'eligible': reason is None,
+        'reason': reason,
+        'script': {
+            'name': metadata.get('name') or '自适应 YOLO 检测',
+            'path': QUICK_SETUP_SCRIPT_PATH,
+            'version': metadata.get('version') or '',
+        },
+        'script_config': script_config,
+        'performance': performance,
+    }
+
+
+def _quick_marker(algorithm):
+    marker = algorithm.ext_config.get(QUICK_SETUP_MARKER_KEY)
+    return marker if isinstance(marker, dict) else {}
+
+
+def _find_quick_algorithm(model, username):
+    for algorithm in Algorithm.select().where(Algorithm.created_by == username):
+        marker = _quick_marker(algorithm)
+        try:
+            marker_model_id = int(marker.get('model_id'))
+        except (TypeError, ValueError):
+            continue
+        if marker_model_id != model.id:
+            continue
+        if algorithm.script_path != QUICK_SETUP_SCRIPT_PATH:
+            continue
+        if _algorithm_references_model(algorithm, model.id, target_model=model):
+            return algorithm
+    return None
+
+
+def _workflow_references_algorithm(workflow, algorithm_id, exact_quick_graph=False):
+    graph = workflow.data_dict
+    nodes = graph.get('nodes') if isinstance(graph, dict) else None
+    if not isinstance(nodes, list):
+        return False
+    if exact_quick_graph:
+        node_types = sorted(str(node.get('type') or '') for node in nodes if isinstance(node, dict))
+        if node_types != ['alert', 'algorithm', 'source']:
+            return False
+    for node in nodes:
+        if not isinstance(node, dict) or node.get('type') != 'algorithm':
+            continue
+        raw_id = node.get('dataId') or node.get('algorithmId')
+        try:
+            if int(raw_id) == int(algorithm_id):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _find_quick_template(algorithm, username):
+    marker = _quick_marker(algorithm)
+    try:
+        template_id = int(marker.get('workflow_template_id'))
+    except (TypeError, ValueError):
+        template_id = None
+
+    if template_id is not None:
+        template = Workflow.get_or_none(
+            (Workflow.id == template_id)
+            & (Workflow.created_by == username)
+            & (Workflow.is_template == True)
+        )
+        if template and _workflow_references_algorithm(template, algorithm.id):
+            return template
+
+    candidates = Workflow.select().where(
+        (Workflow.created_by == username) & (Workflow.is_template == True)
+    )
+    for template in candidates:
+        if _workflow_references_algorithm(template, algorithm.id, exact_quick_graph=True):
+            return template
+    return None
+
+
+def _serialize_quick_resource(resource, created):
+    return {
+        'id': resource.id,
+        'name': resource.name,
+        'created': created,
+    }
+
+
+def _quick_setup_preview(model, username):
+    definition = _quick_setup_definition(model)
+    algorithm = _find_quick_algorithm(model, username)
+    template = _find_quick_template(algorithm, username) if algorithm else None
+    return {
+        'eligible': definition['eligible'],
+        'reason': definition['reason'],
+        'model': {
+            'id': model.id,
+            'name': model.name,
+            'model_type': model.model_type,
+            'framework': model.framework,
+        },
+        'script': definition['script'],
+        'defaults': {
+            'algorithm_name': f'{model.name}算法',
+            'template_name': f'{model.name}告警模板',
+        },
+        'existing': {
+            'algorithm': _serialize_quick_resource(algorithm, False) if algorithm else None,
+            'workflow_template': _serialize_quick_resource(template, False) if template else None,
+        },
+    }
+
+
+def _build_quick_template_graph(model, algorithm, runtime_timeout, memory_limit_mb):
+    graph = build_template_workflow_data()
+    source_node = graph['nodes'][0]
+    source_node.update({'x': 80, 'y': 160})
+    algorithm_node_id = f'quick-algorithm-{algorithm.id}'
+    alert_node_id = f'quick-alert-{algorithm.id}'
+    graph['nodes'].extend([
+        {
+            'id': algorithm_node_id,
+            'type': 'algorithm',
+            'name': algorithm.name,
+            'x': 360,
+            'y': 160,
+            'description': algorithm.description,
+            'dataId': algorithm.id,
+            'algorithmId': algorithm.id,
+            'config': {
+                'interval_seconds': 1,
+                'runtime_timeout': runtime_timeout,
+                'memory_limit_mb': memory_limit_mb,
+                'label_name': model.name,
+                'label_color': QUICK_SETUP_LABEL_COLOR,
+                'window_detection': {
+                    'enable': False,
+                    'window_size': 30,
+                    'window_mode': 'ratio',
+                    'window_threshold': 0.3,
+                },
+            },
+        },
+        {
+            'id': alert_node_id,
+            'type': 'alert',
+            'name': '告警输出',
+            'x': 660,
+            'y': 160,
+            'description': '发送检测告警',
+            'config': None,
+            'data': {
+                'alertLevel': 'warning',
+                'alertType': 'detection',
+                'alertMessage': f'模型 {model.name} 检测到目标',
+                'messageFormat': 'detailed',
+                'triggerCondition': None,
+                'suppression': None,
+                'vlValidation': {'enable': False, 'promptTemplate': ''},
+            },
+        },
+    ])
+    graph['connections'] = [
+        {
+            'id': f'{source_node["id"]}-{algorithm_node_id}',
+            'from': source_node['id'],
+            'to': algorithm_node_id,
+            'from_node_id': source_node['id'],
+            'to_node_id': algorithm_node_id,
+            'from_port': 'output',
+            'to_port': 'input',
+            'condition': None,
+            'label': '',
+        },
+        {
+            'id': f'{algorithm_node_id}-{alert_node_id}',
+            'from': algorithm_node_id,
+            'to': alert_node_id,
+            'from_node_id': algorithm_node_id,
+            'to_node_id': alert_node_id,
+            'from_port': 'output',
+            'to_port': 'input',
+            'condition': None,
+            'label': '',
+        },
+    ]
+    return graph
+
+
 def serialize_model(model):
     """序列化模型对象"""
+    quick_setup = _quick_setup_definition(model)
     return {
         'id': model.id,
         'name': model.name,
@@ -496,7 +778,11 @@ def serialize_model(model):
         'uploaded_by': model.uploaded_by,
         'download_count': model.download_count,
         'usage_count': len(_algorithms_referencing_model(model.id)),
-        'enabled': model.enabled
+        'enabled': model.enabled,
+        'quick_setup': {
+            'eligible': quick_setup['eligible'],
+            'reason': quick_setup['reason'],
+        },
     }
 
 
@@ -874,6 +1160,161 @@ def import_model_from_url():
             os.remove(file_path)
         logger.error(f"模型导入失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@models_bp.route('/<int:model_id>/quick-setup', methods=['GET'])
+def get_model_quick_setup(model_id):
+    """Preview the default algorithm and workflow template for a model."""
+    try:
+        model = MLModel.get_by_id(model_id)
+        return jsonify({
+            'success': True,
+            **_quick_setup_preview(model, current_username('admin')),
+        })
+    except MLModel.DoesNotExist:
+        return jsonify({'success': False, 'error': '模型不存在'}), 404
+    except Exception as exc:
+        logger.error(f'获取模型快速创建预览失败 (model_id={model_id}): {exc}')
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@models_bp.route('/<int:model_id>/quick-setup', methods=['POST'])
+def create_model_quick_setup(model_id):
+    """Create or reuse a default algorithm and its alert workflow template."""
+    try:
+        model = MLModel.get_by_id(model_id)
+    except MLModel.DoesNotExist:
+        return jsonify({'success': False, 'error': '模型不存在'}), 404
+
+    username = current_username('admin')
+    definition = _quick_setup_definition(model)
+    if not definition['eligible']:
+        return jsonify({
+            'success': False,
+            'code': 'quick_setup_ineligible',
+            'error': definition['reason'] or '该模型不支持快速创建',
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    default_algorithm_name = f'{model.name}算法'
+    default_template_name = f'{model.name}告警模板'
+    algorithm_name = str(data.get('algorithm_name') or default_algorithm_name).strip()
+    template_name = str(data.get('template_name') or default_template_name).strip()
+    if not algorithm_name:
+        return jsonify({'success': False, 'error': '算法名称不能为空'}), 400
+    if not template_name:
+        return jsonify({'success': False, 'error': '模板名称不能为空'}), 400
+
+    existing_algorithm = _find_quick_algorithm(model, username)
+    if existing_algorithm is None and Algorithm.get_or_none(Algorithm.name == algorithm_name):
+        return jsonify({
+            'success': False,
+            'code': 'algorithm_name_conflict',
+            'error': '算法名称已存在，请修改后重试',
+        }), 409
+
+    now = datetime.now()
+    algorithm_created = False
+    template_created = False
+    try:
+        with db.atomic():
+            algorithm = existing_algorithm
+            if algorithm is None:
+                performance = definition['performance']
+                runtime_timeout = int(performance.get('timeout') or 15)
+                memory_limit_mb = int(performance.get('memory_limit_mb') or 256)
+                script = definition['script'] or {}
+                ext_config = {
+                    'algorithm_type': 'script',
+                    'plugin_module': 'script_algorithm',
+                    'script_type': 'script',
+                    'script_version': script.get('version') or '',
+                    'interval_seconds': 1,
+                    'runtime_timeout': runtime_timeout,
+                    'memory_limit_mb': memory_limit_mb,
+                    'enable_window_check': False,
+                    'window_size': 30,
+                    'window_mode': 'ratio',
+                    'window_threshold': 0.3,
+                    'label_name': model.name,
+                    'label_color': QUICK_SETUP_LABEL_COLOR,
+                    'model_json': json.dumps({'model_id': model.id}, ensure_ascii=False),
+                    'model_ids': json.dumps([model.id]),
+                    QUICK_SETUP_MARKER_KEY: {
+                        'model_id': model.id,
+                        'script_path': QUICK_SETUP_SCRIPT_PATH,
+                        'script_version': script.get('version') or '',
+                    },
+                }
+                algorithm = Algorithm.create(
+                    name=algorithm_name,
+                    description=f'由模型「{model.name}」快速创建的通用检测算法',
+                    script_path=QUICK_SETUP_SCRIPT_PATH,
+                    script_config=json.dumps(definition['script_config'], ensure_ascii=False),
+                    ext_config_json=json.dumps(ext_config, ensure_ascii=False),
+                    enabled_hooks=None,
+                    created_at=now,
+                    updated_at=now,
+                    created_by=username,
+                )
+                algorithm_created = True
+
+            template = _find_quick_template(algorithm, username)
+            if template is None:
+                ext_config = dict(algorithm.ext_config)
+                runtime_timeout = int(ext_config.get('runtime_timeout') or 15)
+                memory_limit_mb = int(ext_config.get('memory_limit_mb') or 256)
+                graph = _build_quick_template_graph(
+                    model,
+                    algorithm,
+                    runtime_timeout,
+                    memory_limit_mb,
+                )
+                valid, error_message = validate_template_source_node(graph)
+                if not valid:
+                    raise ValueError(error_message)
+                template = Workflow.create(
+                    name=template_name,
+                    description=f'由模型「{model.name}」快速创建的告警编排模板',
+                    workflow_data=json.dumps(graph, ensure_ascii=False),
+                    is_active=False,
+                    is_template=True,
+                    source_template=None,
+                    video_source=None,
+                    created_at=now,
+                    updated_at=now,
+                    created_by=username,
+                )
+                template_created = True
+
+            ext_config = dict(algorithm.ext_config)
+            marker = dict(ext_config.get(QUICK_SETUP_MARKER_KEY) or {})
+            if marker.get('workflow_template_id') != template.id:
+                marker['workflow_template_id'] = template.id
+                ext_config[QUICK_SETUP_MARKER_KEY] = marker
+                algorithm.ext_config_json = json.dumps(ext_config, ensure_ascii=False)
+                algorithm.updated_at = now
+                algorithm.save()
+
+        status_code = 201 if algorithm_created or template_created else 200
+        return jsonify({
+            'success': True,
+            'message': '算法与编排模板创建完成' if status_code == 201 else '已复用现有算法与编排模板',
+            'algorithm': _serialize_quick_resource(algorithm, algorithm_created),
+            'workflow_template': _serialize_quick_resource(template, template_created),
+        }), status_code
+    except IntegrityError as exc:
+        logger.warning(f'模型快速创建发生名称冲突 (model_id={model_id}): {exc}')
+        return jsonify({
+            'success': False,
+            'code': 'algorithm_name_conflict',
+            'error': '算法名称已存在，请修改后重试',
+        }), 409
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        logger.error(f'模型快速创建失败 (model_id={model_id}): {exc}')
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 
 @models_bp.route('/<int:model_id>', methods=['GET'])

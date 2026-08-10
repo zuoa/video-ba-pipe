@@ -6,6 +6,8 @@ import {
   DeleteOutlined,
   ApiOutlined,
   ClockCircleOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import AppButton from '@/components/common/AppButton';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -28,12 +30,24 @@ interface ModelCardProps {
     enabled: boolean;
     usage_count: number;
     created_at: string;
+    quick_setup?: {
+      eligible: boolean;
+      reason?: string | null;
+    };
   };
   onView: (model: any) => void;
   onDelete: (id: number) => void;
+  onQuickSetup: (model: any) => void;
+  onConfigure: (model: any) => void;
 }
 
-const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
+const ModelCard: React.FC<ModelCardProps> = ({
+  model,
+  onView,
+  onDelete,
+  onQuickSetup,
+  onConfigure,
+}) => {
   const handleCopyPath = async () => {
     try {
       const data = await getModel(model.id);
@@ -129,6 +143,32 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onView, onDelete }) => {
           </Text>
         </Space>
         <Space size="small">
+          {model.quick_setup?.eligible ? (
+            <Tooltip title="用通用脚本创建算法和告警模板">
+              <AppButton
+                size="small"
+                tone="success"
+                iconOnly
+                className="action-btn action-btn-quick"
+                aria-label={`从模型 ${model.name} 快速创建算法和模板`}
+                onClick={() => onQuickSetup(model)}
+              >
+                <ThunderboltOutlined />
+              </AppButton>
+            </Tooltip>
+          ) : (
+            <Tooltip title={model.quick_setup?.reason || '使用完整向导配置算法'}>
+              <AppButton
+                size="small"
+                iconOnly
+                className="action-btn action-btn-configure"
+                aria-label={`为模型 ${model.name} 配置算法`}
+                onClick={() => onConfigure(model)}
+              >
+                <SettingOutlined />
+              </AppButton>
+            </Tooltip>
+          )}
           <Tooltip title="查看详情">
             <AppButton
               size="small"
