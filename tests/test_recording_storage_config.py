@@ -88,8 +88,11 @@ def test_load_recording_storage_config_reports_database_failure(monkeypatch):
 @pytest.mark.parametrize(
     "data,error_text",
     [
-        ({}, "告警前录像时长"),
+        # 录像关闭时缺省所有字段：录像相关字段不再报错，最先命中始终必填的录像容量上限
+        ({}, "录像容量上限"),
+        # 录像启用时，录像帧率仍需校验
         ({
+            "recording_enabled": True,
             "pre_alert_seconds": 5,
             "post_alert_seconds": 5,
             "recording_fps": 0,
@@ -114,3 +117,36 @@ def test_load_recording_storage_config_reports_database_failure(monkeypatch):
 def test_save_recording_storage_config_rejects_invalid_values(data, error_text):
     with pytest.raises(ValueError, match=error_text):
         save_recording_storage_config(data)
+
+
+def test_save_recording_storage_config_allows_missing_recording_fields_when_disabled(monkeypatch):
+    """录像关闭时缺省前/后录像时长与帧率不应报错，回退到安全默认值（回归测试）。"""
+
+    class FakeRecord:
+        def __init__(self):
+            self.value = ""
+            self.description = ""
+            self.updated_at = None
+            self.updated_by = ""
+
+        def save(self):
+            return None
+
+    monkeypatch.setattr(
+        "app.core.recording_storage_config.SystemSetting.get_or_create",
+        lambda *_, **__: (FakeRecord(), False),
+    )
+
+    config = save_recording_storage_config({
+        "recording_enabled": False,
+        "video_max_gb": 20,
+        "image_max_gb": 10,
+        "min_free_gb": 10,
+        "stop_recording_percent": 80,
+        "metadata_only_percent": 90,
+    })
+
+    assert config.recording_enabled is False
+    assert config.pre_alert_seconds == RecordingStorageConfig().pre_alert_seconds
+    assert config.post_alert_seconds == RecordingStorageConfig().post_alert_seconds
+    assert config.recording_fps == RecordingStorageConfig().recording_fps

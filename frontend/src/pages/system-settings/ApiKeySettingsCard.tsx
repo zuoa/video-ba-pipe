@@ -8,6 +8,7 @@ import {
   ManagedApiKey,
   setApiKeyEnabled,
 } from '@/services/api';
+import { copyToClipboard } from '@/utils/clipboard';
 
 const { Text } = Typography;
 
@@ -75,10 +76,10 @@ const ApiKeySettingsCard: React.FC = () => {
 
   const handleCopy = async () => {
     if (!generatedKey?.key) return;
-    try {
-      await navigator.clipboard.writeText(generatedKey.key);
+    const ok = await copyToClipboard(generatedKey.key);
+    if (ok) {
       message.success('API Key 已复制');
-    } catch {
+    } else {
       message.error('复制失败，请手动选择并复制');
     }
   };

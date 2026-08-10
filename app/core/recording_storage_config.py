@@ -183,13 +183,21 @@ def save_recording_storage_config(
     if not isinstance(data, dict):
         raise ValueError("配置必须是 JSON 对象")
 
-    _validate_number(
-        data, "pre_alert_seconds", "告警前录像时长", 0, MAX_RECORDING_WINDOW_SECONDS, integer=True
-    )
-    _validate_number(
-        data, "post_alert_seconds", "告警后录像时长", 0, MAX_RECORDING_WINDOW_SECONDS, integer=True
-    )
-    _validate_number(data, "recording_fps", "录像帧率", 1, MAX_RECORDING_FPS, integer=True)
+    defaults = RecordingStorageConfig()
+    recording_enabled = _safe_bool(data.get("recording_enabled"), defaults.recording_enabled)
+
+    # 录像相关的数值字段仅在录像启用时强制校验：录像关闭时前端同样不把它们设为必填，
+    # 此时缺省/空值交给 normalize 回退到安全默认值，避免误报 "告警前录像时长必须是数字"。
+    if recording_enabled:
+        _validate_number(
+            data, "pre_alert_seconds", "告警前录像时长", 0, MAX_RECORDING_WINDOW_SECONDS, integer=True
+        )
+        _validate_number(
+            data, "post_alert_seconds", "告警后录像时长", 0, MAX_RECORDING_WINDOW_SECONDS, integer=True
+        )
+        _validate_number(data, "recording_fps", "录像帧率", 1, MAX_RECORDING_FPS, integer=True)
+
+    # 存储容量字段始终必填（与录像开关无关，用于本地媒体磁盘水位保护）
     _validate_number(
         data, "video_max_gb", "录像容量上限", MIN_STORAGE_LIMIT_GB, MAX_STORAGE_LIMIT_GB
     )

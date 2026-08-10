@@ -4,6 +4,7 @@ import Button from '@/components/common/AppButton';
 import { DownloadOutlined, CopyOutlined } from '@ant-design/icons';
 import { downloadModelFile } from '@/services/api';
 import AppModal from '@/components/common/AppModal';
+import { copyToClipboard } from '@/utils/clipboard';
 
 interface Model {
   id: number;
@@ -36,10 +37,10 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
   if (!model) return null;
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(model.file_path);
+    const ok = await copyToClipboard(model.file_path);
+    if (ok) {
       message.success('路径已复制到剪贴板');
-    } catch (error) {
+    } else {
       message.error('复制失败');
     }
   };

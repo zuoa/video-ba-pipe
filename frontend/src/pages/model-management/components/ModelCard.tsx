@@ -12,6 +12,7 @@ import {
 import AppButton from '@/components/common/AppButton';
 import StatusBadge from '@/components/common/StatusBadge';
 import { getModel } from '@/services/api';
+import { copyToClipboard } from '@/utils/clipboard';
 import './ModelCard.css';
 
 const { Text, Paragraph } = Typography;
@@ -51,8 +52,12 @@ const ModelCard: React.FC<ModelCardProps> = ({
   const handleCopyPath = async () => {
     try {
       const data = await getModel(model.id);
-      await navigator.clipboard.writeText(data.model.file_path);
-      message.success('模型路径已复制');
+      const ok = await copyToClipboard(data.model.file_path);
+      if (ok) {
+        message.success('模型路径已复制');
+      } else {
+        message.error('复制路径失败');
+      }
     } catch (error) {
       message.error('复制路径失败');
     }
