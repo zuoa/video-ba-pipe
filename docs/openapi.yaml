@@ -1,0 +1,328 @@
+openapi: 3.0.3
+info:
+  title: Video BA Pipe Public API
+  version: 1.0.0
+  description: 视频源与算法编排的系统级集成接口。API Key 在系统设置中生成。
+servers:
+  - url: /openapi/v1
+security:
+  - ApiKeyAuth: []
+paths:
+  /video-sources:
+    post:
+      summary: 添加视频源
+      operationId: createVideoSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoSourceCreate'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoSourceResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /video-sources/{source_code}:
+    patch:
+      summary: 编辑视频源基本信息和解码参数
+      description: source_code 和 source_url 不可通过此接口修改。
+      operationId: updateVideoSource
+      parameters:
+        - $ref: '#/components/parameters/SourceCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoSourceUpdate'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoSourceResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /video-sources/{source_code}/source-url:
+    put:
+      summary: 更新视频源地址
+      description: 运行中的视频源将异步重启 decoder 并读取新地址。
+      operationId: updateVideoSourceUrl
+      parameters:
+        - $ref: '#/components/parameters/SourceCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_url]
+              additionalProperties: false
+              properties:
+                source_url:
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: 地址未变化，或非运行中视频源已更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceUrlUpdateResponse'
+        '202':
+          description: 地址已更新并安排运行时重载
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceUrlUpdateResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workflow-templates:
+    get:
+      summary: 查询全部编排模板
+      operationId: listWorkflowTemplates
+      responses:
+        '200':
+          description: 模板列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /workflow-activations:
+    post:
+      summary: 根据视频源编码和模板复制并激活编排
+      description: 相同视频源和模板的重复请求会复用并激活已有派生编排。
+      operationId: activateWorkflowFromTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_code, template_workflow_id]
+              additionalProperties: false
+              properties:
+                source_code:
+                  type: string
+                template_workflow_id:
+                  type: integer
+      responses:
+        '200':
+          description: 已有派生编排被复用并激活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationResponse'
+        '201':
+          description: 派生编排已创建并激活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workflows:
+    get:
+      summary: 查询派生编排
+      operationId: listWorkflows
+      parameters:
+        - name: source_code
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 不传时返回全部非模板编排。
+      responses:
+        '200':
+          description: 编排列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workflows/{workflow_id}/deactivate:
+    post:
+      summary: 去激活编排
+      operationId: deactivateWorkflow
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 编排已处于未激活状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      workflow_id: { type: integer }
+                      is_active: { type: boolean, example: false }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    SourceCode:
+      name: source_code
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: 请求参数或业务配置无效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: API Key 缺失、无效或已禁用
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: 指定资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: 资源唯一标识冲突
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [success, code, message]
+      properties:
+        success: { type: boolean, example: false }
+        code: { type: string, example: invalid_field }
+        message: { type: string }
+    VideoSourceCreate:
+      type: object
+      required: [source_code, name, source_url]
+      properties:
+        source_code:
+          type: string
+          maxLength: 255
+          pattern: '^[A-Za-z0-9._~-]+$'
+        name: { type: string }
+        source_url: { type: string }
+        enabled: { type: boolean, default: true }
+        source_decode_width: { type: integer, minimum: 1, default: 960 }
+        source_decode_height: { type: integer, minimum: 1, default: 540 }
+        source_fps: { type: integer, minimum: 1, default: 10 }
+        source_codec:
+          type: string
+          enum: [unknown, h264, h265]
+          default: unknown
+    VideoSourceUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        source_decode_width: { type: integer, minimum: 1 }
+        source_decode_height: { type: integer, minimum: 1 }
+        source_fps: { type: integer, minimum: 1 }
+        source_codec:
+          type: string
+          enum: [unknown, h264, h265]
+    VideoSource:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        enabled: { type: boolean }
+        source_code: { type: string }
+        source_url: { type: string }
+        source_decode_width: { type: integer }
+        source_decode_height: { type: integer }
+        source_fps: { type: integer }
+        source_codec: { type: string }
+        status: { type: string }
+    VideoSourceResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data: { $ref: '#/components/schemas/VideoSource' }
+    SourceUrlUpdateResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            source_code: { type: string }
+            source_url: { type: string }
+            changed: { type: boolean }
+            reload_scheduled: { type: boolean }
+    Workflow:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        workflow_data: { type: object }
+        is_active: { type: boolean }
+        is_template: { type: boolean }
+        source_template_id: { type: integer, nullable: true }
+        source_template_name: { type: string, nullable: true }
+        video_source_id: { type: integer, nullable: true }
+        source_code: { type: string, nullable: true }
+        config_version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    WorkflowListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          required: [items, total]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Workflow' }
+            total: { type: integer }
+    ActivationResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            workflow_id: { type: integer }
+            template_workflow_id: { type: integer }
+            source_code: { type: string }
+            created: { type: boolean }
+            is_active: { type: boolean, example: true }

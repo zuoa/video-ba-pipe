@@ -34,6 +34,35 @@ export async function getSystemMetrics() {
   return request('/api/system/metrics');
 }
 
+export interface ManagedApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  enabled: boolean;
+  created_at: string;
+  last_used_at?: string | null;
+  created_by: string;
+  key?: string;
+}
+
+export async function getApiKeys() {
+  return request<{ success: boolean; keys: ManagedApiKey[] }>('/api/system/api-keys');
+}
+
+export async function createApiKey(name: string) {
+  return request<{ success: boolean; key: ManagedApiKey; message: string }>('/api/system/api-keys', {
+    method: 'POST',
+    data: { name },
+  });
+}
+
+export async function setApiKeyEnabled(id: number, enabled: boolean) {
+  return request<{ success: boolean; key: ManagedApiKey }>(`/api/system/api-keys/${id}`, {
+    method: 'PATCH',
+    data: { enabled },
+  });
+}
+
 export async function getVlConfig() {
   return request('/api/system/vl-config');
 }

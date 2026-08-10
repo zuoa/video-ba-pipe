@@ -301,6 +301,32 @@
   justify-content: center;
 }
 
+.api-key-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.api-key-toolbar > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-key-toolbar > div span {
+  color: var(--text-secondary, #8c8c8c);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .api-key-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 @media (max-width: 960px) {
   .system-settings-grid {
     grid-template-columns: 1fr;

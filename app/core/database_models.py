@@ -489,6 +489,22 @@ class User(BaseModel):
         table_name = 'users'
 
 
+class ApiKey(BaseModel):
+    """用于系统级对外集成的 API Key（仅持久化摘要）。"""
+
+    id = pw.AutoField()
+    name = pw.CharField(unique=True, max_length=100)
+    key_prefix = pw.CharField(max_length=24)
+    key_hash = pw.CharField(unique=True, max_length=64)
+    enabled = pw.BooleanField(default=True, index=True)
+    created_at = pw.DateTimeField()
+    last_used_at = pw.DateTimeField(null=True)
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'api_keys'
+
+
 class SourceHealthLog(BaseModel):
     """视频源健康日志"""
     source = pw.ForeignKeyField(VideoSource, backref='health_logs', on_delete='CASCADE')

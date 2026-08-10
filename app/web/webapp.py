@@ -90,7 +90,13 @@ from app.version import get_app_version
 from app.branding import get_company_name
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(
+    app,
+    resources={
+        r"/api/*": {"origins": "*"},
+        r"/openapi/*": {"origins": "*"},
+    },
+)
 app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
 
@@ -2180,6 +2186,14 @@ try:
     app.logger.info("外部 API 管理API已注册")
 except ImportError as e:
     app.logger.warning(f"外部 API 管理API注册失败: {e}")
+
+# ========== 注册对外集成 API 与 API Key 管理 ==========
+try:
+    from app.web.api.public_api import register_public_api
+    register_public_api(app)
+    app.logger.info("对外集成 API 与 API Key 管理已注册")
+except ImportError as e:
+    app.logger.warning(f"对外集成 API 注册失败: {e}")
 
 # ========== 注册工作流管理API ==========
 try:
