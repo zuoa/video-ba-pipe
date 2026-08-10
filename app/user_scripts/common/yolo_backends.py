@@ -83,26 +83,115 @@ def parse_classes(model_info: Dict[str, Any]) -> Dict[int, str]:
 
 
 def parse_input_shape(shape_value: Any) -> Tuple[int, int]:
+    """Return ``(width, height)`` from common NCHW/NHWC metadata shapes."""
     if not shape_value:
         return 0, 0
+
+    def _dimensions_to_size(dimensions: List[int]) -> Tuple[int, int]:
+        if len(dimensions) < 2:
+            return 0, 0
+        if len(dimensions) >= 4 and dimensions[-1] in (1, 3, 4):
+            return dimensions[-2], dimensions[-3]
+        return dimensions[-1], dimensions[-2]
 
     if isinstance(shape_value, str):
         normalized = shape_value.lower().replace("[", "").replace("]", "").replace(" ", "")
         if "x" in normalized:
             parts = normalized.split("x")
-            if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
-                return int(parts[-2]), int(parts[-1])
-        parts = [p for p in normalized.split(",") if p.isdigit()]
-        if len(parts) >= 2:
-            return int(parts[-2]), int(parts[-1])
+            if len(parts) >= 2 and all(part.isdigit() for part in parts):
+                return _dimensions_to_size([int(part) for part in parts])
+        parts = normalized.split(",")
+        if len(parts) >= 2 and all(part.isdigit() for part in parts):
+            return _dimensions_to_size([int(part) for part in parts])
 
     if isinstance(shape_value, (list, tuple)) and len(shape_value) >= 2:
         try:
-            return int(shape_value[-2]), int(shape_value[-1])
+            return _dimensions_to_size([int(value) for value in shape_value])
         except Exception:
             return 0, 0
 
     return 0, 0
+
+
+def _parse_bool(value: Any, default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    raise ValueError(f"无法解析布尔配置值: {value!r}")
+
+
+def _bounded_float(config: Dict[str, Any], key: str, default: float) -> float:
+    raw_value = config.get(key, default)
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} 必须是数字，当前值: {raw_value!r}") from exc
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{key} 必须在 0 到 1 之间，当前值: {value}")
+    return value
+
+
+def normalize_backend_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and normalize the configuration shared by all YOLO backends."""
+    if not isinstance(config, dict):
+        raise ValueError("检测器配置必须是对象")
+
+    normalized = dict(config)
+    backend_aliases = {
+        "auto": "auto",
+        "ultralytics": "ultralytics",
+        "onnx": "onnxruntime",
+        "onnxruntime": "onnxruntime",
+        "rknn": "rknn",
+        "rknnlite": "rknn",
+    }
+    requested_backend = str(normalized.get("backend") or "auto").strip().lower()
+    if requested_backend not in backend_aliases:
+        supported = ", ".join(sorted(backend_aliases))
+        raise ValueError(f"不支持的推理后端: {requested_backend}；可选值: {supported}")
+    normalized["backend"] = backend_aliases[requested_backend]
+    normalized["confidence"] = _bounded_float(normalized, "confidence", 0.6)
+    normalized["nms_iou"] = _bounded_float(normalized, "nms_iou", 0.45)
+    normalized["class_filter"] = _parse_int_list(normalized.get("class_filter"))
+
+    for key in ("input_width", "input_height"):
+        raw_value = normalized.get(key)
+        if raw_value in (None, ""):
+            continue
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} 必须是正整数，当前值: {raw_value!r}") from exc
+        if value <= 0:
+            raise ValueError(f"{key} 必须是正整数，当前值: {value}")
+        normalized[key] = value
+
+    for key in ("rknn_input_format", "onnx_input_format"):
+        value = str(normalized.get(key) or "rgb").strip().lower()
+        if value not in ("rgb", "bgr"):
+            raise ValueError(f"{key} 仅支持 rgb 或 bgr，当前值: {value}")
+        normalized[key] = value
+
+    layout = str(normalized.get("onnx_input_layout") or "auto").strip().lower()
+    if layout not in ("auto", "nchw", "nhwc"):
+        raise ValueError(f"onnx_input_layout 仅支持 auto、nchw 或 nhwc，当前值: {layout}")
+    normalized["onnx_input_layout"] = layout
+
+    dtype = str(normalized.get("onnx_input_dtype") or "auto").strip().lower()
+    if dtype not in ("auto", "float32", "uint8"):
+        raise ValueError(f"onnx_input_dtype 仅支持 auto、float32 或 uint8，当前值: {dtype}")
+    normalized["onnx_input_dtype"] = dtype
+    normalized["onnx_normalize"] = _parse_bool(normalized.get("onnx_normalize"), True)
+    return normalized
 
 
 def select_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]) -> str:
@@ -1105,10 +1194,9 @@ class BaseYoloBackend:
         self.config = config
         self.model = None
         self.classes = parse_classes(model_info)
-        input_w, input_h = parse_input_shape(model_info.get("input_shape"))
-        if input_w <= 0 or input_h <= 0:
-            input_w = int(config.get("input_width", 640))
-            input_h = int(config.get("input_height", 640))
+        metadata_w, metadata_h = parse_input_shape(model_info.get("input_shape"))
+        input_w = int(config.get("input_width") or metadata_w or 640)
+        input_h = int(config.get("input_height") or metadata_h or 640)
         self.input_width = input_w
         self.input_height = input_h
         self.output_adapter = YoloOutputAdapter(
@@ -1129,6 +1217,7 @@ class BaseYoloBackend:
     def cleanup(self):
         if self.model is not None and hasattr(self.model, "close"):
             self.model.close()
+        self.model = None
 
 
 class UltralyticsBackend(BaseYoloBackend):
@@ -1283,18 +1372,21 @@ class RKNNBackend(BaseYoloBackend):
 
         self.rknn_input_format = (config.get("rknn_input_format") or "rgb").lower()
         self.model = RKNNLite()
+        try:
+            ret = self.model.load_rknn(model_path)
+            if ret != 0:
+                raise RuntimeError(f"RKNNLite.load_rknn 失败，返回码: {ret}")
 
-        ret = self.model.load_rknn(model_path)
-        if ret != 0:
-            raise RuntimeError(f"RKNNLite.load_rknn 失败，返回码: {ret}")
-
-        core_mask = _resolve_rknn_core_mask(config)
-        if core_mask is not None:
-            ret = self.model.init_runtime(core_mask=core_mask)
-        else:
-            ret = self.model.init_runtime()
-        if ret != 0:
-            raise RuntimeError(f"RKNNLite.init_runtime 失败，返回码: {ret}")
+            core_mask = _resolve_rknn_core_mask(config)
+            if core_mask is not None:
+                ret = self.model.init_runtime(core_mask=core_mask)
+            else:
+                ret = self.model.init_runtime()
+            if ret != 0:
+                raise RuntimeError(f"RKNNLite.init_runtime 失败，返回码: {ret}")
+        except Exception:
+            self.cleanup()
+            raise
 
     def infer(self, frame: np.ndarray):
         image, scale, pad_x, pad_y = _letterbox(frame, self.input_width, self.input_height)
@@ -1325,6 +1417,7 @@ class RKNNBackend(BaseYoloBackend):
     def cleanup(self):
         if self.model is not None and hasattr(self.model, "release"):
             self.model.release()
+        self.model = None
 
 
 class ONNXRuntimeBackend(BaseYoloBackend):
@@ -1348,29 +1441,60 @@ class ONNXRuntimeBackend(BaseYoloBackend):
         providers = [provider_name] if provider_name else None
         self.session = runtime.InferenceSession(model_path, providers=providers)
         self.model = self.session
-        self.input_name = self.session.get_inputs()[0].name
-        self.input_shape = self.session.get_inputs()[0].shape
+        input_definition = self.session.get_inputs()[0]
+        self.input_name = input_definition.name
+        self.input_shape = input_definition.shape
         self.onnx_input_format = (config.get("onnx_input_format") or "rgb").lower()
-        self.onnx_normalize = bool(config.get("onnx_normalize", True))
+        self.onnx_input_layout = self._resolve_input_layout(config.get("onnx_input_layout"))
+        self.onnx_input_dtype = self._resolve_input_dtype(
+            config.get("onnx_input_dtype"),
+            getattr(input_definition, "type", None),
+        )
+        self.onnx_normalize = _parse_bool(config.get("onnx_normalize"), True)
+        if self.onnx_input_dtype == "uint8":
+            self.onnx_normalize = False
         self._logged_signature = False
 
-        if isinstance(self.input_shape, list) and len(self.input_shape) >= 4:
-            if isinstance(self.input_shape[-2], int) and self.input_shape[-2] > 0:
-                self.input_height = int(self.input_shape[-2])
-            if isinstance(self.input_shape[-1], int) and self.input_shape[-1] > 0:
-                self.input_width = int(self.input_shape[-1])
+        if isinstance(self.input_shape, (list, tuple)) and len(self.input_shape) >= 4:
+            height_index, width_index = (2, 3) if self.onnx_input_layout == "nchw" else (1, 2)
+            if isinstance(self.input_shape[height_index], int) and self.input_shape[height_index] > 0:
+                self.input_height = int(self.input_shape[height_index])
+            if isinstance(self.input_shape[width_index], int) and self.input_shape[width_index] > 0:
+                self.input_width = int(self.input_shape[width_index])
         self.output_adapter.update_input_size(self.input_width, self.input_height)
+
+    def _resolve_input_layout(self, requested_layout: Any) -> str:
+        requested = str(requested_layout or "auto").strip().lower()
+        if requested in ("nchw", "nhwc"):
+            return requested
+        if isinstance(self.input_shape, (list, tuple)) and len(self.input_shape) >= 4:
+            channel_first = self.input_shape[1]
+            channel_last = self.input_shape[-1]
+            if isinstance(channel_first, int) and channel_first in (1, 3, 4):
+                return "nchw"
+            if isinstance(channel_last, int) and channel_last in (1, 3, 4):
+                return "nhwc"
+        return "nchw"
+
+    @staticmethod
+    def _resolve_input_dtype(requested_dtype: Any, runtime_type: Any) -> str:
+        requested = str(requested_dtype or "auto").strip().lower()
+        if requested in ("float32", "uint8"):
+            return requested
+        normalized_runtime_type = str(runtime_type or "").strip().lower()
+        return "uint8" if "uint8" in normalized_runtime_type else "float32"
 
     def infer(self, frame: np.ndarray):
         image, scale, pad_x, pad_y = _letterbox(frame, self.input_width, self.input_height)
         if self.onnx_input_format == "bgr":
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-        tensor = image.astype(np.float32)
+        tensor_dtype = np.uint8 if self.onnx_input_dtype == "uint8" else np.float32
+        tensor = image.astype(tensor_dtype)
         if self.onnx_normalize:
             tensor = tensor / 255.0
 
-        if len(self.input_shape) >= 4 and self.input_shape[1] in (1, 3):
+        if self.onnx_input_layout == "nchw":
             tensor = np.transpose(tensor, (2, 0, 1))
             tensor = np.expand_dims(np.ascontiguousarray(tensor), axis=0)
         else:
@@ -1400,19 +1524,28 @@ class ONNXRuntimeBackend(BaseYoloBackend):
                 "height": int(self.input_height),
             },
             "onnx_input_format": self.onnx_input_format,
+            "onnx_input_layout": self.onnx_input_layout,
+            "onnx_input_dtype": self.onnx_input_dtype,
             "onnx_normalize": self.onnx_normalize,
             "onnx_provider": self.session.get_providers()[0] if self.session.get_providers() else None,
             "nms_iou": float(self.config.get("nms_iou", 0.45)),
             **adapter_metadata,
         }
 
+    def cleanup(self):
+        self.session = None
+        self.model = None
+
 
 def create_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]) -> BaseYoloBackend:
-    backend_name = select_backend(model_path, model_info, config)
+    if not str(model_path or "").strip():
+        raise ValueError("模型路径不能为空")
+    normalized_config = normalize_backend_config(config)
+    backend_name = select_backend(model_path, model_info, normalized_config)
     if backend_name == "rknn":
-        return RKNNBackend(model_path, model_info, config)
+        return RKNNBackend(model_path, model_info, normalized_config)
     if backend_name == "onnxruntime":
-        return ONNXRuntimeBackend(model_path, model_info, config)
-    if _SHARED_ULTRALYTICS_CLIENT_MODE and config.get("shared_inference_enabled", True):
-        return SharedUltralyticsBackend(model_path, model_info, config)
-    return UltralyticsBackend(model_path, model_info, config)
+        return ONNXRuntimeBackend(model_path, model_info, normalized_config)
+    if _SHARED_ULTRALYTICS_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
+        return SharedUltralyticsBackend(model_path, model_info, normalized_config)
+    return UltralyticsBackend(model_path, model_info, normalized_config)

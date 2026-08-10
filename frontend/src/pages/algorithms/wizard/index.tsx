@@ -50,6 +50,28 @@ const { Option } = Select;
 
 type AlgorithmType = 'script' | 'vl' | 'ocr';
 
+interface DetectorPreset extends Script {
+  description: string;
+}
+
+const DETECTOR_PRESETS: readonly DetectorPreset[] = [
+  {
+    name: '通用单模型',
+    path: 'templates/adaptive_yolo_detector.py',
+    description: '单模型检测，自动适配 Ultralytics、ONNX 和 RKNN 后端',
+  },
+  {
+    name: '多模型',
+    path: 'templates/yolo_detector.py',
+    description: '组合多个 YOLO 模型，并通过 IOU 匹配共同确认目标',
+  },
+];
+
+const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
+  const availablePaths = new Set(scripts.map(script => script.path));
+  return DETECTOR_PRESETS.filter(preset => availablePaths.has(preset.path));
+};
+
 const DEFAULT_VL_PROMPT = `请判断画面中是否存在需要关注的目标或事件。
 如果命中，请为每个目标或事件返回一个检测项；无法可靠定位时 bbox 返回 null。
 请在 reason 中简要说明判断依据。`;
@@ -104,7 +126,7 @@ export default function AlgorithmWizard() {
   const editId = searchParams.get('edit');
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [scripts, setScripts] = useState<Script[]>([]);
+  const [scripts, setScripts] = useState<DetectorPreset[]>([]);
   const [models, setModels] = useState<any[]>([]);
   const [selectedDetector, setSelectedDetector] = useState<SelectedDetector | null>(null);
   const [configSchema, setConfigSchema] = useState<ConfigSchema>({});
@@ -124,7 +146,7 @@ export default function AlgorithmWizard() {
         editId ? getAlgorithms() : Promise.resolve([]),
         getPluginModules().catch(() => ({ modules: [], capabilities: {} })),
       ]);
-      setScripts(scriptsData?.scripts || []);
+      setScripts(getAvailableDetectorPresets(scriptsData?.scripts || []));
       setModels(modelsData?.models || []);
       setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
       setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
@@ -672,14 +694,14 @@ export default function AlgorithmWizard() {
               {scripts.length === 0 ? (
                 <Col span={24}>
                   <Alert
-                    message="暂无检测脚本"
-                    description="请先上传包含 SCRIPT_METADATA 和 process(frame, config) 的检测脚本。"
+                    message="内置检测脚本不可用"
+                    description="请检查通用单模型和多模型脚本是否已正确部署。"
                     type="warning"
                     showIcon
                   />
                 </Col>
               ) : scripts.map(script => (
-                <Col key={script.path} xs={24} sm={12} lg={8} xl={6}>
+                <Col key={script.path} xs={24} md={12}>
                   <Card
                     hoverable
                     className={`detector-card ${selectedDetector?.scriptPath === script.path ? 'selected' : ''}`}
@@ -687,14 +709,15 @@ export default function AlgorithmWizard() {
                       type: 'script',
                       id: null,
                       name: script.name,
-                      description: script.path,
+                      description: script.description,
                       scriptPath: script.path,
                     })}
                   >
                     <CodeOutlined className="card-icon script-icon" />
                     <div className="detector-card-content">
                       <h4 className="card-title">{script.name}</h4>
-                      <p className="card-description">{script.path}</p>
+                      <p className="card-description">{script.description}</p>
+                      <code className="card-script-path">{script.path}</code>
                     </div>
                   </Card>
                 </Col>

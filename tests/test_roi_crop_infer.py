@@ -99,13 +99,19 @@ def load_roi_module():
     fake_app.logger = types.SimpleNamespace(
         info=lambda *args, **kwargs: None,
         warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
         exception=lambda *args, **kwargs: None,
     )
     fake_app_core = types.ModuleType("app.core")
+    cv2_stub = make_cv2_stub()
+    fake_cv2_compat = types.ModuleType("app.core.cv2_compat")
+    fake_cv2_compat.cv2 = cv2_stub
+    fake_cv2_compat.require_cv2 = lambda: cv2_stub
     overrides = {
-        "cv2": make_cv2_stub(),
+        "cv2": cv2_stub,
         "app": fake_app,
         "app.core": fake_app_core,
+        "app.core.cv2_compat": fake_cv2_compat,
     }
 
     with patched_sys_modules(overrides):
@@ -128,9 +134,14 @@ def load_adaptive_module(roi_module):
     fake_app.logger = types.SimpleNamespace(
         info=lambda *args, **kwargs: None,
         warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
         exception=lambda *args, **kwargs: None,
     )
     fake_app_core = types.ModuleType("app.core")
+    fake_config = types.ModuleType("app.config")
+    fake_config.WORKFLOW_FRAME_LOGS_ENABLED = False
+    fake_frame_utils = types.ModuleType("app.core.frame_utils")
+    fake_frame_utils.nv12_to_rgb = lambda frame, width=None, height=None: frame
     fake_model_resolver = types.ModuleType("app.core.model_resolver")
     fake_model_resolver.get_model_resolver = lambda: None
     fake_user_scripts = types.ModuleType("app.user_scripts")
@@ -146,7 +157,9 @@ def load_adaptive_module(roi_module):
 
     overrides = {
         "app": fake_app,
+        "app.config": fake_config,
         "app.core": fake_app_core,
+        "app.core.frame_utils": fake_frame_utils,
         "app.core.model_resolver": fake_model_resolver,
         "app.user_scripts": fake_user_scripts,
         "app.user_scripts.common": fake_common,
@@ -277,6 +290,7 @@ def test_process_crop_infer_uses_original_frame_when_mixed_with_pre_mask():
     fake_app.logger = types.SimpleNamespace(
         info=lambda *args, **kwargs: None,
         warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
         exception=lambda *args, **kwargs: None,
     )
 
@@ -294,7 +308,14 @@ def test_process_crop_infer_uses_original_frame_when_mixed_with_pre_mask():
     frame = np.zeros((20, 20, 3), dtype=np.uint8)
     frame[12:18, 12:18] = 255
 
-    with patched_sys_modules({"app": fake_app}):
+    fake_app_core = types.ModuleType("app.core")
+    fake_frame_utils = types.ModuleType("app.core.frame_utils")
+    fake_frame_utils.nv12_to_rgb = lambda value, width=None, height=None: value
+    with patched_sys_modules({
+        "app": fake_app,
+        "app.core": fake_app_core,
+        "app.core.frame_utils": fake_frame_utils,
+    }):
         result = adaptive_module.process(
             frame=frame,
             config={},
@@ -312,3 +333,102 @@ def test_process_crop_infer_uses_original_frame_when_mixed_with_pre_mask():
     assert result["detections"] == []
     assert len(backend.frames) == 1
     assert int(np.sum(backend.frames[0])) > 0
+
+
+def test_process_returns_structured_error_when_backend_inference_fails():
+    roi_module = load_roi_module()
+    adaptive_module = load_adaptive_module(roi_module)
+    fake_app = types.ModuleType("app")
+    fake_app.logger = types.SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+        exception=lambda *args, **kwargs: None,
+    )
+
+    class Backend:
+        name = "onnxruntime"
+        config = {"confidence": 0.4, "class_filter": [1]}
+
+        def infer(self, _frame):
+            raise RuntimeError("output shape mismatch")
+
+    fake_app_core = types.ModuleType("app.core")
+    fake_frame_utils = types.ModuleType("app.core.frame_utils")
+    fake_frame_utils.nv12_to_rgb = lambda value, width=None, height=None: value
+    with patched_sys_modules({
+        "app": fake_app,
+        "app.core": fake_app_core,
+        "app.core.frame_utils": fake_frame_utils,
+    }):
+        result = adaptive_module.process(
+            frame=np.zeros((20, 20, 3), dtype=np.uint8),
+            config={},
+            state={"backend": Backend(), "model_path": "dummy.onnx"},
+        )
+
+    assert result["detections"] == []
+    assert result["metadata"]["error_code"] == "inference_failed"
+    assert "output shape mismatch" in result["metadata"]["error"]
+    assert result["metadata"]["backend"] == "onnxruntime"
+
+
+def test_process_marks_unsupported_model_output_as_error():
+    roi_module = load_roi_module()
+    adaptive_module = load_adaptive_module(roi_module)
+    fake_app = types.ModuleType("app")
+    fake_app.logger = types.SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+        exception=lambda *args, **kwargs: None,
+    )
+
+    class Backend:
+        name = "rknn"
+        config = {"confidence": 0.6, "class_filter": []}
+
+        def infer(self, _frame):
+            return [], [], {
+                "postprocess_profile": "unsupported",
+                "postprocess_warning": "缺少模型级后处理配置",
+            }
+
+    fake_app_core = types.ModuleType("app.core")
+    fake_frame_utils = types.ModuleType("app.core.frame_utils")
+    fake_frame_utils.nv12_to_rgb = lambda value, width=None, height=None: value
+    with patched_sys_modules({
+        "app": fake_app,
+        "app.core": fake_app_core,
+        "app.core.frame_utils": fake_frame_utils,
+    }):
+        result = adaptive_module.process(
+            frame=np.zeros((20, 20, 4), dtype=np.uint8),
+            config={},
+            state={"backend": Backend(), "model_path": "dummy.rknn"},
+        )
+
+    assert result["metadata"]["error_code"] == "unsupported_model_output"
+    assert result["metadata"]["error"] == "缺少模型级后处理配置"
+    assert result["metadata"]["image_size"] == {"height": 20, "width": 20}
+
+
+def test_cleanup_is_idempotent_and_removes_backend_reference():
+    roi_module = load_roi_module()
+    adaptive_module = load_adaptive_module(roi_module)
+
+    class Backend:
+        def __init__(self):
+            self.cleanup_calls = 0
+
+        def cleanup(self):
+            self.cleanup_calls += 1
+
+    backend = Backend()
+    state = {"backend": backend}
+
+    adaptive_module.cleanup(state)
+    adaptive_module.cleanup(state)
+
+    assert backend.cleanup_calls == 1
+    assert "backend" not in state

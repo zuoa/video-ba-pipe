@@ -172,6 +172,28 @@ SCRIPT_METADATA = {
             ],
             "description": "ONNX 输入图像颜色顺序"
         },
+        "onnx_input_layout": {
+            "type": "select",
+            "label": "ONNX输入布局",
+            "default": "auto",
+            "options": [
+                {"value": "auto", "label": "自动"},
+                {"value": "nchw", "label": "NCHW"},
+                {"value": "nhwc", "label": "NHWC"}
+            ],
+            "description": "auto 会从 ONNX 输入张量自动识别"
+        },
+        "onnx_input_dtype": {
+            "type": "select",
+            "label": "ONNX输入类型",
+            "default": "auto",
+            "options": [
+                {"value": "auto", "label": "自动"},
+                {"value": "float32", "label": "Float32"},
+                {"value": "uint8", "label": "UInt8"}
+            ],
+            "description": "auto 会读取模型输入类型；UInt8 输入不执行 0-1 归一化"
+        },
         "onnx_normalize": {
             "type": "boolean",
             "label": "ONNX归一化",
@@ -366,6 +388,7 @@ def init(config: dict) -> Dict[str, Any]:
         "backend": backend,
         "model_info": model_info,
         "model_path": model_path,
+        "effective_config": backend.config,
     }
 
 
@@ -383,7 +406,10 @@ def process(
 
     start_time = time.time()
     if not state or "backend" not in state:
-        return build_result([], metadata={"error": "Model not initialized"})
+        return build_result([], metadata={
+            "error": "模型尚未初始化",
+            "error_code": "model_not_initialized",
+        })
 
     frame_looks_rgb = (
         isinstance(frame, np.ndarray)
@@ -391,25 +417,59 @@ def process(
         and frame.shape[2] in (3, 4)
     )
     if pixel_format == 'nv12' and not frame_looks_rgb:
-        frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
+        try:
+            frame = nv12_to_rgb(frame, width=frame_width, height=frame_height)
+        except Exception as exc:
+            logger.error(f"[自适应YOLO检测] NV12 转 RGB 失败: {exc}", exc_info=True)
+            return build_result([], metadata={
+                "error": f"输入帧转换失败: {exc}",
+                "error_code": "invalid_input_frame",
+                "pixel_format": pixel_format,
+            })
+
+    if isinstance(frame, np.ndarray) and frame.ndim == 3 and frame.shape[2] == 4:
+        frame = frame[:, :, :3]
+    if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
+        return build_result([], metadata={
+            "error": (
+                f"不支持的输入帧格式: shape={getattr(frame, 'shape', None)}, "
+                f"pixel_format={pixel_format}"
+            ),
+            "error_code": "invalid_input_frame",
+            "pixel_format": pixel_format,
+        })
 
     backend = state["backend"]
-    roi_regions_effective = _prepare_roi_regions(config, roi_regions)
+    effective_config = state.get("effective_config") or getattr(backend, "config", config)
+    roi_regions_effective = _prepare_roi_regions(effective_config, roi_regions)
     _, crop_infer_regions, post_filter_regions = split_regions(roi_regions_effective)
     roi_modes = sorted({region.get("mode", ROI_MODE_POST_FILTER) for region in roi_regions_effective}) if roi_regions_effective else []
     crop_infer_enabled = bool(crop_infer_regions) and backend.name == "rknn"
     crop_infer_fallback = bool(crop_infer_regions) and backend.name != "rknn"
 
-    if crop_infer_enabled:
-        detections, detections_detail, backend_metadata = _run_crop_infer(
-            backend=backend,
-            frame=frame,
-            crop_regions=crop_infer_regions,
-            config=config,
+    try:
+        if crop_infer_enabled:
+            detections, detections_detail, backend_metadata = _run_crop_infer(
+                backend=backend,
+                frame=frame,
+                crop_regions=crop_infer_regions,
+                config=effective_config,
+            )
+        else:
+            frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
+            detections, detections_detail, backend_metadata = backend.infer(frame_to_detect)
+    except Exception as exc:
+        logger.error(
+            f"[自适应YOLO检测] 推理失败: backend={backend.name}, "
+            f"model={state.get('model_path')}, error={exc}",
+            exc_info=True,
         )
-    else:
-        frame_to_detect, _ = apply_roi(frame, [], roi_regions_effective)
-        detections, detections_detail, backend_metadata = backend.infer(frame_to_detect)
+        return build_result([], metadata={
+            "error": f"{backend.name} 推理失败: {exc}",
+            "error_code": "inference_failed",
+            "backend": backend.name,
+            "model_path": state.get("model_path"),
+        })
 
     detections_before_roi = len(detections)
     roi_filtered_count = 0
@@ -422,7 +482,7 @@ def process(
             detections=detections,
             detections_detail=detections_detail,
             roi_regions=filter_regions,
-            config=config,
+            config=effective_config,
         )
         roi_filtered_count = detections_before_roi - len(detections)
 
@@ -434,8 +494,8 @@ def process(
         "framework": state.get("model_info", {}).get("framework"),
         "total_detections": len(detections),
         "inference_time_ms": processing_time,
-        "confidence_threshold": float(config.get("confidence", 0.6)),
-        "class_filter": config.get("class_filter") or "all",
+        "confidence_threshold": float(effective_config.get("confidence", 0.6)),
+        "class_filter": effective_config.get("class_filter") or "all",
         "detections_detail": detections_detail,
         "image_size": {
             "height": frame.shape[0],
@@ -443,6 +503,15 @@ def process(
         },
         **(backend_metadata or {}),
     }
+
+    postprocess_warning = metadata.get("postprocess_warning")
+    if postprocess_warning and metadata.get("postprocess_profile") == "unsupported":
+        metadata["error"] = postprocess_warning
+        metadata["error_code"] = "unsupported_model_output"
+        logger.error(
+            f"[自适应YOLO检测] 模型输出不兼容: backend={backend.name}, "
+            f"model={state.get('model_path')}, detail={postprocess_warning}"
+        )
 
     if roi_regions_effective:
         metadata["roi_enabled"] = True
@@ -452,8 +521,8 @@ def process(
         metadata["roi_crop_requested"] = bool(crop_infer_regions)
         metadata["roi_crop_active"] = crop_infer_enabled
         metadata["roi_crop_backend_fallback"] = crop_infer_fallback
-        metadata["roi_filter_metric"] = config.get("roi_filter_metric") or "ioa"
-        metadata["roi_filter_threshold"] = float(config.get("roi_filter_threshold", 0.3))
+        metadata["roi_filter_metric"] = effective_config.get("roi_filter_metric") or "ioa"
+        metadata["roi_filter_threshold"] = float(effective_config.get("roi_filter_threshold", 0.3))
         metadata["detections_before_roi"] = detections_before_roi
         metadata["roi_filtered_count"] = roi_filtered_count
 
@@ -470,3 +539,5 @@ def cleanup(state: dict) -> None:
     backend = (state or {}).get("backend")
     if backend is not None and hasattr(backend, "cleanup"):
         backend.cleanup()
+    if isinstance(state, dict):
+        state.pop("backend", None)

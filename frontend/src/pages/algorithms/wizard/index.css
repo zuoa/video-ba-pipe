@@ -294,6 +294,17 @@
   -webkit-box-orient: vertical;
 }
 
+.detector-card .card-script-path {
+  display: block;
+  overflow: hidden;
+  color: #64748b;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detector-card .card-tags {
   display: flex;
   flex-wrap: wrap;

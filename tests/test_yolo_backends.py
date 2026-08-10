@@ -37,6 +37,12 @@ def _load_yolo_output_adapter():
             return [idx for idx, score in enumerate(scores) if score >= score_threshold]
 
     cv2_stub.dnn = _DnnModule()
+    cv2_stub.INTER_LINEAR = 1
+    cv2_stub.COLOR_RGB2BGR = 2
+    cv2_stub.resize = lambda _frame, size, interpolation=None: np.zeros(
+        (size[1], size[0], 3), dtype=np.uint8
+    )
+    cv2_stub.cvtColor = lambda frame, _code: frame[:, :, ::-1]
 
     fake_app = types.ModuleType("app")
     fake_app.logger = types.SimpleNamespace(
@@ -53,10 +59,129 @@ def _load_yolo_output_adapter():
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
-    return module.YoloOutputAdapter
+    return module
 
 
-YoloOutputAdapter = _load_yolo_output_adapter()
+YOLO_BACKENDS = _load_yolo_output_adapter()
+YoloOutputAdapter = YOLO_BACKENDS.YoloOutputAdapter
+
+
+class BackendConfigTests(unittest.TestCase):
+    def test_parse_input_shape_returns_width_height_for_non_square_shape(self):
+        self.assertEqual(YOLO_BACKENDS.parse_input_shape([1, 3, 480, 640]), (640, 480))
+        self.assertEqual(YOLO_BACKENDS.parse_input_shape("1x3x320x640"), (640, 320))
+        self.assertEqual(YOLO_BACKENDS.parse_input_shape([1, 480, 640, 3]), (640, 480))
+        self.assertEqual(YOLO_BACKENDS.parse_input_shape("1,3,height,width"), (0, 0))
+
+    def test_backend_selection_uses_override_then_model_metadata(self):
+        self.assertEqual(YOLO_BACKENDS.select_backend("model.pt", {}, {"backend": "auto"}), "ultralytics")
+        self.assertEqual(YOLO_BACKENDS.select_backend("model.onnx", {}, {"backend": "auto"}), "onnxruntime")
+        self.assertEqual(YOLO_BACKENDS.select_backend("model.bin", {"framework": "rknn"}, {"backend": "auto"}), "rknn")
+        self.assertEqual(YOLO_BACKENDS.select_backend("model.pt", {}, {"backend": "onnxruntime"}), "onnxruntime")
+
+    def test_explicit_input_size_overrides_model_metadata(self):
+        backend = YOLO_BACKENDS.BaseYoloBackend(
+            "model.onnx",
+            {"input_shape": [1, 3, 480, 640]},
+            {"input_width": 960, "input_height": 544},
+        )
+
+        self.assertEqual((backend.input_width, backend.input_height), (960, 544))
+
+    def test_normalize_backend_config_handles_string_values(self):
+        config = YOLO_BACKENDS.normalize_backend_config({
+            "backend": "onnx",
+            "confidence": "0.4",
+            "nms_iou": "0.5",
+            "class_filter": "0, 2",
+            "onnx_normalize": "false",
+        })
+
+        self.assertEqual(config["backend"], "onnxruntime")
+        self.assertEqual(config["class_filter"], [0, 2])
+        self.assertFalse(config["onnx_normalize"])
+
+    def test_normalize_backend_config_rejects_invalid_values(self):
+        with self.assertRaisesRegex(ValueError, "confidence"):
+            YOLO_BACKENDS.normalize_backend_config({"confidence": 1.5})
+        with self.assertRaisesRegex(ValueError, "不支持的推理后端"):
+            YOLO_BACKENDS.normalize_backend_config({"backend": "tensorrt"})
+        with self.assertRaisesRegex(ValueError, "模型路径不能为空"):
+            YOLO_BACKENDS.create_backend("", {}, {})
+
+    def test_onnx_backend_detects_nhwc_uint8_input(self):
+        class InputDefinition:
+            name = "images"
+            shape = [1, 320, 640, 3]
+            type = "tensor(uint8)"
+
+        class Session:
+            def __init__(self, _path, providers=None):
+                self.providers = providers or ["CPUExecutionProvider"]
+                self.last_tensor = None
+
+            def get_inputs(self):
+                return [InputDefinition()]
+
+            def get_providers(self):
+                return self.providers
+
+            def run(self, _outputs, inputs):
+                self.last_tensor = inputs["images"]
+                return [np.empty((1, 0, 6), dtype=np.float32)]
+
+        YOLO_BACKENDS.ort = types.SimpleNamespace(InferenceSession=Session)
+        YOLO_BACKENDS.ONNXRUNTIME_IMPORT_ERROR = None
+        backend = YOLO_BACKENDS.ONNXRuntimeBackend(
+            "model.onnx",
+            {},
+            YOLO_BACKENDS.normalize_backend_config({}),
+        )
+
+        _, _, metadata = backend.infer(np.zeros((100, 200, 3), dtype=np.uint8))
+
+        self.assertEqual((backend.input_width, backend.input_height), (640, 320))
+        self.assertEqual(backend.session.last_tensor.shape, (1, 320, 640, 3))
+        self.assertEqual(backend.session.last_tensor.dtype, np.uint8)
+        self.assertEqual(metadata["onnx_input_layout"], "nhwc")
+        self.assertEqual(metadata["onnx_input_dtype"], "uint8")
+        self.assertFalse(metadata["onnx_normalize"])
+        backend.cleanup()
+        self.assertIsNone(backend.model)
+
+    def test_rknn_backend_releases_runtime_when_initialization_fails(self):
+        class RKNNLite:
+            NPU_CORE_AUTO = 0
+            last_instance = None
+
+            def __init__(self):
+                self.released = False
+                RKNNLite.last_instance = self
+
+            def load_rknn(self, _path):
+                return 0
+
+            def init_runtime(self, core_mask=None):
+                return -1
+
+            def release(self):
+                self.released = True
+
+        original_runtime = YOLO_BACKENDS.RKNNLite
+        original_error = YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR
+        YOLO_BACKENDS.RKNNLite = RKNNLite
+        YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR = None
+        try:
+            with self.assertRaisesRegex(RuntimeError, "init_runtime"):
+                YOLO_BACKENDS.RKNNBackend(
+                    "model.rknn",
+                    {},
+                    YOLO_BACKENDS.normalize_backend_config({}),
+                )
+            self.assertTrue(RKNNLite.last_instance.released)
+        finally:
+            YOLO_BACKENDS.RKNNLite = original_runtime
+            YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR = original_error
 
 
 class YoloOutputAdapterTests(unittest.TestCase):
