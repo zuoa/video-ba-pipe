@@ -1,0 +1,28 @@
+# MediaMTX 配置 —— 仅作为「实时预览」的按需拉流中继
+#
+# 关键点：
+# - api: yes           开启 REST(:9997)，供后端注册/注销按需拉流路径
+# - webrtc: yes        WebRTC(WHEP) 在 :8889，浏览器直连（UDP + TCP 双栈）
+# - 按需拉流(sourceOnDemand) 不在此处配置，而是后端通过 REST 注册每个视频源路径时
+#   逐条写入，保证「有观众才向摄像机拉 RTSP，观众离开自动断开」。
+# - webrtcAdditionalHosts 由 docker-compose 的 MTX_WEBRTC_ADDITIONALHOSTS 注入，
+#   让 ICE 候选地址对浏览器可达（同局域网填宿主机 IP 即可）。
+
+api: yes
+apiAddress: ":9997"
+
+rtsp: yes          # 内部协议，无需映射到宿主机
+rtspAddress: ":8554"
+
+hls: no
+srt: no
+rtmp: no
+
+webrtc: yes
+webrtcAddress: ":8889"
+webrtcLocalUDPAddress: ":8889"
+webrtcLocalTCPAddress: ":8889"
+# 额外主机通过环境变量 MTX_WEBRTC_ADDITIONALHOSTS 注入
+
+paths:
+  all_others:

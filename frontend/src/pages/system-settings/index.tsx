@@ -5,6 +5,7 @@ import {
   ApiOutlined,
   DatabaseOutlined,
   HddOutlined,
+  KeyOutlined,
   NotificationOutlined,
   SafetyCertificateOutlined,
   SaveOutlined,
@@ -37,6 +38,7 @@ import {
   updateRabbitMqConfig,
   updateVlConfig,
 } from '@/services/api';
+import ApiKeySettingsCard from './ApiKeySettingsCard';
 import './index.css';
 
 const SystemSettingsPage: React.FC = () => {
@@ -226,8 +228,8 @@ const SystemSettingsPage: React.FC = () => {
       <PageHeader
         icon={<SettingOutlined />}
         title="系统设置"
-        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、VL 核验与消息队列配置。"
-        extra={
+        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息队列配置。"
+        extra={activeTabKey !== 'apiKeys' ? (
           <Button
             type="primary"
             icon={<SaveOutlined />}
@@ -236,7 +238,7 @@ const SystemSettingsPage: React.FC = () => {
           >
             保存配置
           </Button>
-        }
+        ) : undefined}
       />
 
       {loading ? (
@@ -833,6 +835,15 @@ const SystemSettingsPage: React.FC = () => {
                       <strong>完整轮转约 {estimatedCycleSeconds} 秒</strong>
                     </div>
                   </Form>
+                </Card>
+              ),
+            },
+            {
+              key: 'apiKeys',
+              label: (<span><KeyOutlined /> API Key</span>),
+              children: (
+                <Card className="system-settings-card" title={<span><KeyOutlined /> API Key 管理</span>}>
+                  <ApiKeySettingsCard />
                 </Card>
               ),
             },

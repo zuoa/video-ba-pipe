@@ -90,6 +90,14 @@ x-jetson-environment: &jetson-environment
   RABBITMQ_ALERT_QUEUE: ${RABBITMQ_ALERT_QUEUE:-video_alerts}
   RABBITMQ_ALERT_EXCHANGE: ${RABBITMQ_ALERT_EXCHANGE:-video_alerts}
   RABBITMQ_ALERT_ROUTING_KEY: ${RABBITMQ_ALERT_ROUTING_KEY:-alert}
+  # MediaMTX / WebRTC 实时预览（按需拉流中继，默认关闭）
+  MEDIAMTX_ENABLED: ${MEDIAMTX_ENABLED:-false}
+  MEDIAMTX_API_HOST: mediamtx
+  MEDIAMTX_API_PORT: "9997"
+  MEDIAMTX_RTSP_PORT: "8554"
+  MEDIAMTX_WEBRTC_PORT: "8889"
+  MEDIAMTX_WEBRTC_PUBLIC_HOST: ${MEDIAMTX_WEBRTC_PUBLIC_HOST:-}
+  MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS: ${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
   TZ: Asia/Shanghai
 
 services:
@@ -251,6 +259,34 @@ services:
     networks:
       - video-ba-network
     logging: *default-logging
+
+  # ============================================
+  # MediaMTX 实时预览中继服务（可选，默认 MEDIAMTX_ENABLED=false）
+  # WebRTC(WHEP) 按需拉流：仅当有浏览器观众时才向摄像机拉 RTSP，观众离开自动断开。
+  # 多架构镜像(amd64/arm64)，Jetson 可直接使用。
+  # ============================================
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: video-ba-mediamtx-jetson
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - MTX_WEBRTC_ADDITIONALHOSTS=${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
+    ports:
+      - "8889:8889"   # WebRTC(WHEP) —— 浏览器直连
+      - "9997:9997"   # REST —— 调试/外部注册（可选）
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9997/v3/paths >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 networks:
   video-ba-network:

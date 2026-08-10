@@ -24,6 +24,7 @@ from app.config import (
     FRAME_SAVE_PATH,
     VIDEO_FRAME_PIXEL_FORMAT,
     SNAPSHOT_SAVE_PATH,
+    DETECTION_SNAPSHOT_SAVE_PATH,
     VIDEO_SAVE_PATH,
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
@@ -89,7 +90,13 @@ from app.version import get_app_version
 from app.branding import get_company_name
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(
+    app,
+    resources={
+        r"/api/*": {"origins": "*"},
+        r"/openapi/*": {"origins": "*"},
+    },
+)
 app.config['JSON_AS_ASCII'] = False
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB for large model files
 
@@ -1673,13 +1680,15 @@ def get_image(file_path):
     安全的图片返回接口
     支持的图片路径：
     - frames/ 下的帧图片
-    - snapshots/ 下的快照图片
+    - snapshots/ 下的原始快照图片
+    - detection_snapshots/ 下的「最新检测帧」（带检测框 + ROI）
     """
     try:
         # 定义允许访问的基础路径
         allowed_bases = {
             'frames': FRAME_SAVE_PATH,
-            'snapshots': SNAPSHOT_SAVE_PATH
+            'snapshots': SNAPSHOT_SAVE_PATH,
+            'detection_snapshots': DETECTION_SNAPSHOT_SAVE_PATH,
         }
         
         # 解析路径的第一部分作为基础目录类型
@@ -2178,6 +2187,14 @@ try:
 except ImportError as e:
     app.logger.warning(f"外部 API 管理API注册失败: {e}")
 
+# ========== 注册对外集成 API 与 API Key 管理 ==========
+try:
+    from app.web.api.public_api import register_public_api
+    register_public_api(app)
+    app.logger.info("对外集成 API 与 API Key 管理已注册")
+except ImportError as e:
+    app.logger.warning(f"对外集成 API 注册失败: {e}")
+
 # ========== 注册工作流管理API ==========
 try:
     from app.web.api.workflows import register_workflows_api
@@ -2202,6 +2219,14 @@ try:
     app.logger.info("视频源导入API已注册")
 except ImportError as e:
     app.logger.warning(f"视频源导入API注册失败: {e}")
+
+# ========== 注册实时预览API（WebRTC / 最新检测帧）==========
+try:
+    from app.web.api.preview import register_preview_api
+    register_preview_api(app)
+    app.logger.info("实时预览API已注册")
+except ImportError as e:
+    app.logger.warning(f"实时预览API注册失败: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)

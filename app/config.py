@@ -105,6 +105,15 @@ SNAPSHOT_INTERVAL = int(os.getenv('SNAPSHOT_INTERVAL', '60'))  # in seconds
 SNAPSHOT_SAVE_PATH = _resolve_data_path('SNAPSHOT_PATH', 'snapshots')
 os.makedirs(SNAPSHOT_SAVE_PATH, exist_ok=True)
 
+# ============ 最新检测帧快照（视频源预览） ============
+# 与上面的原始快照不同：此处保存的是「带算法检测框 + ROI」的标注帧，
+# 供视频源管理页「最新检测帧」按钮查看。由 workflow 执行器周期性写入，
+# 无活跃 workflow/检测时回退显示原始快照。
+DETECTION_SNAPSHOT_ENABLED = os.getenv('DETECTION_SNAPSHOT_ENABLED', 'true').lower() in ('true', '1', 'yes')
+DETECTION_SNAPSHOT_INTERVAL = float(os.getenv('DETECTION_SNAPSHOT_INTERVAL', '5'))  # 秒，比原始快照更勤
+DETECTION_SNAPSHOT_SAVE_PATH = _resolve_data_path('DETECTION_SNAPSHOT_PATH', 'detection_snapshots')
+os.makedirs(DETECTION_SNAPSHOT_SAVE_PATH, exist_ok=True)
+
 
 # 极速解码模式，每次取最新的帧，扔掉所有老的帧
 IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in ('true', '1', 'yes')
@@ -348,6 +357,23 @@ RABBITMQ_CONNECTION_TIMEOUT = int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT', '30')
 # 默认 false：broker 相关功能默认关闭，避免 DB 读取失败回退到 env 时误启用，
 # 也与系统设置 UI（首次无配置行时显示关闭）保持一致。需要启用请在 .env/compose 显式置 true。
 RABBITMQ_ENABLED = os.getenv('RABBITMQ_ENABLED', 'false').lower() in ('true', '1', 'yes')
+
+# ============ MediaMTX / WebRTC 实时预览 ============
+# 通过部署 MediaMTX 作为「按需拉流」中继，前端用 WebRTC(WHEP) 直接看实时画面。
+# 仅当 MEDIAMTX_ENABLED=true 且 MediaMTX 服务可达时生效；其余情况所有调用安全降级为 no-op。
+# 注意：MediaMTX 不参与检测流水线，worker/decoder 仍直连摄像机拉流；
+#       MediaMTX 只在有 WebRTC 观众时另起一路拉流(sourceOnDemand)，观众离开自动断开。
+MEDIAMTX_ENABLED = os.getenv('MEDIAMTX_ENABLED', 'false').lower() in ('true', '1', 'yes')
+# 后端容器内访问 MediaMTX REST API 的地址（docker 网络内通常为服务名 mediamtx）
+MEDIAMTX_API_HOST = os.getenv('MEDIAMTX_API_HOST', 'mediamtx')
+MEDIAMTX_API_PORT = int(os.getenv('MEDIAMTX_API_PORT', '9997'))
+MEDIAMTX_RTSP_PORT = int(os.getenv('MEDIAMTX_RTSP_PORT', '8554'))
+# 浏览器侧连接 WebRTC 的端口（docker host 映射端口）
+MEDIAMTX_WEBRTC_PORT = int(os.getenv('MEDIAMTX_WEBRTC_PORT', '8889'))
+# 浏览器侧访问的主机名/IP；为空时前端用页面所在 hostname 兜底
+MEDIAMTX_WEBRTC_PUBLIC_HOST = os.getenv('MEDIAMTX_WEBRTC_PUBLIC_HOST', '')
+# 逗号分隔的额外 ICE 主机，注入 MediaMTX(MTX_WEBRTC_ADDITIONALHOSTS)，让候选对浏览器可达
+MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS = os.getenv('MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS', '')
 
 # ============ 健康监控配置 ============
 # 是否启用健康监控

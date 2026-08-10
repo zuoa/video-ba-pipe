@@ -1,0 +1,145 @@
+.webrtc-preview-modal .wr-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.webrtc-preview-modal .wr-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.webrtc-preview-modal .wr-live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #ff4d4f;
+  letter-spacing: 0.5px;
+}
+
+.webrtc-preview-modal .wr-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: wr-blink 1.2s infinite;
+}
+
+@keyframes wr-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.webrtc-preview-modal .wr-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 72vh;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.webrtc-preview-modal .wr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.webrtc-preview-modal .wr-video.visible {
+  opacity: 1;
+}
+
+.webrtc-preview-modal .wr-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #ddd;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+.webrtc-preview-modal .wr-overlay-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.webrtc-preview-modal .wr-error-text {
+  color: #ff7875;
+}
+
+.webrtc-preview-modal .wr-overlay-sub {
+  font-size: 12px;
+  color: #aaa;
+  max-width: 420px;
+  text-align: center;
+}
+
+.webrtc-preview-modal .wr-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: wr-spin 0.8s linear infinite;
+}
+
+@keyframes wr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.webrtc-preview-modal .wr-retry-btn {
+  margin-top: 6px;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.webrtc-preview-modal .wr-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.webrtc-preview-modal .wr-hint {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.webrtc-preview-modal .wr-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.webrtc-preview-modal .wr-close-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}

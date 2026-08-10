@@ -8,7 +8,7 @@ import peewee as pw
 from app.core.database_models import (
     db, Algorithm, VideoSource, Alert,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
-    Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, SourceHealthLog,
+    Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, ApiKey, SourceHealthLog,
     SystemSetting, ExternalApi
 )
 
@@ -36,6 +36,7 @@ _DATABASE_MODELS = (
     WorkflowConnection,
     WorkflowTestResult,
     User,
+    ApiKey,
     SourceHealthLog,
     SystemSetting,
 )

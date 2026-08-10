@@ -36,6 +36,9 @@ from app.config import (
     RESOURCE_PROFILING_ENABLED,
     RESOURCE_PROFILE_LOG_INTERVAL_SECONDS,
     SOURCE_ROTATION_DRAIN_GRACE_SECONDS,
+    DETECTION_SNAPSHOT_ENABLED,
+    DETECTION_SNAPSHOT_INTERVAL,
+    DETECTION_SNAPSHOT_SAVE_PATH,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.cv2_compat import cv2, require_cv2
@@ -312,6 +315,10 @@ class WorkflowExecutor:
         self.executed_nodes = []
         # last_frame_timestamp: 记录最后处理的帧时间戳（用于多 workflow 共享 buffer 时避免重复处理）
         self.last_frame_timestamp = None
+        # _latest_algorithm_results: 各算法节点最近一次检测结果（用于「最新检测帧」快照聚合）
+        self._latest_algorithm_results = {}
+        # _last_detection_snapshot_at: 上次写入检测帧快照的单调时间（节流）
+        self._last_detection_snapshot_at = 0.0
 
         self.node_handlers = {
             'source': self._handle_source_node,
@@ -1236,6 +1243,18 @@ class WorkflowExecutor:
                     f"[Workflow-{self.workflow_id}] 算法节点 {node_id} "
                     f"处理完成，检测到目标: {has_detection}"
                 )
+
+            # 记录本节点最近一次检测结果，供「最新检测帧」快照聚合使用。
+            try:
+                with self._state_lock:
+                    self._latest_algorithm_results[node_id] = {
+                        'detections': result.get('detections', []) if isinstance(result, dict) else [],
+                        'roi_mask': roi_mask,
+                        'label_color': label_color,
+                        'roi_regions': effective_roi_regions or [],
+                    }
+            except Exception:
+                pass
 
             # 返回结果，包含节点 ID 和 label_color（用于下游 Alert 节点）
             return {
@@ -3440,7 +3459,7 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
-    def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float, executor=None):
+    def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float, executor=None, source_code: str = None):
         """执行单帧工作流，用于 source host 统一驱动多个工作流。"""
         if not self.running:
             return
@@ -3472,6 +3491,73 @@ class WorkflowExecutor:
         self._execute_by_topology_levels(executor=executor, context=context)
         self._record_to_window_detector_for_all_alerts(context)
         self._record_run_once_profile((time.perf_counter() - started_at) * 1000)
+
+        # 周期性写入「最新检测帧」快照（供视频源管理页预览）。节流 + 异常吞掉，绝不影响主流程。
+        if source_code:
+            try:
+                self._maybe_save_detection_snapshot(context, source_code)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(f"[Workflow-{self.workflow_id}] 写入检测帧快照失败（忽略）: {exc}")
+
+    def _maybe_save_detection_snapshot(self, context, source_code: str):
+        """周期性写入「最新检测帧」快照（带检测框 + ROI）到 detection_snapshots/{source_code}.jpg。
+
+        - 节流：两次写入间隔不少于 DETECTION_SNAPSHOT_INTERVAL 秒。
+        - 聚合 self._latest_algorithm_results 中各算法节点的最近检测结果。
+        - 无算法节点/无结果时不写（保留旧文件或留空，由前端回退到原始快照）。
+        - 复用 _save_visualized_frame 的绘图链（BaseAlgorithm.visualize）。
+        """
+        if not DETECTION_SNAPSHOT_ENABLED or not source_code:
+            return
+        now = time.monotonic()
+        if now - self._last_detection_snapshot_at < DETECTION_SNAPSHOT_INTERVAL:
+            return
+
+        with self._state_lock:
+            results_snapshot = list(self._latest_algorithm_results.values())
+        if not results_snapshot:
+            return  # 本工作流没有算法节点或尚未产出结果
+
+        # 聚合所有算法节点的检测结果与 ROI
+        all_detections = []
+        roi_regions = []
+        first_label_color = '#FF0000'
+        roi_mask = None
+        for item in results_snapshot:
+            dets = item.get('detections') or []
+            if dets:
+                all_detections.extend(dets)
+            if item.get('roi_regions'):
+                roi_regions.extend(item['roi_regions'])
+            if roi_mask is None and item.get('roi_mask') is not None:
+                roi_mask = item['roi_mask']
+            if first_label_color == '#FF0000' and item.get('label_color'):
+                first_label_color = item['label_color']
+
+        try:
+            frame_rgb = context.get('frame')
+        except Exception:
+            frame_rgb = None
+        if frame_rgb is None:
+            return
+
+        safe_code = "".join(c for c in str(source_code) if c not in ('/', '\\', '\x00')).strip()
+        if not safe_code:
+            return
+        save_path = os.path.join(DETECTION_SNAPSHOT_SAVE_PATH, f"{safe_code}.jpg")
+
+        # upstream_node_id=None -> 走 BaseAlgorithm.visualize 通用绘制（画全部检测框 + ROI）
+        ok = self._save_visualized_frame(
+            frame_rgb,
+            all_detections,
+            save_path,
+            label_color=first_label_color,
+            roi_mask=roi_mask,
+            roi_regions=roi_regions,
+            upstream_node_id=None,
+        )
+        if ok:
+            self._last_detection_snapshot_at = now
 
     def _record_run_once_profile(self, elapsed_ms: float):
         if not RESOURCE_PROFILING_ENABLED:
