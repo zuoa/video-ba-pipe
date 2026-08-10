@@ -93,6 +93,8 @@ except ImportError as exc:  # pragma: no cover - optional in lightweight test en
     Workflow = VideoSource = Algorithm = Alert = ExternalApi = _MissingDatabaseModel
 
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
+DETECTION_SNAPSHOT_COORDINATOR_LOCK = threading.Lock()
+DETECTION_SNAPSHOT_SOURCE_STATES = {}
 
 
 class FrameExecutionContext(dict):
@@ -315,10 +317,8 @@ class WorkflowExecutor:
         self.executed_nodes = []
         # last_frame_timestamp: 记录最后处理的帧时间戳（用于多 workflow 共享 buffer 时避免重复处理）
         self.last_frame_timestamp = None
-        # _latest_algorithm_results: 各算法节点最近一次检测结果（用于「最新检测帧」快照聚合）
+        # _latest_algorithm_results: 各算法节点最近一次检测结果及其原始帧时间戳。
         self._latest_algorithm_results = {}
-        # _last_detection_snapshot_at: 上次写入检测帧快照的单调时间（节流）
-        self._last_detection_snapshot_at = 0.0
 
         self.node_handlers = {
             'source': self._handle_source_node,
@@ -1252,6 +1252,7 @@ class WorkflowExecutor:
                         'roi_mask': roi_mask,
                         'label_color': label_color,
                         'roi_regions': effective_roi_regions or [],
+                        'frame_timestamp': frame_timestamp,
                     }
             except Exception:
                 pass
@@ -3502,37 +3503,31 @@ class WorkflowExecutor:
     def _maybe_save_detection_snapshot(self, context, source_code: str):
         """周期性写入「最新检测帧」快照（带检测框 + ROI）到 detection_snapshots/{source_code}.jpg。
 
-        - 节流：两次写入间隔不少于 DETECTION_SNAPSHOT_INTERVAL 秒。
-        - 聚合 self._latest_algorithm_results 中各算法节点的最近检测结果。
+        - 只聚合与当前帧时间戳一致的算法结果，绝不把缓存框画到后续帧上。
+        - 同一 source 的多个 workflow 按 frame timestamp 聚合，并串行、原子地替换快照。
+        - 节流在 source 级共享；同帧后到的 workflow 可补全该帧的聚合结果。
         - 无算法节点/无结果时不写（保留旧文件或留空，由前端回退到原始快照）。
         - 复用 _save_visualized_frame 的绘图链（BaseAlgorithm.visualize）。
         """
         if not DETECTION_SNAPSHOT_ENABLED or not source_code:
             return
-        now = time.monotonic()
-        if now - self._last_detection_snapshot_at < DETECTION_SNAPSHOT_INTERVAL:
+
+        frame_timestamp = context.get('frame_timestamp')
+        if not isinstance(frame_timestamp, (int, float)):
             return
+        frame_timestamp = float(frame_timestamp)
 
         with self._state_lock:
-            results_snapshot = list(self._latest_algorithm_results.values())
+            results_snapshot = sorted(
+                (
+                    (str(node_id), item)
+                    for node_id, item in self._latest_algorithm_results.items()
+                    if item.get('frame_timestamp') == frame_timestamp
+                ),
+                key=lambda pair: pair[0],
+            )
         if not results_snapshot:
-            return  # 本工作流没有算法节点或尚未产出结果
-
-        # 聚合所有算法节点的检测结果与 ROI
-        all_detections = []
-        roi_regions = []
-        first_label_color = '#FF0000'
-        roi_mask = None
-        for item in results_snapshot:
-            dets = item.get('detections') or []
-            if dets:
-                all_detections.extend(dets)
-            if item.get('roi_regions'):
-                roi_regions.extend(item['roi_regions'])
-            if roi_mask is None and item.get('roi_mask') is not None:
-                roi_mask = item['roi_mask']
-            if first_label_color == '#FF0000' and item.get('label_color'):
-                first_label_color = item['label_color']
+            return  # 本工作流的算法节点没有在当前帧执行
 
         try:
             frame_rgb = context.get('frame')
@@ -3546,18 +3541,77 @@ class WorkflowExecutor:
             return
         save_path = os.path.join(DETECTION_SNAPSHOT_SAVE_PATH, f"{safe_code}.jpg")
 
-        # upstream_node_id=None -> 走 BaseAlgorithm.visualize 通用绘制（画全部检测框 + ROI）
-        ok = self._save_visualized_frame(
-            frame_rgb,
-            all_detections,
-            save_path,
-            label_color=first_label_color,
-            roi_mask=roi_mask,
-            roi_regions=roi_regions,
-            upstream_node_id=None,
-        )
-        if ok:
-            self._last_detection_snapshot_at = now
+        with DETECTION_SNAPSHOT_COORDINATOR_LOCK:
+            source_state = DETECTION_SNAPSHOT_SOURCE_STATES.setdefault(
+                safe_code,
+                {
+                    'lock': threading.Lock(),
+                    'frame_timestamp': None,
+                    'candidates': {},
+                    'last_saved_at': 0.0,
+                    'last_saved_frame_timestamp': None,
+                },
+            )
+
+        with source_state['lock']:
+            coordinated_timestamp = source_state['frame_timestamp']
+            if coordinated_timestamp is not None and frame_timestamp < coordinated_timestamp:
+                return  # 较慢 workflow 的旧帧不得覆盖较新的 source 快照
+            if coordinated_timestamp != frame_timestamp:
+                source_state['frame_timestamp'] = frame_timestamp
+                source_state['candidates'] = {}
+
+            source_state['candidates'][str(self.workflow_id)] = results_snapshot
+            now = time.monotonic()
+            completing_saved_frame = (
+                source_state['last_saved_frame_timestamp'] == frame_timestamp
+            )
+            if (
+                not completing_saved_frame
+                and now - source_state['last_saved_at'] < DETECTION_SNAPSHOT_INTERVAL
+            ):
+                return
+
+            all_detections = []
+            roi_regions = []
+            first_label_color = '#FF0000'
+            roi_mask = None
+            for workflow_id in sorted(source_state['candidates']):
+                for _node_id, item in source_state['candidates'][workflow_id]:
+                    dets = item.get('detections') or []
+                    if dets:
+                        all_detections.extend(dets)
+                    if item.get('roi_regions'):
+                        roi_regions.extend(item['roi_regions'])
+                    if roi_mask is None and item.get('roi_mask') is not None:
+                        roi_mask = item['roi_mask']
+                    if first_label_color == '#FF0000' and item.get('label_color'):
+                        first_label_color = item['label_color']
+
+            os.makedirs(DETECTION_SNAPSHOT_SAVE_PATH, exist_ok=True)
+            temp_path = os.path.join(
+                DETECTION_SNAPSHOT_SAVE_PATH,
+                f".{safe_code}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp.jpg",
+            )
+            try:
+                # upstream_node_id=None -> 通用绘制，覆盖所有 workflow 的检测框与 ROI。
+                ok = self._save_visualized_frame(
+                    frame_rgb,
+                    all_detections,
+                    temp_path,
+                    label_color=first_label_color,
+                    roi_mask=roi_mask,
+                    roi_regions=roi_regions,
+                    upstream_node_id=None,
+                )
+                if not ok:
+                    return
+                os.replace(temp_path, save_path)
+                source_state['last_saved_at'] = now
+                source_state['last_saved_frame_timestamp'] = frame_timestamp
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
     def _record_run_once_profile(self, elapsed_ms: float):
         if not RESOURCE_PROFILING_ENABLED:

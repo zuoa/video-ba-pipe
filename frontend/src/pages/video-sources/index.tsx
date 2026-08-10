@@ -131,13 +131,14 @@ export default function VideoSources() {
       message.warning('未启用 WebRTC 实时预览，请在系统配置中开启 MediaMTX');
       return;
     }
-    setLivePreviewSource(source);
-    setLivePreviewVisible(true);
     // 懒注册兜底：确保 MediaMTX 已有该源的按需拉流路径
     try {
       await ensurePreviewPath(source.id);
+      // 注册成功后再挂载播放器，避免 WHEP 与路径创建并发导致首次请求 404。
+      setLivePreviewSource(source);
+      setLivePreviewVisible(true);
     } catch (error) {
-      // 注册失败不强制关闭，播放器内会给出连接错误
+      message.error('实时预览路径注册失败，请检查 MediaMTX 服务与视频源配置');
     }
   };
 

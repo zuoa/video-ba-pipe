@@ -367,6 +367,9 @@ MEDIAMTX_ENABLED = os.getenv('MEDIAMTX_ENABLED', 'false').lower() in ('true', '1
 # 后端容器内访问 MediaMTX REST API 的地址（docker 网络内通常为服务名 mediamtx）
 MEDIAMTX_API_HOST = os.getenv('MEDIAMTX_API_HOST', 'mediamtx')
 MEDIAMTX_API_PORT = int(os.getenv('MEDIAMTX_API_PORT', '9997'))
+# Control API 专用凭据。MediaMTX 默认只允许 localhost 调用 API，容器间访问必须认证。
+MEDIAMTX_API_USER = os.getenv('MEDIAMTX_API_USER', 'video-ba-api')
+MEDIAMTX_API_PASSWORD = os.getenv('MEDIAMTX_API_PASSWORD', 'video-ba-api-change-me')
 MEDIAMTX_RTSP_PORT = int(os.getenv('MEDIAMTX_RTSP_PORT', '8554'))
 # 浏览器侧连接 WebRTC 的端口（docker host 映射端口）
 MEDIAMTX_WEBRTC_PORT = int(os.getenv('MEDIAMTX_WEBRTC_PORT', '8889'))

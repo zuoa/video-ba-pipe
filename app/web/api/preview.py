@@ -55,11 +55,19 @@ def register_preview_api(app):
             }), 400
 
         registered = mediamtx_client.register_path(source.source_code, source.source_url)
-        if not registered and not mediamtx_client.is_available(force=True):
+        if not registered:
+            if not mediamtx_client.is_available(force=True):
+                return jsonify({
+                    'success': False,
+                    'message': 'MediaMTX 服务不可达，请检查 mediamtx 容器与 MEDIAMTX_* 配置',
+                }), 503
+            # 清除短期不可用缓存后重试一次；服务刚重启时第一次探测可能仍是旧状态。
+            registered = mediamtx_client.register_path(source.source_code, source.source_url)
+        if not registered:
             return jsonify({
                 'success': False,
-                'message': 'MediaMTX 服务不可达，请检查 mediamtx 容器与 MEDIAMTX_* 配置',
-            }), 503
+                'message': 'MediaMTX 路径注册失败，请检查视频源地址与 Control API 权限',
+            }), 502
 
         base = _whep_base_url()
         return jsonify({

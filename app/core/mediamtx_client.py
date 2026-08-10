@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import threading
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -44,6 +45,22 @@ class MediaMTXClient:
         port = getattr(cfg, "MEDIAMTX_API_PORT", 9997)
         return f"http://{host}:{port}"
 
+    def _auth(self) -> Optional[tuple[str, str]]:
+        user = str(getattr(cfg, "MEDIAMTX_API_USER", "") or "").strip()
+        if not user:
+            return None
+        password = str(getattr(cfg, "MEDIAMTX_API_PASSWORD", "") or "")
+        return user, password
+
+    def _request(self, method: str, path: str, **kwargs):
+        return requests.request(
+            method,
+            f"{self._api_base()}{path}",
+            auth=self._auth(),
+            timeout=_TIMEOUT,
+            **kwargs,
+        )
+
     def _path_name(self, source_code: str) -> str:
         # source_code 作为 MediaMTX path 名；去除首尾斜杠避免拼出空段。
         return (source_code or "").strip().strip("/")
@@ -64,7 +81,7 @@ class MediaMTXClient:
 
         ok = False
         try:
-            resp = requests.get(f"{self._api_base()}/v3/paths", timeout=_TIMEOUT)
+            resp = self._request("GET", "/v3/paths/list")
             ok = resp.status_code == 200
         except Exception as exc:  # noqa: BLE001 - 探活吞掉所有异常
             logger.debug(f"[MediaMTX] 探活失败（忽略）: {exc}")
@@ -91,14 +108,28 @@ class MediaMTXClient:
 
         payload: Dict[str, Any] = {
             "source": rtsp_url,
-            "sourceProtocol": "tcp",
+            "rtspTransport": "tcp",
             "sourceOnDemand": True,
-            # RTSP 时钟校正，避免部分相机时间戳抖动导致 WebRTC 卡顿
-            "rtspRangeType": "clock",
         }
-        url = f"{self._api_base()}/v3/config/paths/patch/{name}"
+        escaped_name = quote(name, safe="")
+        exists = name in self.list_path_names()
+        method = "PATCH" if exists else "POST"
+        action = "patch" if exists else "add"
         try:
-            resp = requests.post(url, json=payload, timeout=_TIMEOUT)
+            resp = self._request(
+                method,
+                f"/v3/config/paths/{action}/{escaped_name}",
+                json=payload,
+            )
+            # 配置可能在 list 与写入之间被另一请求增删；切换 add/patch 幂等重试一次。
+            if (not exists and resp.status_code == 409) or (exists and resp.status_code == 404):
+                fallback_method = "PATCH" if not exists else "POST"
+                fallback_action = "patch" if not exists else "add"
+                resp = self._request(
+                    fallback_method,
+                    f"/v3/config/paths/{fallback_action}/{escaped_name}",
+                    json=payload,
+                )
             if resp.status_code < 300:
                 logger.info(f"[MediaMTX] 已注册按需拉流路径 '{name}' -> {rtsp_url}")
                 return True
@@ -119,9 +150,9 @@ class MediaMTXClient:
         if not self.is_available():
             return False
 
-        url = f"{self._api_base()}/v3/config/paths/{name}"
         try:
-            resp = requests.delete(url, timeout=_TIMEOUT)
+            escaped_name = quote(name, safe="")
+            resp = self._request("DELETE", f"/v3/config/paths/delete/{escaped_name}")
             # 404 视为成功（本来就不存在）
             if resp.status_code < 300 or resp.status_code == 404:
                 logger.info(f"[MediaMTX] 已注销路径 '{name}'")
@@ -138,13 +169,21 @@ class MediaMTXClient:
         if not self.enabled or not self.is_available():
             return []
         try:
-            resp = requests.get(f"{self._api_base()}/v3/config/paths", timeout=_TIMEOUT)
+            resp = self._request("GET", "/v3/config/paths/list")
             if resp.status_code != 200:
                 return []
             data = resp.json()
-            # MediaMTX v3: {"items": {"<name>": {...}, ...}} 或 dict
-            items = data.get("items", data) if isinstance(data, dict) else {}
-            return [str(k) for k in items.keys()] if isinstance(items, dict) else []
+            items = data.get("items", []) if isinstance(data, dict) else []
+            if isinstance(items, list):
+                return [
+                    str(item["name"])
+                    for item in items
+                    if isinstance(item, dict) and item.get("name")
+                ]
+            # 兼容较早 v3 响应中的 name -> config 映射。
+            if isinstance(items, dict):
+                return [str(name) for name in items]
+            return []
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"[MediaMTX] 读取路径列表失败（忽略）: {exc}")
             return []
