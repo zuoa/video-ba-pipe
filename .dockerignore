@@ -29,9 +29,11 @@ ENV/
 .gitattributes
 
 # Documentation
-docs/
+docs/*
 *.md
 !README.md
+!docs/openapi.yaml
+!docs/openapi_usage.md
 
 # Data directories (will be mounted as volumes)
 app/data/db/*.db
@@ -65,4 +67,3 @@ test_*.py
 # Cache
 .cache/
 .pytest_cache/
-
