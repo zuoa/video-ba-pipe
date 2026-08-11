@@ -85,6 +85,7 @@ RUN set -eux; \
 # 复制应用代码
 COPY app/ /app/app/
 COPY scripts/ /app/scripts/
+COPY docs/openapi.yaml docs/openapi_usage.md /app/docs/
 COPY env.example /app/.env.example
 
 # 创建必要的数据目录

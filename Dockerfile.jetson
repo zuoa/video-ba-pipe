@@ -51,6 +51,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
 
 COPY app/ /app/app/
 COPY scripts/ /app/scripts/
+COPY docs/openapi.yaml docs/openapi_usage.md /app/docs/
 COPY env.example /app/.env.example
 
 RUN mkdir -p \

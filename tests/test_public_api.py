@@ -54,6 +54,36 @@ def _create_managed_key(client, admin_headers, name='生产集成'):
     return response.get_json()['key']
 
 
+@pytest.mark.parametrize(
+    ('endpoint', 'download_name', 'content_marker'),
+    [
+        (
+            '/api/system/openapi/spec',
+            'video-ba-pipe-openapi.yaml',
+            b'openapi: 3.0.3',
+        ),
+        (
+            '/api/system/openapi/guide',
+            'video-ba-pipe-api-usage.md',
+            '开放 API'.encode('utf-8'),
+        ),
+    ],
+)
+def test_openapi_documents_can_be_downloaded(
+    public_api_client,
+    endpoint,
+    download_name,
+    content_marker,
+):
+    client, admin_headers = public_api_client
+
+    response = client.get(endpoint, headers=admin_headers)
+
+    assert response.status_code == 200
+    assert download_name in response.headers['Content-Disposition']
+    assert content_marker in response.data
+
+
 def test_managed_api_key_is_only_returned_in_plaintext_once(public_api_client):
     client, admin_headers = public_api_client
     created = _create_managed_key(client, admin_headers)

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Card, Form, Input, InputNumber, Progress, Select, Switch, Tabs, Tag, message, Spin } from 'antd';
+import type { FormInstance } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
   ApiOutlined,
@@ -40,6 +41,12 @@ import {
 } from '@/services/api';
 import ApiKeySettingsCard from './ApiKeySettingsCard';
 import './index.css';
+
+const validateAndGetAllFields = async (form: FormInstance) => {
+  await form.validateFields();
+  // Tabs are rendered lazily. `true` includes values loaded before a tab's fields mount.
+  return form.getFieldsValue(true);
+};
 
 const SystemSettingsPage: React.FC = () => {
   const [vlForm] = Form.useForm();
@@ -146,13 +153,13 @@ const SystemSettingsPage: React.FC = () => {
   const handleSave = async () => {
     // 逐个校验，第一个出错的页签自动切过去，避免错误藏在其它页签里
     const sections = [
-      { key: 'inference', validate: () => inferenceForm.validateFields() },
-      { key: 'recording', validate: () => recordingForm.validateFields() },
-      { key: 'publicMedia', validate: () => publicMediaForm.validateFields() },
-      { key: 'messageQueue', validate: () => messageQueueForm.validateFields() },
-      { key: 'ops', validate: () => opsForm.validateFields() },
-      { key: 'rotation', validate: () => rotationForm.validateFields() },
-      { key: 'vl', validate: () => vlForm.validateFields() },
+      { key: 'inference', validate: () => validateAndGetAllFields(inferenceForm) },
+      { key: 'recording', validate: () => validateAndGetAllFields(recordingForm) },
+      { key: 'publicMedia', validate: () => validateAndGetAllFields(publicMediaForm) },
+      { key: 'messageQueue', validate: () => validateAndGetAllFields(messageQueueForm) },
+      { key: 'ops', validate: () => validateAndGetAllFields(opsForm) },
+      { key: 'rotation', validate: () => validateAndGetAllFields(rotationForm) },
+      { key: 'vl', validate: () => validateAndGetAllFields(vlForm) },
     ];
     const results = await Promise.allSettled(sections.map((section) => section.validate()));
     const firstErrorIndex = results.findIndex((result) => result.status === 'rejected');
