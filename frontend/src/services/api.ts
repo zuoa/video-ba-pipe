@@ -388,6 +388,21 @@ export interface Workflow {
   created_by?: string;
 }
 
+export interface WorkflowFormValues {
+  name: string;
+  description?: string;
+  is_template: boolean;
+}
+
+export interface VideoSource {
+  id: number;
+  name: string;
+  source_code: string;
+  status: string;
+  enabled?: boolean;
+  source_codec?: string;
+}
+
 export interface BatchCopyWorkflowResponse {
   success: boolean;
   template: { id: number; name: string };
@@ -417,8 +432,8 @@ export async function getWorkflow(id: number) {
   return request<Workflow>(`/api/workflows/${id}`);
 }
 
-export async function createWorkflow(data: any) {
-  return request('/api/workflows', {
+export async function createWorkflow(data: WorkflowFormValues) {
+  return request<{ id: number; message: string }>('/api/workflows', {
     method: 'POST',
     data,
   });
@@ -616,11 +631,11 @@ export async function testAlgorithmWithBase64(algorithmId: number, base64Image: 
 
 // 视频源
 export async function getVideoSources() {
-  return request('/api/video-sources');
+  return request<VideoSource[]>('/api/video-sources');
 }
 
 export async function getVideoSource(id: number) {
-  return request(`/api/video-sources/${id}`);
+  return request<VideoSource>(`/api/video-sources/${id}`);
 }
 
 export async function createVideoSource(data: any) {

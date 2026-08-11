@@ -30,11 +30,6 @@
   animation: fadeInUp 0.4s ease-out;
 }
 
-/* 表格容器动画 */
-.workflow-table-wrapper {
-  animation-delay: 0.1s;
-}
-
 /* 滚动条美化 */
 .workflows-page ::-webkit-scrollbar {
   width: 8px;
@@ -54,4 +49,10 @@
 
 .workflows-page ::-webkit-scrollbar-thumb:hover {
   background: #999;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflows-page > * {
+    animation: none;
+  }
 }

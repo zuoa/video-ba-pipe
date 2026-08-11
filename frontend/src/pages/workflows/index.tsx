@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
+import { useNavigate } from 'umi';
 import Button from '@/components/common/AppButton';
 import {
   PlusOutlined,
@@ -18,7 +19,7 @@ import {
   batchDeactivateWorkflows,
   batchDeleteWorkflows,
 } from '@/services/api';
-import type { Workflow } from '@/services/api';
+import type { VideoSource, Workflow, WorkflowFormValues } from '@/services/api';
 import { PageHeader, useAppConfirm } from '@/components/common';
 import WorkflowTable from './components/WorkflowTable';
 import WorkflowForm from './components/WorkflowForm';
@@ -27,15 +28,14 @@ import BatchConfigDrawer from './components/BatchConfigDrawer';
 import './index.css';
 
 export default function Workflows() {
+  const navigate = useNavigate();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
-  const [editorVisible, setEditorVisible] = useState(false);
   const [copyModalVisible, setCopyModalVisible] = useState(false);
-  const [editingWorkflow, setEditingWorkflow] = useState<any>(null);
-  const [copyingWorkflow, setCopyingWorkflow] = useState<any>(null);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
-  const [videoSources, setVideoSources] = useState<any[]>([]);
+  const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
+  const [copyingWorkflow, setCopyingWorkflow] = useState<Workflow | null>(null);
+  const [videoSources, setVideoSources] = useState<VideoSource[]>([]);
   const [batchConfigWorkflows, setBatchConfigWorkflows] = useState<Workflow[]>([]);
   const confirmAction = useAppConfirm();
 
@@ -75,17 +75,14 @@ export default function Workflows() {
     setFormVisible(true);
   };
 
-  const handleOpenEditor = (record: Workflow) => {
-    setSelectedWorkflow(record);
-    setEditorVisible(true);
-  };
-
   const handleDelete = (id: number) => {
     const workflow = workflows.find((item) => item.id === id);
     confirmAction({
-      title: '删除工作流',
+      title: workflow?.is_template ? '删除编排模板' : '删除运行编排',
       objectName: workflow?.name || `工作流 #${id}`,
-      description: '删除后，当前编排和节点配置将无法恢复。',
+      description: workflow?.is_template
+        ? '删除后，模板结构将无法恢复；已由该模板生成运行编排时，系统会阻止删除。'
+        : '删除后，当前编排和节点配置将无法恢复。',
       onConfirm: async () => {
         try {
           await deleteWorkflow(id);
@@ -118,33 +115,21 @@ export default function Workflows() {
     }
   };
 
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (values: WorkflowFormValues) => {
     try {
       if (editingWorkflow) {
         await updateWorkflow(editingWorkflow.id, values);
         message.success('工作流更新成功');
+        setFormVisible(false);
+        await loadWorkflows();
       } else {
-        await createWorkflow(values);
+        const created = await createWorkflow(values);
         message.success('工作流创建成功');
+        setFormVisible(false);
+        navigate(`/workflows/editor/${created.id}`);
       }
-      setFormVisible(false);
-      loadWorkflows();
     } catch (error) {
       message.error(editingWorkflow ? '更新失败' : '创建失败');
-      throw error;
-    }
-  };
-
-  const handleEditorSubmit = async (graphData: any) => {
-    try {
-      // 后端期望的字段是 workflow_data，不是 graph_json
-      await updateWorkflow(selectedWorkflow.id, {
-        workflow_data: graphData, // 直接传递对象，让前端库自动序列化
-      });
-      message.success('保存成功');
-      loadWorkflows();
-    } catch (error) {
-      message.error('保存失败');
       throw error;
     }
   };
@@ -196,6 +181,7 @@ export default function Workflows() {
   };
 
   const handleCopyConfirm = async (sourceIds: number[]) => {
+    if (!copyingWorkflow) return;
     try {
       const result = await batchCopyWorkflow(copyingWorkflow.id, sourceIds);
 
@@ -225,7 +211,7 @@ export default function Workflows() {
       <PageHeader
         icon={<ApartmentOutlined />}
         title="算法编排管理"
-        subtitle="可视化配置视频分析算法编排"
+        subtitle="分别管理可复用模板与绑定视频源的运行编排"
         count={workflows.length}
         countLabel="个算法编排"
         extra={
@@ -247,7 +233,6 @@ export default function Workflows() {
         videoSources={videoSources}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        onOpenEditor={handleOpenEditor}
         onActivate={handleActivate}
         onDeactivate={handleDeactivate}
         onCopy={handleCopy}
