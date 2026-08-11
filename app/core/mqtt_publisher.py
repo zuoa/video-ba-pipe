@@ -132,16 +132,37 @@ class MQTTPublisher:
             topic = build_alert_topic(config, alert_data)
             info = self._client.publish(topic, payload=payload, qos=1, retain=False)
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
-                logger.error("MQTT 发布失败，rc=%s topic=%s", info.rc, topic)
+                logger.error(
+                    "MQTT 发布失败，broker=%s:%s topic=%s rc=%s",
+                    config.host,
+                    config.port,
+                    topic,
+                    info.rc,
+                )
                 return False
             info.wait_for_publish(timeout=config.publish_timeout_seconds)
             if not info.is_published():
-                logger.error("等待 MQTT PUBACK 超时，topic=%s", topic)
+                logger.error(
+                    "等待 MQTT PUBACK 超时，broker=%s:%s topic=%s",
+                    config.host,
+                    config.port,
+                    topic,
+                )
                 return False
-            logger.info("成功发布预警消息到 MQTT: %s", topic)
+            logger.info(
+                "成功发布预警消息到 MQTT，broker=%s:%s topic=%s",
+                config.host,
+                config.port,
+                topic,
+            )
             return True
         except Exception as exc:
-            logger.error("发布 MQTT 预警消息失败: %s", exc)
+            logger.error(
+                "发布 MQTT 预警消息失败，broker=%s:%s: %s",
+                config.host,
+                config.port,
+                exc,
+            )
             return False
 
 

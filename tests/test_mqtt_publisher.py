@@ -44,9 +44,10 @@ def test_build_alert_topic_sanitizes_dynamic_segments():
     assert topic == "video/alert/box-01/person--"
 
 
-def test_publish_uses_qos_one_and_is_not_retained(monkeypatch):
-    config = MqttConfig()
+def test_publish_uses_qos_one_and_is_not_retained(monkeypatch, caplog):
+    config = MqttConfig(host="broker.example", port=2883)
     calls = []
+    caplog.set_level("INFO", logger=mqtt_publisher.__name__)
 
     class PublishInfo:
         rc = 0
@@ -72,6 +73,10 @@ def test_publish_uses_qos_one_and_is_not_retained(monkeypatch):
     assert calls[0][0] == "video/alert/box-1/person"
     assert calls[0][2:] == (1, False)
     assert calls[1] == ("wait", config.publish_timeout_seconds)
+    assert (
+        "成功发布预警消息到 MQTT，broker=broker.example:2883 "
+        "topic=video/alert/box-1/person"
+    ) in caplog.text
 
 
 def test_publish_fails_when_puback_times_out(monkeypatch):
