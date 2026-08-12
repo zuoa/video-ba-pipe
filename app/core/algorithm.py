@@ -1,7 +1,9 @@
 import os
 from abc import ABC, abstractmethod
+from functools import lru_cache
 
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from app import logger
 from app.core.cv2_compat import cv2, require_cv2
@@ -341,6 +343,85 @@ class BaseAlgorithm(ABC):
         img[y1:y2 + 1, max(x2 - thickness + 1, x1):x2 + 1] = color
 
     @staticmethod
+    @lru_cache(maxsize=8)
+    def _load_unicode_font(font_size: int):
+        """Load a CJK-capable font for labels that OpenCV cannot render."""
+        configured_font = os.getenv('VIDEO_BA_FONT_PATH')
+        font_candidates = [
+            configured_font,
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+            '/System/Library/Fonts/STHeiti Medium.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            os.path.expanduser('~/Library/Fonts/LXGWWenKai-Regular.ttf'),
+            'C:/Windows/Fonts/msyh.ttc',
+            'C:/Windows/Fonts/simhei.ttf',
+        ]
+
+        for font_path in font_candidates:
+            if not font_path or not os.path.isfile(font_path):
+                continue
+            try:
+                return ImageFont.truetype(font_path, font_size)
+            except OSError:
+                logger.warning(f"无法加载可视化字体: {font_path}")
+
+        logger.warning(
+            "未找到支持中文的可视化字体；可安装 fonts-wqy-zenhei，"
+            "或通过 VIDEO_BA_FONT_PATH 指定字体文件"
+        )
+        return None
+
+    @staticmethod
+    def _draw_unicode_text(img: np.ndarray, text: str, origin, color, font_scale: float, thickness: int):
+        """Draw Unicode text on a BGR OpenCV image via Pillow."""
+        font_size = max(12, int(round(font_scale * 30)))
+        font = BaseAlgorithm._load_unicode_font(font_size)
+        if font is None:
+            return False
+
+        rgb_image = Image.fromarray(np.ascontiguousarray(img[:, :, ::-1]))
+        drawer = ImageDraw.Draw(rgb_image)
+        x, baseline_y = origin
+        stroke_width = max(0, thickness - 1)
+        text_box = drawer.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+        text_height = text_box[3] - text_box[1]
+        top_y = max(0, int(baseline_y - text_height - 2))
+        b, g, r = color
+        rgb_color = (int(r), int(g), int(b))
+        drawer.text(
+            (int(x), top_y),
+            text,
+            font=font,
+            fill=rgb_color,
+            stroke_width=stroke_width,
+            stroke_fill=rgb_color,
+        )
+        img[:] = np.asarray(rgb_image)[:, :, ::-1]
+        return True
+
+    @staticmethod
+    def _draw_text(img: np.ndarray, text, origin, color, font_scale: float, thickness: int):
+        """Use OpenCV for ASCII labels and Pillow for Unicode labels."""
+        label = str(text)
+        if not label.isascii() and BaseAlgorithm._draw_unicode_text(
+            img, label, origin, color, font_scale, thickness
+        ):
+            return
+
+        cv2.putText(
+            img,
+            label,
+            origin,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            thickness,
+        )
+
+    @staticmethod
     def _visualize_numpy(img, results, label_color='#FF0000', roi_regions=None):
         if img is None:
             return None
@@ -463,16 +544,6 @@ class BaseAlgorithm(ABC):
         # 转换主标签颜色
         main_color = BaseAlgorithm.hex_to_bgr(label_color)
         
-        # 定义stages的颜色列表（不同颜色用于区分不同stage）
-        stage_colors = [
-            (0, 255, 0),    # 绿色
-            (255, 0, 255),  # 洋红色
-            (0, 255, 255),  # 黄色
-            (255, 255, 0),  # 青色
-            (128, 0, 128),  # 紫色
-            (255, 165, 0),  # 橙色
-        ]
-
         # 绘制检测结果
         for result in results:
             box = BaseAlgorithm._get_detection_box(result)
@@ -485,7 +556,6 @@ class BaseAlgorithm(ABC):
             logger.debug(f"Main detection box: {x1, y1, x2, y2}")
 
             label_prefix = BaseAlgorithm._get_detection_label(result, 'Object')
-            cls = result.get('class', 0)
             conf = BaseAlgorithm._get_detection_confidence(result, 1.0)
             stages = result.get('stages', [])
 
@@ -493,8 +563,7 @@ class BaseAlgorithm(ABC):
             cv2.rectangle(img_vis, (x1, y1), (x2, y2), main_color, 3)
             label = f"{label_prefix}: {conf:.2f}"
             label_y = y1 - 10 if y1 > 24 else y1 + 22
-            cv2.putText(img_vis, label, (x1, label_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, main_color, 2)
+            BaseAlgorithm._draw_text(img_vis, label, (x1, label_y), main_color, 0.6, 2)
 
             # 绘制stages信息
             if stages:
@@ -523,8 +592,9 @@ class BaseAlgorithm(ABC):
                     stage_label = f"{stage_label}: {stage_conf:.2f}"
                     # 在stage框的右下角显示标签
                     label_y = stage_y2 + 15 + (i * 15)  # 垂直偏移避免重叠
-                    cv2.putText(img_vis, stage_label, (stage_x1, label_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, stage_color, 1)
+                    BaseAlgorithm._draw_text(
+                        img_vis, stage_label, (stage_x1, label_y), stage_color, 0.4, 1
+                    )
 
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)

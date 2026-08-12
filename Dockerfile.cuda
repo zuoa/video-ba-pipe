@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
     libgl1-mesa-glx \
+    fonts-wqy-zenhei \
     # FFmpeg和视频编解码
     ffmpeg \
     libavcodec-dev \

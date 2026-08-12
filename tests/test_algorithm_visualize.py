@@ -102,3 +102,29 @@ def test_visualize_draws_xyxy_alias_detection():
 
     assert rendered is not None
     assert tuple(rendered[10, 10]) == (0, 255, 0)
+
+
+def test_visualize_routes_chinese_label_to_unicode_renderer(monkeypatch):
+    frame_rgb = np.full((80, 120, 3), 255, dtype=np.uint8)
+    detections = [{
+        "box": [10, 30, 70, 70],
+        "confidence": 0.92,
+        "class_name": "安全帽",
+    }]
+    rendered_labels = []
+
+    def fake_draw_unicode_text(img, text, origin, color, font_scale, thickness):
+        rendered_labels.append(text)
+        img[0, 0] = color
+        return True
+
+    monkeypatch.setattr(BaseAlgorithm, '_draw_unicode_text', fake_draw_unicode_text)
+
+    rendered = BaseAlgorithm.visualize(
+        frame_rgb,
+        detections,
+        label_color="#00FF00",
+    )
+
+    assert rendered_labels == ["安全帽: 0.92"]
+    assert tuple(rendered[0, 0]) == (0, 255, 0)

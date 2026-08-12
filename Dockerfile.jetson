@@ -30,6 +30,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
       ca-certificates \
       ffmpeg \
+      fonts-wqy-zenhei \
       gir1.2-gstreamer-1.0 \
       gir1.2-gst-plugins-base-1.0 \
       gstreamer1.0-libav \

@@ -260,8 +260,9 @@ services:
       - MTX_AUTHINTERNALUSERS_1_PASS=${MEDIAMTX_API_PASSWORD:-video-ba-api-change-me}
       - MTX_WEBRTCADDITIONALHOSTS=${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
     ports:
-      - "8889:8889/tcp" # WebRTC(WHEP) TCP fallback
-      - "8889:8889/udp" # WebRTC ICE media
+      - "8889:8889/tcp" # WebRTC WHEP/HTTP signaling
+      - "8189:8189/udp" # WebRTC ICE media
+      - "8189:8189/tcp" # WebRTC ICE TCP fallback
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./mediamtx.yml:/mediamtx.yml:ro

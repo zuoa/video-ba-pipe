@@ -327,8 +327,9 @@ services:
       # 让 ICE 候选对浏览器可达；填宿主机可达 IP（逗号分隔），同局域网填宿主机 LAN IP
       - MTX_WEBRTCADDITIONALHOSTS=${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
     ports:
-      - "8889:8889/tcp" # WebRTC(WHEP) TCP fallback
-      - "8889:8889/udp" # WebRTC ICE media
+      - "8889:8889/tcp" # WebRTC WHEP/HTTP signaling
+      - "8189:8189/udp" # WebRTC ICE media
+      - "8189:8189/tcp" # WebRTC ICE TCP fallback
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./mediamtx.yml:/mediamtx.yml:ro

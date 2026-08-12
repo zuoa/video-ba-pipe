@@ -33,6 +33,7 @@ import {
   RobotOutlined,
   FileSearchOutlined,
   ApartmentOutlined,
+  ControlOutlined,
 } from '@ant-design/icons';
 import {
   getScripts,
@@ -1506,12 +1507,12 @@ export default function AlgorithmWizard() {
   const steps = [
     {
       title: '选择类型',
-      icon: <ApiOutlined />,
+      icon: <ApiOutlined className="wizard-step-icon" />,
       description: '选择脚本、组合检测、VL 或 OCR 算法',
     },
     {
       title: '配置参数',
-      icon: <SettingOutlined />,
+      icon: <SettingOutlined className="wizard-step-icon" />,
       description: algorithmType === 'vl'
         ? '配置接口、模型与提示词'
         : algorithmType === 'ocr'
@@ -1522,7 +1523,7 @@ export default function AlgorithmWizard() {
     },
     {
       title: '执行配置',
-      icon: <ThunderboltOutlined />,
+      icon: <ControlOutlined className="wizard-step-icon" />,
       description: '配置执行和告警参数',
     },
   ];
@@ -1540,7 +1541,7 @@ export default function AlgorithmWizard() {
           items={steps.map((step, index) => ({
             title: step.title,
             description: step.description,
-            icon: index < currentStep ? <CheckOutlined /> : step.icon,
+            icon: index < currentStep ? <CheckOutlined className="wizard-step-icon" /> : step.icon,
           }))}
           className="wizard-steps"
         />

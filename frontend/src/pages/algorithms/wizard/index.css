@@ -32,6 +32,17 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
+.wizard-steps .ant-steps-item-icon .ant-steps-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard-steps .wizard-step-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .wizard-steps .ant-steps-item-process .ant-steps-item-icon {
   background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
   border-color: #1890ff;
