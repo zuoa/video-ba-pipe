@@ -45,3 +45,20 @@ def test_cascade_stage_model_reference_is_detected():
     })
 
     assert _algorithm_references_model(algorithm, target.id, target_model=target) is True
+
+
+def test_combination_detector_model_reference_is_detected():
+    target = SimpleNamespace(id=7, name="HelmetModel")
+    algorithm = _algorithm([], {
+        "algorithm_type": "cascade",
+        "cascade_config": {
+            "version": 2,
+            "nodes": [
+                {"id": "frame", "type": "frame"},
+                {"id": "head", "type": "detector", "model_id": 3},
+                {"id": "helmet", "type": "detector", "model_id": 7},
+            ],
+        },
+    })
+
+    assert _algorithm_references_model(algorithm, target.id, target_model=target) is True

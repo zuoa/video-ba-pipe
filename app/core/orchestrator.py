@@ -727,8 +727,11 @@ class Orchestrator:
         add(config.get('model_id'))
         cascade_config = config.get('cascade_config')
         if isinstance(cascade_config, dict):
-            for stage in cascade_config.get('stages') or []:
+            candidates = cascade_config.get('nodes') or cascade_config.get('stages') or []
+            for stage in candidates:
                 if isinstance(stage, dict):
+                    if stage.get('type') not in (None, 'detector'):
+                        continue
                     add(stage.get('model_id'))
         models = config.get('models')
         if isinstance(models, list):
@@ -749,8 +752,11 @@ class Orchestrator:
         cascade_config = config.get('cascade_config')
         if isinstance(cascade_config, dict):
             occurrences = []
-            for stage in cascade_config.get('stages') or []:
+            candidates = cascade_config.get('nodes') or cascade_config.get('stages') or []
+            for stage in candidates:
                 if not isinstance(stage, dict):
+                    continue
+                if stage.get('type') not in (None, 'detector'):
                     continue
                 try:
                     model_id = int(stage.get('model_id'))

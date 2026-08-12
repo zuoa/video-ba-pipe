@@ -105,15 +105,24 @@ interface TestResponse {
       model_names: string[];
     };
     cascade_checked?: boolean;
+    combination_checked?: boolean;
+    config_version?: number;
     completed_paths?: number;
     stage_debug?: Array<{
-      stage_id: string;
-      stage_name: string;
+      stage_id?: string;
+      stage_name?: string;
+      node_id?: string;
+      node_name?: string;
       status: string;
       input_count: number;
       detection_count: number;
       inference_time_ms: number;
       error_count: number;
+    }>;
+    context_evaluations?: Array<{
+      anchor_record_id: number | null;
+      state: 'true' | 'false' | 'unknown';
+      predicates: Array<{ name: string; count: number; state: string }>;
     }>;
     vl_checked?: boolean;
     vl_reason?: string;
@@ -406,7 +415,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                     : algorithm.algorithm_type === 'ocr'
                       ? 'OCR 算法'
                       : algorithm.algorithm_type === 'cascade'
-                        ? '多阶段检测'
+                        ? '组合检测'
                         : '脚本算法'}
                 </Descriptions.Item>
                 {algorithm.algorithm_type === 'vl' ? (
@@ -691,13 +700,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
                                   {testResult.metadata.stage_debug?.length ? (
                                     <>
-                                      <Divider style={{ margin: '12px 0' }}>级联阶段</Divider>
+                                      <Divider style={{ margin: '12px 0' }}>
+                                        {testResult.metadata.combination_checked ? '组合检测节点' : '级联阶段'}
+                                      </Divider>
                                       <Space direction="vertical" style={{ width: '100%' }}>
                                         {testResult.metadata.stage_debug.map((stage, index) => (
-                                          <Card key={stage.stage_id} size="small">
+                                          <Card key={stage.node_id || stage.stage_id || index} size="small">
                                             <Descriptions size="small" column={2}>
-                                              <Descriptions.Item label={`阶段 ${index + 1}`}>
-                                                {stage.stage_name}
+                                              <Descriptions.Item label={testResult.metadata?.combination_checked ? `节点 ${index + 1}` : `阶段 ${index + 1}`}>
+                                                {stage.node_name || stage.stage_name}
                                               </Descriptions.Item>
                                               <Descriptions.Item label="状态">
                                                 <Tag color={stage.status === 'ok' ? 'success' : stage.status === 'failed' ? 'error' : 'warning'}>
@@ -712,6 +723,22 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                           </Card>
                                         ))}
                                       </Space>
+                                      {testResult.metadata.context_evaluations?.length ? (
+                                        <div style={{ marginTop: 12 }}>
+                                          <Divider style={{ margin: '12px 0' }}>逐主体判定</Divider>
+                                          <Space direction="vertical" style={{ width: '100%' }}>
+                                            {testResult.metadata.context_evaluations.map((context, index) => (
+                                              <Alert
+                                                key={context.anchor_record_id ?? index}
+                                                type={context.state === 'true' ? 'success' : context.state === 'unknown' ? 'warning' : 'info'}
+                                                showIcon
+                                                message={`主体 ${index + 1}：${context.state === 'true' ? '规则成立' : context.state === 'unknown' ? '结果未知' : '规则不成立'}`}
+                                                description={context.predicates.map(item => `${item.name} ${item.count} 个（${item.state}）`).join(' · ')}
+                                              />
+                                            ))}
+                                          </Space>
+                                        </div>
+                                      ) : null}
                                     </>
                                   ) : null}
                                 </div>

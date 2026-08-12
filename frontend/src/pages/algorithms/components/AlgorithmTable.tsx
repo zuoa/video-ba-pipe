@@ -44,8 +44,10 @@ export interface Algorithm {
     device?: string;
   };
   cascade_config?: {
+    version?: number;
     stages?: Array<{ id: string; name: string; model_id: number }>;
     output?: { label?: string; color?: string };
+    nodes?: Array<{ id: string; type: string; name: string; label?: string }>;
   };
 }
 
@@ -98,7 +100,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                 color={record.algorithm_type === 'vl' ? 'cyan' : record.algorithm_type === 'ocr' ? 'blue' : record.algorithm_type === 'cascade' ? 'gold' : 'purple'}
                 className="algorithm-type-tag"
               >
-                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? '多阶段' : '脚本'}
+                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? '组合检测' : '脚本'}
               </Tag>
             </div>
             {record.description && (
@@ -111,7 +113,9 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                   : record.algorithm_type === 'ocr'
                     ? `运行设备：${record.ocr_config?.device || 'auto'}`
                     : record.algorithm_type === 'cascade'
-                      ? record.cascade_config?.stages?.map(stage => stage.name).join(' → ')
+                      ? record.cascade_config?.version === 2
+                        ? record.cascade_config?.nodes?.filter(node => node.type === 'detector').map(node => node.name).join(' · ')
+                        : record.cascade_config?.stages?.map(stage => stage.name).join(' → ')
                     : record.script_path
               }>
                 <code className="algorithm-code">
@@ -121,7 +125,9 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                     : record.algorithm_type === 'ocr'
                       ? `检测模型 #${record.ocr_config?.detection_model_id || '-'} · 识别模型 #${record.ocr_config?.recognition_model_id || '-'}`
                       : record.algorithm_type === 'cascade'
-                        ? `${record.cascade_config?.stages?.length || 0} 阶段 · ${record.cascade_config?.output?.label || '未配置输出'}`
+                        ? record.cascade_config?.version === 2
+                          ? `${record.cascade_config?.nodes?.filter(node => node.type === 'detector').length || 0} 个检测 · ${record.cascade_config?.nodes?.find(node => node.type === 'output')?.label || '未配置输出'}`
+                          : `${record.cascade_config?.stages?.length || 0} 阶段 · ${record.cascade_config?.output?.label || '未配置输出'}`
                       : record.script_path}
                 </code>
               </Tooltip>

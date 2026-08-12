@@ -449,8 +449,11 @@ def _algorithm_references_model(algorithm, model_id, target_model=None):
             pass
 
     cascade_config = ext_config.get('cascade_config') or {}
-    for stage in cascade_config.get('stages') or []:
+    candidates = cascade_config.get('nodes') or cascade_config.get('stages') or []
+    for stage in candidates:
         if not isinstance(stage, dict):
+            continue
+        if stage.get('type') not in (None, 'detector'):
             continue
         try:
             if int(stage.get('model_id')) == target_id:

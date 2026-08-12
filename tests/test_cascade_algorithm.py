@@ -5,6 +5,7 @@ import pytest
 
 from app.core.cascade_algorithm_config import (
     cascade_model_ids,
+    cascade_v1_to_v2,
     normalize_cascade_algorithm_config,
 )
 from app.core.orchestrator import Orchestrator
@@ -37,6 +38,43 @@ def _raw_config():
             },
         ],
         "output": {"label": "吸烟", "color": "#FF4D4F"},
+    }
+
+
+def _combination_config():
+    return {
+        "version": 2,
+        "evaluation": {"scope": "per_anchor", "anchor_node_id": "head"},
+        "nodes": [
+            {"id": "frame", "type": "frame", "name": "画面输入"},
+            {
+                "id": "head", "type": "detector", "name": "检测头部", "model_id": 1,
+                "class_ids": [0], "confidence": 0.6, "max_candidates": 20,
+                "expand_ratio": 0.1, "inference": {"backend": "auto", "nms_iou": 0.45},
+            },
+            {
+                "id": "helmet", "type": "detector", "name": "检测安全帽", "model_id": 2,
+                "class_ids": [0], "confidence": 0.55, "max_candidates": 20,
+                "expand_ratio": 0.1, "inference": {"backend": "auto", "nms_iou": 0.45},
+            },
+            {"id": "head_exists", "type": "predicate", "name": "检测到头部", "operator": "exists"},
+            {"id": "helmet_missing", "type": "predicate", "name": "没有安全帽", "operator": "not_exists"},
+            {"id": "all", "type": "logic", "name": "全部满足", "operator": "and"},
+            {
+                "id": "output", "type": "output", "name": "最终输出",
+                "label": "未戴安全帽", "color": "#ff4d4f", "box_source_node_id": "head",
+            },
+        ],
+        "edges": [
+            {"source": "frame", "target": "head", "kind": "data"},
+            {"source": "head", "target": "helmet", "kind": "data"},
+            {"source": "head", "target": "head_exists", "kind": "rule"},
+            {"source": "helmet", "target": "helmet_missing", "kind": "rule"},
+            {"source": "head_exists", "target": "all", "kind": "rule"},
+            {"source": "helmet_missing", "target": "all", "kind": "rule"},
+            {"source": "all", "target": "output", "kind": "rule"},
+        ],
+        "layout": {"nodes": {}},
     }
 
 
@@ -88,6 +126,52 @@ def test_cascade_config_rejects_incompatible_model(monkeypatch):
         normalize_cascade_algorithm_config(_raw_config())
 
 
+def test_combination_config_normalizes_graph_and_model_ids(cascade_models):
+    config = normalize_cascade_algorithm_config(_combination_config())
+
+    assert config["version"] == 2
+    assert config["evaluation"] == {"scope": "per_anchor", "anchor_node_id": "head"}
+    assert cascade_model_ids(config) == (1, 2)
+    assert next(node for node in config["nodes"] if node["id"] == "helmet")["model_name"] == "smoke"
+
+
+def test_combination_config_rejects_data_cycle(cascade_models):
+    config = _combination_config()
+    config["edges"][0] = {"source": "helmet", "target": "head", "kind": "data"}
+
+    with pytest.raises(ValueError, match="循环"):
+        normalize_cascade_algorithm_config(config)
+
+
+def test_combination_config_rejects_disconnected_rule_and_accepts_zero_count(cascade_models):
+    config = _combination_config()
+    config["nodes"].append({
+        "id": "unused", "type": "predicate", "name": "未使用条件", "operator": "eq", "value": 0,
+    })
+    config["edges"].append({"source": "head", "target": "unused", "kind": "rule"})
+
+    with pytest.raises(ValueError, match="未连接到最终输出"):
+        normalize_cascade_algorithm_config(config)
+
+    config["nodes"] = [node for node in config["nodes"] if node["id"] != "unused"]
+    config["edges"] = [edge for edge in config["edges"] if edge["target"] != "unused"]
+    helmet_missing = next(node for node in config["nodes"] if node["id"] == "helmet_missing")
+    helmet_missing.update({"operator": "eq", "value": 0})
+    normalized = normalize_cascade_algorithm_config(config)
+    assert next(node for node in normalized["nodes"] if node["id"] == "helmet_missing")["value"] == 0
+
+
+def test_v1_conversion_builds_equivalent_and_rule(cascade_models):
+    legacy = normalize_cascade_algorithm_config(_raw_config())
+    converted = normalize_cascade_algorithm_config(cascade_v1_to_v2(legacy))
+
+    assert converted["version"] == 2
+    assert converted["evaluation"]["anchor_node_id"] == "person"
+    assert [node["operator"] for node in converted["nodes"] if node["type"] == "predicate"] == [
+        "exists", "exists"
+    ]
+
+
 class _Backend:
     def __init__(self, detections=None, error=None, name="fake"):
         self.detections = detections or []
@@ -127,6 +211,21 @@ def _runtime_algorithm(config, backends):
         {"stage": stage, "backend": backend, "model_info": {}}
         for stage, backend in zip(config["stages"], backends)
     ]
+    return algorithm
+
+
+def _runtime_combination(config, backends):
+    algorithm = CascadeAlgorithm.__new__(CascadeAlgorithm)
+    algorithm.config = {"cascade_config": config, "pixel_format": "rgb24"}
+    algorithm.cascade_config = config
+    detector_nodes = [node for node in config["nodes"] if node["type"] == "detector"]
+    algorithm.stage_runtimes = [
+        {"stage": node, "backend": backend, "model_info": {}}
+        for node, backend in zip(detector_nodes, backends)
+    ]
+    algorithm.node_runtimes = {
+        runtime["stage"]["id"]: runtime for runtime in algorithm.stage_runtimes
+    }
     return algorithm
 
 
@@ -239,6 +338,152 @@ def test_cascade_applies_pre_mask_and_filters_only_post_filter_regions(cascade_m
     assert result["detections"][0]["box"] == [65, 10, 85, 40]
 
 
+def test_combination_marks_only_anchor_without_helmet(cascade_models):
+    config = normalize_cascade_algorithm_config(_combination_config())
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+        {"box": [55, 5, 85, 45], "confidence": 0.9, "label": "head"},
+    ])
+    helmets = _SequenceBackend([
+        [{"box": [5, 2, 20, 12], "confidence": 0.8, "label": "helmet"}],
+        [],
+    ])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    assert [detection["box"] for detection in result["detections"]] == [[55, 5, 85, 45]]
+    assert result["detections"][0]["label"] == "未戴安全帽"
+    assert [item["state"] for item in result["metadata"]["context_evaluations"]] == ["false", "true"]
+
+
+def test_combination_does_not_turn_detector_failure_into_negative_match(cascade_models):
+    config = normalize_cascade_algorithm_config(_combination_config())
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+        {"box": [55, 5, 85, 45], "confidence": 0.9, "label": "head"},
+    ])
+    helmets = _SequenceBackend([
+        [{"box": [5, 2, 20, 12], "confidence": 0.8, "label": "helmet"}],
+        RuntimeError("worker unavailable"),
+    ])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    assert result["detections"] == []
+    assert [item["state"] for item in result["metadata"]["context_evaluations"]] == ["false", "unknown"]
+    assert result["metadata"]["node_debug"][1]["status"] == "degraded"
+
+
+def test_combination_frame_scope_supports_count_predicate(cascade_models):
+    raw = _combination_config()
+    raw["evaluation"] = {"scope": "frame", "anchor_node_id": None}
+    helmet_condition = next(node for node in raw["nodes"] if node["id"] == "helmet_missing")
+    helmet_condition.update({"name": "安全帽数量为一", "operator": "eq", "value": 1})
+    config = normalize_cascade_algorithm_config(raw)
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+        {"box": [55, 5, 85, 45], "confidence": 0.9, "label": "head"},
+    ])
+    helmets = _SequenceBackend([
+        [{"box": [5, 2, 20, 12], "confidence": 0.8, "label": "helmet"}],
+        [],
+    ])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    assert [detection["box"] for detection in result["detections"]] == [
+        [5, 5, 35, 45], [55, 5, 85, 45]
+    ]
+    assert result["metadata"]["context_evaluations"][0]["state"] == "true"
+
+
+def test_combination_frame_scope_partial_failure_is_unknown(cascade_models):
+    raw = _combination_config()
+    raw["evaluation"] = {"scope": "frame", "anchor_node_id": None}
+    config = normalize_cascade_algorithm_config(raw)
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+        {"box": [55, 5, 85, 45], "confidence": 0.9, "label": "head"},
+    ])
+    helmets = _SequenceBackend([[], RuntimeError("one crop failed")])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    assert result["detections"] == []
+    assert result["metadata"]["context_evaluations"][0]["state"] == "unknown"
+    assert result["metadata"]["node_debug"][1]["status"] == "degraded"
+
+
+def test_combination_propagates_failed_empty_parent_to_descendant(cascade_models):
+    raw = _combination_config()
+    raw["nodes"] = [node for node in raw["nodes"] if node["id"] != "helmet_missing"]
+    raw["edges"] = [
+        edge for edge in raw["edges"]
+        if edge["source"] != "helmet_missing" and edge["target"] != "helmet_missing"
+    ]
+    raw["nodes"].extend([
+        {
+            "id": "badge", "type": "detector", "name": "检测徽章", "model_id": 2,
+            "class_ids": [0], "confidence": 0.55, "max_candidates": 20,
+            "expand_ratio": 0.1, "inference": {"backend": "auto", "nms_iou": 0.45},
+        },
+        {"id": "badge_missing", "type": "predicate", "name": "没有徽章", "operator": "not_exists"},
+    ])
+    raw["edges"].extend([
+        {"source": "helmet", "target": "badge", "kind": "data"},
+        {"source": "badge", "target": "badge_missing", "kind": "rule"},
+        {"source": "badge_missing", "target": "all", "kind": "rule"},
+    ])
+    config = normalize_cascade_algorithm_config(raw)
+    heads = _Backend([{"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"}])
+    helmets = _Backend(error=RuntimeError("helmet worker unavailable"))
+    badges = _Backend([])
+    algorithm = _runtime_combination(config, [heads, helmets, badges])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    assert badges.frames == []
+    assert result["detections"] == []
+    assert result["metadata"]["context_evaluations"][0]["state"] == "unknown"
+    assert result["metadata"]["node_debug"][2]["status"] == "failed"
+
+
+def test_combination_caps_merged_candidates_before_next_detector(cascade_models):
+    raw = _combination_config()
+    helmet_node = next(node for node in raw["nodes"] if node["id"] == "helmet")
+    helmet_node["max_candidates"] = 1
+    raw["nodes"].append({
+        "id": "badge", "type": "detector", "name": "检测徽章", "model_id": 2,
+        "class_ids": [0], "confidence": 0.55, "max_candidates": 20,
+        "expand_ratio": 0.1, "inference": {"backend": "auto", "nms_iou": 0.45},
+    })
+    raw["edges"].append({"source": "helmet", "target": "badge", "kind": "data"})
+    config = normalize_cascade_algorithm_config(raw)
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+        {"box": [55, 5, 85, 45], "confidence": 0.9, "label": "head"},
+    ])
+    helmets = _SequenceBackend([
+        [{"box": [2, 2, 12, 12], "confidence": 0.9, "label": "helmet"}],
+        [{"box": [2, 2, 12, 12], "confidence": 0.8, "label": "helmet"}],
+    ])
+    badges = _Backend([])
+    algorithm = _runtime_combination(config, [heads, helmets, badges])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    helmet_debug = result["metadata"]["node_debug"][1]
+    assert helmet_debug["detection_count"] == 2
+    assert helmet_debug["forwarded_count"] == 1
+    assert len(badges.frames) == 1
+    # Rules see both observations, so bounding downstream work cannot create a false absence alert.
+    assert result["detections"] == []
+
+
 def test_cascade_initialization_cleans_loaded_backends(monkeypatch, cascade_models):
     config = normalize_cascade_algorithm_config(_raw_config())
     first = _Backend()
@@ -287,4 +532,13 @@ def test_orchestrator_preserves_per_stage_model_occurrences():
     }) == (
         (1, {"backend": "ultralytics"}),
         (1, {"backend": "auto"}),
+    )
+
+
+def test_orchestrator_extracts_v2_detector_nodes():
+    config = _combination_config()
+    assert Orchestrator._model_ids_from_algorithm_config({"cascade_config": config}) == (1, 2)
+    assert Orchestrator._model_occurrences_from_algorithm_config({"cascade_config": config}) == (
+        (1, {"backend": "auto", "nms_iou": 0.45}),
+        (2, {"backend": "auto", "nms_iou": 0.45}),
     )

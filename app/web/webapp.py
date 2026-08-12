@@ -1080,14 +1080,20 @@ def preview_cascade_algorithm():
     image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
     instance = None
     try:
+        if cascade_config.get('version') == 2:
+            output_config = next(
+                node for node in cascade_config['nodes'] if node.get('type') == 'output'
+            )
+        else:
+            output_config = cascade_config['output']
         instance = _create_algorithm_instance('cascade', {
             'id': 'preview',
-            'name': cascade_config['output']['label'],
+            'name': output_config['label'],
             'algorithm_type': 'cascade',
             'cascade_config': cascade_config,
             'pixel_format': 'rgb24',
-            'label_name': cascade_config['output']['label'],
-            'label_color': cascade_config['output']['color'],
+            'label_name': output_config['label'],
+            'label_color': output_config['color'],
         })
         result = instance.process(image)
         detections = BaseAlgorithm.normalize_detection_results(result.get('detections', []))
@@ -1095,7 +1101,7 @@ def preview_cascade_algorithm():
         result_image = instance.visualize(
             image,
             detections,
-            label_color=cascade_config['output']['color'],
+            label_color=output_config['color'],
         )
         stage_previews = []
         for stage in metadata.get('stage_debug') or []:
@@ -1105,8 +1111,10 @@ def preview_cascade_algorithm():
                 x1, y1, x2, y2 = [int(value) for value in crop_box[:4]]
                 cv2.rectangle(stage_image, (x1, y1), (x2, y2), (11, 158, 245), 2)
             stage_previews.append({
-                'stage_id': stage.get('stage_id'),
-                'stage_name': stage.get('stage_name'),
+                'stage_id': stage.get('stage_id') or stage.get('node_id'),
+                'stage_name': stage.get('stage_name') or stage.get('node_name'),
+                'node_id': stage.get('node_id') or stage.get('stage_id'),
+                'node_name': stage.get('node_name') or stage.get('stage_name'),
                 'status': stage.get('status'),
                 'input_count': stage.get('input_count'),
                 'detection_count': stage.get('detection_count'),
@@ -1123,6 +1131,8 @@ def preview_cascade_algorithm():
             'metadata': metadata,
             'result_image': _encode_bgr_jpeg(result_image),
             'stage_previews': stage_previews,
+            'node_previews': stage_previews,
+            'context_evaluations': metadata.get('context_evaluations') or [],
         })
     except Exception as exc:
         app.logger.error('级联算法预览失败: %s', exc, exc_info=True)

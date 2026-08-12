@@ -44,7 +44,13 @@ import {
   getPluginModules,
 } from '@/services/api';
 import type { Script } from '@/services/api';
-import CascadeEditor, { type CascadeConfig } from './CascadeEditor';
+import CascadeEditor, {
+  createHelmetTemplate,
+  getCascadeOutput,
+  normalizeCascadeForEditor,
+  validateCascadeGraph,
+  type CascadeConfig,
+} from './CascadeEditor';
 import './index.css';
 
 const { TextArea } = Input;
@@ -52,32 +58,7 @@ const { Option } = Select;
 
 type AlgorithmType = 'script' | 'vl' | 'ocr' | 'cascade';
 
-const DEFAULT_CASCADE_CONFIG: CascadeConfig = {
-  version: 1,
-  stages: [
-    {
-      id: 'stage_subject',
-      name: '找到主体',
-      model_id: null,
-      class_ids: [],
-      confidence: 0.6,
-      max_candidates: 20,
-      inference: { backend: 'auto', nms_iou: 0.45 },
-      input: { type: 'frame' },
-    },
-    {
-      id: 'stage_confirm',
-      name: '确认目标',
-      model_id: null,
-      class_ids: [],
-      confidence: 0.6,
-      max_candidates: 20,
-      inference: { backend: 'auto', nms_iou: 0.45 },
-      input: { type: 'parent_boxes', parent_stage_id: 'stage_subject', expand_ratio: 0.1 },
-    },
-  ],
-  output: { label: '复合事件', color: '#ff4d4f' },
-};
+const DEFAULT_CASCADE_CONFIG: CascadeConfig = createHelmetTemplate();
 
 interface DetectorPreset extends Script {
   description: string;
@@ -272,12 +253,12 @@ export default function AlgorithmWizard() {
 
     if (currentType === 'cascade') {
       const loadedCascade = algorithm.cascade_config || DEFAULT_CASCADE_CONFIG;
-      setCascadeConfig(loadedCascade);
+      setCascadeConfig(normalizeCascadeForEditor(loadedCascade));
       setSelectedDetector({
         type: 'template',
         id: null,
-        name: '多阶段检测',
-        description: '按顺序缩小检测范围并形成一个业务结果',
+        name: '组合检测',
+        description: '用检测数据流和判定规则形成一个业务结果',
         scriptPath: '',
       });
       setConfigSchema({});
@@ -423,26 +404,29 @@ export default function AlgorithmWizard() {
   };
 
   const handleSelectCascade = () => {
+    const isNewSelection = algorithmType !== 'cascade';
     setAlgorithmType('cascade');
+    if (isNewSelection) setCascadeConfig(createHelmetTemplate());
     setSelectedDetector({
       type: 'template',
       id: null,
-      name: '多阶段检测',
-      description: '把多个检测模型按顺序组合成一个业务算法',
+      name: '组合检测',
+      description: '用画布组合多个检测模型和判定规则',
       scriptPath: '',
     });
     setConfigSchema({});
+    if (isNewSelection) {
+      form.setFieldsValue({
+        enableWindowCheck: true,
+        windowSize: 30,
+        windowMode: 'ratio',
+        windowThreshold: 0.3,
+      });
+    }
   };
 
   const validateCascade = (): string | null => {
-    if (cascadeConfig.stages.length < 2) return '多阶段检测至少需要两个阶段';
-    for (let index = 0; index < cascadeConfig.stages.length; index += 1) {
-      const stage = cascadeConfig.stages[index];
-      if (!stage.name.trim()) return `请填写阶段 ${index + 1} 的名称`;
-      if (!stage.model_id) return `请为阶段 ${index + 1} 选择模型`;
-    }
-    if (!cascadeConfig.output.label.trim()) return '请填写最终输出标签';
-    return null;
+    return validateCascadeGraph(cascadeConfig);
   };
 
   const handleNext = async () => {
@@ -598,6 +582,7 @@ export default function AlgorithmWizard() {
           message.error(cascadeError);
           return;
         }
+        const cascadeOutput = getCascadeOutput(cascadeConfig);
         const data = {
           name: values.algorithmName,
           description: values.algorithmDescription,
@@ -610,16 +595,16 @@ export default function AlgorithmWizard() {
           window_size: values.windowSize,
           window_mode: values.windowMode,
           window_threshold: values.windowThreshold,
-          label_name: cascadeConfig.output.label,
-          label_color: cascadeConfig.output.color,
+          label_name: cascadeOutput?.label || '组合事件',
+          label_color: cascadeOutput?.color || '#ff4d4f',
           cascade_config: cascadeConfig,
         };
         if (editingAlgorithm) {
           await updateAlgorithm(editingAlgorithm.id, data);
-          message.success('多阶段算法更新成功！');
+          message.success('组合检测算法更新成功！');
         } else {
           await createAlgorithm(data);
-          message.success('多阶段算法创建成功！');
+          message.success('组合检测算法创建成功！');
         }
         navigate('/algorithms');
         return;
@@ -791,8 +776,8 @@ export default function AlgorithmWizard() {
             >
               <ApartmentOutlined className="algorithm-type-icon" />
               <div>
-                <h4>多阶段检测</h4>
-                <p>先找到主体，再在主体区域内逐步确认目标或行为。</p>
+                <h4>组合检测</h4>
+                <p>在画布上组合检测步骤与 AND、OR、NOT 判定规则。</p>
               </div>
             </Card>
           </Col>
@@ -885,8 +870,8 @@ export default function AlgorithmWizard() {
             className="cascade-contract-callout"
             type="warning"
             showIcon
-            message="完整链条才形成业务结果"
-            description="例如人员 → 烟：只有同一个人员区域内检测到烟，才输出吸烟；阶段失败不会降级成误报。"
+            message="检测数据流与判定规则分离"
+            description="蓝色连线传递画面或目标区域，橙色连线组合存在、不存在和数量条件；模型失败不会被取反为告警。"
           />
         )}
       </div>
@@ -1526,7 +1511,7 @@ export default function AlgorithmWizard() {
     {
       title: '选择类型',
       icon: <ApiOutlined />,
-      description: '选择脚本、多阶段、VL 或 OCR 算法',
+      description: '选择脚本、组合检测、VL 或 OCR 算法',
     },
     {
       title: '配置参数',
@@ -1536,7 +1521,7 @@ export default function AlgorithmWizard() {
         : algorithmType === 'ocr'
           ? '配置 OCR 模型与推理参数'
           : algorithmType === 'cascade'
-            ? '按顺序配置检测阶段并测试'
+            ? '在画布中连接检测数据流与判定规则'
           : '配置检测器参数',
     },
     {
