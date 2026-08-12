@@ -69,6 +69,12 @@
 - `Dockerfile.rk` 通过 `FFMPEG_RK_IMAGE` 复用已发布的 FFmpeg 基础镜像。
 - 当前 `Dockerfile.rk` 使用 Python 3.11，因此 wheel 也需要与 `cp311` 匹配。
 
+本地构建业务镜像前先生成版本和构建时间参数（CI 中会自动执行）：
+
+```bash
+eval "$(python3 scripts/generate_docker_build_info.py --format shell)"
+```
+
 ```bash
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.ffmpeg.rk \
@@ -79,6 +85,8 @@ docker buildx build --platform=linux/arm64 \
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.rk \
   -t ghcr.io/<org>/<repo>:rk \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   --build-arg FFMPEG_RK_IMAGE=ghcr.io/<org>/video-ba-pipe-ffmpeg-rk:rkmpp \
   .
 ```
@@ -89,6 +97,8 @@ docker buildx build --platform=linux/arm64 \
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.rk \
   -t ghcr.io/<org>/<repo>:rk \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   --build-arg TORCH_WHL=<torch_wheel_url_or_path> \
   .
 ```
@@ -99,6 +109,8 @@ docker buildx build --platform=linux/arm64 \
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.rk \
   -t ghcr.io/<org>/<repo>:rk \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   --build-arg ONNXRUNTIME_WHL=<onnxruntime_wheel_url_or_path> \
   .
 ```
@@ -109,6 +121,8 @@ docker buildx build --platform=linux/arm64 \
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.rk \
   -t ghcr.io/<org>/<repo>:rk \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   --build-arg RKNN_TOOLKIT_LITE2_WHL=<rknn_toolkit_lite2_wheel_url_or_path> \
   .
 ```

@@ -50,6 +50,31 @@ push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。Jets
 `Build backend images`（或 `Build Jetson image`）手动触发构建；X86+CUDA 与 RKNN 镜像分别通过
 `Build X86+CUDA image`、`Build RKNN image` 手动触发构建。
 
+### 应用版本和构建时间
+
+所有后端镜像在 GitHub Actions 构建时都会自动生成以下镜像内环境变量：
+
+- `APP_VERSION`：`frontend/package.json` 中的基础版本加 UTC 构建时间，例如
+  `1.0.0+20260812.043015`
+- `BUILD_TIME`：UTC ISO 8601 时间，例如 `2026-08-12T04:30:15Z`
+
+相同的值也会写入 OCI 标签 `org.opencontainers.image.version` 和
+`org.opencontainers.image.created`。运行中的应用继续读取 `APP_VERSION`，因此系统信息接口和
+页面版本号不再依赖部署机器额外配置环境变量。
+
+可以直接检查已发布镜像中的值：
+
+```bash
+docker image inspect ghcr.io/<owner>/<repo>:cpu \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(APP_VERSION|BUILD_TIME)='
+```
+
+本地手工构建前，可用同一个生成器生成构建参数：
+
+```bash
+eval "$(python3 scripts/generate_docker_build_info.py --format shell)"
+```
+
 ### 前端镜像
 
 工作流：`Build frontend images`
@@ -114,6 +139,8 @@ x86 不需要运行 `Build and publish RK3588 FFmpeg image`。
 ```bash
 docker buildx build --platform=linux/amd64 \
   -f Dockerfile.cpu \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   -t video-ba-pipe:cpu \
   --load \
   .
@@ -124,6 +151,8 @@ docker buildx build --platform=linux/amd64 \
 ```bash
 docker buildx build --platform=linux/amd64 \
   -f Dockerfile.cuda \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   -t video-ba-pipe:cuda \
   --load \
   .
@@ -167,6 +196,8 @@ ARM64 前端镜像。
 ```bash
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.jetson \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   -t video-ba-pipe:jetson \
   --load \
   .

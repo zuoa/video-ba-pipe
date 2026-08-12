@@ -56,8 +56,12 @@ ghcr.io/<owner>/<repo>-frontend:arm64-<commit>
 本地构建：
 
 ```bash
+eval "$(python3 scripts/generate_docker_build_info.py --format shell)"
+
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.jetson \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   -t video-ba-pipe:jetson \
   --load \
   .
@@ -69,6 +73,8 @@ docker buildx build --platform=linux/arm64 \
 docker buildx build --platform=linux/arm64 \
   -f Dockerfile.jetson \
   --build-arg JETSON_PYTORCH_IMAGE=<registry>/nvidia-pytorch:25.05-py3-igpu \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
   -t video-ba-pipe:jetson \
   --load \
   .

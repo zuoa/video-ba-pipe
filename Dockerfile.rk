@@ -12,12 +12,18 @@ FROM ${FFMPEG_RK_IMAGE} AS ffmpeg_rk
 # RKNNLite wheel currently bundled in vendor/rknn_wheels targets CPython 3.11.
 FROM --platform=linux/arm64 arm64v8/python:3.11-slim-bookworm
 
+# 由镜像构建流程注入；本地手工构建时仍可使用默认基础版本。
+ARG APP_VERSION=1.0.0
+ARG BUILD_TIME=unknown
+
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    APP_VERSION=${APP_VERSION} \
+    BUILD_TIME=${BUILD_TIME}
 
 # 设置工作目录
 WORKDIR /app
@@ -119,6 +125,8 @@ ENTRYPOINT ["./entrypoint.sh"]
 
 # 标签信息
 LABEL maintainer="Codvision" \
-      version="1.0" \
+      version="${APP_VERSION}" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
       description="Video Behavior Analysis Pipeline - RK3588 NPU Version" \
       npu.enabled="true"

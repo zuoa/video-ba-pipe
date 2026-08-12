@@ -66,6 +66,10 @@ jobs:
       - name: Check out selected revision
         uses: actions/checkout@v4
 
+      - name: Generate image build information
+        id: build_info
+        run: python3 scripts/generate_docker_build_info.py >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -94,6 +98,8 @@ jobs:
             ONNXRUNTIME_WHL=${{ inputs.onnxruntime_whl }}
             RKNN_TOOLKIT_LITE2_WHL=${{ inputs.rknn_toolkit_lite2_whl }}
             FFMPEG_RK_IMAGE=${{ env.DEFAULT_FFMPEG_RK_IMAGE }}
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
+            BUILD_TIME=${{ steps.build_info.outputs.build_time }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rk
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rk-${{ github.sha }}
