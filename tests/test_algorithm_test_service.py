@@ -78,6 +78,68 @@ def test_saved_algorithm_execution_returns_compatible_result_and_cleans_up(monke
     assert instance.cleaned is True
 
 
+def test_cascade_preview_exposes_step_diagnostics(monkeypatch):
+    config = {
+        "version": 2,
+        "nodes": [
+            {
+                "id": "output", "type": "output", "label": "未戴安全帽",
+                "color": "#ff4d4f",
+            },
+        ],
+    }
+
+    class FakeInstance:
+        def process(self, _image):
+            return {
+                "detections": [],
+                "metadata": {
+                    "stage_debug": [{
+                        "node_id": "helmet",
+                        "node_name": "检测安全帽",
+                        "status": "ok",
+                        "execution_state": "not_matched",
+                        "reason_code": "not_matched",
+                        "reason": "已执行 1 次，但没有检测到目标",
+                        "upstream_node_id": "head",
+                        "upstream_node_name": "检测头部",
+                        "input_kind": "crops",
+                        "input_count": 1,
+                        "successful_inferences": 1,
+                        "failed_inferences": 0,
+                        "detection_count": 0,
+                        "forwarded_count": 0,
+                        "pruned_count": 0,
+                        "error_count": 0,
+                        "errors": [],
+                        "detections": [],
+                        "crop_boxes": [],
+                        "inference_time_ms": 3.2,
+                    }],
+                    "context_evaluations": [],
+                    "diagnosis": {"state": "not_matched", "summary": "安全帽条件不成立"},
+                },
+            }
+
+        def visualize(self, image, _detections, label_color):
+            assert label_color in {"#1677ff", "#ff4d4f"}
+            return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        def cleanup(self):
+            pass
+
+    monkeypatch.setattr(execution, "normalize_cascade_algorithm_config", lambda _config: config)
+    monkeypatch.setattr(execution, "_create_algorithm_instance", lambda *_args: FakeInstance())
+
+    result = execution.execute_cascade_preview(config, _jpeg_bytes())
+
+    node = result["node_previews"][0]
+    assert node["execution_state"] == "not_matched"
+    assert node["successful_inferences"] == 1
+    assert node["reason"] == "已执行 1 次，但没有检测到目标"
+    assert result["diagnosis"] == {"state": "not_matched", "summary": "安全帽条件不成立"}
+
+
 def test_algorithm_test_job_rejects_invalid_image_payload():
     try:
         execution.execute_algorithm_test_job(

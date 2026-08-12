@@ -202,9 +202,20 @@ def execute_cascade_preview(cascade_config: Dict[str, Any], image_bytes: bytes) 
                     "node_id": stage.get("node_id") or stage.get("stage_id"),
                     "node_name": stage.get("node_name") or stage.get("stage_name"),
                     "status": stage.get("status"),
+                    "execution_state": stage.get("execution_state"),
+                    "reason_code": stage.get("reason_code"),
+                    "reason": stage.get("reason"),
+                    "upstream_node_id": stage.get("upstream_node_id"),
+                    "upstream_node_name": stage.get("upstream_node_name"),
+                    "input_kind": stage.get("input_kind"),
                     "input_count": stage.get("input_count"),
+                    "successful_inferences": stage.get("successful_inferences"),
+                    "failed_inferences": stage.get("failed_inferences"),
                     "detection_count": stage.get("detection_count"),
+                    "forwarded_count": stage.get("forwarded_count"),
+                    "pruned_count": stage.get("pruned_count"),
                     "error_count": stage.get("error_count"),
+                    "errors": stage.get("errors") or [],
                     "inference_time_ms": stage.get("inference_time_ms"),
                     "image": _encode_bgr_jpeg(stage_image),
                 }
@@ -221,6 +232,7 @@ def execute_cascade_preview(cascade_config: Dict[str, Any], image_bytes: bytes) 
                 "stage_previews": stage_previews,
                 "node_previews": stage_previews,
                 "context_evaluations": metadata.get("context_evaluations") or [],
+                "diagnosis": metadata.get("diagnosis"),
             }
         )
     finally:

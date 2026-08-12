@@ -141,9 +141,20 @@ interface StagePreview {
   stage_name?: string;
   node_name?: string;
   status: string;
+  execution_state?: 'matched' | 'not_matched' | 'skipped' | 'blocked' | 'failed' | 'degraded';
+  reason_code?: string;
+  reason?: string;
+  upstream_node_id?: string;
+  upstream_node_name?: string;
+  input_kind?: 'frame' | 'crops';
   input_count: number;
+  successful_inferences?: number;
+  failed_inferences?: number;
   detection_count: number;
+  forwarded_count?: number;
+  pruned_count?: number;
   error_count: number;
+  errors?: string[];
   inference_time_ms: number;
   image: string;
 }
@@ -156,7 +167,19 @@ interface ContextEvaluation {
     node_id: string;
     name: string;
     operator: string;
+    value?: number;
     count: number;
+    state: 'true' | 'false' | 'unknown';
+    source_node_id?: string;
+    source_node_name?: string;
+    reason?: string;
+  }>;
+  summary?: string;
+  rules?: Array<{
+    node_id: string;
+    name: string;
+    node_type: 'predicate' | 'logic';
+    operator: string;
     state: 'true' | 'false' | 'unknown';
   }>;
 }
@@ -169,6 +192,12 @@ interface PreviewResult {
   node_previews?: StagePreview[];
   stage_previews?: StagePreview[];
   context_evaluations?: ContextEvaluation[];
+  diagnosis?: {
+    state: 'matched' | 'not_matched' | 'unknown' | 'no_context';
+    summary: string;
+    first_break_node_id?: string | null;
+    first_break_node_name?: string | null;
+  };
 }
 
 interface CanvasNodeData {
@@ -436,9 +465,25 @@ const predicateLabel: Record<PredicateOperator, string> = {
 
 const logicLabel: Record<LogicOperator, string> = { and: '全部满足', or: '任一满足', not: '取反' };
 
+const executionStateMeta: Record<string, { label: string; color: string }> = {
+  matched: { label: '已命中', color: 'success' },
+  not_matched: { label: '已执行·未命中', color: 'default' },
+  skipped: { label: '上游无目标·未执行', color: 'default' },
+  blocked: { label: '上游异常·未执行', color: 'warning' },
+  failed: { label: '执行失败', color: 'error' },
+  degraded: { label: '部分失败', color: 'warning' },
+};
+
+const truthStateMeta = {
+  true: { label: '成立', color: 'success' },
+  false: { label: '不成立', color: 'default' },
+  unknown: { label: '未知', color: 'warning' },
+} as const;
+
 const GraphNodeCard = memo(({ data }: NodeProps<CanvasNodeData>) => {
   const node = data.graphNode;
   const status = data.status;
+  const executionMeta = status?.execution_state ? executionStateMeta[status.execution_state] : null;
   const subtitle = node.type === 'detector'
     ? `模型 ${node.model_id ? `#${node.model_id}` : '未选择'} · 阈值 ${node.confidence ?? 0.6}`
     : node.type === 'predicate'
@@ -455,12 +500,13 @@ const GraphNodeCard = memo(({ data }: NodeProps<CanvasNodeData>) => {
         ? <Handle type="target" position={Position.Top} id="rule-in" className="rule-handle" /> : null}
       <div className="combination-node-kicker">
         <span>{kindLabel[node.type]}</span>
-        {status ? <Tag color={status.status === 'ok' ? 'success' : status.status === 'failed' ? 'error' : 'warning'}>{status.status}</Tag> : null}
+        {status ? <Tag color={executionMeta?.color || (status.status === 'ok' ? 'success' : status.status === 'failed' ? 'error' : 'warning')}>{executionMeta?.label || status.status}</Tag> : null}
       </div>
       <strong>{node.name}</strong>
       <small>{subtitle}</small>
       {status ? (
         <div className="combination-node-metrics">
+          <span>输入 {status.input_count}</span>
           <span>命中 {status.detection_count}</span>
           <span>{status.inference_time_ms} ms</span>
         </div>
@@ -1007,13 +1053,30 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
 
       <Drawer title="组合检测测试结果" open={resultOpen} onClose={() => setResultOpen(false)} width={720}>
         {preview?.error ? <Alert type="error" showIcon message={preview.error} /> : null}
+        {preview?.diagnosis ? (
+          <Alert
+            className="combination-diagnosis"
+            type={preview.diagnosis.state === 'matched' ? 'success' : preview.diagnosis.state === 'unknown' ? 'warning' : 'info'}
+            showIcon
+            message={preview.diagnosis.state === 'matched' ? '组合规则已命中' : preview.diagnosis.state === 'unknown' ? '检测结果不完整' : '组合规则未命中'}
+            description={preview.diagnosis.summary}
+          />
+        ) : null}
         {preview?.context_evaluations?.length ? (
           <Card size="small" title={`主体判定 · ${preview.context_evaluations.length} 个上下文`} className="combination-context-card">
             {preview.context_evaluations.map((context, index) => (
               <div className="combination-context-row" key={context.anchor_record_id ?? index}>
-                <Tag color={context.state === 'true' ? 'success' : context.state === 'unknown' ? 'warning' : 'default'}>{context.state === 'true' ? '成立' : context.state === 'unknown' ? '未知' : '不成立'}</Tag>
+                <Tag color={truthStateMeta[context.state].color}>{truthStateMeta[context.state].label}</Tag>
                 <strong>主体 {index + 1}</strong>
-                <span>{context.predicates.map(item => `${item.name}: ${item.count} (${item.state})`).join(' · ')}</span>
+                <div className="combination-context-detail">
+                  <span>{context.summary || context.predicates.map(item => `${item.name}: ${item.count}`).join(' · ')}</span>
+                  {context.predicates.map(item => (
+                    <div className="combination-predicate-result" key={item.node_id}>
+                      <Tag color={truthStateMeta[item.state].color}>{truthStateMeta[item.state].label}</Tag>
+                      <span>{item.reason || `${item.name}：命中 ${item.count} 个`}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </Card>
@@ -1021,7 +1084,20 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
         <div className="cascade-preview-results">
           {(preview?.node_previews || preview?.stage_previews || []).map((node, index) => (
             <Card key={node.node_id || node.stage_id || index} size="small" className="cascade-preview-result">
-              <Space wrap><strong>{node.node_name || node.stage_name}</strong><Tag color={node.status === 'ok' ? 'success' : node.status === 'failed' ? 'error' : 'warning'}>{node.status}</Tag><span>命中 {node.detection_count}</span><span>{node.inference_time_ms} ms</span></Space>
+              <Space wrap>
+                <strong>{node.node_name || node.stage_name}</strong>
+                <Tag color={(node.execution_state && executionStateMeta[node.execution_state]?.color) || (node.status === 'ok' ? 'success' : node.status === 'failed' ? 'error' : 'warning')}>
+                  {(node.execution_state && executionStateMeta[node.execution_state]?.label) || node.status}
+                </Tag>
+                <span>输入 {node.input_count}</span>
+                <span>执行 {node.successful_inferences ?? 0}</span>
+                <span>命中 {node.detection_count}</span>
+                {node.forwarded_count !== undefined ? <span>下传 {node.forwarded_count}</span> : null}
+                {node.pruned_count ? <span>截断 {node.pruned_count}</span> : null}
+                <span>{node.inference_time_ms} ms</span>
+              </Space>
+              {node.reason ? <Alert className="cascade-node-reason" type={node.execution_state === 'failed' ? 'error' : node.execution_state === 'blocked' || node.execution_state === 'degraded' ? 'warning' : 'info'} showIcon message={node.reason} /> : null}
+              {node.errors?.length ? <div className="cascade-node-errors">{node.errors.map((error, errorIndex) => <div key={`${error}-${errorIndex}`}>{error}</div>)}</div> : null}
               <Image src={node.image} alt={`${node.node_name || node.stage_name}测试结果`} />
             </Card>
           ))}

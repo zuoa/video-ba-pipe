@@ -357,6 +357,57 @@ def test_combination_marks_only_anchor_without_helmet(cascade_models):
     assert [item["state"] for item in result["metadata"]["context_evaluations"]] == ["false", "true"]
 
 
+def test_combination_diagnostics_distinguish_executed_miss(cascade_models):
+    raw = _combination_config()
+    helmet_condition = next(node for node in raw["nodes"] if node["id"] == "helmet_missing")
+    helmet_condition.update({"name": "检测到安全帽", "operator": "exists"})
+    config = normalize_cascade_algorithm_config(raw)
+    heads = _Backend([
+        {"box": [5, 5, 35, 45], "confidence": 0.95, "label": "head"},
+    ])
+    helmets = _Backend([])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    head_debug, helmet_debug = result["metadata"]["node_debug"]
+    assert head_debug["execution_state"] == "matched"
+    assert helmet_debug["execution_state"] == "not_matched"
+    assert helmet_debug["input_count"] == 1
+    assert helmet_debug["successful_inferences"] == 1
+    assert helmet_debug["detection_count"] == 0
+    assert "已执行 1 次，但没有检测到目标" in helmet_debug["reason"]
+    context = result["metadata"]["context_evaluations"][0]
+    helmet_predicate = next(item for item in context["predicates"] if item["node_id"] == "helmet_missing")
+    assert helmet_predicate["state"] == "false"
+    assert "命中 0 个目标" in helmet_predicate["reason"]
+    assert result["metadata"]["diagnosis"]["state"] == "not_matched"
+    assert "检测到安全帽" in context["summary"]
+
+
+def test_combination_diagnostics_distinguish_upstream_skip(cascade_models):
+    config = normalize_cascade_algorithm_config(_combination_config())
+    heads = _Backend([])
+    helmets = _Backend([{"box": [1, 1, 5, 5], "confidence": 0.9, "label": "helmet"}])
+    algorithm = _runtime_combination(config, [heads, helmets])
+
+    result = algorithm.process(np.zeros((80, 100, 3), dtype=np.uint8))
+
+    head_debug, helmet_debug = result["metadata"]["node_debug"]
+    assert head_debug["execution_state"] == "not_matched"
+    assert helmet_debug["execution_state"] == "skipped"
+    assert helmet_debug["successful_inferences"] == 0
+    assert "上游节点“检测头部”没有可继续检测的目标" in helmet_debug["reason"]
+    assert helmets.frames == []
+    assert result["metadata"]["context_evaluations"] == []
+    assert result["metadata"]["diagnosis"] == {
+        "state": "no_context",
+        "summary": "未进入规则判断：锚点节点“检测头部”没有检测到目标",
+        "first_break_node_id": "head",
+        "first_break_node_name": "检测头部",
+    }
+
+
 def test_combination_does_not_turn_detector_failure_into_negative_match(cascade_models):
     config = normalize_cascade_algorithm_config(_combination_config())
     heads = _Backend([
@@ -374,6 +425,8 @@ def test_combination_does_not_turn_detector_failure_into_negative_match(cascade_
     assert result["detections"] == []
     assert [item["state"] for item in result["metadata"]["context_evaluations"]] == ["false", "unknown"]
     assert result["metadata"]["node_debug"][1]["status"] == "degraded"
+    assert result["metadata"]["node_debug"][1]["execution_state"] == "degraded"
+    assert result["metadata"]["diagnosis"]["state"] == "unknown"
 
 
 def test_combination_frame_scope_supports_count_predicate(cascade_models):
@@ -450,6 +503,7 @@ def test_combination_propagates_failed_empty_parent_to_descendant(cascade_models
     assert result["detections"] == []
     assert result["metadata"]["context_evaluations"][0]["state"] == "unknown"
     assert result["metadata"]["node_debug"][2]["status"] == "failed"
+    assert result["metadata"]["node_debug"][2]["execution_state"] == "blocked"
 
 
 def test_combination_caps_merged_candidates_before_next_detector(cascade_models):

@@ -114,16 +114,28 @@ interface TestResponse {
       node_id?: string;
       node_name?: string;
       status: string;
+      execution_state?: 'matched' | 'not_matched' | 'skipped' | 'blocked' | 'failed' | 'degraded';
+      reason?: string;
       input_count: number;
+      successful_inferences?: number;
+      failed_inferences?: number;
       detection_count: number;
+      forwarded_count?: number;
+      pruned_count?: number;
       inference_time_ms: number;
       error_count: number;
+      errors?: string[];
     }>;
     context_evaluations?: Array<{
       anchor_record_id: number | null;
       state: 'true' | 'false' | 'unknown';
-      predicates: Array<{ name: string; count: number; state: string }>;
+      summary?: string;
+      predicates: Array<{ name: string; count: number; state: string; reason?: string }>;
     }>;
+    diagnosis?: {
+      state: 'matched' | 'not_matched' | 'unknown' | 'no_context';
+      summary: string;
+    };
     vl_checked?: boolean;
     vl_reason?: string;
     vl_model?: string;
@@ -138,6 +150,15 @@ interface TestHistory {
   result: TestResponse;
   image: string;
 }
+
+const cascadeExecutionStateMeta: Record<string, { label: string; color: string }> = {
+  matched: { label: '已命中', color: 'success' },
+  not_matched: { label: '已执行·未命中', color: 'default' },
+  skipped: { label: '上游无目标·未执行', color: 'default' },
+  blocked: { label: '上游异常·未执行', color: 'warning' },
+  failed: { label: '执行失败', color: 'error' },
+  degraded: { label: '部分失败', color: 'warning' },
+};
 
 const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) => {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -703,6 +724,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                       <Divider style={{ margin: '12px 0' }}>
                                         {testResult.metadata.combination_checked ? '组合检测节点' : '级联阶段'}
                                       </Divider>
+                                      {testResult.metadata.combination_checked && testResult.metadata.diagnosis ? (
+                                        <Alert
+                                          style={{ marginBottom: 12 }}
+                                          type={testResult.metadata.diagnosis.state === 'matched' ? 'success' : testResult.metadata.diagnosis.state === 'unknown' ? 'warning' : 'info'}
+                                          showIcon
+                                          message={testResult.metadata.diagnosis.state === 'matched' ? '组合规则已命中' : testResult.metadata.diagnosis.state === 'unknown' ? '检测结果不完整' : '组合规则未命中'}
+                                          description={testResult.metadata.diagnosis.summary}
+                                        />
+                                      ) : null}
                                       <Space direction="vertical" style={{ width: '100%' }}>
                                         {testResult.metadata.stage_debug.map((stage, index) => (
                                           <Card key={stage.node_id || stage.stage_id || index} size="small">
@@ -711,15 +741,19 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                                 {stage.node_name || stage.stage_name}
                                               </Descriptions.Item>
                                               <Descriptions.Item label="状态">
-                                                <Tag color={stage.status === 'ok' ? 'success' : stage.status === 'failed' ? 'error' : 'warning'}>
-                                                  {stage.status}
+                                                <Tag color={cascadeExecutionStateMeta[stage.execution_state || '']?.color || (stage.status === 'ok' ? 'success' : stage.status === 'failed' ? 'error' : 'warning')}>
+                                                  {cascadeExecutionStateMeta[stage.execution_state || '']?.label || stage.status}
                                                 </Tag>
                                               </Descriptions.Item>
                                               <Descriptions.Item label="输入候选">{stage.input_count}</Descriptions.Item>
+                                              <Descriptions.Item label="成功执行">{stage.successful_inferences ?? '-'}</Descriptions.Item>
                                               <Descriptions.Item label="命中目标">{stage.detection_count}</Descriptions.Item>
+                                              {stage.forwarded_count !== undefined ? <Descriptions.Item label="下传候选">{stage.forwarded_count}</Descriptions.Item> : null}
                                               <Descriptions.Item label="耗时">{stage.inference_time_ms} ms</Descriptions.Item>
                                               <Descriptions.Item label="失败候选">{stage.error_count}</Descriptions.Item>
+                                              {stage.reason ? <Descriptions.Item label="分析" span={2}>{stage.reason}</Descriptions.Item> : null}
                                             </Descriptions>
+                                            {stage.errors?.length ? <Alert type="error" showIcon message={stage.errors.join('；')} /> : null}
                                           </Card>
                                         ))}
                                       </Space>
@@ -733,7 +767,12 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                                 type={context.state === 'true' ? 'success' : context.state === 'unknown' ? 'warning' : 'info'}
                                                 showIcon
                                                 message={`主体 ${index + 1}：${context.state === 'true' ? '规则成立' : context.state === 'unknown' ? '结果未知' : '规则不成立'}`}
-                                                description={context.predicates.map(item => `${item.name} ${item.count} 个（${item.state}）`).join(' · ')}
+                                                description={(
+                                                  <div>
+                                                    {context.summary ? <div>{context.summary}</div> : null}
+                                                    {context.predicates.map(item => <div key={item.name}>{item.reason || `${item.name}命中 ${item.count} 个（${item.state}）`}</div>)}
+                                                  </div>
+                                                )}
                                               />
                                             ))}
                                           </Space>

@@ -352,6 +352,28 @@ class CascadeAlgorithm(BaseAlgorithm):
             "lte": count <= expected,
         }[operator]
 
+    @staticmethod
+    def _predicate_reason(
+        source_name: str,
+        operator: str,
+        count: int,
+        value: int | None,
+        state: bool | None,
+    ) -> str:
+        if state is None:
+            return f"检测节点“{source_name}”执行失败或结果不完整，当前条件无法判断"
+        if operator == "exists":
+            expectation = "至少检测到 1 个目标"
+        elif operator == "not_exists":
+            expectation = "没有检测到目标"
+        else:
+            symbol = {
+                "eq": "=", "ne": "≠", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤",
+            }[operator]
+            expectation = f"目标数量 {symbol} {int(value or 0)}"
+        conclusion = "满足" if state else "不满足"
+        return f"检测节点“{source_name}”命中 {count} 个目标，{conclusion}条件“{expectation}”"
+
     def _process_combination(
         self,
         frame: np.ndarray,
@@ -478,6 +500,49 @@ class CascadeAlgorithm(BaseAlgorithm):
                 errors and successful_inferences == 0 and parent_records
             )
             has_unknown_inputs = failed_global or bool(errors) or bool(unknown_lineage_ids)
+            detection_count = len(ordered_records)
+            forwarded_count = len(records_by_node[node_id])
+            pruned_count = len(pruned_records)
+            if (inherited_global_failure or unknown_lineage_ids) and not parent_records:
+                execution_state = "blocked"
+                reason_code = "upstream_failed"
+                reason = f"未执行：上游节点“{node_by_id[parent_id]['name']}”执行失败或结果不完整"
+            elif not parent_records:
+                execution_state = "skipped"
+                reason_code = "upstream_empty"
+                reason = f"未执行：上游节点“{node_by_id[parent_id]['name']}”没有可继续检测的目标"
+            elif errors and successful_inferences == 0:
+                execution_state = "failed"
+                reason_code = "inference_failed"
+                reason = f"执行失败：{errors[0]}"
+            elif errors:
+                execution_state = "degraded"
+                reason_code = "partial_failure"
+                reason = (
+                    f"部分完成：收到 {len(parent_records)} 个输入，成功执行 {successful_inferences} 次，"
+                    f"失败 {len(errors)} 次，命中 {detection_count} 个目标"
+                )
+            elif has_unknown_inputs:
+                execution_state = "degraded"
+                reason_code = "upstream_incomplete"
+                reason = (
+                    f"已执行 {successful_inferences} 次，命中 {detection_count} 个目标；"
+                    f"但上游节点“{node_by_id[parent_id]['name']}”有失败或被截断的候选，结果不完整"
+                )
+            elif detection_count:
+                execution_state = "matched"
+                reason_code = "matched"
+                reason = (
+                    f"已执行 {successful_inferences} 次，命中 {detection_count} 个目标"
+                    + (f"，向下游传递 {forwarded_count} 个" if parent_is_detector else "")
+                )
+            else:
+                execution_state = "not_matched"
+                reason_code = "not_matched"
+                reason = (
+                    f"已执行 {successful_inferences} 次，但没有检测到目标"
+                    + (f"；输入来自上游节点“{node_by_id[parent_id]['name']}”" if parent_is_detector else "")
+                )
             debug_by_node[node_id] = {
                 "node_id": node_id,
                 "node_name": node["name"],
@@ -485,10 +550,18 @@ class CascadeAlgorithm(BaseAlgorithm):
                 "model_id": node["model_id"],
                 "backend": backend.name,
                 "status": "failed" if failed_global else "degraded" if has_unknown_inputs else "ok",
+                "execution_state": execution_state,
+                "reason_code": reason_code,
+                "reason": reason,
+                "upstream_node_id": parent_id,
+                "upstream_node_name": node_by_id[parent_id]["name"],
+                "input_kind": "crops" if parent_is_detector else "frame",
                 "input_count": len(parent_records),
                 "successful_inferences": successful_inferences,
-                "detection_count": len(ordered_records),
-                "forwarded_count": len(records_by_node[node_id]),
+                "failed_inferences": len(errors),
+                "detection_count": detection_count,
+                "forwarded_count": forwarded_count,
+                "pruned_count": pruned_count,
                 "detections": [dict(record["detection"]) for record in ordered_records],
                 "crop_boxes": crop_boxes,
                 "error_count": len(errors),
@@ -547,16 +620,47 @@ class CascadeAlgorithm(BaseAlgorithm):
                 if node["type"] != "predicate" or node["id"] not in memo:
                     continue
                 predicate_state, _, count = memo[node["id"]]
+                source_id = predicate_source[node["id"]]
+                source_name = node_by_id[source_id]["name"]
                 predicate_details.append({
                     "node_id": node["id"], "name": node["name"], "operator": node["operator"],
                     "value": node.get("value"), "count": count,
+                    "source_node_id": source_id, "source_node_name": source_name,
                     "state": "unknown" if predicate_state is None else "true" if predicate_state else "false",
+                    "reason": self._predicate_reason(
+                        source_name, node["operator"], count, node.get("value"), predicate_state
+                    ),
                 })
+            rule_details = []
+            for rule_node_id, (rule_state, _, _) in memo.items():
+                rule_node = node_by_id[rule_node_id]
+                if rule_node["type"] not in {"predicate", "logic"}:
+                    continue
+                rule_details.append({
+                    "node_id": rule_node_id,
+                    "name": rule_node["name"],
+                    "node_type": rule_node["type"],
+                    "operator": rule_node["operator"],
+                    "input_node_ids": list(rule_inputs.get(rule_node_id, [])),
+                    "state": "unknown" if rule_state is None else "true" if rule_state else "false",
+                })
+            false_predicates = [item["name"] for item in predicate_details if item["state"] == "false"]
+            unknown_predicates = [item["name"] for item in predicate_details if item["state"] == "unknown"]
+            if state is True:
+                context_summary = "全部规则成立，产生业务结果"
+            elif state is None:
+                names = "、".join(unknown_predicates) or "上游条件"
+                context_summary = f"无法完成判断：{names} 的结果未知"
+            else:
+                names = "、".join(false_predicates) or "组合逻辑"
+                context_summary = f"未产生业务结果：{names} 不成立"
             context_results.append({
                 "anchor_record_id": anchor["record_id"] if anchor else None,
                 "anchor_box": list(_box(anchor["detection"]) or []) if anchor else None,
                 "state": "unknown" if state is None else "true" if state else "false",
+                "summary": context_summary,
                 "predicates": predicate_details,
+                "rules": rule_details,
             })
             if state is not True:
                 continue
@@ -590,6 +694,58 @@ class CascadeAlgorithm(BaseAlgorithm):
             item["pruned_lineage_ids"] = sorted(item["pruned_lineage_ids"])
             node_debug.append(item)
         failed_nodes = [item for item in node_debug if item["failed_global"]]
+        problem_nodes = [
+            item for item in node_debug
+            if item["execution_state"] in {"failed", "degraded", "blocked"}
+        ]
+        true_contexts = sum(item["state"] == "true" for item in context_results)
+        unknown_contexts = sum(item["state"] == "unknown" for item in context_results)
+        anchor_debug = debug_by_node.get(anchor_node_id) if anchor_node_id else None
+        anchor_unknown_without_context = bool(
+            evaluation["scope"] == "per_anchor"
+            and not anchors
+            and anchor_debug
+            and anchor_debug["has_unknown_inputs"]
+        )
+        if failed_nodes or unknown_contexts or anchor_unknown_without_context:
+            diagnosis_state = "unknown"
+            first_problem = (
+                failed_nodes[0] if failed_nodes else
+                anchor_debug if anchor_unknown_without_context else
+                problem_nodes[0] if problem_nodes else None
+            )
+            diagnosis_summary = (
+                first_problem["reason"] if first_problem else
+                f"{unknown_contexts} 个判定上下文因检测结果不完整而无法判断"
+            )
+        elif evaluation["scope"] == "per_anchor" and not anchors:
+            diagnosis_state = "no_context"
+            first_problem = anchor_debug
+            diagnosis_summary = (
+                f"未进入规则判断：锚点节点“{node_by_id[anchor_node_id]['name']}”没有检测到目标"
+            )
+        elif true_contexts:
+            diagnosis_state = "matched"
+            first_problem = None
+            diagnosis_summary = f"{true_contexts} 个判定上下文满足全部规则，输出 {len(output_detections)} 个业务结果"
+        else:
+            diagnosis_state = "not_matched"
+            first_problem = None
+            diagnosis_summary = "检测节点已执行，但没有判定上下文满足全部规则"
+            for context in context_results:
+                failed_predicate = next(
+                    (item for item in context["predicates"] if item["state"] == "false"), None
+                )
+                if failed_predicate:
+                    diagnosis_summary = failed_predicate["reason"]
+                    first_problem = debug_by_node.get(failed_predicate["source_node_id"])
+                    break
+        diagnosis = {
+            "state": diagnosis_state,
+            "summary": diagnosis_summary,
+            "first_break_node_id": first_problem["node_id"] if first_problem else None,
+            "first_break_node_name": first_problem["node_name"] if first_problem else None,
+        }
         metadata = {
             "cascade_checked": not bool(failed_nodes),
             "combination_checked": True,
@@ -601,6 +757,7 @@ class CascadeAlgorithm(BaseAlgorithm):
             "node_debug": node_debug,
             "stage_debug": node_debug,
             "context_evaluations": context_results,
+            "diagnosis": diagnosis,
             "total_detections": len(output_detections),
             "inference_time_ms": round((time.perf_counter() - started_at) * 1000.0, 2),
         }
