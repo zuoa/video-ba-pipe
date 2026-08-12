@@ -1,10 +1,7 @@
 import os
-import tempfile
 import base64
 from datetime import datetime
 from pathlib import Path
-import cv2
-import numpy as np
 from werkzeug.utils import secure_filename
 import subprocess
 import json
@@ -21,6 +18,7 @@ from app.core.database_models import db
 from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
+    ALGORITHM_TEST_MAX_IMAGE_BYTES,
     FRAME_SAVE_PATH,
     VIDEO_FRAME_PIXEL_FORMAT,
     SNAPSHOT_SAVE_PATH,
@@ -97,7 +95,7 @@ from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     workflow_references_algorithm,
 )
-from app.core.algorithm import BaseAlgorithm
+from app.core.algorithm_test_service import submit_algorithm_test
 from app.core.window_detector import get_window_detector
 from app.core.video_probe import normalize_video_codec
 from app.core.system_metrics import collect_system_metrics
@@ -190,25 +188,14 @@ def serialize_algorithm(algorithm):
     }
 
 
-def _create_algorithm_instance(algorithm_type, full_config):
-    if algorithm_type == 'vl':
-        from app.plugins.vl_algorithm import VLAlgorithm
-        return VLAlgorithm(full_config)
-    if algorithm_type == 'ocr':
-        from app.plugins.ocr_algorithm import OCRAlgorithm
-        return OCRAlgorithm(full_config)
-    if algorithm_type == 'cascade':
-        from app.plugins.cascade_algorithm import CascadeAlgorithm
-        return CascadeAlgorithm(full_config)
-    from app.plugins.script_algorithm import ScriptAlgorithm
-    return ScriptAlgorithm(full_config)
-
-
-def _encode_bgr_jpeg(image):
-    encoded, buffer = cv2.imencode('.jpg', image)
-    if not encoded:
-        raise RuntimeError('无法编码测试结果图片')
-    return f"data:image/jpeg;base64,{base64.b64encode(buffer.tobytes()).decode('utf-8')}"
+def _forward_algorithm_test(image_file, job):
+    image_bytes = image_file.read(ALGORITHM_TEST_MAX_IMAGE_BYTES + 1)
+    if not image_bytes:
+        return {'success': False, 'error': '没有上传图片'}, 400
+    if len(image_bytes) > ALGORITHM_TEST_MAX_IMAGE_BYTES:
+        return {'success': False, 'error': '测试图片过大'}, 413
+    job['image_base64'] = base64.b64encode(image_bytes).decode('ascii')
+    return submit_algorithm_test(job)
 
 
 def _bump_active_workflows_for_algorithm(algorithm_id):
@@ -916,152 +903,41 @@ def delete_algorithm(id):
 @app.route('/api/algorithms/test', methods=['POST'])
 @require_auth
 def test_algorithm():
-    """算法测试API端点"""
+    """Validate and forward a saved-algorithm test to the worker."""
+    if 'image' not in request.files:
+        return jsonify({'success': False, 'error': '没有上传图片'}), 400
+    uploaded = request.files['image']
+    if not uploaded.filename:
+        return jsonify({'success': False, 'error': '没有选择文件'}), 400
+    if not str(uploaded.content_type or '').startswith('image/'):
+        return jsonify({'success': False, 'error': '只支持图片文件'}), 400
+
+    raw_algorithm_id = request.form.get('algorithm_id')
+    if not raw_algorithm_id:
+        return jsonify({'success': False, 'error': '缺少算法ID'}), 400
     try:
-        # 检查是否有上传的图片
-        if 'image' not in request.files:
-            return jsonify({'success': False, 'error': '没有上传图片'}), 400
-        
-        file = request.files['image']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': '没有选择文件'}), 400
-        
-        # 检查算法ID
-        algorithm_id = request.form.get('algorithm_id')
-        if not algorithm_id:
-            return jsonify({'success': False, 'error': '缺少算法ID'}), 400
-        
-        algo_instance = None
-        try:
-            algorithm_id = int(algorithm_id)
-        except ValueError:
-            return jsonify({'success': False, 'error': '无效的算法ID'}), 400
-        
-        # 获取算法配置
-        try:
-            algorithm = Algorithm.get_by_id(algorithm_id)
-        except Algorithm.DoesNotExist:
-            return jsonify({'success': False, 'error': '算法不存在'}), 404
+        algorithm_id = int(raw_algorithm_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': '无效的算法ID'}), 400
+    try:
+        algorithm = Algorithm.get_by_id(algorithm_id)
+    except Algorithm.DoesNotExist:
+        return jsonify({'success': False, 'error': '算法不存在'}), 404
+    owner_response = require_resource_owner(algorithm)
+    if owner_response:
+        return owner_response
 
-        owner_response = require_resource_owner(algorithm)
-        if owner_response:
-            return owner_response
-        
-        # 验证文件类型
-        if not file.content_type.startswith('image/'):
-            return jsonify({'success': False, 'error': '只支持图片文件'}), 400
-        
-        # 保存上传的图片到临时文件
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_file:
-            file.save(temp_file.name)
-            temp_image_path = temp_file.name
-        
-        try:
-            # 读取图片
-            image = cv2.imread(temp_image_path)
-            if image is None:
-                return jsonify({'success': False, 'error': '无法读取图片文件'}), 400
-
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-            # 调整图片大小，宽高至少640
-            h, w = image.shape[:2]
-            if w < 640 or h < 640:
-                scale = max(640 / w, 640 / h)
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-                app.logger.info(f"已调整图片大小为: {new_w}x{new_h}")
-
-
-            # 准备算法配置
-            script_config = algorithm.config_dict  # 从 script_config 字段解析
-            ext_config = algorithm.ext_config
-            algorithm_type = ext_config.get('algorithm_type') or 'script'
-
-            full_config = {
-                "id": algorithm.id,
-                "name": algorithm.name,
-                "label_name": getattr(algorithm, 'label_name', None) or script_config.get('label_name', 'Object'),
-                "label_color": getattr(algorithm, 'label_color', None) or script_config.get('label_color', '#FF0000'),
-                "interval_seconds": getattr(algorithm, 'interval_seconds', None) or script_config.get('interval_seconds', 1),
-                "source_id": 0,  # 测试模式，使用虚拟视频源ID
-                "pixel_format": "rgb24",  # 上传图片直调入口保持 RGB 输入
-
-                # 脚本执行相关配置
-                "script_path": algorithm.script_path,
-                "entry_function": 'process',
-                "runtime_timeout": getattr(algorithm, 'runtime_timeout', None) or script_config.get('runtime_timeout', 30),
-                "memory_limit_mb": getattr(algorithm, 'memory_limit_mb', None) or script_config.get('memory_limit_mb', 512),
-                "algorithm_type": algorithm_type,
-            }
-
-            # 合并脚本配置
-            full_config.update(script_config)
-            full_config.update(ext_config)
-
-            algo_instance = _create_algorithm_instance(algorithm_type, full_config)
-            
-            # 创建算法实例并处理图片
-            results = algo_instance.process(image)
-
-            # 处理结果
-            detections = BaseAlgorithm.normalize_detection_results(results.get('detections', []))
-            metadata = results.get('metadata', {})
-            algorithm_error = metadata.get('error') if isinstance(metadata, dict) else None
-            
-            # 生成可视化结果（无论是否有检测结果都生成）
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_result:
-                result_image_path = temp_result.name
-            
-            # 生成可视化结果
-            algo_instance.visualize(
-                image,
-                detections, 
-                save_path=result_image_path,
-                label_color=full_config.get('label_color', '#FF0000')
-            )
-            
-            # 准备返回结果
-            response_data = {
-                'success': not bool(algorithm_error),
-                'detections': detections,
-                'detection_count': len(detections),
-                'metadata': metadata  # 包含调试信息
-            }
-            if algorithm_error:
-                response_data['error'] = algorithm_error
-            
-            # 转换结果图片为base64
-            if result_image_path and os.path.exists(result_image_path):
-                with open(result_image_path, 'rb') as f:
-                    result_image_data = base64.b64encode(f.read()).decode('utf-8')
-                    response_data['result_image'] = f'data:image/jpeg;base64,{result_image_data}'
-                
-                # 清理临时结果文件
-                os.unlink(result_image_path)
-            
-            return jsonify(response_data)
-            
-        finally:
-            if algo_instance is not None and hasattr(algo_instance, 'cleanup'):
-                try:
-                    algo_instance.cleanup()
-                except Exception:
-                    app.logger.warning('算法测试资源清理失败', exc_info=True)
-            # 清理临时上传文件
-            if os.path.exists(temp_image_path):
-                os.unlink(temp_image_path)
-                
-    except Exception as e:
-        app.logger.error(f"算法测试失败: {str(e)}")
-        return jsonify({'success': False, 'error': f'测试失败: {str(e)}'}), 500
+    body, status = _forward_algorithm_test(
+        uploaded,
+        {'kind': 'saved_algorithm', 'algorithm_id': algorithm_id},
+    )
+    return jsonify(body), status
 
 
 @app.route('/api/algorithms/cascade/preview', methods=['POST'])
 @require_auth
 def preview_cascade_algorithm():
-    """Test an unsaved cascade configuration against an uploaded image."""
+    """Validate and forward an unsaved cascade preview to the worker."""
     if 'image' not in request.files:
         return jsonify({'success': False, 'error': '没有上传图片'}), 400
     uploaded = request.files['image']
@@ -1073,73 +949,11 @@ def preview_cascade_algorithm():
     except (json.JSONDecodeError, ValueError) as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
-    raw_image = np.frombuffer(uploaded.read(), dtype=np.uint8)
-    bgr_image = cv2.imdecode(raw_image, cv2.IMREAD_COLOR)
-    if bgr_image is None:
-        return jsonify({'success': False, 'error': '无法读取图片文件'}), 400
-    image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
-    instance = None
-    try:
-        if cascade_config.get('version') == 2:
-            output_config = next(
-                node for node in cascade_config['nodes'] if node.get('type') == 'output'
-            )
-        else:
-            output_config = cascade_config['output']
-        instance = _create_algorithm_instance('cascade', {
-            'id': 'preview',
-            'name': output_config['label'],
-            'algorithm_type': 'cascade',
-            'cascade_config': cascade_config,
-            'pixel_format': 'rgb24',
-            'label_name': output_config['label'],
-            'label_color': output_config['color'],
-        })
-        result = instance.process(image)
-        detections = BaseAlgorithm.normalize_detection_results(result.get('detections', []))
-        metadata = result.get('metadata') or {}
-        result_image = instance.visualize(
-            image,
-            detections,
-            label_color=output_config['color'],
-        )
-        stage_previews = []
-        for stage in metadata.get('stage_debug') or []:
-            stage_detections = BaseAlgorithm.normalize_detection_results(stage.get('detections') or [])
-            stage_image = instance.visualize(image, stage_detections, label_color='#1677ff')
-            for crop_box in stage.get('crop_boxes') or []:
-                x1, y1, x2, y2 = [int(value) for value in crop_box[:4]]
-                cv2.rectangle(stage_image, (x1, y1), (x2, y2), (11, 158, 245), 2)
-            stage_previews.append({
-                'stage_id': stage.get('stage_id') or stage.get('node_id'),
-                'stage_name': stage.get('stage_name') or stage.get('node_name'),
-                'node_id': stage.get('node_id') or stage.get('stage_id'),
-                'node_name': stage.get('node_name') or stage.get('stage_name'),
-                'status': stage.get('status'),
-                'input_count': stage.get('input_count'),
-                'detection_count': stage.get('detection_count'),
-                'error_count': stage.get('error_count'),
-                'inference_time_ms': stage.get('inference_time_ms'),
-                'image': _encode_bgr_jpeg(stage_image),
-            })
-        error = metadata.get('error')
-        return jsonify({
-            'success': not bool(error),
-            'error': error,
-            'detection_count': len(detections),
-            'detections': detections,
-            'metadata': metadata,
-            'result_image': _encode_bgr_jpeg(result_image),
-            'stage_previews': stage_previews,
-            'node_previews': stage_previews,
-            'context_evaluations': metadata.get('context_evaluations') or [],
-        })
-    except Exception as exc:
-        app.logger.error('级联算法预览失败: %s', exc, exc_info=True)
-        return jsonify({'success': False, 'error': f'预览失败: {exc}'}), 500
-    finally:
-        if instance is not None:
-            instance.cleanup()
+    body, status = _forward_algorithm_test(
+        uploaded,
+        {'kind': 'cascade_preview', 'cascade_config': cascade_config},
+    )
+    return jsonify(body), status
 
 # VideoSource API
 @app.route('/api/video-sources', methods=['GET'])

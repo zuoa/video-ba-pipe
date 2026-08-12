@@ -203,6 +203,25 @@ const detectorNode = (id: string, name: string): CascadeGraphNode => ({
   inference: { backend: 'auto', nms_iou: 0.45 },
 });
 
+export const createEmptyCascadeConfig = (): CascadeConfig => ({
+  version: 2,
+  evaluation: { scope: 'frame', anchor_node_id: null },
+  nodes: [
+    { id: 'frame', type: 'frame', name: '画面输入' },
+    {
+      id: 'output', type: 'output', name: '最终输出', label: '组合事件',
+      color: '#ff4d4f', box_source_node_id: null,
+    },
+  ],
+  edges: [],
+  layout: {
+    nodes: {
+      frame: { x: 80, y: 180 },
+      output: { x: 760, y: 180 },
+    },
+  },
+});
+
 export const createHelmetTemplate = (): CascadeConfig => ({
   version: 2,
   evaluation: { scope: 'per_anchor', anchor_node_id: 'head' },
@@ -237,15 +256,38 @@ export const createHelmetTemplate = (): CascadeConfig => ({
 });
 
 export const createLinearTemplate = (): CascadeConfig => {
-  const config = createHelmetTemplate();
-  config.nodes = config.nodes.map(node => (
-    node.id === 'helmet_missing'
-      ? { ...node, name: '检测到目标', operator: 'exists' }
-      : node.id === 'output'
-        ? { ...node, label: '复合事件' }
-        : node
-  ));
-  return config;
+  return {
+    version: 2,
+    evaluation: { scope: 'per_anchor', anchor_node_id: 'primary' },
+    nodes: [
+      { id: 'frame', type: 'frame', name: '画面输入' },
+      detectorNode('primary', '检测主体'),
+      detectorNode('secondary', '检测目标'),
+      { id: 'primary_exists', type: 'predicate', name: '检测到主体', operator: 'exists' },
+      { id: 'secondary_exists', type: 'predicate', name: '检测到目标', operator: 'exists' },
+      { id: 'all', type: 'logic', name: '全部满足', operator: 'and' },
+      {
+        id: 'output', type: 'output', name: '最终输出', label: '复合事件',
+        color: '#ff4d4f', box_source_node_id: 'primary',
+      },
+    ],
+    edges: [
+      { source: 'frame', target: 'primary', kind: 'data' },
+      { source: 'primary', target: 'secondary', kind: 'data' },
+      { source: 'primary', target: 'primary_exists', kind: 'rule' },
+      { source: 'secondary', target: 'secondary_exists', kind: 'rule' },
+      { source: 'primary_exists', target: 'all', kind: 'rule' },
+      { source: 'secondary_exists', target: 'all', kind: 'rule' },
+      { source: 'all', target: 'output', kind: 'rule' },
+    ],
+    layout: {
+      nodes: {
+        frame: { x: 30, y: 170 }, primary: { x: 250, y: 170 }, secondary: { x: 480, y: 170 },
+        primary_exists: { x: 500, y: 20 }, secondary_exists: { x: 710, y: 170 },
+        all: { x: 920, y: 80 }, output: { x: 1140, y: 80 },
+      },
+    },
+  };
 };
 
 export const normalizeCascadeForEditor = (raw: CascadeConfig | LegacyCascadeConfig): CascadeConfig => {
@@ -697,17 +739,10 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
   return (
     <div className="cascade-editor combination-editor">
       <div className="combination-toolbar">
-        <Space wrap>
-          <Select
-            aria-label="选择组合检测模板"
-            placeholder="应用模板"
-            style={{ width: 180 }}
-            options={[
-              { value: 'helmet', label: '未检测到目标模板' },
-              { value: 'linear', label: '线性级联模板' },
-            ]}
-            onChange={applyTemplate}
-          />
+        <Space wrap className="combination-template-shortcuts">
+          <span className="combination-template-label">参考模板</span>
+          <Button onClick={() => applyTemplate('helmet')}>安全帽缺失示例</Button>
+          <Button onClick={() => applyTemplate('linear')}>线性级联示例</Button>
         </Space>
         <Space>
           <Button aria-label="撤销" icon={<UndoOutlined />} disabled={historyIndexRef.current === 0} onClick={() => travelHistory(-1)}>撤销</Button>

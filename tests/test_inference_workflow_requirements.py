@@ -156,6 +156,24 @@ def test_jetson_api_keeps_worker_local_shared_socket_disabled():
     )
 
 
+def test_rknn_algorithm_preview_runtime_is_worker_only():
+    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml.rknn"
+    with compose_path.open(encoding="utf-8") as handle:
+        compose = yaml.safe_load(handle)
+
+    api = compose["services"]["api"]
+    worker = compose["services"]["worker"]
+    assert api.get("privileged") is not True
+    assert "/dev/dri:/dev/dri" not in api.get("devices", [])
+    assert "/opt/rknn:/opt/rknn:ro" not in api.get("volumes", [])
+    assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in api.get("volumes", [])
+    assert worker["privileged"] is True
+    assert "/dev/dri:/dev/dri" in worker["devices"]
+    assert "/opt/rknn:/opt/rknn:ro" in worker["volumes"]
+    assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" in worker["volumes"]
+    assert api["environment"]["ALGORITHM_TEST_WORKER_URL"].endswith("worker:5010}")
+
+
 def test_runtime_policy_values_are_hot_updated():
     orchestrator = Orchestrator.__new__(Orchestrator)
     orchestrator.oom_circuit = OomCircuitBreaker(
@@ -223,9 +241,16 @@ def test_service_rebuild_stops_hosts_before_router_restart():
         def stop(self):
             events.append("old_stop")
 
+    class FakeTestController:
+        def replace_environment(self, environment):
+            assert environment["SHARED_INFERENCE_ENABLED"] == "true"
+            events.append("test_restart")
+            return True
+
     orchestrator = Orchestrator.__new__(Orchestrator)
     orchestrator.workflow_hosts = {1: {}, 2: {}}
     orchestrator.shared_inference_service = FakeController()
+    orchestrator.algorithm_test_service = FakeTestController()
     orchestrator.inference_reconcile_error = "previous"
 
     def stop_host(source_id):
@@ -239,5 +264,7 @@ def test_service_rebuild_stops_hosts_before_router_restart():
         shared_inference_enabled=True,
     ))
 
-    assert events == ["host_stop:1", "host_stop:2", "old_stop", "new_start"]
+    assert events == [
+        "host_stop:1", "host_stop:2", "old_stop", "new_start", "test_restart"
+    ]
     assert orchestrator.inference_reconcile_error is None

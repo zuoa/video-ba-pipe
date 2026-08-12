@@ -45,7 +45,7 @@ import {
 } from '@/services/api';
 import type { Script } from '@/services/api';
 import CascadeEditor, {
-  createHelmetTemplate,
+  createEmptyCascadeConfig,
   getCascadeOutput,
   normalizeCascadeForEditor,
   validateCascadeGraph,
@@ -57,8 +57,6 @@ const { TextArea } = Input;
 const { Option } = Select;
 
 type AlgorithmType = 'script' | 'vl' | 'ocr' | 'cascade';
-
-const DEFAULT_CASCADE_CONFIG: CascadeConfig = createHelmetTemplate();
 
 interface DetectorPreset extends Script {
   description: string;
@@ -143,9 +141,7 @@ export default function AlgorithmWizard() {
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
   const [editingAlgorithm, setEditingAlgorithm] = useState<any>(null);
   const [algorithmType, setAlgorithmType] = useState<AlgorithmType>('script');
-  const [cascadeConfig, setCascadeConfig] = useState<CascadeConfig>(() => (
-    JSON.parse(JSON.stringify(DEFAULT_CASCADE_CONFIG))
-  ));
+  const [cascadeConfig, setCascadeConfig] = useState<CascadeConfig>(createEmptyCascadeConfig);
   const [ocrRuntimeAvailable, setOcrRuntimeAvailable] = useState(false);
   const [ocrRuntimeError, setOcrRuntimeError] = useState('');
   const [form] = Form.useForm();
@@ -252,7 +248,7 @@ export default function AlgorithmWizard() {
     }
 
     if (currentType === 'cascade') {
-      const loadedCascade = algorithm.cascade_config || DEFAULT_CASCADE_CONFIG;
+      const loadedCascade = algorithm.cascade_config || createEmptyCascadeConfig();
       setCascadeConfig(normalizeCascadeForEditor(loadedCascade));
       setSelectedDetector({
         type: 'template',
@@ -406,7 +402,7 @@ export default function AlgorithmWizard() {
   const handleSelectCascade = () => {
     const isNewSelection = algorithmType !== 'cascade';
     setAlgorithmType('cascade');
-    if (isNewSelection) setCascadeConfig(createHelmetTemplate());
+    if (isNewSelection) setCascadeConfig(createEmptyCascadeConfig());
     setSelectedDetector({
       type: 'template',
       id: null,

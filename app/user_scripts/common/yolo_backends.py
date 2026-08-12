@@ -1383,7 +1383,11 @@ class RKNNBackend(BaseYoloBackend):
             else:
                 ret = self.model.init_runtime()
             if ret != 0:
-                raise RuntimeError(f"RKNNLite.init_runtime 失败，返回码: {ret}")
+                raise RuntimeError(
+                    f"RKNNLite.init_runtime 失败，返回码: {ret}。"
+                    "请确认当前容器可访问 /dev/dri、/proc/device-tree/compatible，"
+                    "并已挂载 /usr/lib/librknnrt.so"
+                )
         except Exception:
             self.cleanup()
             raise

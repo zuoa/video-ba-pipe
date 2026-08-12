@@ -130,10 +130,15 @@ docker buildx build --platform=linux/arm64 \
 
 ```bash
 docker run --rm -it \
+  --privileged \
+  --device /dev/dri:/dev/dri \
   -v /opt/rknn:/opt/rknn:ro \
+  -v /usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro \
   -v /data/video-ba:/data \
   -p 5000:5000 \
   ghcr.io/<org>/<repo>:rk
 ```
 
-如果你的 NPU runtime 路径不同，请按实际路径挂载，并确保 `librknnrt.so` 在容器内可见。
+如果你的 NPU runtime 路径不同，请按实际路径挂载，并确保 `librknnrt.so` 在容器内可见。使用 Compose 部署时，只有 `worker` 需要这些权限：正式工作流、已保存算法测试和组合检测预览都在 worker 中推理，`api` 仅通过容器内网转发测试请求。
+
+建议在生产环境通过 `ALGORITHM_TEST_WORKER_TOKEN` 覆盖内部测试服务的默认密钥，并确保 worker 的 `5010` 端口不映射到宿主机。

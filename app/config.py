@@ -236,6 +236,34 @@ SHARED_INFERENCE_IDLE_SECONDS = max(
     10, int(os.getenv('SHARED_INFERENCE_IDLE_SECONDS', '120'))
 )
 
+# API forwards all interactive algorithm tests to this worker-local HTTP service.
+# The port is exposed only on the Compose network, never on the host.
+ALGORITHM_TEST_WORKER_HOST = (
+    os.getenv('ALGORITHM_TEST_WORKER_HOST', '127.0.0.1').strip() or '127.0.0.1'
+)
+ALGORITHM_TEST_WORKER_PORT = max(
+    1, min(65535, int(os.getenv('ALGORITHM_TEST_WORKER_PORT', '5010')))
+)
+ALGORITHM_TEST_WORKER_URL = (
+    os.getenv(
+        'ALGORITHM_TEST_WORKER_URL',
+        'http://127.0.0.1:5010',
+    ).strip().rstrip('/')
+)
+ALGORITHM_TEST_WORKER_TOKEN = (
+    os.getenv('ALGORITHM_TEST_WORKER_TOKEN', '').strip()
+    or 'video-ba-pipe-internal-test-v1'
+)
+ALGORITHM_TEST_QUEUE_SIZE = max(
+    0, int(os.getenv('ALGORITHM_TEST_QUEUE_SIZE', '2'))
+)
+ALGORITHM_TEST_TIMEOUT_SECONDS = max(
+    1.0, float(os.getenv('ALGORITHM_TEST_TIMEOUT_SECONDS', '180'))
+)
+ALGORITHM_TEST_MAX_IMAGE_BYTES = max(
+    1024 * 1024, int(os.getenv('ALGORITHM_TEST_MAX_IMAGE_BYTES', str(20 * 1024 * 1024)))
+)
+
 # 推理准入只把 RAM 作为容量；Swap 不计入可用容量。新模型尚无实测数据时，
 # 使用保守默认增量，待共享服务产生 PSS 样本后改用观测值。
 INFERENCE_ADMISSION_ENABLED = os.getenv(

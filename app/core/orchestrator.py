@@ -82,6 +82,7 @@ from app.core.shared_inference import (
     SharedInferenceServiceController,
     request_service_stats,
 )
+from app.core.algorithm_test_service import AlgorithmTestServiceController
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.recording_storage_config import (
     get_recording_storage_config,
@@ -278,6 +279,10 @@ class Orchestrator:
             if self.effective_inference_config.shared_inference_enabled
             else None
         )
+        self.algorithm_test_service = AlgorithmTestServiceController(
+            environment=self._source_host_inference_environment()
+        )
+        self.last_algorithm_test_service_check_at = 0.0
         # 硬解资源准入控制器（仅在使用硬解解码器时生效）；
         # 容量依据按解码器类型选择探针:NVDEC → NVML 利用率+型号查表,其余 → CMA
         self.hw_budget = HwDecodeBudget(
@@ -307,6 +312,11 @@ class Orchestrator:
             else:
                 self.inference_reconcile_error = "shared_inference_start_failed"
                 logger.error("共享推理服务启动失败；需要共享模型的工作流将保持等待")
+
+        if self.algorithm_test_service.start():
+            logger.info("Worker 算法测试服务已启动")
+        else:
+            logger.error("Worker 算法测试服务启动失败；页面测试请求将返回 503")
 
         # 健康监控配置
         self.health_check_enabled = HEALTH_MONITOR_ENABLED
@@ -377,6 +387,7 @@ class Orchestrator:
         if not config.shared_inference_enabled:
             self.inference_reconcile_error = None
             logger.info("共享推理服务已按系统设置关闭")
+            self._restart_algorithm_test_service(config)
             return
 
         controller = self._build_shared_inference_controller(config)
@@ -387,6 +398,15 @@ class Orchestrator:
         else:
             self.inference_reconcile_error = "shared_inference_start_failed"
             logger.error("共享推理服务重建失败；工作流将等待服务恢复")
+        self._restart_algorithm_test_service(config)
+
+    def _restart_algorithm_test_service(self, config: InferenceResourceConfig) -> None:
+        if self.algorithm_test_service.replace_environment(
+            self._source_host_inference_environment(config)
+        ):
+            logger.info("Worker 算法测试服务已同步推理配置")
+        else:
+            logger.error("Worker 算法测试服务同步推理配置失败")
 
     def _refresh_inference_resource_config(self, now: float) -> None:
         if (
@@ -444,8 +464,10 @@ class Orchestrator:
         elif self.inference_reconcile_error == "shared_oom_policy_update_failed":
             self.inference_reconcile_error = None
 
-    def _source_host_inference_environment(self) -> dict:
-        config = self.effective_inference_config
+    def _source_host_inference_environment(
+        self, config: InferenceResourceConfig | None = None
+    ) -> dict:
+        config = config or self.effective_inference_config
         environment = os.environ.copy()
         environment.update({
             "SHARED_INFERENCE_ENABLED": (
@@ -2149,6 +2171,10 @@ class Orchestrator:
         self.media_cleaner.start()
         while True:
             now = time.monotonic()
+            if now - self.last_algorithm_test_service_check_at >= 5.0:
+                self.last_algorithm_test_service_check_at = now
+                if not self.algorithm_test_service.ensure_running():
+                    logger.error("Worker 算法测试服务重启失败")
             self._refresh_inference_resource_config(now)
             self.manage_sources()
             self.manage_workflows()
@@ -2176,6 +2202,8 @@ class Orchestrator:
 
         if self.shared_inference_service is not None:
             self.shared_inference_service.stop()
+
+        self.algorithm_test_service.stop()
         
         db.close()
         print("所有工作流和视频源已停止。")
