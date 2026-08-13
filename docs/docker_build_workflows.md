@@ -54,9 +54,12 @@ push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。Jets
 
 所有后端镜像在 GitHub Actions 构建时都会自动生成以下镜像内环境变量：
 
-- `APP_VERSION`：`frontend/package.json` 中的基础版本加 UTC 构建时间，例如
-  `1.0.0+20260812.043015`
+- `APP_VERSION`：最近 Git 提交的日期和 7 位 commit hash，格式为
+  `YYYYMMDD-<commit>`，例如 `20260813-7b59fd9`
 - `BUILD_TIME`：UTC ISO 8601 时间，例如 `2026-08-12T04:30:15Z`
+
+Git 本身不记录 push 时间，因此版本日期使用最新提交的 committer 时间；日期按该提交记录的
+时区生成。`BUILD_TIME` 继续记录镜像的实际构建时间。
 
 相同的值也会写入 OCI 标签 `org.opencontainers.image.version` 和
 `org.opencontainers.image.created`。运行中的应用继续读取 `APP_VERSION`，因此系统信息接口和
