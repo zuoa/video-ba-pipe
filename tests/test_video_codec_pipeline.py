@@ -1,3 +1,4 @@
+import inspect
 import json
 from types import SimpleNamespace
 
@@ -195,15 +196,8 @@ def test_orchestrator_decoder_args_can_select_full_frame_software_decode():
     assert arguments[option_index + 1] == "false"
 
 
-def test_nvdec_uses_ffmpeg_hevc_decoder_name_for_h265():
-    class ConcreteNVDECDecoder(FFmpegNVDECDecoder):
-        def send_packet(self, data):
-            return None
-
-        def get_frame(self, timeout=1):
-            return None
-
-    decoder = ConcreteNVDECDecoder(
+def test_nvdec_is_concrete_and_uses_ffmpeg_hevc_decoder_name_for_h265():
+    decoder = FFmpegNVDECDecoder(
         decoder_id=1,
         device_id=0,
         width=854,
@@ -214,4 +208,6 @@ def test_nvdec_uses_ffmpeg_hevc_decoder_name_for_h265():
 
     command = decoder._build_ffmpeg_command()
 
+    assert inspect.isabstract(FFmpegNVDECDecoder) is False
     assert command[command.index("-c:v") + 1] == "hevc_cuvid"
+    assert command[command.index("-f") + 1] == "hevc"
