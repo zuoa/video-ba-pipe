@@ -59,6 +59,12 @@ class ConditionNodeData(NodeContext):
     keyword_logic: str = "any"
     regex_pattern: str = ""
     case_sensitive: bool = False
+    window_size: int = 10
+    direction: str = "both"
+    relative_threshold: float = 0.5
+    absolute_threshold: int = 3
+    confirmation_count: int = 1
+    labels: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -267,6 +273,13 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             keyword_logic=data.get('keywordLogic') or data.get('keyword_logic', 'any'),
             regex_pattern=data.get('regexPattern') or data.get('regex_pattern', ''),
             case_sensitive=bool(data.get('caseSensitive') if 'caseSensitive' in data else data.get('case_sensitive', False)),
+            window_size=int(data.get('windowSize', data.get('window_size', 10))),
+            direction=data.get('direction', 'both'),
+            relative_threshold=float(data.get('relativeThreshold', data.get('relative_threshold', 0.5))),
+            absolute_threshold=int(data.get('absoluteThreshold', data.get('absolute_threshold', 3))),
+            confirmation_count=int(data.get('confirmationCount', data.get('confirmation_count', 1))),
+            labels=[str(item).strip() for item in data.get('labels', []) if str(item).strip()]
+            if isinstance(data.get('labels'), list) else [],
         )
     elif node_type == 'time_schedule':
         return node_class(

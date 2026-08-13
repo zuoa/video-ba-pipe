@@ -93,6 +93,82 @@ def _validate_ocr_text_conditions(workflow_data):
     return True, None
 
 
+def _validate_count_change_conditions(workflow_data):
+    """校验数量骤变条件的来源连接与数值配置。"""
+    if not isinstance(workflow_data, dict):
+        return True, None
+    nodes = {
+        node.get('id'): node
+        for node in workflow_data.get('nodes', [])
+        if isinstance(node, dict) and node.get('id')
+    }
+    connections = [
+        connection
+        for connection in (workflow_data.get('connections', []) or [])
+        if isinstance(connection, dict)
+    ]
+    connected_pairs = {
+        (
+            connection.get('from') or connection.get('from_node_id'),
+            connection.get('to') or connection.get('to_node_id'),
+        )
+        for connection in connections
+    }
+    valid_source_types = {'algorithm', 'function', 'external_api', 'externalApi'}
+
+    for node in nodes.values():
+        if node.get('type') != 'condition':
+            continue
+        data = node.get('data') or {}
+        condition_kind = data.get('conditionKind') or data.get('condition_kind') or 'count'
+        if condition_kind != 'count_change':
+            continue
+
+        name = node.get('name') or node.get('id')
+        source_node_id = data.get('sourceNodeId') or data.get('source_node_id')
+        source_node = nodes.get(source_node_id)
+        incoming_connections = [
+            connection for connection in connections
+            if (connection.get('to') or connection.get('to_node_id')) == node.get('id')
+        ]
+        if len(incoming_connections) != 1:
+            return False, f'数量骤变条件 {name} 必须且只能连接一个上游结果节点'
+        if not source_node or (source_node_id, node.get('id')) not in connected_pairs:
+            return False, f'数量骤变条件 {name} 选择的来源必须与唯一入边一致'
+        if source_node.get('type') not in valid_source_types:
+            return False, f'数量骤变条件 {name} 的来源必须是算法、函数或外部 API 节点'
+
+        direction = data.get('direction', 'both')
+        if direction not in ('increase', 'decrease', 'both'):
+            return False, f'数量骤变条件 {name} 的变化方向无效'
+
+        numeric_fields = (
+            ('windowSize', 'window_size', 10, int, 2, 300, '历史窗口'),
+            ('relativeThreshold', 'relative_threshold', 0.5, float, 0.000001, 100, '相对阈值'),
+            ('absoluteThreshold', 'absolute_threshold', 3, int, 1, 100000, '绝对阈值'),
+            ('confirmationCount', 'confirmation_count', 1, int, 1, 20, '确认次数'),
+        )
+        for camel_key, snake_key, default, converter, minimum, maximum, label in numeric_fields:
+            raw_value = data.get(camel_key, data.get(snake_key, default))
+            if isinstance(raw_value, bool):
+                return False, f'数量骤变条件 {name} 的{label}无效'
+            try:
+                numeric_value = float(raw_value)
+            except (TypeError, ValueError):
+                return False, f'数量骤变条件 {name} 的{label}必须是数字'
+            if converter is int and not numeric_value.is_integer():
+                return False, f'数量骤变条件 {name} 的{label}必须是整数'
+            value = converter(numeric_value)
+            if value < minimum or value > maximum:
+                return False, f'数量骤变条件 {name} 的{label}必须在 {minimum}-{maximum} 之间'
+
+        labels = data.get('labels', [])
+        if not isinstance(labels, list) or any(not isinstance(item, str) for item in labels):
+            return False, f'数量骤变条件 {name} 的类别筛选必须是字符串数组'
+
+    return True, None
+
+
 def register_workflows_api(app):
     """注册工作流管理 API 路由"""
 
@@ -225,6 +301,9 @@ def register_workflows_api(app):
             is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
+            is_valid, error_message = _validate_count_change_conditions(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
             is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
@@ -311,6 +390,9 @@ def register_workflows_api(app):
                         return jsonify(duplicate_template_source_response(duplicate)), 409
                     workflow_data = normalize_source_node_fields(workflow_data, source)
                 is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+                is_valid, error_message = _validate_count_change_conditions(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
@@ -928,6 +1010,10 @@ def register_workflows_api(app):
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue
                 is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = _validate_count_change_conditions(workflow_data)
                 if not is_valid:
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue

@@ -199,6 +199,12 @@ export default function WorkflowEditorPage() {
                 nodeData.keywordLogic = node.data.keywordLogic || node.data.keyword_logic || 'any';
                 nodeData.regexPattern = node.data.regexPattern || node.data.regex_pattern || '';
                 nodeData.caseSensitive = node.data.caseSensitive ?? node.data.case_sensitive ?? false;
+                nodeData.labels = node.data.labels || [];
+                nodeData.windowSize = node.data.windowSize ?? node.data.window_size ?? 10;
+                nodeData.direction = node.data.direction || 'both';
+                nodeData.relativeThreshold = node.data.relativeThreshold ?? node.data.relative_threshold ?? 0.5;
+                nodeData.absoluteThreshold = node.data.absoluteThreshold ?? node.data.absolute_threshold ?? 3;
+                nodeData.confirmationCount = node.data.confirmationCount ?? node.data.confirmation_count ?? 1;
                 console.log('🔀 [EDITOR] Condition 节点加载配置:', {
                   id: node.id,
                   targetCount: nodeData.targetCount,
@@ -471,6 +477,15 @@ export default function WorkflowEditorPage() {
       message.warning('Webhook 只能连接一个告警输出节点');
       return;
     }
+    const targetConditionKind = targetNode?.data?.conditionKind || targetNode?.data?.condition_kind;
+    if (
+      targetType === 'condition'
+      && targetConditionKind === 'count_change'
+      && edges.some((edge) => edge.target === params.target)
+    ) {
+      message.warning('数量骤变条件只能连接一个上游结果节点');
+      return;
+    }
 
     setEdges((currentEdges) => addEdge({
       ...params,
@@ -660,6 +675,12 @@ export default function WorkflowEditorPage() {
             keywordLogic: node.data?.keywordLogic || node.data?.keyword_logic || 'any',
             regexPattern: node.data?.regexPattern || node.data?.regex_pattern || '',
             caseSensitive: node.data?.caseSensitive ?? node.data?.case_sensitive ?? false,
+            labels: node.data?.labels || [],
+            windowSize: node.data?.windowSize ?? node.data?.window_size ?? 10,
+            direction: node.data?.direction || 'both',
+            relativeThreshold: node.data?.relativeThreshold ?? node.data?.relative_threshold ?? 0.5,
+            absoluteThreshold: node.data?.absoluteThreshold ?? node.data?.absolute_threshold ?? 3,
+            confirmationCount: node.data?.confirmationCount ?? node.data?.confirmation_count ?? 1,
           };
           console.log('🔀 [EDITOR] Condition 节点保存数据:', {
             id: node.id,
@@ -778,6 +799,13 @@ export default function WorkflowEditorPage() {
         vlValidation: nodeData.vlValidation,
         externalApiName: nodeData.externalApiName,
         executionMode: nodeData.config?.execution_mode || 'sync',
+        conditionKind: nodeData.conditionKind,
+        labels: nodeData.labels,
+        windowSize: nodeData.windowSize,
+        direction: nodeData.direction,
+        relativeThreshold: nodeData.relativeThreshold,
+        absoluteThreshold: nodeData.absoluteThreshold,
+        confirmationCount: nodeData.confirmationCount,
         weeklySchedule: nodeData.type === 'timeSchedule'
           ? (nodeData.weeklySchedule || createDefaultWeeklySchedule())
           : undefined,

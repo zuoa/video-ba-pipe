@@ -64,6 +64,7 @@ from app.core.storage_pressure import (
 )
 from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
+from app.core.numeric_window_detector import NumericWindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
 from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
 from app.core.time_schedule import evaluate_weekly_schedule
@@ -301,6 +302,7 @@ class WorkflowExecutor:
         self.execution_graph = defaultdict(list)
         self.video_recorder = None
         self.window_detector = window_detector or WindowDetector()
+        self.numeric_window_detector = NumericWindowDetector()
         self.recorder_key = f"workflow:{self.workflow_id}"
         self.running = True
         self._cleaned_up = False
@@ -312,6 +314,8 @@ class WorkflowExecutor:
         # ========== 执行状态追踪 ==========
         # node_results_cache: 存储节点执行结果（用于下游节点访问）
         self.node_results_cache = {}
+        # condition_diagnostics_cache: 存储有状态条件的诊断信息，不参与下游结果传递。
+        self.condition_diagnostics_cache = {}
         # execution_results: 记录执行状态（用于测试结果收集）
         self.execution_results = {}
         # executed_nodes: 记录实际执行过的节点（按顺序）
@@ -390,6 +394,12 @@ class WorkflowExecutor:
             self.node_results_cache.clear()
             self.execution_results.clear()
             self.executed_nodes.clear()
+            diagnostics_cache = getattr(self, 'condition_diagnostics_cache', None)
+            if diagnostics_cache is not None:
+                diagnostics_cache.clear()
+        numeric_window_detector = getattr(self, 'numeric_window_detector', None)
+        if numeric_window_detector is not None:
+            numeric_window_detector.clear()
 
     def _cleanup_window_detector(self):
         if self.video_source is None:
@@ -1352,6 +1362,12 @@ class WorkflowExecutor:
         Returns:
             bool: 条件是否满足
         """
+        if context.get('_skip_condition_routing'):
+            logger.debug(
+                f"[Workflow-{self.workflow_id}] 条件节点本次无有效新样本，跳过分支路由"
+            )
+            return False
+
         if not condition:
             logger.debug(f"[Workflow-{self.workflow_id}] 条件判断: 无条件，通过")
             return True
@@ -1803,6 +1819,9 @@ class WorkflowExecutor:
         upstream_results = self._get_upstream_results(node_id)
         log_collector = context.get('log_collector')
 
+        if node.condition_kind == 'count_change':
+            return self._handle_count_change_condition(node, context, log_collector)
+
         if node.condition_kind == 'ocr_text':
             condition_passed, metadata, error = self._evaluate_ocr_text_condition(node, upstream_results)
             context['has_detection'] = condition_passed
@@ -1868,6 +1887,129 @@ class WorkflowExecutor:
             f"{detection_count} {comparison_type} {target_count} = {condition_passed}"
         )
 
+        return context
+
+    @staticmethod
+    def _get_detection_labels_for_count(det: dict) -> set:
+        if not isinstance(det, dict):
+            return set()
+        return {
+            str(det.get(key)).strip().casefold()
+            for key in ('label_name', 'label', 'class_name', 'class')
+            if det.get(key) is not None and str(det.get(key)).strip()
+        }
+
+    def _handle_count_change_condition(self, node, context, log_collector=None):
+        """处理单一显式上游的数量骤变条件。"""
+        node_id = node.node_id
+        source_node_id = node.source_node_id
+        context.pop('_skip_condition_routing', None)
+        connected_sources = [
+            conn.get('from')
+            for conn in self.connections
+            if conn.get('to') == node_id
+        ]
+        if len(connected_sources) != 1 or not source_node_id or connected_sources[0] != source_node_id:
+            error = '数量骤变条件必须且只能连接一个与配置一致的上游结果节点'
+            context['has_detection'] = False
+            context['condition_error'] = error
+            context['_skip_condition_routing'] = True
+            with self._state_lock:
+                self.condition_diagnostics_cache[node_id] = {
+                    'condition_kind': 'count_change',
+                    'condition_passed': False,
+                    'error': error,
+                }
+            if log_collector:
+                log_collector.add_error(node_id, error, metadata={'event_type': 'condition'})
+            return context
+
+        routing_source = context.get('_routing_from_node_id')
+        if routing_source is not None and routing_source != source_node_id:
+            context['has_detection'] = False
+            context['condition_error'] = None
+            context['_skip_condition_routing'] = True
+            return context
+
+        with self._state_lock:
+            source_executed = source_node_id in self.executed_nodes
+            cached_source = dict(self.node_results_cache.get(source_node_id) or {})
+
+        source_result = cached_source.get('result')
+        if not source_executed or not isinstance(source_result, dict):
+            context['has_detection'] = False
+            context['condition_error'] = None
+            context['_skip_condition_routing'] = True
+            metadata = {
+                'event_type': 'condition',
+                'condition_kind': 'count_change',
+                'sampled': False,
+                'waiting_for_sample': True,
+                'source_node_id': source_node_id,
+                'condition_passed': False,
+            }
+            with self._state_lock:
+                self.condition_diagnostics_cache[node_id] = metadata
+            return context
+
+        detections = source_result.get('detections') or []
+        if not isinstance(detections, list):
+            detections = []
+        label_filter = {item.casefold() for item in node.labels if item}
+        if label_filter:
+            counted_detections = [
+                det for det in detections
+                if self._get_detection_labels_for_count(det) & label_filter
+            ]
+        else:
+            counted_detections = detections
+
+        frame_timestamp = context.get('frame_timestamp')
+        sample_id = (source_node_id, frame_timestamp)
+        metadata = self.numeric_window_detector.evaluate(
+            node_id,
+            sample_id,
+            len(counted_detections),
+            window_size=node.window_size,
+            direction=node.direction,
+            relative_threshold=node.relative_threshold,
+            absolute_threshold=node.absolute_threshold,
+            confirmation_count=node.confirmation_count,
+        )
+        condition_passed = bool(metadata.get('emitted', metadata.get('triggered')))
+        metadata.update({
+            'event_type': 'condition',
+            'condition_kind': 'count_change',
+            'source_node_id': source_node_id,
+            'labels': list(node.labels),
+            'condition_passed': condition_passed,
+        })
+
+        context['has_detection'] = condition_passed
+        context['condition_error'] = None
+        if metadata.get('duplicate_sample'):
+            context['_skip_condition_routing'] = True
+        context['result'] = source_result
+        context['upstream_node_id'] = source_node_id
+        with self._state_lock:
+            self.condition_diagnostics_cache[node_id] = metadata
+
+        if log_collector and not metadata.get('duplicate_sample'):
+            if not metadata.get('warmed_up'):
+                message = f"数量骤变预热中: {metadata['warmup_count']}/{metadata['window_size']}"
+            else:
+                relative_percent = metadata['relative_change'] * 100
+                message = (
+                    f"数量骤变: 当前 {int(metadata['current_count'])}，"
+                    f"基线 {metadata['baseline']:g}，变化 {metadata['delta']:+g} "
+                    f"({relative_percent:.1f}%)，"
+                    f"{'✓ 触发' if condition_passed else '✗ 未触发'}"
+                )
+            log_collector.add_info(node_id, message, metadata=metadata)
+
+        logger.debug(
+            f"[Workflow-{self.workflow_id}] 数量骤变条件 {node_id}: {metadata}"
+        )
         return context
 
     def _handle_time_schedule_node(self, node_id, context):
@@ -2502,6 +2644,7 @@ class WorkflowExecutor:
             logger.debug(f"[Workflow-{self.workflow_id}] {node_id} -> {next_id} 条件满足，继续执行")
             # 继续执行下游节点（分支隔离 context，避免污染）
             branch_context = context.copy()
+            branch_context['_routing_from_node_id'] = node_id
             self._execute_branch(next_id, branch_context)
 
     def _execute_level_nodes(self, level_nodes, context, executor=None):
@@ -2583,7 +2726,9 @@ class WorkflowExecutor:
                 if self._evaluate_condition(condition, context):
                     logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
                     # 传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
-                    self._execute_branch(next_id, context.copy())
+                    branch_context = context.copy()
+                    branch_context['_routing_from_node_id'] = node_id
+                    self._execute_branch(next_id, branch_context)
         elif isinstance(node, (AlgorithmNodeData, ExternalApiNodeData)):
             # 算法型节点：执行并继续执行下游（形成完整分支）
             self._execute_branch(node_id, context)
@@ -3450,9 +3595,11 @@ class WorkflowExecutor:
             self.execution_results.clear()
             self.executed_nodes.clear()
             self.node_results_cache.clear()
+            self.condition_diagnostics_cache.clear()
             # 测试模式每次都应完整执行，避免 interval 导致后续帧被跳过
             for node_id in self.nodes.keys():
                 self.node_last_exec_time[node_id] = 0
+        self.numeric_window_detector.clear()
 
         # ========== 使用统一的执行逻辑（与运行模式完全相同） ==========
         # 注意：直接调用运行模式的执行方法，不需要任何特殊处理
@@ -3939,6 +4086,31 @@ class WorkflowExecutor:
 
         # 条件节点
         elif node_type == 'condition':
+            if getattr(node, 'condition_kind', 'count') == 'count_change':
+                with self._state_lock:
+                    metadata = dict(self.condition_diagnostics_cache.get(node_id) or {})
+                if metadata.get('waiting_for_sample'):
+                    message = '数量骤变条件等待上游产生新样本'
+                elif not metadata.get('warmed_up'):
+                    message = (
+                        f"数量骤变条件预热中 "
+                        f"{metadata.get('warmup_count', 0)}/{metadata.get('window_size', node.window_size)}"
+                    )
+                else:
+                    relative_percent = float(metadata.get('relative_change') or 0) * 100
+                    message = (
+                        f"数量骤变条件: 当前 {metadata.get('current_count', 0):g}，"
+                        f"基线 {metadata.get('baseline', 0):g}，"
+                        f"变化 {metadata.get('delta', 0):+g} ({relative_percent:.1f}%) - "
+                        f"{'✓ 触发' if metadata.get('triggered') else '✗ 未触发'}"
+                    )
+                return {
+                    'message': message,
+                    'detection_count': metadata.get('current_count'),
+                    'condition_passed': bool(metadata.get('triggered')),
+                    'debug_info': metadata,
+                }
+
             if getattr(node, 'condition_kind', 'count') == 'ocr_text':
                 upstream_results = self._get_upstream_results(node_id)
                 condition_passed, metadata, error = self._evaluate_ocr_text_condition(node, upstream_results)

@@ -237,6 +237,13 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               description: '是/否检测到',
               icon: <BranchesOutlined />,
               color: '#faad14',
+              conditionKind: 'count',
+              labels: [],
+              windowSize: 10,
+              direction: 'both',
+              relativeThreshold: 0.5,
+              absoluteThreshold: 3,
+              confirmationCount: 1,
             })}
             style={{ borderColor: '#faad14' }}
           >

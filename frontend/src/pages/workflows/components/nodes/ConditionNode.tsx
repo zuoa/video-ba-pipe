@@ -19,6 +19,17 @@ const ConditionNode = ({ data }: any) => {
         : (data.keywords || []).join(' / ') || '未配置';
       return `${operator} ${value}`;
     }
+    if (conditionKind === 'count_change') {
+      const direction = data.direction === 'increase'
+        ? '骤增'
+        : data.direction === 'decrease'
+          ? '骤减'
+          : '骤增/骤减';
+      const windowSize = data.windowSize ?? data.window_size ?? 10;
+      const relativeThreshold = data.relativeThreshold ?? data.relative_threshold ?? 0.5;
+      const absoluteThreshold = data.absoluteThreshold ?? data.absolute_threshold ?? 3;
+      return `${direction} · ${windowSize}次 · ≥${Math.round(relativeThreshold * 100)}% 且 ≥${absoluteThreshold}个`;
+    }
     if (comparisonType === '>=') {
       return `数量 ≥ ${targetCount}`;
     } else if (comparisonType === '==') {

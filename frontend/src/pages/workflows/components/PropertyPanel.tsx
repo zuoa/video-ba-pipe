@@ -199,6 +199,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.keywordLogic = node.data.keywordLogic || node.data.keyword_logic || 'any';
         formValues.regexPattern = node.data.regexPattern || node.data.regex_pattern || '';
         formValues.caseSensitive = node.data.caseSensitive ?? node.data.case_sensitive ?? false;
+        formValues.labels = node.data.labels || [];
+        formValues.windowSize = node.data.windowSize ?? node.data.window_size ?? 10;
+        formValues.direction = node.data.direction || 'both';
+        formValues.relativeThresholdPercent =
+          (node.data.relativeThreshold ?? node.data.relative_threshold ?? 0.5) * 100;
+        formValues.absoluteThreshold = node.data.absoluteThreshold ?? node.data.absolute_threshold ?? 3;
+        formValues.confirmationCount = node.data.confirmationCount ?? node.data.confirmation_count ?? 1;
       } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
         formValues.weeklySchedule = node.data.weeklySchedule
           ? normalizeWeeklySchedule(node.data.weeklySchedule)
@@ -530,6 +537,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         updatedData.keywordLogic = values.keywordLogic || 'any';
         updatedData.regexPattern = values.regexPattern || '';
         updatedData.caseSensitive = values.caseSensitive === true;
+        updatedData.labels = values.labels || [];
+        updatedData.windowSize = values.windowSize ?? 10;
+        updatedData.direction = values.direction || 'both';
+        updatedData.relativeThreshold = (values.relativeThresholdPercent ?? 50) / 100;
+        updatedData.absoluteThreshold = values.absoluteThreshold ?? 3;
+        updatedData.confirmationCount = values.confirmationCount ?? 1;
+        delete updatedData.relativeThresholdPercent;
       } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
         updatedData.weeklySchedule = normalizeWeeklySchedule(values.weeklySchedule);
       }
@@ -1038,9 +1052,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'condition': {
-        const upstreamOcrNodes = edges
+        const upstreamResultNodes = edges
           .filter(edge => edge.target === node.id)
           .map(edge => nodes.find(item => item.id === edge.source))
+          .filter(sourceNode => {
+            const sourceType = sourceNode?.data?.type || sourceNode?.type;
+            return ['algorithm', 'function', 'externalApi', 'external_api'].includes(sourceType);
+          });
+        const upstreamOcrNodes = upstreamResultNodes
           .filter(sourceNode => {
             if (!sourceNode || (sourceNode.data?.type || sourceNode.type) !== 'algorithm') return false;
             const sourceAlgorithm = algorithms.find(item =>
@@ -1051,7 +1070,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           <>
             <div className="info-box" style={{ marginBottom: 16 }}>
               <InfoCircleOutlined />
-              <span>条件节点根据目标数量或 OCR 文字控制 yes/no 分支</span>
+              <span>条件节点根据目标数量、数量变化或 OCR 文字控制 yes/no 分支</span>
             </div>
 
             <Form.Item
@@ -1061,6 +1080,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             >
               <Select>
                 <Option value="count">目标数量</Option>
+                <Option value="count_change">数量骤变</Option>
                 <Option value="ocr_text">OCR 文字</Option>
               </Select>
             </Form.Item>
@@ -1140,6 +1160,73 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                   </Form.Item>
                   <Form.Item label="区分大小写" name="caseSensitive" valuePropName="checked">
                     <Switch />
+                  </Form.Item>
+                </>
+              ) : getFieldValue('conditionKind') === 'count_change' ? (
+                <>
+                  <Form.Item
+                    label="统计来源节点"
+                    name="sourceNodeId"
+                    rules={[{ required: true, message: '请选择已连接的上游结果节点' }]}
+                  >
+                    <Select placeholder="选择上游算法、函数或外部 API 节点">
+                      {upstreamResultNodes.map(sourceNode => (
+                        <Option key={sourceNode.id} value={sourceNode.id}>
+                          {sourceNode.data?.label || sourceNode.id}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  {upstreamResultNodes.length === 0 ? (
+                    <div className="info-box" style={{ marginBottom: 16, background: '#fff7e6', borderColor: '#ffd591', color: '#ad4e00' }}>
+                      <InfoCircleOutlined />
+                      <span>请先连接一个算法、函数或外部 API 节点。</span>
+                    </div>
+                  ) : null}
+                  <Form.Item
+                    label="目标类别"
+                    name="labels"
+                    extra="留空统计全部目标；输入类别后按回车确认，不区分大小写"
+                  >
+                    <Select mode="tags" tokenSeparators={[',', '，']} placeholder="全部类别" />
+                  </Form.Item>
+                  <Form.Item
+                    label="历史窗口（次）"
+                    name="windowSize"
+                    rules={[{ required: true }, { type: 'number', min: 2, max: 300 }]}
+                    extra="积满历史样本后，从下一次检测开始判断"
+                  >
+                    <InputNumber min={2} max={300} step={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item label="变化方向" name="direction" rules={[{ required: true }]}>
+                    <Select>
+                      <Option value="both">骤增或骤减</Option>
+                      <Option value="increase">仅骤增</Option>
+                      <Option value="decrease">仅骤减</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item
+                    label="相对变化阈值（%）"
+                    name="relativeThresholdPercent"
+                    rules={[{ required: true }, { type: 'number', min: 0.01, max: 10000 }]}
+                  >
+                    <InputNumber min={0.01} max={10000} step={5} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item
+                    label="最小绝对变化（个）"
+                    name="absoluteThreshold"
+                    rules={[{ required: true }, { type: 'number', min: 1, max: 100000 }]}
+                    extra="相对阈值和绝对阈值需同时满足"
+                  >
+                    <InputNumber min={1} max={100000} step={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item
+                    label="连续确认次数"
+                    name="confirmationCount"
+                    rules={[{ required: true }, { type: 'number', min: 1, max: 20 }]}
+                    extra="触发后采用边沿语义，恢复相同次数后重新布防"
+                  >
+                    <InputNumber min={1} max={20} step={1} style={{ width: '100%' }} />
                   </Form.Item>
                 </>
               ) : (
