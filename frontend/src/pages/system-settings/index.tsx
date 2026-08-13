@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Card, Form, Input, InputNumber, Progress, Select, Switch, Tabs, Tag, message, Spin } from 'antd';
+import { Alert, Card, Form, Input, InputNumber, Progress, Select, Switch, Tabs, Tag, Typography, message, Spin } from 'antd';
 import type { FormInstance } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
   ApiOutlined,
+  ApartmentOutlined,
   DatabaseOutlined,
   HddOutlined,
   KeyOutlined,
@@ -20,6 +21,7 @@ import {
 import { PageHeader } from '@/components/common';
 import {
   getSourceRotationConfig,
+  getSystemInfo,
   getInferenceResourceConfig,
   getRecordingStorageConfig,
   getOpsNotificationConfig,
@@ -29,6 +31,7 @@ import {
   RecordingStorageUsage,
   InferenceResourceResponse,
   PublicMediaConfig,
+  SystemInfo,
   testOpsNotificationConfig,
   testMessageQueueConfig,
   updateSourceRotationConfig,
@@ -48,6 +51,14 @@ const validateAndGetAllFields = async (form: FormInstance) => {
   return form.getFieldsValue(true);
 };
 
+const NODE_ID_SOURCE_LABELS: Record<string, string> = {
+  environment: '环境变量',
+  mac: 'MAC 地址',
+  persistent_file: '持久化文件',
+  uuid: '自动 UUID',
+  hostname: '主机名回退',
+};
+
 const SystemSettingsPage: React.FC = () => {
   const [vlForm] = Form.useForm();
   const [rotationForm] = Form.useForm();
@@ -65,6 +76,7 @@ const SystemSettingsPage: React.FC = () => {
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
   const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
   const [publicMediaConfig, setPublicMediaConfig] = useState<PublicMediaConfig | null>(null);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
   const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
   const imageMaxGb = Form.useWatch('image_max_gb', recordingForm) ?? 10;
@@ -94,7 +106,7 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse, systemInfoResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
         getRecordingStorageConfig(),
@@ -102,6 +114,7 @@ const SystemSettingsPage: React.FC = () => {
         getInferenceResourceConfig(),
         getPublicMediaConfig(),
         getMessageQueueConfig(),
+        getSystemInfo(),
       ]);
       vlForm.setFieldsValue({
         enabled: vlResponse?.config?.enabled ?? false,
@@ -124,6 +137,7 @@ const SystemSettingsPage: React.FC = () => {
       setPublicMediaConfig(publicMediaResponse.config);
       setInferenceResource(inferenceResponse);
       messageQueueForm.setFieldsValue(messageQueueResponse.config);
+      setSystemInfo(systemInfoResponse);
     } catch (error: any) {
       message.error(`加载系统配置失败: ${error.message}`);
     } finally {
@@ -255,11 +269,38 @@ const SystemSettingsPage: React.FC = () => {
           <Spin size="large" />
         </div>
       ) : (
-        <Tabs
-          className="system-settings-tabs"
-          activeKey={activeTabKey}
-          onChange={setActiveTabKey}
-          items={[
+        <>
+          <section className="node-identity-strip" aria-label="当前系统节点身份">
+            <div className="node-identity-primary">
+              <span className="node-identity-icon" aria-hidden="true"><ApartmentOutlined /></span>
+              <div>
+                <span className="node-identity-eyebrow">当前系统节点</span>
+                <Typography.Text
+                  className="node-identity-value"
+                  copyable={systemInfo?.node_id ? { text: systemInfo.node_id, tooltips: ['复制节点 ID', '已复制'] } : false}
+                >
+                  {systemInfo?.node_id || '未获取'}
+                </Typography.Text>
+                <small>用于消息主题、告警来源标识和集群去重</small>
+              </div>
+            </div>
+            <dl className="node-identity-meta">
+              <div>
+                <dt>身份来源</dt>
+                <dd>{NODE_ID_SOURCE_LABELS[systemInfo?.node_id_source || ''] || systemInfo?.node_id_source || '未知'}</dd>
+              </div>
+              <div>
+                <dt>主机名</dt>
+                <dd title={systemInfo?.hostname}>{systemInfo?.hostname || '未知'}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <Tabs
+            className="system-settings-tabs"
+            activeKey={activeTabKey}
+            onChange={setActiveTabKey}
+            items={[
             {
               key: 'inference',
               label: (<span><SafetyCertificateOutlined /> 推理资源保护</span>),
@@ -900,8 +941,9 @@ const SystemSettingsPage: React.FC = () => {
                 </Card>
               ),
             },
-          ]}
-        />
+            ]}
+          />
+        </>
       )}
     </div>
   );

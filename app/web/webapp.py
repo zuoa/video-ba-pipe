@@ -73,6 +73,7 @@ from app.core.public_media_config import (
     save_public_media_config,
     verify_public_media_signature,
 )
+from app.core.node_identity import get_node_identity
 from app.core.inference_resource_config import (
     detect_inference_capabilities,
     effective_inference_resource_config,
@@ -260,10 +261,14 @@ def list_plugin_modules():
 @app.route('/api/system/info', methods=['GET'])
 @require_auth
 def get_system_info():
+    node_identity = get_node_identity()
     return jsonify({
         'success': True,
         'version': get_app_version(),
         'company_name': get_company_name(),
+        'node_id': node_identity['node_id'],
+        'node_id_source': node_identity['source'],
+        'hostname': node_identity['hostname'],
     })
 
 

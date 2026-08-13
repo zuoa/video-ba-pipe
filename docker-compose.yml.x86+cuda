@@ -39,7 +39,7 @@ x-app-environment: &app-environment
   DB_USER: ${DB_USER:-video_ba_pipe}
   DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
   DB_SSLMODE: ${DB_SSLMODE:-disable}
-  # 节点唯一编码；集群/多盒子部署每台必须唯一，留空则自动生成 UUID 并持久化到 /data/node_id.json
+  # 节点唯一编码；集群/多盒子部署每台必须唯一，留空则优先使用 MAC 并持久化到 /data/node_id.json
   NODE_ID: ${NODE_ID:-}
   PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
   MEDIA_URL_SIGNING_ENABLED: ${MEDIA_URL_SIGNING_ENABLED:-true}

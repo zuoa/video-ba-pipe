@@ -353,8 +353,9 @@ ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '10'))
 # ============ 平台节点身份（集群 / MQ 来源标识）============
 # 当前实例的唯一编码。集群或多盒子部署时必须保证全局唯一（如 box-01、edge-sh-03）。
 # 留空时按以下优先级解析（见 app/core/node_identity.py）：
-#   1) 持久化文件 NODE_ID_FILE（首次启动自动生成 UUID 并写入，保证重启不变）；
-#   2) 文件不可写时回退到 hostname。
+#   1) 持久化文件 NODE_ID_FILE；
+#   2) 首次启动优先使用 MAC 地址并写入持久化文件；
+#   3) MAC 不可用时自动生成 UUID，文件不可写时最终回退 hostname。
 # 推荐在 .env 中显式设置 NODE_ID，便于集群可读与可追溯。
 NODE_ID = (os.getenv('NODE_ID') or '').strip()
 NODE_ID_FILE = _resolve_data_path('NODE_ID_FILE', 'node_id.json')

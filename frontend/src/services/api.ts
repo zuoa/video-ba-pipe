@@ -24,6 +24,9 @@ export interface SystemInfo {
   success: boolean;
   version: string;
   company_name: string;
+  node_id: string;
+  node_id_source: string;
+  hostname: string;
 }
 
 export async function getSystemInfo() {

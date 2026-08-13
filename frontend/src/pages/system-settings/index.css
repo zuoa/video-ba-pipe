@@ -28,6 +28,114 @@
   margin-top: 4px;
 }
 
+.node-identity-strip {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 4px 0 20px;
+  padding: 18px 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(66, 211, 171, 0.12), transparent 34%),
+    #18303d;
+  box-shadow: var(--app-shadow-sm);
+  color: #d9e6ec;
+}
+
+.node-identity-primary {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 14px;
+}
+
+.node-identity-primary > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.node-identity-icon {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(92, 226, 188, 0.2);
+  border-radius: 13px;
+  background: rgba(65, 214, 155, 0.1);
+  color: #5ce2bc;
+  font-size: 21px;
+}
+
+.node-identity-eyebrow {
+  color: #9eb4be;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.node-identity-value.ant-typography {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-identity-value .ant-typography-copy {
+  margin-left: 9px;
+  color: #5ce2bc;
+}
+
+.node-identity-primary small {
+  color: #9eb4be;
+  font-size: 12px;
+}
+
+.node-identity-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, auto));
+  flex: 0 0 auto;
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.node-identity-meta > div {
+  display: grid;
+  align-content: center;
+  min-width: 140px;
+  padding: 10px 16px;
+  background: rgba(11, 31, 41, 0.62);
+}
+
+.node-identity-meta dt {
+  color: #829ca8;
+  font-size: 11px;
+}
+
+.node-identity-meta dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #eef6f8;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 页签内容区只放一张卡片，去掉卡片在网格布局下的多余外边距 */
 .system-settings-tabs .system-settings-card {
   margin: 0;
@@ -328,6 +436,15 @@
 }
 
 @media (max-width: 960px) {
+  .node-identity-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .node-identity-meta {
+    width: 100%;
+  }
+
   .system-settings-grid {
     grid-template-columns: 1fr;
   }
@@ -346,6 +463,18 @@
 }
 
 @media (max-width: 560px) {
+  .node-identity-strip {
+    padding: 16px;
+  }
+
+  .node-identity-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .node-identity-value.ant-typography {
+    font-size: 15px;
+  }
+
   .system-settings-form-grid,
   .storage-usage-panel {
     grid-template-columns: 1fr;
