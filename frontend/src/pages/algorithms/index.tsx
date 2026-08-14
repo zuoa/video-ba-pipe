@@ -94,8 +94,9 @@ export default function Algorithms() {
     <div className="algorithms-page">
       <PageHeader
         icon={<ExperimentOutlined />}
+        eyebrow="ANALYSIS ENGINE"
         title="算法管理"
-        subtitle="配置和管理AI算法模型"
+        subtitle="配置并验证视频分析算法"
         count={algorithms.length}
         countLabel="个算法"
         extra={

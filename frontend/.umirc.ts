@@ -7,7 +7,7 @@ export default defineConfig({
     configProvider: {
       theme: {
         token: {
-          colorPrimary: '#000000',
+          colorPrimary: '#14202b',
         },
       },
     },

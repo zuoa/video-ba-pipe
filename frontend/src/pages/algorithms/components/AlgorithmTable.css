@@ -1,8 +1,8 @@
 .algorithm-table-wrapper {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f0f0f0;
+  background: var(--app-surface-strong);
+  border-radius: 16px;
+  box-shadow: var(--app-shadow-sm);
+  border: 1px solid var(--app-line-soft);
   overflow: hidden;
 }
 
@@ -11,23 +11,23 @@
 }
 
 .algorithm-table .ant-table-thead > tr > th {
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-  color: #374151;
+  background: var(--app-surface-muted);
+  color: var(--app-text-muted);
   font-weight: 600;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 16px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid var(--app-line-soft);
 }
 
 .algorithm-table .ant-table-tbody > tr > td {
   padding: 16px;
-  border-bottom: 1px solid #fafafa;
+  border-bottom: 1px solid var(--app-line-soft);
 }
 
 .algorithm-table .ant-table-tbody > tr:hover > td {
-  background: #fafafa;
+  background: #f7faf9;
 }
 
 .algorithm-table .ant-table-tbody > tr > td {
@@ -41,12 +41,12 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, #fafafa 0%, #f0f0f0 100%);
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
+  background: var(--app-surface-muted);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--app-text-secondary);
 }
 
 /* Algorithm Info Cell */
@@ -59,20 +59,22 @@
 .algorithm-icon {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
-  border-radius: 8px;
+  background: var(--app-night);
+  border: 1px solid rgba(98, 212, 187, 0.14);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   font-size: 16px;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+  box-shadow: none;
   flex-shrink: 0;
 }
 
 .algorithm-icon.algorithm-icon-vl {
-  background: linear-gradient(135deg, #13c2c2 0%, #08979c 100%);
-  box-shadow: 0 2px 8px rgba(19, 194, 194, 0.3);
+  color: var(--app-signal-bright);
+  background: var(--app-night-soft);
+  box-shadow: none;
 }
 
 .algorithm-icon.algorithm-icon-cascade {
@@ -88,7 +90,7 @@
 .algorithm-name {
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--app-text);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -111,10 +113,10 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #bae6fd;
+  background: var(--app-info-soft);
+  border: 1px solid rgba(57, 112, 131, 0.18);
   border-radius: 4px;
-  color: #0369a1;
+  color: var(--app-info);
   font-family: 'Monaco', 'Consolas', monospace;
   font-size: 11px;
   max-width: 100%;
@@ -221,13 +223,13 @@
 }
 
 .algorithm-table .ant-pagination-item:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: var(--app-accent);
+  color: var(--app-accent);
 }
 
 .algorithm-table .ant-pagination-item-active {
-  background: #1890ff;
-  border-color: #1890ff;
+  background: var(--app-accent);
+  border-color: var(--app-accent);
 }
 
 .algorithm-table .ant-pagination-item-active a {
@@ -242,12 +244,12 @@
 
 .algorithm-table .ant-pagination-prev:hover,
 .algorithm-table .ant-pagination-next:hover {
-  border-color: #1890ff;
+  border-color: var(--app-accent);
 }
 
 /* Loading State */
 .algorithm-table .ant-spin-dot-item {
-  background-color: #1890ff;
+  background-color: var(--app-signal);
 }
 
 /* Responsive */

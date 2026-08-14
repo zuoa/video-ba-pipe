@@ -1,36 +1,52 @@
 .dashboard-stat-card {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 20px;
-  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  padding: 19px;
   border: 1px solid var(--app-line-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--app-shadow-sm);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  cursor: pointer;
   height: 100%;
+  cursor: default;
+  transition: border-color var(--app-motion-base) ease, box-shadow var(--app-motion-base) ease;
+}
+
+.dashboard-stat-card.is-interactive {
+  cursor: pointer;
+}
+
+.dashboard-stat-card::after {
+  position: absolute;
+  right: -24px;
+  bottom: -36px;
+  width: 86px;
+  height: 86px;
+  border: 1px solid rgba(20, 32, 43, 0.035);
+  border-radius: 50%;
+  content: '';
 }
 
 .dashboard-stat-card:hover {
-  transform: translateY(-2px);
   border-color: var(--app-line);
-  box-shadow: var(--app-shadow-md);
+  box-shadow: 0 12px 30px rgba(11, 23, 34, 0.065);
 }
 
 .stat-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 13px;
 }
 
 .stat-card-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 18px;
+  font-size: 15px;
   box-shadow: none;
 }
 
@@ -38,7 +54,7 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--app-text-muted);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .stat-card-body {
@@ -52,7 +68,8 @@
 }
 
 .stat-card-value {
-  font-size: 28px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 26px;
   font-weight: 700;
   color: var(--app-text);
   line-height: 1.2;
@@ -67,6 +84,12 @@
 }
 
 .stat-card-trend {
-  font-size: 18px;
-  color: var(--app-text-muted);
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--app-success);
+  background: var(--app-success-soft);
+  font-size: 12px;
 }

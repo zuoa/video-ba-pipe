@@ -1,18 +1,17 @@
 .model-card {
-  border-radius: 12px;
-  border: 1px solid #f0f0f0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 16px;
+  border: 1px solid var(--app-line-soft);
+  transition: border-color var(--app-motion-base) ease, box-shadow var(--app-motion-base) ease;
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: white;
+  background: var(--app-surface-strong);
 }
 
 .model-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  transform: translateY(-4px);
-  border-color: #d9d9d9;
+  box-shadow: var(--app-shadow-md);
+  border-color: var(--app-line);
 }
 
 .model-card-header {
@@ -25,14 +24,15 @@
 .model-card-icon {
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #000000 0%, #333333 100%);
+  background: var(--app-night);
+  border: 1px solid rgba(98, 212, 187, 0.14);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-size: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: none;
   flex-shrink: 0;
 }
 
@@ -44,7 +44,7 @@
 .model-name {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--app-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -63,8 +63,9 @@
   gap: 12px 16px;
   margin-bottom: 16px;
   padding: 16px;
-  background: #fafafa;
-  border-radius: 8px;
+  background: var(--app-surface-muted);
+  border: 1px solid var(--app-line-soft);
+  border-radius: 10px;
 }
 
 .model-card .info-item {
@@ -91,12 +92,12 @@
 .model-description {
   margin-bottom: 12px;
   padding: 12px;
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-  border-radius: 6px;
+  background: var(--app-surface-muted);
+  border-radius: 10px;
   font-size: 13px;
   color: #595959;
   line-height: 1.6;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--app-line-soft);
 }
 
 .model-card-footer {

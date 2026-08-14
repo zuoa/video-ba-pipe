@@ -1,5 +1,5 @@
 .algorithms-page {
-  min-height: 100vh;
+  min-height: calc(100vh - 150px);
 }
 
 /* Header Actions */
@@ -44,15 +44,6 @@
   }
 }
 
-.algorithms-page > * {
-  animation: fadeInUp 0.4s ease-out;
-}
-
-/* Table Container Animation */
-.algorithms-page .algorithm-table-wrapper {
-  animation-delay: 0.1s;
-}
-
 /* Scrollbar Styling */
 .algorithms-page ::-webkit-scrollbar {
   width: 8px;
@@ -60,16 +51,16 @@
 }
 
 .algorithms-page ::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: var(--app-surface-muted);
   border-radius: 4px;
 }
 
 .algorithms-page ::-webkit-scrollbar-thumb {
-  background: #bfbfbf;
+  background: var(--app-line);
   border-radius: 4px;
   transition: background 0.3s;
 }
 
 .algorithms-page ::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: var(--app-text-muted);
 }

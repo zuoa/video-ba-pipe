@@ -1,7 +1,7 @@
 .recent-alerts-card {
   background: rgba(255, 255, 255, 0.9);
-  border-radius: 20px;
-  padding: 24px;
+  border-radius: 16px;
+  padding: 20px;
   border: 1px solid var(--app-line-soft);
   box-shadow: var(--app-shadow-sm);
   height: 100%;
@@ -33,7 +33,7 @@
 
 .view-all-link {
   font-size: 13px;
-  color: var(--app-text);
+  color: var(--app-info);
   text-decoration: none;
   font-weight: 500;
   transition: color 0.3s ease;
@@ -83,16 +83,15 @@
   padding: 12px;
   background: var(--app-surface-strong);
   border: 1px solid var(--app-line-soft);
-  border-radius: 16px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
   gap: 12px;
 }
 
 .recent-alert-item:hover {
-  transform: translateY(-1px);
   border-color: var(--app-line);
-  box-shadow: var(--app-shadow-sm);
+  background: var(--app-surface-muted);
 }
 
 .alert-image-wrapper {

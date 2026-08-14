@@ -1,21 +1,26 @@
 :root {
-  --app-bg: #f3f4f6;
-  --app-bg-soft: #f7f8fa;
-  --app-surface: rgba(255, 255, 255, 0.92);
+  --app-bg: #edf1f3;
+  --app-bg-soft: #f4f7f8;
+  --app-surface: rgba(255, 255, 255, 0.94);
   --app-surface-strong: #ffffff;
-  --app-surface-muted: #f7f8fa;
-  --app-text: #1f242b;
-  --app-text-secondary: #4b5563;
-  --app-text-muted: #667085;
-  --app-line: #d7dbe2;
-  --app-line-soft: #e5e7eb;
-  --app-accent: #1f242b;
-  --app-accent-hover: #343b45;
-  --app-accent-active: #161a20;
-  --app-accent-soft: #eceff3;
-  --app-info: #356a92;
-  --app-info-hover: #2d5a7d;
-  --app-info-soft: #edf5fa;
+  --app-surface-muted: #f4f7f8;
+  --app-text: #14202b;
+  --app-text-secondary: #465866;
+  --app-text-muted: #687985;
+  --app-line: #d4dde2;
+  --app-line-soft: #e2e8eb;
+  --app-accent: #14202b;
+  --app-accent-hover: #203442;
+  --app-accent-active: #0b1722;
+  --app-accent-soft: #e7edf0;
+  --app-night: #0b1722;
+  --app-night-soft: #102433;
+  --app-signal: #46bfa7;
+  --app-signal-bright: #62d4bb;
+  --app-signal-soft: #e8f7f3;
+  --app-info: #397083;
+  --app-info-hover: #305f70;
+  --app-info-soft: #eaf3f5;
   --app-success: #2f6b4f;
   --app-success-hover: #285c44;
   --app-success-soft: #edf6f1;
@@ -30,9 +35,9 @@
   --app-control-disabled-text: #9aa1ab;
   --app-control-disabled-bg: #f2f3f5;
   --app-switch-off: #c9ced6;
-  --app-shadow-sm: 0 10px 24px rgba(15, 23, 42, 0.05);
-  --app-shadow-md: 0 18px 40px rgba(15, 23, 42, 0.08);
-  --app-shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.14);
+  --app-shadow-sm: 0 8px 24px rgba(11, 23, 34, 0.045);
+  --app-shadow-md: 0 18px 44px rgba(11, 23, 34, 0.085);
+  --app-shadow-lg: 0 28px 70px rgba(11, 23, 34, 0.15);
   --app-radius-s: 12px;
   --app-radius-m: 18px;
   --app-radius-l: 26px;
@@ -65,7 +70,11 @@ body,
 body {
   margin: 0;
   color: var(--app-text);
-  background: #f5f6f8;
+  background:
+    linear-gradient(rgba(20, 32, 43, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 32, 43, 0.025) 1px, transparent 1px),
+    var(--app-bg);
+  background-size: 32px 32px;
   font-family:
     'PingFang SC',
     'Hiragino Sans GB',
@@ -89,13 +98,13 @@ button,
 }
 
 :focus-visible {
-  outline: 2px solid rgba(53, 106, 146, 0.72);
+  outline: 2px solid rgba(70, 191, 167, 0.82);
   outline-offset: 2px;
 }
 
 ::selection {
   color: #fff;
-  background: rgba(31, 36, 43, 0.78);
+  background: rgba(20, 32, 43, 0.82);
 }
 
 .app-shell {
@@ -103,11 +112,27 @@ button,
 }
 
 .app-shell__main {
-  padding: 18px 24px 40px;
+  padding: 24px clamp(18px, 2.4vw, 36px) 48px;
 }
 
 .app-shell__content {
-  width: 100%;
+  width: min(1760px, 100%);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.dashboard-page,
+.video-sources-page,
+.alerts-page,
+.algorithms-page,
+.workflows-page,
+.models-page,
+.scripts-page,
+.external-apis-page,
+.users-page,
+.system-settings-page,
+.api-docs-page,
+.workflow-test-results-page {
   min-width: 0;
 }
 
@@ -190,7 +215,7 @@ button,
 .ant-picker-focused,
 .ant-input-number-focused {
   border-color: var(--app-control-hover-line) !important;
-  box-shadow: 0 0 0 3px rgba(53, 106, 146, 0.1) !important;
+  box-shadow: 0 0 0 3px rgba(57, 112, 131, 0.1) !important;
 }
 
 .ant-table-wrapper {
@@ -213,10 +238,17 @@ button,
   color: var(--app-text-muted) !important;
   font-weight: 600 !important;
   background: var(--app-surface-muted) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .ant-table-tbody > tr > td {
   border-color: var(--app-line-soft) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f7faf9 !important;
 }
 
 .ant-card,
@@ -225,6 +257,15 @@ button,
   border: 1px solid var(--app-line-soft);
   border-radius: var(--app-radius-m);
   box-shadow: var(--app-shadow-sm);
+}
+
+.ant-card .ant-card-head {
+  border-color: var(--app-line-soft);
+}
+
+.ant-card .ant-card-head-title {
+  color: var(--app-text);
+  font-weight: 650;
 }
 
 .ant-empty-description,
@@ -269,6 +310,29 @@ button,
   box-shadow: var(--app-shadow-md);
 }
 
+.ant-pagination .ant-pagination-item-active {
+  border-color: var(--app-accent) !important;
+  background: var(--app-accent) !important;
+}
+
+.ant-pagination .ant-pagination-item-active a {
+  color: #fff !important;
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+  background: var(--app-signal);
+}
+
+.ant-tag {
+  border-radius: 6px;
+}
+
+.ant-modal .ant-modal-content,
+.ant-drawer .ant-drawer-content {
+  border: 1px solid var(--app-line-soft);
+  box-shadow: var(--app-shadow-lg);
+}
+
 .ant-form-item-label > label {
   color: var(--app-text-secondary) !important;
   font-weight: 600;
@@ -276,6 +340,23 @@ button,
 
 .ant-form-item-explain-error {
   color: var(--app-danger) !important;
+}
+
+@media (max-width: 768px) {
+  .app-shell__main {
+    padding: 18px 14px 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .ant-checkbox-inner {

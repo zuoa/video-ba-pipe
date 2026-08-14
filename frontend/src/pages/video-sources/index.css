@@ -26,15 +26,6 @@
   }
 }
 
-.video-sources-page > * {
-  animation: fadeInUp 0.4s ease-out;
-}
-
-/* 表格容器动画 */
-.source-table-wrapper {
-  animation-delay: 0.1s;
-}
-
 /* 滚动条美化 */
 .video-sources-page ::-webkit-scrollbar {
   width: 8px;
@@ -42,16 +33,16 @@
 }
 
 .video-sources-page ::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: var(--app-surface-muted);
   border-radius: 4px;
 }
 
 .video-sources-page ::-webkit-scrollbar-thumb {
-  background: #bfbfbf;
+  background: var(--app-line);
   border-radius: 4px;
   transition: background 0.3s;
 }
 
 .video-sources-page ::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: var(--app-text-muted);
 }

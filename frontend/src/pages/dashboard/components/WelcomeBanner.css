@@ -1,75 +1,109 @@
 .welcome-banner {
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18) 0%, transparent 30%),
-    linear-gradient(135deg, #242932 0%, #343a43 100%);
-  border-radius: 24px;
-  padding: 30px 32px;
+  position: relative;
   display: flex;
+  min-height: 144px;
   align-items: center;
   justify-content: space-between;
-  box-shadow: var(--app-shadow-md);
-  position: relative;
+  margin-bottom: 16px;
+  padding: 28px 30px;
   overflow: hidden;
+  border: 1px solid rgba(164, 198, 207, 0.12);
+  border-radius: 20px;
+  color: #eef7f8;
+  background:
+    radial-gradient(circle at 82% 40%, rgba(39, 112, 115, 0.22), transparent 28%),
+    linear-gradient(145deg, var(--app-night-soft), var(--app-night) 68%);
+  box-shadow: 0 14px 34px rgba(11, 23, 34, 0.13);
 }
 
 .welcome-banner::before {
-  content: '';
   position: absolute;
-  top: -50%;
-  right: -10%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+  right: 150px;
+  bottom: 26px;
+  left: 46%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(98, 212, 187, 0.44), transparent);
+  content: '';
+}
+
+.welcome-banner::after {
+  position: absolute;
+  right: -76px;
+  bottom: -122px;
+  width: 260px;
+  height: 260px;
+  border: 1px solid rgba(98, 212, 187, 0.075);
   border-radius: 50%;
+  box-shadow:
+    0 0 0 46px rgba(98, 212, 187, 0.022),
+    0 0 0 92px rgba(98, 212, 187, 0.015);
+  content: '';
 }
 
 .welcome-content {
-  flex: 1;
   position: relative;
   z-index: 1;
+  flex: 1;
+}
+
+.welcome-content::before {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--app-signal-bright);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  content: 'LIVE OPERATIONS';
 }
 
 .welcome-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 10px 0;
-  letter-spacing: -0.04em;
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: clamp(24px, 2.2vw, 32px);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.2;
 }
 
 .welcome-subtitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.72);
+  max-width: 600px;
   margin: 0;
-  font-weight: 400;
-  max-width: 520px;
+  color: rgba(221, 235, 239, 0.62);
+  font-size: 13px;
+  line-height: 1.65;
 }
 
 .welcome-icon-wrapper {
-  display: none;
   position: relative;
   z-index: 1;
-}
-
-@media (min-width: 768px) {
-  .welcome-icon-wrapper {
-    display: block;
-  }
+  display: block;
 }
 
 .welcome-icon-bg {
-  width: 96px;
-  height: 96px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(10px);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  border: 1px solid rgba(98, 212, 187, 0.16);
+  border-radius: 18px;
+  color: var(--app-signal-bright);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 .welcome-icon {
-  font-size: 40px;
-  color: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  font-size: 28px;
+}
+
+@media (max-width: 640px) {
+  .welcome-banner {
+    min-height: 132px;
+    padding: 24px 22px;
+  }
+
+  .welcome-icon-wrapper {
+    display: none;
+  }
 }

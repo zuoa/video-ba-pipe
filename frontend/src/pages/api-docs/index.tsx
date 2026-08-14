@@ -332,6 +332,7 @@ export default function ApiDocsPage() {
     <div className="api-docs-page">
       <PageHeader
         icon={<ApiOutlined />}
+        eyebrow="OPEN INTERFACE"
         title="API 使用说明"
         subtitle="通过 X-API-Key 访问 /openapi/v1 开放接口,实现视频源与算法编排的自动化集成"
         count={ENDPOINTS.length}

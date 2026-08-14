@@ -210,6 +210,7 @@ export default function Workflows() {
     <div className="workflows-page">
       <PageHeader
         icon={<ApartmentOutlined />}
+        eyebrow="PIPELINE ORCHESTRATION"
         title="算法编排管理"
         subtitle="分别管理可复用模板与绑定视频源的运行编排"
         count={workflows.length}

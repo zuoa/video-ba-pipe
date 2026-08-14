@@ -26,10 +26,6 @@
   }
 }
 
-.workflows-page > * {
-  animation: fadeInUp 0.4s ease-out;
-}
-
 /* 滚动条美化 */
 .workflows-page ::-webkit-scrollbar {
   width: 8px;
@@ -37,18 +33,18 @@
 }
 
 .workflows-page ::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: var(--app-surface-muted);
   border-radius: 4px;
 }
 
 .workflows-page ::-webkit-scrollbar-thumb {
-  background: #bfbfbf;
+  background: var(--app-line);
   border-radius: 4px;
   transition: background 0.3s;
 }
 
 .workflows-page ::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: var(--app-text-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {

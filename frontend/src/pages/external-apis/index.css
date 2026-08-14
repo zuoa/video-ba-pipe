@@ -1,11 +1,11 @@
 .external-apis-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
 }
 
 .external-apis-table .ant-table {
-  border-radius: 20px;
+  border-radius: 16px;
   overflow: hidden;
 }
 

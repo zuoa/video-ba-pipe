@@ -240,8 +240,9 @@ const AlertsPage: React.FC = () => {
     <div className="alerts-page">
       <PageHeader
         icon={<BellOutlined />}
+        eyebrow="EVENT LOG"
         title="告警记录"
-        subtitle="实时监控和管理告警信息"
+        subtitle="筛选、回溯并处置视频分析事件"
         count={pagination.total}
         countLabel="条告警"
       />

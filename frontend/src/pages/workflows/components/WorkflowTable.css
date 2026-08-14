@@ -13,7 +13,7 @@
 }
 
 .workflow-section--templates {
-  border-color: #ded5ed;
+  border-color: var(--app-line);
 }
 
 .workflow-section__header {
@@ -24,11 +24,11 @@
   gap: 24px;
   padding: 20px 22px;
   border-bottom: 1px solid var(--app-line-soft);
-  background: linear-gradient(135deg, #ffffff 0%, #f8f5fc 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f0f7f5 100%);
 }
 
 .workflow-section--runtime .workflow-section__header {
-  background: linear-gradient(135deg, #ffffff 0%, #f4f7fa 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f1f6f7 100%);
 }
 
 .workflow-section__identity {
@@ -51,13 +51,14 @@
 }
 
 .workflow-section__icon--template {
-  background: #5f3b85;
+  color: var(--app-signal-bright);
+  background: var(--app-night-soft);
 }
 
 .workflow-section__eyebrow {
   display: block;
   margin-bottom: 2px;
-  color: #6e527f;
+  color: var(--app-success);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -174,7 +175,7 @@
 }
 
 .workflow-template-table .ant-table-thead > tr > th {
-  background: #f8f5fc !important;
+  background: #f0f7f5 !important;
 }
 
 .workflow-table .ant-table-tbody > tr > td {
@@ -187,7 +188,7 @@
 }
 
 .workflow-template-table .ant-table-tbody > tr:hover > td {
-  background: #fbf9fd !important;
+  background: #f7faf9 !important;
 }
 
 .workflow-table .ant-pagination {
@@ -214,8 +215,8 @@
 }
 
 .workflow-name-cell__icon--template {
-  color: #5f3b85;
-  background: #eee7f7;
+  color: var(--app-success);
+  background: var(--app-signal-soft);
 }
 
 .workflow-name-cell__copy {
@@ -243,7 +244,7 @@
 }
 
 .template-usage strong {
-  color: #5f3b85;
+  color: var(--app-success);
   font-size: 18px;
 }
 

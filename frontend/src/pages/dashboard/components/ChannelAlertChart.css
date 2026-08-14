@@ -2,10 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 24px;
+  padding: 20px;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--app-line-soft);
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--app-shadow-sm);
 }
 
@@ -91,13 +91,13 @@
 .channel-alert-chart__bar {
   width: 60%;
   max-width: 36px;
-  background: linear-gradient(180deg, #5b8def 0%, #2f5fc4 100%);
+  background: linear-gradient(180deg, var(--app-signal-bright) 0%, #318f7d 100%);
   border-radius: 6px 6px 2px 2px;
   transition: height 0.3s ease;
 }
 
 .channel-alert-chart__item:hover .channel-alert-chart__bar {
-  background: linear-gradient(180deg, #6f9cf1 0%, #3d6dd1 100%);
+  background: linear-gradient(180deg, #7ce0ca 0%, var(--app-signal) 100%);
 }
 
 .channel-alert-chart__bar.is-empty {

@@ -146,6 +146,7 @@ export default function Users() {
     <div className="users-page">
       <PageHeader
         icon={<TeamOutlined />}
+        eyebrow="ACCESS CONTROL"
         title="用户管理"
         subtitle="维护系统账号、权限与启用状态"
         count={users.length}

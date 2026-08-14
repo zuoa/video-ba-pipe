@@ -161,8 +161,9 @@ export default function VideoSources() {
     <div className="video-sources-page">
       <PageHeader
         icon={<VideoCameraOutlined />}
+        eyebrow="VIDEO INPUTS"
         title="视频源管理"
-        subtitle="管理和配置视频源"
+        subtitle="接入、预览并维护视频分析通道"
         count={sources.length}
         countLabel="个视频源"
         extra={

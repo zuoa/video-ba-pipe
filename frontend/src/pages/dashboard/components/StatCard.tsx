@@ -24,7 +24,10 @@ const StatCard: React.FC<StatCardProps> = ({
   onClick,
 }) => {
   return (
-    <div className="dashboard-stat-card" onClick={onClick}>
+    <div
+      className={`dashboard-stat-card${onClick ? ' is-interactive' : ''}`}
+      onClick={onClick}
+    >
       <div className="stat-card-header">
         <div
           className="stat-card-icon"
@@ -39,9 +42,9 @@ const StatCard: React.FC<StatCardProps> = ({
       <div className="stat-card-body">
         <div className="stat-card-info">
           <p className="stat-card-value">{value}</p>
-          {subtitle && <p className="stat-card-subtitle">{subtitle}</p>}
+          {subtitle ? <p className="stat-card-subtitle">{subtitle}</p> : null}
         </div>
-        {trendIcon && <div className="stat-card-trend">{trendIcon}</div>}
+        {trendIcon ? <div className="stat-card-trend">{trendIcon}</div> : null}
       </div>
     </div>
   );

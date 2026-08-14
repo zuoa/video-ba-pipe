@@ -113,15 +113,17 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-page">
+      <WelcomeBanner />
+
       {/* 统计卡片 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[14, 14]} className="dashboard-stats-row">
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<AppstoreOutlined />}
             title="视频源总数"
             value={stats.totalTasks}
             subtitle={`当前有 ${stats.runningTasks} 路视频源正在运行`}
-            iconBgColor="#000000"
+            iconBgColor="#14202b"
             trendIcon={<ArrowUpOutlined />}
           />
         </Col>
@@ -131,7 +133,7 @@ export default function Dashboard() {
             title="算法模型"
             value={stats.totalAlgorithms}
             subtitle="已接入的算法与模型总数"
-            iconBgColor="#000000"
+            iconBgColor="#203b48"
             trendIcon={<CheckCircleOutlined />}
           />
         </Col>
@@ -141,7 +143,7 @@ export default function Dashboard() {
             title="今日告警"
             value={stats.todayAlerts}
             subtitle="今日累计触发的告警次数"
-            iconBgColor="#ff4d4f"
+            iconBgColor="#b54743"
             trendIcon={<ExclamationCircleOutlined />}
           />
         </Col>
@@ -153,7 +155,7 @@ export default function Dashboard() {
             subtitle={systemMetrics
               ? `${systemMetrics.hostname} · 已采集主机资源状态`
               : '正在连接系统状态服务'}
-            iconBgColor={systemMetricsError && !systemMetrics ? '#9a681f' : '#52c41a'}
+            iconBgColor={systemMetricsError && !systemMetrics ? '#9a681f' : '#2f6b4f'}
             trendIcon={systemMetricsError && !systemMetrics
               ? <ExclamationCircleOutlined />
               : <CheckCircleOutlined />}
@@ -168,7 +170,7 @@ export default function Dashboard() {
       />
 
       {/* 通道告警统计和最近告警 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[14, 14]} className="dashboard-insights-row">
         <Col xs={24} lg={12}>
           <ChannelAlertChart />
         </Col>
@@ -183,9 +185,6 @@ export default function Dashboard() {
           />
         </Col>
       </Row>
-
-      {/* 欢迎横幅 */}
-      <WelcomeBanner />
     </div>
   );
 }

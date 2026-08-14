@@ -160,8 +160,9 @@ const ModelsPage: React.FC = () => {
     <div className="models-page">
       <PageHeader
         icon={<ApiOutlined />}
+        eyebrow="MODEL REGISTRY"
         title="模型管理"
-        subtitle="管理和上传AI模型文件"
+        subtitle="上传、检查并维护推理模型"
         count={filteredModels.length}
         countLabel="个模型"
         extra={

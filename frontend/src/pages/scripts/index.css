@@ -1,5 +1,5 @@
 .scripts-page {
-  animation: fadeInUp 0.4s ease-out;
+  min-width: 0;
 }
 
 @keyframes fadeInUp {
@@ -53,14 +53,4 @@
 
 .scripts-page ::-webkit-scrollbar-thumb:hover {
   background: #999;
-}
-
-/* 加载动画 */
-.scripts-page > * {
-  animation: fadeInUp 0.4s ease-out;
-}
-
-/* 表格容器动画 */
-.script-table-wrapper {
-  animation-delay: 0.1s;
 }

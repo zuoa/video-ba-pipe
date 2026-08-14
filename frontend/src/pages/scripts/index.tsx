@@ -111,8 +111,9 @@ export default function Scripts() {
     <div className="scripts-page">
       <PageHeader
         icon={<CodeOutlined />}
+        eyebrow="SCRIPT LIBRARY"
         title="脚本管理"
-        subtitle="管理自定义检测脚本"
+        subtitle="维护自定义检测逻辑与复用模板"
         count={filteredScripts.length}
         countLabel="个脚本"
         extra={

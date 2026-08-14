@@ -1,21 +1,22 @@
 .api-docs-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
 }
 
 .api-docs-card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 24px 28px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  padding: 22px 24px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: 16px;
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-sm);
 }
 
 .api-docs-card__title {
   margin: 0 0 16px;
   font-size: 16px;
   font-weight: 600;
-  color: #1f2328;
+  color: var(--app-text);
 }
 
 .api-docs-grid {
@@ -31,7 +32,7 @@
   margin: 16px 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: var(--app-text-secondary);
 }
 
 .api-docs-card__title + .api-docs-grid .api-docs-field-label,
@@ -44,7 +45,7 @@
 }
 
 .api-docs-text {
-  color: #475569;
+  color: var(--app-text-secondary);
   line-height: 1.8;
 }
 
@@ -71,8 +72,9 @@
 .api-docs-flow__step {
   padding: 6px 14px;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #1f2328;
+  border: 1px solid var(--app-line-soft);
+  background: var(--app-surface-muted);
+  color: var(--app-text);
   font-size: 13px;
   font-weight: 500;
 }
@@ -112,7 +114,8 @@
   margin: 0;
   padding: 14px 16px;
   border-radius: 12px;
-  background: #0f172a;
+  border: 1px solid rgba(98, 212, 187, 0.1);
+  background: var(--app-night);
   color: #e2e8f0;
   font-size: 12.5px;
   line-height: 1.7;

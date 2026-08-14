@@ -149,6 +149,7 @@ export default function ExternalApisPage() {
     <div className="external-apis-page">
       <PageHeader
         icon={<ApiOutlined />}
+        eyebrow="EXTERNAL SERVICES"
         title="外部 API"
         subtitle="集中管理第三方算法接口，供编排节点直接选择"
         count={items.length}

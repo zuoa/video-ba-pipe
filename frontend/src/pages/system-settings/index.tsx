@@ -250,6 +250,7 @@ const SystemSettingsPage: React.FC = () => {
     <div className="system-settings-page">
       <PageHeader
         icon={<SettingOutlined />}
+        eyebrow="SYSTEM CONTROL"
         title="系统设置"
         subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息队列配置。"
         extra={activeTabKey !== 'apiKeys' ? (
