@@ -361,6 +361,25 @@ def _device_model() -> str:
     return ""
 
 
+def _device_tree_compatible() -> str:
+    for path in (
+        Path("/proc/device-tree/compatible"),
+        Path("/sys/firmware/devicetree/base/compatible"),
+    ):
+        try:
+            values = path.read_bytes().split(b"\x00")
+            compatible = ",".join(
+                value.decode("utf-8", "ignore").strip()
+                for value in values
+                if value.strip()
+            )
+            if compatible:
+                return compatible
+        except OSError:
+            continue
+    return ""
+
+
 def _cgroup_oom_available() -> bool:
     try:
         with open("/proc/self/cgroup", "r", encoding="utf-8") as handle:
@@ -378,9 +397,19 @@ def detect_inference_capabilities() -> Dict[str, Any]:
     system = platform.system().lower()
     machine = platform.machine().lower()
     device_model = _device_model()
+    device_compatible = _device_tree_compatible()
     model_lower = device_model.lower()
-    is_jetson = "jetson" in model_lower or "nvidia" in model_lower
-    is_rk3588 = "rk3588" in model_lower or "rk3588" in machine
+    compatible_lower = device_compatible.lower()
+    is_jetson = (
+        "jetson" in model_lower
+        or "nvidia" in model_lower
+        or "nvidia" in compatible_lower
+    )
+    is_rk3588 = (
+        "rk3588" in model_lower
+        or "rk3588" in machine
+        or "rk3588" in compatible_lower
+    )
     if is_jetson:
         platform_name = "jetson"
     elif is_rk3588:
@@ -403,13 +432,14 @@ def detect_inference_capabilities() -> Dict[str, Any]:
         "system": system,
         "machine": machine,
         "device_model": device_model,
+        "device_compatible": device_compatible,
         "in_docker": os.path.exists("/.dockerenv"),
         "shared_ultralytics": unix_socket and posix_shared_memory,
         "memory_admission": True,
         "oom_detection": cgroup_oom,
         "unix_socket": unix_socket,
         "posix_shared_memory": posix_shared_memory,
-        "rknn_shared": False,
+        "rknn_shared": is_rk3588 and unix_socket and posix_shared_memory,
         "onnx_shared": False,
     }
 
@@ -421,7 +451,11 @@ def effective_inference_resource_config(
     capabilities = capabilities or detect_inference_capabilities()
     values = config.to_dict()
     values["shared_inference_enabled"] = bool(
-        config.shared_inference_enabled and capabilities.get("shared_ultralytics")
+        config.shared_inference_enabled
+        and (
+            capabilities.get("shared_ultralytics")
+            or capabilities.get("rknn_shared")
+        )
     )
     values["inference_admission_enabled"] = bool(
         config.inference_admission_enabled and capabilities.get("memory_admission")

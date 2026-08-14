@@ -1,4 +1,4 @@
-"""Cross-process shared Ultralytics inference service.
+"""Cross-process shared Ultralytics and RKNN inference service.
 
 Source workflow hosts exchange frame descriptors over a Unix socket.  Pixels live
 in short-lived POSIX shared-memory segments, while exactly one model process is
@@ -59,6 +59,30 @@ class SharedInferenceOverloaded(SharedInferenceError):
     pass
 
 
+def _selected_backend_name(
+    model_path: str,
+    model_info: Dict[str, Any],
+    config: Dict[str, Any],
+) -> str:
+    aliases = {
+        "onnx": "onnxruntime",
+        "onnxruntime": "onnxruntime",
+        "rknn": "rknn",
+        "rknnlite": "rknn",
+        "ultralytics": "ultralytics",
+    }
+    requested = str(config.get("backend") or "auto").strip().lower()
+    if requested in aliases:
+        return aliases[requested]
+    framework = str(model_info.get("framework") or "").lower()
+    extension = os.path.splitext(model_path)[1].lower()
+    if extension == ".rknn" or "rknn" in framework:
+        return "rknn"
+    if extension == ".onnx" or framework == "onnx":
+        return "onnxruntime"
+    return "ultralytics"
+
+
 def build_model_spec(model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     try:
         stat_result = os.stat(model_path)
@@ -70,6 +94,21 @@ def build_model_spec(model_path: str, model_info: Dict[str, Any], config: Dict[s
     model_id = model_info.get("id")
     if model_id is None:
         model_id = config.get("model_id")
+    static_config_keys = (
+        "rknn_core_mask",
+        "rknn_input_format",
+        "postprocess_profile",
+        "postprocess_layout",
+        "postprocess_bbox_format",
+        "postprocess_score_mode",
+        "postprocess_apply_sigmoid",
+        "postprocess_strides",
+        "postprocess_anchors",
+        "postprocess_anchor_count",
+        "postprocess_reg_max",
+        "postprocess_num_classes",
+        "model_postprocess",
+    )
     return {
         "model_id": int(model_id) if str(model_id).isdigit() else model_id,
         "model_path": os.path.abspath(model_path),
@@ -77,8 +116,20 @@ def build_model_spec(model_path: str, model_info: Dict[str, Any], config: Dict[s
         "file_mtime_ns": file_mtime_ns,
         "framework": str(model_info.get("framework") or "ultralytics"),
         "model_type": str(model_info.get("model_type") or "YOLO"),
+        "backend": _selected_backend_name(model_path, model_info, config),
+        "classes": {
+            str(key): str(value)
+            for key, value in (model_info.get("classes") or {}).items()
+        },
+        "model_postprocess": model_info.get("model_postprocess") or {},
+        "input_shape": model_info.get("input_shape"),
         "input_width": int(config.get("input_width") or 640),
         "input_height": int(config.get("input_height") or 640),
+        "backend_config": {
+            key: config.get(key)
+            for key in static_config_keys
+            if config.get(key) not in (None, "")
+        },
     }
 
 
@@ -88,7 +139,7 @@ def model_key(spec: Dict[str, Any]) -> str:
 
 
 def _inference_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    result = {
         "confidence": float(config.get("confidence", 0.6)),
         "nms_iou": float(config.get("nms_iou", 0.45)),
         "class_filter": list(config.get("class_filter") or []),
@@ -96,6 +147,42 @@ def _inference_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "input_width": int(config.get("input_width") or 640),
         "input_height": int(config.get("input_height") or 640),
     }
+    for key in (
+        "backend",
+        "rknn_core_mask",
+        "rknn_input_format",
+        "postprocess_profile",
+        "postprocess_layout",
+        "postprocess_bbox_format",
+        "postprocess_score_mode",
+        "postprocess_apply_sigmoid",
+        "postprocess_strides",
+        "postprocess_anchors",
+        "postprocess_anchor_count",
+        "postprocess_reg_max",
+        "postprocess_num_classes",
+        "model_postprocess",
+    ):
+        if config.get(key) not in (None, ""):
+            result[key] = config.get(key)
+    return result
+
+
+def _create_model_worker_backend(
+    spec: Dict[str, Any],
+    model_info: Dict[str, Any],
+    base_config: Dict[str, Any],
+):
+    from app.user_scripts.common.yolo_backends import RKNNBackend, UltralyticsBackend
+
+    backend_name = spec.get("backend") or _selected_backend_name(
+        spec["model_path"], model_info, base_config
+    )
+    if backend_name == "rknn":
+        return RKNNBackend(spec["model_path"], model_info, base_config)
+    if backend_name == "ultralytics":
+        return UltralyticsBackend(spec["model_path"], model_info, base_config)
+    raise SharedInferenceError(f"共享推理暂不支持后端: {backend_name}")
 
 
 def _untrack_attached_shared_memory(segment: shared_memory.SharedMemory) -> None:
@@ -116,18 +203,24 @@ def _model_worker_main(
     os.environ["SHARED_INFERENCE_WORKER"] = "true"
     startup_started_at = time.monotonic()
     try:
-        from app.user_scripts.common.yolo_backends import UltralyticsBackend
-
         model_info = {
             "id": spec.get("model_id"),
             "path": spec["model_path"],
             "file_size": spec.get("file_size"),
             "framework": spec.get("framework"),
             "model_type": spec.get("model_type"),
-            "input_shape": f"{spec.get('input_width', 640)}x{spec.get('input_height', 640)}",
-            "classes": {},
+            "input_shape": spec.get("input_shape") or (
+                f"{spec.get('input_width', 640)}x{spec.get('input_height', 640)}"
+            ),
+            "classes": spec.get("classes") or {},
+            "model_postprocess": spec.get("model_postprocess") or {},
         }
-        backend = UltralyticsBackend(spec["model_path"], model_info, base_config)
+        worker_config = {
+            **(spec.get("backend_config") or {}),
+            **base_config,
+            "backend": spec.get("backend") or base_config.get("backend"),
+        }
+        backend = _create_model_worker_backend(spec, model_info, worker_config)
 
         # YOLO(model_path) does not necessarily initialize CUDA or move all
         # weights to the target device.  Complete one warm-up before announcing
@@ -145,6 +238,7 @@ def _model_worker_main(
             "pid": os.getpid(),
             "startup_time_ms": (time.monotonic() - startup_started_at) * 1000.0,
             "device": str(device) if device is not None else None,
+            "backend": backend.name,
         })
     except Exception as exc:
         result_queue.put({
@@ -218,11 +312,18 @@ def _model_worker_main(
             try:
                 configs = [item[0]["config"] for item in group]
                 frames = [item[1] for item in group]
-                if len(group) > 1:
+                infer_batch = getattr(backend, "infer_batch", None)
+                if len(group) > 1 and callable(infer_batch):
                     batch_results = backend.infer_batch(frames, configs)
+                    effective_batch_size = len(group)
                 else:
-                    backend.config = configs[0]
-                    batch_results = [backend.infer(frames[0])]
+                    batch_results = []
+                    for frame, config in zip(frames, configs):
+                        backend.config = config
+                        if getattr(backend, "output_adapter", None) is not None:
+                            backend.output_adapter.config = config
+                        batch_results.append(backend.infer(frame))
+                    effective_batch_size = 1
                 for (request, _frame), result in zip(group, batch_results):
                     detections, details, metadata = result
                     result_queue.put({
@@ -231,7 +332,11 @@ def _model_worker_main(
                         "ok": True,
                         "detections": detections,
                         "details": details,
-                        "metadata": {**metadata, "batch_size": len(group)},
+                        "metadata": {
+                            **metadata,
+                            "batch_size": effective_batch_size,
+                            "shared_backend": backend.name,
+                        },
                     })
             except Exception as exc:
                 for request, _frame in group:
@@ -271,6 +376,7 @@ class _ModelSlot:
     start_error: Optional[str] = None
     startup_time_ms: Optional[float] = None
     device: Optional[str] = None
+    backend: Optional[str] = None
     oom_kill_count_at_start: int = 0
     oom_failures: int = 0
     last_oom_at: Optional[float] = None
@@ -548,6 +654,7 @@ class _ModelRegistry:
                         slot.start_error = response.get("error")
                         slot.startup_time_ms = response.get("startup_time_ms")
                         slot.device = response.get("device")
+                        slot.backend = response.get("backend") or slot.spec.get("backend")
                         slot.ready_event.set()
                     if kind == "worker_start_failed":
                         # worker 起不来时,已入队但永远不会被处理的请求必须立即置败,
@@ -625,6 +732,7 @@ class _ModelRegistry:
                     "start_error": slot.start_error,
                     "startup_time_ms": slot.startup_time_ms,
                     "device": slot.device,
+                    "backend": slot.backend or slot.spec.get("backend"),
                     "references": slot.references,
                     "queue_depth": queue_depth,
                     **memory_metrics,

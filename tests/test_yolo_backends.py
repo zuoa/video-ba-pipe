@@ -67,6 +67,12 @@ YoloOutputAdapter = YOLO_BACKENDS.YoloOutputAdapter
 
 
 class BackendConfigTests(unittest.TestCase):
+    def test_runtime_modules_are_not_imported_when_adapter_is_loaded(self):
+        self.assertIsNone(YOLO_BACKENDS.YOLO)
+        self.assertFalse(YOLO_BACKENDS._ULTRALYTICS_IMPORT_ATTEMPTED)
+        self.assertIsNone(YOLO_BACKENDS.RKNNLite)
+        self.assertFalse(YOLO_BACKENDS._RKNNLITE_IMPORT_ATTEMPTED)
+
     def test_parse_input_shape_returns_width_height_for_non_square_shape(self):
         self.assertEqual(YOLO_BACKENDS.parse_input_shape([1, 3, 480, 640]), (640, 480))
         self.assertEqual(YOLO_BACKENDS.parse_input_shape("1x3x320x640"), (640, 320))
@@ -182,6 +188,63 @@ class BackendConfigTests(unittest.TestCase):
         finally:
             YOLO_BACKENDS.RKNNLite = original_runtime
             YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR = original_error
+
+    def test_rknn_backend_pool_reuses_runtime_until_last_reference_closes(self):
+        class RKNNLite:
+            NPU_CORE_AUTO = 0
+            instances = []
+
+            def __init__(self):
+                self.released = False
+                RKNNLite.instances.append(self)
+
+            def load_rknn(self, _path):
+                return 0
+
+            def init_runtime(self, core_mask=None):
+                return 0
+
+            def release(self):
+                self.released = True
+
+        original_runtime = YOLO_BACKENDS.RKNNLite
+        original_error = YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR
+        YOLO_BACKENDS._reset_rknn_runtime_pool_for_tests()
+        YOLO_BACKENDS.RKNNLite = RKNNLite
+        YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR = None
+        try:
+            config = YOLO_BACKENDS.normalize_backend_config({})
+            first = YOLO_BACKENDS.RKNNBackend("model.rknn", {}, config)
+            second = YOLO_BACKENDS.RKNNBackend("model.rknn", {}, config)
+
+            self.assertIs(first.model, second.model)
+            self.assertEqual(len(RKNNLite.instances), 1)
+            first.cleanup()
+            self.assertFalse(RKNNLite.instances[0].released)
+            second.cleanup()
+            self.assertTrue(RKNNLite.instances[0].released)
+            second.cleanup()  # cleanup is idempotent
+        finally:
+            YOLO_BACKENDS._reset_rknn_runtime_pool_for_tests()
+            YOLO_BACKENDS.RKNNLite = original_runtime
+            YOLO_BACKENDS.RKNNLITE_IMPORT_ERROR = original_error
+
+    def test_shared_client_routes_rknn_without_loading_local_runtime(self):
+        original_mode = YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE
+        original_proxy = YOLO_BACKENDS.SharedRKNNBackend
+        sentinel = object()
+        YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = True
+        YOLO_BACKENDS.SharedRKNNBackend = lambda *_args, **_kwargs: sentinel
+        try:
+            backend = YOLO_BACKENDS.create_backend(
+                "model.rknn",
+                {"framework": "rknn"},
+                {"backend": "auto"},
+            )
+            self.assertIs(backend, sentinel)
+        finally:
+            YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = original_mode
+            YOLO_BACKENDS.SharedRKNNBackend = original_proxy
 
 
 class YoloOutputAdapterTests(unittest.TestCase):

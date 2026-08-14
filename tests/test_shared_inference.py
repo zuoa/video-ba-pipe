@@ -48,6 +48,45 @@ def test_model_key_changes_when_model_file_changes(tmp_path):
     assert model_key(spec_a) != model_key(spec_b)
 
 
+def test_model_spec_selects_rknn_and_keys_runtime_configuration(tmp_path):
+    model = tmp_path / "model.rknn"
+    model.write_bytes(b"weights")
+    model_info = {
+        "framework": "rknn",
+        "classes": {0: "person"},
+        "model_postprocess": {"profile": "head_dfl", "reg_max": 16},
+    }
+    spec_auto = build_model_spec(
+        str(model), model_info, {"model_id": 7, "rknn_core_mask": "auto"}
+    )
+    spec_core_0 = build_model_spec(
+        str(model), model_info, {"model_id": 7, "rknn_core_mask": "core_0"}
+    )
+
+    assert spec_auto["backend"] == "rknn"
+    assert spec_auto["classes"] == {"0": "person"}
+    assert spec_auto["model_postprocess"]["reg_max"] == 16
+    assert model_key(spec_auto) != model_key(spec_core_0)
+
+
+def test_model_key_normalizes_auto_and_explicit_rknn_backend(tmp_path):
+    model = tmp_path / "model.rknn"
+    model.write_bytes(b"weights")
+    model_info = {"framework": "rknn"}
+
+    automatic = build_model_spec(
+        str(model), model_info, {"model_id": 7, "backend": "auto"}
+    )
+    explicit = build_model_spec(
+        str(model), model_info, {"model_id": 7, "backend": "rknn"}
+    )
+
+    assert automatic["backend"] == explicit["backend"] == "rknn"
+    assert "backend" not in automatic["backend_config"]
+    assert "backend" not in explicit["backend_config"]
+    assert model_key(automatic) == model_key(explicit)
+
+
 def test_registry_reuses_one_worker_for_same_model(tmp_path):
     model = tmp_path / "model.pt"
     model.write_bytes(b"weights")

@@ -10,6 +10,7 @@ Current backends:
 
 import json
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,34 +23,53 @@ try:
 except ImportError:  # pragma: no cover - standalone adapter tests/templates
     SHARED_INFERENCE_ENABLED = False
 
-_SHARED_ULTRALYTICS_CLIENT_MODE = (
+_SHARED_INFERENCE_CLIENT_MODE = (
     SHARED_INFERENCE_ENABLED
     and os.getenv("SHARED_INFERENCE_WORKER", "false").lower()
     not in ("true", "1", "yes", "on")
 )
 
-# Importing Ultralytics also imports PyTorch/CUDA. In shared mode source hosts are
-# clients only, so importing it in every host would retain most of the memory we
-# are trying to eliminate. Only the dedicated model worker imports the runtime.
-if _SHARED_ULTRALYTICS_CLIENT_MODE:
-    YOLO = None
-    ULTRALYTICS_IMPORT_ERROR = None  # 客户端模式:按设计跳过,非导入失败
-else:
-    try:
-        from ultralytics import YOLO
-        ULTRALYTICS_IMPORT_ERROR = None
-    except Exception as exc:
-        # 不要用裸 except 吞掉真实异常(曾导致 libcudnn.so.9 缺失被误报成
-        # "未安装 ultralytics")。保留原始异常,UltralyticsBackend 抛错时透出。
-        YOLO = None
-        ULTRALYTICS_IMPORT_ERROR = exc
+# Both runtimes are loaded only when their local backend is actually created.
+# In particular, importing this adapter in an RKNN-only source host must not
+# import Ultralytics -> PyTorch -> CUDA and retain their allocator state.
+YOLO = None
+ULTRALYTICS_IMPORT_ERROR = None
+_ULTRALYTICS_IMPORT_ATTEMPTED = False
+RKNNLite = None
+RKNNLITE_IMPORT_ERROR = None
+_RKNNLITE_IMPORT_ATTEMPTED = False
 
-try:
-    from rknnlite.api import RKNNLite
-    RKNNLITE_IMPORT_ERROR = None
-except Exception as exc:
-    RKNNLite = None
-    RKNNLITE_IMPORT_ERROR = exc
+
+def _load_ultralytics():
+    global YOLO, ULTRALYTICS_IMPORT_ERROR, _ULTRALYTICS_IMPORT_ATTEMPTED
+    if YOLO is not None:
+        return YOLO
+    if _SHARED_INFERENCE_CLIENT_MODE:
+        return None
+    if _ULTRALYTICS_IMPORT_ATTEMPTED:
+        return None
+    _ULTRALYTICS_IMPORT_ATTEMPTED = True
+    try:
+        from ultralytics import YOLO as loaded_yolo
+        YOLO = loaded_yolo
+    except Exception as exc:
+        ULTRALYTICS_IMPORT_ERROR = exc
+    return YOLO
+
+
+def _load_rknnlite():
+    global RKNNLite, RKNNLITE_IMPORT_ERROR, _RKNNLITE_IMPORT_ATTEMPTED
+    if RKNNLite is not None:
+        return RKNNLite
+    if _RKNNLITE_IMPORT_ATTEMPTED:
+        return None
+    _RKNNLITE_IMPORT_ATTEMPTED = True
+    try:
+        from rknnlite.api import RKNNLite as loaded_rknnlite
+        RKNNLite = loaded_rknnlite
+    except Exception as exc:
+        RKNNLITE_IMPORT_ERROR = exc
+    return RKNNLite
 
 # ONNX Runtime performs device discovery during import.  Shared Ultralytics
 # workers never use it, so importing it eagerly both delays model readiness and
@@ -209,14 +229,15 @@ def select_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str
 
 
 def _resolve_rknn_core_mask(config: Dict[str, Any]):
-    if RKNNLite is None:
+    runtime_class = _load_rknnlite()
+    if runtime_class is None:
         return None
 
     mapping = {
-        "auto": getattr(RKNNLite, "NPU_CORE_AUTO", None),
-        "core_0": getattr(RKNNLite, "NPU_CORE_0", None),
-        "core_1": getattr(RKNNLite, "NPU_CORE_1", None),
-        "core_2": getattr(RKNNLite, "NPU_CORE_2", None),
+        "auto": getattr(runtime_class, "NPU_CORE_AUTO", None),
+        "core_0": getattr(runtime_class, "NPU_CORE_0", None),
+        "core_1": getattr(runtime_class, "NPU_CORE_1", None),
+        "core_2": getattr(runtime_class, "NPU_CORE_2", None),
     }
     return mapping.get((config.get("rknn_core_mask") or "auto").lower())
 
@@ -1227,8 +1248,9 @@ class UltralyticsBackend(BaseYoloBackend):
 
     def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model_path, model_info, config)
-        if YOLO is None:
-            if _SHARED_ULTRALYTICS_CLIENT_MODE:
+        runtime_class = _load_ultralytics()
+        if runtime_class is None:
+            if _SHARED_INFERENCE_CLIENT_MODE:
                 # 客户端进程按设计不本地加载 ultralytics;走到这里说明本应委托给
                 # model worker 的节点错误地走了本地加载路径(多见于 create_backend
                 # 的 shared 分支未命中),请检查 SHARED_INFERENCE_WORKER 配置。
@@ -1244,7 +1266,7 @@ class UltralyticsBackend(BaseYoloBackend):
                 f"真实异常: {type(ULTRALYTICS_IMPORT_ERROR).__name__}"
                 f": {ULTRALYTICS_IMPORT_ERROR}"
             ) from ULTRALYTICS_IMPORT_ERROR
-        self.model = YOLO(model_path)
+        self.model = runtime_class(model_path)
 
     @staticmethod
     def _predict_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -1303,13 +1325,14 @@ class UltralyticsBackend(BaseYoloBackend):
         return parsed
 
 
-class SharedUltralyticsBackend(BaseYoloBackend):
-    """Lightweight proxy to the worker-container shared model service."""
+class SharedInferenceBackend(BaseYoloBackend):
+    """Lightweight proxy to the process-global shared model service."""
+
+    backend_name = "shared"
 
     @property
     def name(self) -> str:
-        # Preserve the public backend name used by ROI and result consumers.
-        return "ultralytics"
+        return self.backend_name
 
     def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model_path, model_info, config)
@@ -1352,36 +1375,79 @@ class SharedUltralyticsBackend(BaseYoloBackend):
         self.model = None
 
 
-class RKNNBackend(BaseYoloBackend):
-    @property
-    def name(self) -> str:
-        return "rknn"
+class SharedUltralyticsBackend(SharedInferenceBackend):
+    backend_name = "ultralytics"
 
-    def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
-        super().__init__(model_path, model_info, config)
-        if RKNNLite is None:
-            message = (
-                "当前环境未安装 rknnlite.api，无法加载 .rknn 模型。"
-                "请使用 RK3588 镜像，并在构建镜像时安装 rknn-toolkit-lite2 wheel "
-                "（可通过 Dockerfile.rk 的 RKNN_TOOLKIT_LITE2_WHL build-arg 传入），"
-                "同时在运行时挂载 /opt/rknn。"
-            )
-            if RKNNLITE_IMPORT_ERROR is not None:
-                raise ImportError(f"{message} 原始错误: {RKNNLITE_IMPORT_ERROR}") from RKNNLITE_IMPORT_ERROR
-            raise ImportError(message)
 
-        self.rknn_input_format = (config.get("rknn_input_format") or "rgb").lower()
-        self.model = RKNNLite()
+class SharedRKNNBackend(SharedInferenceBackend):
+    backend_name = "rknn"
+
+
+class _RKNNRuntimeEntry:
+    def __init__(self, runtime):
+        self.runtime = runtime
+        self.references = 1
+        self.inference_lock = threading.Lock()
+
+
+_RKNN_RUNTIME_POOL: Dict[Tuple[Any, ...], _RKNNRuntimeEntry] = {}
+_RKNN_RUNTIME_POOL_LOCK = threading.RLock()
+_RKNN_RUNTIME_POOL_PID = os.getpid()
+
+
+def _rknn_runtime_key(model_path: str, config: Dict[str, Any]) -> Tuple[Any, ...]:
+    absolute_path = os.path.realpath(os.path.abspath(model_path))
+    try:
+        stat_result = os.stat(absolute_path)
+        identity = (int(stat_result.st_size), int(stat_result.st_mtime_ns))
+    except OSError:
+        identity = (0, 0)
+    core_mask = str(config.get("rknn_core_mask") or "auto").strip().lower()
+    return absolute_path, identity, core_mask
+
+
+def _ensure_rknn_pool_process() -> None:
+    global _RKNN_RUNTIME_POOL, _RKNN_RUNTIME_POOL_PID
+    current_pid = os.getpid()
+    if current_pid != _RKNN_RUNTIME_POOL_PID:
+        # A runtime created before fork must never be used by the child. Do not
+        # call release() on the inherited native handle; just forget the copy.
+        _RKNN_RUNTIME_POOL = {}
+        _RKNN_RUNTIME_POOL_PID = current_pid
+
+
+def _acquire_rknn_runtime(model_path: str, config: Dict[str, Any]):
+    runtime_class = _load_rknnlite()
+    if runtime_class is None:
+        message = (
+            "当前环境未安装 rknnlite.api，无法加载 .rknn 模型。"
+            "请使用 RK3588 镜像，并在构建镜像时安装 rknn-toolkit-lite2 wheel "
+            "（可通过 Dockerfile.rk 的 RKNN_TOOLKIT_LITE2_WHL build-arg 传入），"
+            "同时在运行时挂载 /opt/rknn。"
+        )
+        if RKNNLITE_IMPORT_ERROR is not None:
+            raise ImportError(f"{message} 原始错误: {RKNNLITE_IMPORT_ERROR}") from RKNNLITE_IMPORT_ERROR
+        raise ImportError(message)
+
+    key = _rknn_runtime_key(model_path, config)
+    with _RKNN_RUNTIME_POOL_LOCK:
+        _ensure_rknn_pool_process()
+        entry = _RKNN_RUNTIME_POOL.get(key)
+        if entry is not None:
+            entry.references += 1
+            return key, entry
+
+        runtime = runtime_class()
         try:
-            ret = self.model.load_rknn(model_path)
+            ret = runtime.load_rknn(model_path)
             if ret != 0:
                 raise RuntimeError(f"RKNNLite.load_rknn 失败，返回码: {ret}")
-
             core_mask = _resolve_rknn_core_mask(config)
-            if core_mask is not None:
-                ret = self.model.init_runtime(core_mask=core_mask)
-            else:
-                ret = self.model.init_runtime()
+            ret = (
+                runtime.init_runtime(core_mask=core_mask)
+                if core_mask is not None
+                else runtime.init_runtime()
+            )
             if ret != 0:
                 raise RuntimeError(
                     f"RKNNLite.init_runtime 失败，返回码: {ret}。"
@@ -1389,8 +1455,52 @@ class RKNNBackend(BaseYoloBackend):
                     "并已挂载 /usr/lib/librknnrt.so"
                 )
         except Exception:
-            self.cleanup()
+            if hasattr(runtime, "release"):
+                runtime.release()
             raise
+        entry = _RKNNRuntimeEntry(runtime)
+        _RKNN_RUNTIME_POOL[key] = entry
+        return key, entry
+
+
+def _release_rknn_runtime(key, entry) -> None:
+    with _RKNN_RUNTIME_POOL_LOCK:
+        _ensure_rknn_pool_process()
+        current = _RKNN_RUNTIME_POOL.get(key)
+        if current is not entry:
+            return
+        entry.references = max(0, entry.references - 1)
+        if entry.references > 0:
+            return
+        _RKNN_RUNTIME_POOL.pop(key, None)
+        with entry.inference_lock:
+            if hasattr(entry.runtime, "release"):
+                entry.runtime.release()
+
+
+def _reset_rknn_runtime_pool_for_tests() -> None:
+    """Release all local runtimes; intended for isolated unit tests only."""
+    with _RKNN_RUNTIME_POOL_LOCK:
+        _ensure_rknn_pool_process()
+        entries = list(_RKNN_RUNTIME_POOL.values())
+        _RKNN_RUNTIME_POOL.clear()
+        for entry in entries:
+            if hasattr(entry.runtime, "release"):
+                entry.runtime.release()
+
+
+class RKNNBackend(BaseYoloBackend):
+    @property
+    def name(self) -> str:
+        return "rknn"
+
+    def __init__(self, model_path: str, model_info: Dict[str, Any], config: Dict[str, Any]):
+        super().__init__(model_path, model_info, config)
+        self.rknn_input_format = (config.get("rknn_input_format") or "rgb").lower()
+        self._runtime_key = None
+        self._runtime_entry = None
+        self._runtime_key, self._runtime_entry = _acquire_rknn_runtime(model_path, config)
+        self.model = self._runtime_entry.runtime
 
     def infer(self, frame: np.ndarray):
         image, scale, pad_x, pad_y = _letterbox(frame, self.input_width, self.input_height)
@@ -1398,7 +1508,11 @@ class RKNNBackend(BaseYoloBackend):
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         image = np.expand_dims(np.ascontiguousarray(image), axis=0)
-        outputs = self.model.inference(inputs=[image])
+        entry = self._runtime_entry
+        if entry is None:
+            raise RuntimeError("RKNN backend 已关闭")
+        with entry.inference_lock:
+            outputs = self.model.inference(inputs=[image])
         detections, details, adapter_metadata = self.output_adapter.parse(
             outputs=outputs,
             frame_shape=frame.shape,
@@ -1419,9 +1533,13 @@ class RKNNBackend(BaseYoloBackend):
         }
 
     def cleanup(self):
-        if self.model is not None and hasattr(self.model, "release"):
-            self.model.release()
+        entry = self._runtime_entry
+        key = self._runtime_key
+        self._runtime_entry = None
+        self._runtime_key = None
         self.model = None
+        if entry is not None:
+            _release_rknn_runtime(key, entry)
 
 
 class ONNXRuntimeBackend(BaseYoloBackend):
@@ -1547,9 +1665,11 @@ def create_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str
     normalized_config = normalize_backend_config(config)
     backend_name = select_backend(model_path, model_info, normalized_config)
     if backend_name == "rknn":
+        if _SHARED_INFERENCE_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
+            return SharedRKNNBackend(model_path, model_info, normalized_config)
         return RKNNBackend(model_path, model_info, normalized_config)
     if backend_name == "onnxruntime":
         return ONNXRuntimeBackend(model_path, model_info, normalized_config)
-    if _SHARED_ULTRALYTICS_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
+    if _SHARED_INFERENCE_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
         return SharedUltralyticsBackend(model_path, model_info, normalized_config)
     return UltralyticsBackend(model_path, model_info, normalized_config)

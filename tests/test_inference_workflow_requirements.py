@@ -110,6 +110,39 @@ def test_adaptive_local_backend_is_not_assumed_shared(monkeypatch):
     assert local == (8,)
 
 
+def test_adaptive_rknn_model_is_budgeted_as_globally_shared(monkeypatch):
+    algorithms = {
+        3: FakeAlgorithm(
+            "templates/adaptive_yolo_detector.py",
+            {"model_id": 8, "backend": "auto"},
+        ),
+    }
+    models = {8: FakeModel(8, path="/models/model.rknn", framework="rknn")}
+    monkeypatch.setattr(
+        orchestrator_module.Algorithm,
+        "get_by_id",
+        lambda algorithm_id: algorithms[algorithm_id],
+    )
+    monkeypatch.setattr(
+        orchestrator_module.MLModel,
+        "get_by_id",
+        lambda model_id: models[model_id],
+    )
+    orchestrator = _orchestrator()
+    orchestrator.inference_capabilities = {
+        "shared_ultralytics": True,
+        "rknn_shared": True,
+    }
+    workflow = FakeWorkflow([
+        {"id": "algorithm-1", "type": "algorithm", "dataId": 3}
+    ])
+
+    shared, local = orchestrator._workflow_model_requirements([workflow])
+
+    assert shared == {8}
+    assert local == ()
+
+
 def test_cascade_repeated_model_is_budgeted_per_stage_backend(monkeypatch):
     cascade_config = {
         "stages": [
@@ -156,6 +189,21 @@ def test_jetson_api_keeps_worker_local_shared_socket_disabled():
     )
 
 
+def test_no_mqtt_compose_enables_shared_inference_only_in_worker():
+    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.no-mqtt.yml"
+    with compose_path.open(encoding="utf-8") as handle:
+        compose = yaml.safe_load(handle)
+
+    assert "mqtt" not in compose["services"]
+    assert compose["services"]["api"]["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
+    assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
+        ":-true}"
+    )
+    assert compose["services"]["worker"]["environment"]["INFERENCE_ADMISSION_ENABLED"].endswith(
+        ":-true}"
+    )
+
+
 def test_rknn_algorithm_preview_runtime_is_worker_only():
     compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml.rknn"
     with compose_path.open(encoding="utf-8") as handle:
@@ -163,6 +211,10 @@ def test_rknn_algorithm_preview_runtime_is_worker_only():
 
     api = compose["services"]["api"]
     worker = compose["services"]["worker"]
+    assert api["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
+    assert worker["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
+        ":-true}"
+    )
     assert api.get("privileged") is not True
     assert "/dev/dri:/dev/dri" not in api.get("devices", [])
     assert "/opt/rknn:/opt/rknn:ro" not in api.get("volumes", [])

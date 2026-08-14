@@ -88,6 +88,36 @@ def test_effective_config_auto_downgrades_unsupported_features():
     assert effective.oom_circuit_breaker_enabled is False
 
 
+def test_effective_config_allows_shared_service_for_rknn_only_host():
+    requested = InferenceResourceConfig(shared_inference_enabled=True)
+
+    effective = effective_inference_resource_config(requested, {
+        "shared_ultralytics": False,
+        "rknn_shared": True,
+        "memory_admission": True,
+        "oom_detection": False,
+    })
+
+    assert effective.shared_inference_enabled is True
+
+
+def test_capabilities_detect_rk3588_from_device_tree_compatible(monkeypatch):
+    monkeypatch.setattr(resource_config.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(resource_config.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(resource_config, "_device_model", lambda: "FriendlyElec NanoPC-T6")
+    monkeypatch.setattr(
+        resource_config,
+        "_device_tree_compatible",
+        lambda: "friendlyarm,nanopc-t6,rockchip,rk3588",
+    )
+
+    capabilities = resource_config.detect_inference_capabilities()
+
+    assert capabilities["platform"] == "rk3588"
+    assert capabilities["rknn_shared"] is True
+    assert capabilities["device_compatible"].endswith("rockchip,rk3588")
+
+
 def test_load_uses_environment_when_database_is_unavailable(monkeypatch):
     monkeypatch.setattr(
         resource_config.SystemSetting,

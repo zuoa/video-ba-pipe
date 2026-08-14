@@ -808,7 +808,7 @@ class Orchestrator:
                 continue
         return None
 
-    def _model_uses_shared_ultralytics(
+    def _model_uses_shared_inference(
         self,
         algorithm,
         config,
@@ -828,8 +828,13 @@ class Orchestrator:
             config = inference_config
         elif normalized_script != 'templates/adaptive_yolo_detector.py':
             return False
+        backend_aliases = {
+            'onnx': 'onnxruntime',
+            'rknnlite': 'rknn',
+        }
         backend = str(config.get('backend') or 'auto').strip().lower()
-        if backend in ('rknn', 'onnxruntime'):
+        backend = backend_aliases.get(backend, backend)
+        if backend == 'onnxruntime':
             return False
         try:
             model = MLModel.get_by_id(int(model_id))
@@ -837,12 +842,19 @@ class Orchestrator:
             return False
         framework = str(model.framework or '').lower()
         extension = os.path.splitext(str(model.file_path or ''))[1].lower()
-        return backend == 'ultralytics' or (
-            backend == 'auto'
-            and extension not in ('.onnx', '.rknn')
-            and 'onnx' not in framework
-            and 'rknn' not in framework
-        )
+        if backend == 'auto':
+            if extension == '.rknn' or 'rknn' in framework:
+                backend = 'rknn'
+            elif extension == '.onnx' or framework == 'onnx':
+                backend = 'onnxruntime'
+            else:
+                backend = 'ultralytics'
+        capabilities = getattr(self, 'inference_capabilities', {}) or {}
+        if backend == 'rknn':
+            return bool(capabilities.get('rknn_shared'))
+        if backend == 'ultralytics':
+            return bool(capabilities.get('shared_ultralytics', True))
+        return False
 
     def _workflow_model_requirements(self, workflows) -> tuple:
         shared_model_ids = set()
@@ -870,7 +882,7 @@ class Orchestrator:
                     effective_config.update(node_config)
                 model_occurrences = self._model_occurrences_from_algorithm_config(effective_config)
                 for model_id, inference_config in model_occurrences:
-                    if self._model_uses_shared_ultralytics(
+                    if self._model_uses_shared_inference(
                         algorithm,
                         effective_config,
                         model_id,

@@ -138,6 +138,29 @@ docker buildx build --platform=linux/arm64 \
 - 仅挂载 `/opt/rknn` 只能提供 NPU runtime 动态库，不能提供 `rknnlite.api` Python 包。
 - 如果 wheel 缺失，RK 镜像会在构建阶段直接失败，而不是等到脚本测试阶段再报错。
 
+## RKNN 共享推理与内存保护
+
+RK3588 compose 默认在 worker 中启用共享推理。自适应 YOLO 和组合检测使用
+`.rknn` 模型时，相同模型和 NPU core mask 只创建一个全局模型 worker；不同
+source host 通过 Unix socket 与 POSIX shared memory 提交帧。单个 source host
+内部即使关闭共享服务，也会通过引用计数池复用相同 RKNN runtime。
+
+API 容器保持共享推理关闭，因为它不能访问 worker 私有的 Unix socket。首次
+启动后配置由“系统设置 → 推理资源保护”的数据库记录接管；已有部署如果该开关
+此前为关闭状态，需要在页面中手动开启一次。关键默认值如下：
+
+```text
+SHARED_INFERENCE_ENABLED=true
+SHARED_INFERENCE_QUEUE_SIZE=2
+SHARED_INFERENCE_BATCH_MAX_SIZE=4
+INFERENCE_ADMISSION_ENABLED=true
+OOM_CIRCUIT_BREAKER_ENABLED=true
+```
+
+共享服务按模型串行调用 RKNNLite，以符合单 runtime 的并发约束。队列满时丢弃
+分析帧，不继续积压内存。worker 的“共享推理资源”日志和系统设置状态页会显示
+模型 backend、进程、PSS、引用数和队列深度。
+
 ## 运行时挂载 NPU 运行时
 
 `Dockerfile.rk` 默认将 NPU 运行时放在 `/opt/rknn`，请在启动时挂载：
