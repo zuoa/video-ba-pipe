@@ -65,6 +65,21 @@ def test_visualize_accepts_normalized_xywh_boxes():
     assert tuple(rendered[24, 24]) == (255, 0, 0)
 
 
+def test_visualize_draws_roi_outline_as_dashes():
+    frame_rgb = np.full((80, 80, 3), 255, dtype=np.uint8)
+
+    rendered = BaseAlgorithm.visualize(
+        frame_rgb,
+        [],
+        roi_regions=[{
+            "points": [[10, 10], [60, 10], [60, 60], [10, 60]],
+        }],
+    )
+
+    assert tuple(rendered[10, 15]) == (50, 180, 50)
+    assert tuple(rendered[10, 23]) != (50, 180, 50)
+
+
 def test_normalize_detection_results_expands_class_placeholder():
     detections = BaseAlgorithm.normalize_detection_results([{
         "bbox": [10, 10, 50, 50],

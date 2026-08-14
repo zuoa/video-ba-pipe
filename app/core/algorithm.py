@@ -343,6 +343,72 @@ class BaseAlgorithm(ABC):
         img[y1:y2 + 1, max(x2 - thickness + 1, x1):x2 + 1] = color
 
     @staticmethod
+    def _iter_dashed_polygon_segments(pts: np.ndarray, dash_length: int = 10, gap_length: int = 6):
+        """Yield visible line segments for a closed dashed polygon."""
+        if pts is None:
+            return
+
+        points = np.asarray(pts, dtype=np.float32).reshape((-1, 2))
+        if len(points) < 2:
+            return
+
+        dash_length = max(1, int(dash_length))
+        gap_length = max(0, int(gap_length))
+        period = dash_length + gap_length
+
+        for index, start in enumerate(points):
+            end = points[(index + 1) % len(points)]
+            edge = end - start
+            edge_length = float(np.linalg.norm(edge))
+            if edge_length <= 0:
+                continue
+
+            direction = edge / edge_length
+            offset = 0.0
+            while offset < edge_length:
+                segment_end = min(offset + dash_length, edge_length)
+                yield start + direction * offset, start + direction * segment_end
+                offset += period
+
+    @staticmethod
+    def _draw_dashed_polygon(img: np.ndarray, pts: np.ndarray, color, thickness: int = 2,
+                             dash_length: int = 10, gap_length: int = 6):
+        """Draw a closed dashed polygon with OpenCV."""
+        for start, end in BaseAlgorithm._iter_dashed_polygon_segments(
+            pts, dash_length=dash_length, gap_length=gap_length
+        ):
+            cv2.line(
+                img,
+                tuple(np.rint(start).astype(int)),
+                tuple(np.rint(end).astype(int)),
+                color,
+                thickness,
+                cv2.LINE_AA,
+            )
+
+    @staticmethod
+    def _draw_dashed_polygon_numpy(img: np.ndarray, pts: np.ndarray, color, thickness: int = 2,
+                                   dash_length: int = 10, gap_length: int = 6):
+        """Draw the same dashed ROI outline when OpenCV is unavailable."""
+        height, width = img.shape[:2]
+        thickness = max(1, int(thickness))
+        before = (thickness - 1) // 2
+        after = thickness // 2
+
+        for start, end in BaseAlgorithm._iter_dashed_polygon_segments(
+            pts, dash_length=dash_length, gap_length=gap_length
+        ):
+            delta = end - start
+            steps = max(1, int(np.ceil(np.max(np.abs(delta)))))
+            samples = np.linspace(start, end, steps + 1)
+            for sample_x, sample_y in np.rint(samples).astype(int):
+                x1 = max(0, sample_x - before)
+                x2 = min(width, sample_x + after + 1)
+                y1 = max(0, sample_y - before)
+                y2 = min(height, sample_y + after + 1)
+                img[y1:y2, x1:x2] = color
+
+    @staticmethod
     @lru_cache(maxsize=8)
     def _load_unicode_font(font_size: int):
         """Load a CJK-capable font for labels that OpenCV cannot render."""
@@ -435,14 +501,20 @@ class BaseAlgorithm(ABC):
         height, width = img_vis.shape[:2]
         if roi_regions:
             overlay_mask = np.zeros((height, width), dtype=np.uint8)
+            roi_polygons = []
             for region in roi_regions:
                 pts = BaseAlgorithm._resolve_roi_points(region, width, height)
+                if pts is None:
+                    continue
+                roi_polygons.append(pts)
                 BaseAlgorithm._fill_polygon_numpy(overlay_mask, pts, 255)
             if np.any(overlay_mask):
                 img_vis[overlay_mask > 0] = (
                     img_vis[overlay_mask > 0].astype(np.float32) * 0.85
                     + np.array([144, 238, 144], dtype=np.float32) * 0.15
                 ).astype(np.uint8)
+            for pts in roi_polygons:
+                BaseAlgorithm._draw_dashed_polygon_numpy(img_vis, pts, (50, 180, 50), 2)
 
         main_color = BaseAlgorithm.hex_to_bgr(label_color)
         for result in results or []:
@@ -527,8 +599,8 @@ class BaseAlgorithm(ABC):
                     pts_list = polygon
 
                 pts = np.array(pts_list, dtype=np.int32).reshape((-1, 1, 2))
-                # 绘制热区边界线（完全不透明，使用深绿色）
-                cv2.polylines(img_vis, [pts], True, (50, 180, 50), 2)
+                # 绘制热区虚线边界（完全不透明，使用深绿色）
+                BaseAlgorithm._draw_dashed_polygon(img_vis, pts, (50, 180, 50), 2)
 
         # 如果有ROI掩码（兼容旧代码），在图像上绘制ROI区域轮廓
         elif roi_mask is not None:
@@ -538,8 +610,9 @@ class BaseAlgorithm(ABC):
             roi_overlay = img_vis.copy()
             cv2.drawContours(roi_overlay, contours, -1, (0, 255, 255), -1)  # 黄色填充
             cv2.addWeighted(img_vis, 0.9, roi_overlay, 0.1, 0, img_vis)
-            # 绘制ROI边界线
-            cv2.drawContours(img_vis, contours, -1, (0, 255, 255), 2)  # 黄色边线
+            # 绘制ROI虚线边界
+            for contour in contours:
+                BaseAlgorithm._draw_dashed_polygon(img_vis, contour, (0, 255, 255), 2)
 
         # 转换主标签颜色
         main_color = BaseAlgorithm.hex_to_bgr(label_color)
