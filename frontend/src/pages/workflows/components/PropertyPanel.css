@@ -164,6 +164,25 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.auto-update-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: #3f6600;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+}
+
+.auto-update-hint .anticon {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
 .info-box {
   display: flex;
   align-items: center;

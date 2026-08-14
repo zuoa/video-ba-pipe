@@ -9,6 +9,7 @@ import {
   SearchOutlined,
   VideoCameraOutlined,
   EditOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { getNodeTypes } from './nodes';
 import VideoSourceSelector from './VideoSourceSelector';
@@ -26,6 +27,48 @@ const { TextArea } = Input;
 const { Option } = Select;
 const { Text } = Typography;
 
+const WEBHOOK_CREDENTIAL_FORM_FIELDS = new Set([
+  'webhookEndpointUrl',
+  'webhookSigningSecret',
+  'webhookBarkDeviceKey',
+]);
+
+type WebhookCredentialPatch = Partial<Record<
+  'endpoint_url' | 'signing_secret' | 'device_key',
+  string
+>>;
+
+const buildWebhookConfig = (
+  values: Record<string, any>,
+  currentConfig: Record<string, any>,
+  credentialPatch?: WebhookCredentialPatch,
+) => {
+  const config = { ...currentConfig };
+  const providerOptions = { ...(config.provider_options || {}) };
+
+  config.provider = values.webhookProvider || 'generic';
+  config.title_template = values.webhookTitleTemplate || '【{{alert.level}}】{{alert.type}}';
+  config.body_template = values.webhookBodyTemplate || '{{alert.message}}';
+  config.include_media_urls = values.webhookIncludeMediaUrls !== false;
+  config.public_base_url = (values.webhookPublicBaseUrl || '').trim();
+  config.timeout_seconds = values.webhookTimeoutSeconds || 5;
+  config.max_attempts = values.webhookMaxAttempts || 3;
+  config.retry_backoff_seconds = values.webhookRetryBackoffSeconds || 1;
+  config.headers = values.webhookHeaders ? JSON.parse(values.webhookHeaders) : [];
+  config.payload_template = values.webhookPayloadTemplate ? JSON.parse(values.webhookPayloadTemplate) : {};
+
+  providerOptions.group = values.webhookBarkGroup || 'VideoBA';
+  providerOptions.sound = values.webhookBarkSound || '';
+  providerOptions.level = values.webhookBarkLevel || 'active';
+
+  if (credentialPatch?.endpoint_url) config.endpoint_url = credentialPatch.endpoint_url;
+  if (credentialPatch?.signing_secret) providerOptions.signing_secret = credentialPatch.signing_secret;
+  if (credentialPatch?.device_key) providerOptions.device_key = credentialPatch.device_key;
+
+  config.provider_options = providerOptions;
+  return config;
+};
+
 export interface PropertyPanelProps {
   node: any;
   videoSources: any[];
@@ -35,8 +78,8 @@ export interface PropertyPanelProps {
   edges?: any[];
   nodes?: any[];
   isTemplate?: boolean;
-  onUpdate: (data: any) => void;
-  onDelete: () => void;
+  onUpdate: (nodeId: string, data: any) => void;
+  onDelete: (nodeId: string) => void;
 }
 
 const PropertyPanel: React.FC<PropertyPanelProps> = ({
@@ -62,10 +105,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const isOcrAlgorithm = selectedAlgorithmType === 'ocr';
   const vlDefaultTimeout = Number(selectedAlgorithm?.vl_config?.timeout_seconds || 30);
 
-  // 使用 useRef 而不是 useState，确保同步更新
-  const isUpdatingVideoSourceRef = useRef(false);
-  // 保存上一个节点的ID，用于检测节点切换
-  const lastNodeIdRef = useRef<string | undefined>(node?.id);
+  // 只允许最后一次表单校验结果写入节点，避免快速输入时旧值覆盖新值。
+  const updateVersionRef = useRef(0);
+  const autoUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   console.log('Available videoSources:', videoSources);
   console.log('onUpdate 函数:', onUpdate);
@@ -80,15 +122,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       console.log('🔄 PropertyPanel useEffect 触发');
       console.log('📦 节点类型:', nodeType);
       console.log('🎥 videoSourceId:', node.data.videoSourceId, 'videoSourceName:', node.data.videoSourceName);
-      console.log('🚫 isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
-
-      // 如果正在更新视频源，不要覆盖表单值
-      if (isUpdatingVideoSourceRef.current) {
-        console.log('⏸️ 跳过表单初始化，正在更新视频源');
-        isUpdatingVideoSourceRef.current = false; // 重置标志
-        return;
-      }
-
       // 获取当前表单值，检查表单是否已经有值
       const currentFormValues = form.getFieldsValue();
 
@@ -177,7 +210,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.webhookBarkLevel = providerOptions.level || 'active';
       } else if (nodeType === 'function') {
         // 从 config 中读取函数配置
-        const config = node.data?.config || {};
+        const config = { ...(node.data?.config || {}) };
         formValues.functionName = config.function_name || 'area_ratio';
         formValues.threshold = config.threshold ?? 0.7;
         formValues.operator = config.operator || 'less_than';
@@ -275,7 +308,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
       }, 100);
     }
-  }, [node, node?.data, node?.id, form, vlConfigReady, isVlAlgorithm, isOcrAlgorithm, vlDefaultTimeout]); // 移除 videoSources 依赖，避免不必要的重渲染
+  }, [node?.id, form, vlConfigReady, isVlAlgorithm, isOcrAlgorithm, vlDefaultTimeout]);
+
+  useEffect(() => () => {
+    if (autoUpdateTimerRef.current) {
+      clearTimeout(autoUpdateTimerRef.current);
+    }
+  }, [node?.id]);
 
   if (!node) {
     return (
@@ -289,7 +328,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
     );
   }
 
-  const handleUpdate = async () => {
+  const handleUpdate = async (version: number) => {
     try {
       const values = await form.validateFields();
 
@@ -379,38 +418,24 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.payloadTemplate;
         delete updatedData.outputMapping;
       } else if (nodeType === 'webhook') {
-        const config = { ...(node.data?.config || {}) };
-        const providerOptions = { ...(config.provider_options || {}) };
-
-        config.provider = values.webhookProvider || 'generic';
-        config.endpoint_url = (values.webhookEndpointUrl || '').trim();
-        config.title_template = values.webhookTitleTemplate || '【{{alert.level}}】{{alert.type}}';
-        config.body_template = values.webhookBodyTemplate || '{{alert.message}}';
-        config.include_media_urls = values.webhookIncludeMediaUrls !== false;
-        config.public_base_url = (values.webhookPublicBaseUrl || '').trim();
-        config.timeout_seconds = values.webhookTimeoutSeconds || 5;
-        config.max_attempts = values.webhookMaxAttempts || 3;
-        config.retry_backoff_seconds = values.webhookRetryBackoffSeconds || 1;
-        config.headers = values.webhookHeaders ? JSON.parse(values.webhookHeaders) : [];
-        config.payload_template = values.webhookPayloadTemplate ? JSON.parse(values.webhookPayloadTemplate) : {};
-
-        if ((values.webhookSigningSecret || '').trim()) {
-          providerOptions.signing_secret = values.webhookSigningSecret.trim();
-        }
-        if ((values.webhookBarkDeviceKey || '').trim()) {
-          providerOptions.device_key = values.webhookBarkDeviceKey.trim();
-        }
-        providerOptions.group = values.webhookBarkGroup || 'VideoBA';
-        providerOptions.sound = values.webhookBarkSound || '';
-        providerOptions.level = values.webhookBarkLevel || 'active';
-        config.provider_options = providerOptions;
-        updatedData.config = config;
+        updatedData.config = buildWebhookConfig(values, node.data?.config || {});
 
         Object.keys(updatedData)
           .filter((key) => key.startsWith('webhook'))
           .forEach((key) => delete updatedData[key]);
       } else if (nodeType === 'alert') {
         // Alert 节点：保存触发条件和抑制配置
+
+        if (vlConfigReady && values.vlValidationEnable === true) {
+          const promptTemplate = String(values.vlValidationPromptTemplate || '').trim();
+          if (!promptTemplate) {
+            form.setFields([{
+              name: 'vlValidationPromptTemplate',
+              errors: ['启用 VL 核验时必须配置核验提示词模板'],
+            }]);
+            return;
+          }
+        }
 
         // 保存消息格式
         console.log('📝 Alert节点保存 messageFormat:', values.messageFormat);
@@ -479,7 +504,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             n.type === 'externalApi'
           ));
 
-        const config = node.data?.config || {};
+        const config = { ...(node.data?.config || {}) };
 
         config.function_name = values.functionName;
 
@@ -548,9 +573,69 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         updatedData.weeklySchedule = normalizeWeeklySchedule(values.weeklySchedule);
       }
 
-      onUpdate(updatedData);
+      if (version !== updateVersionRef.current) return;
+      onUpdate(node.id, updatedData);
     } catch (error) {
-      console.error('❌ Form validation failed:', error);
+      // 输入过程中的临时无效值（如未写完的 JSON）保留在表单中，待合法后再同步。
+    }
+  };
+
+  const handleValuesChange = (changedValues: Record<string, unknown>) => {
+    const changedFields = Object.keys(changedValues);
+    if (
+      changedFields.length > 0
+      && changedFields.every((fieldName) => WEBHOOK_CREDENTIAL_FORM_FIELDS.has(fieldName))
+    ) {
+      return;
+    }
+
+    const version = updateVersionRef.current + 1;
+    updateVersionRef.current = version;
+    if (autoUpdateTimerRef.current) {
+      clearTimeout(autoUpdateTimerRef.current);
+    }
+    // 让 shouldUpdate 内的条件字段先完成挂载，再收集和校验完整表单。
+    autoUpdateTimerRef.current = setTimeout(() => {
+      autoUpdateTimerRef.current = null;
+      void handleUpdate(version);
+    }, 0);
+  };
+
+  const commitWebhookCredentials = async () => {
+    try {
+      const values = await form.validateFields();
+      const provider = values.webhookProvider || 'generic';
+      const credentialPatch: WebhookCredentialPatch = {
+        endpoint_url: String(values.webhookEndpointUrl || '').trim() || undefined,
+        signing_secret: provider === 'dingtalk'
+          ? String(values.webhookSigningSecret || '').trim() || undefined
+          : undefined,
+        device_key: provider === 'bark'
+          ? String(values.webhookBarkDeviceKey || '').trim() || undefined
+          : undefined,
+      };
+      // 写入型字段留空代表保留原配置，不能用空值或输入过程的前缀覆盖。
+      if (!Object.values(credentialPatch).some(Boolean)) return;
+
+      if (autoUpdateTimerRef.current) {
+        clearTimeout(autoUpdateTimerRef.current);
+        autoUpdateTimerRef.current = null;
+      }
+      updateVersionRef.current += 1;
+
+      const config = buildWebhookConfig(
+        values,
+        node.data?.config || {},
+        credentialPatch,
+      );
+      onUpdate(node.id, { config });
+      form.setFieldsValue({
+        webhookEndpointUrl: '',
+        webhookSigningSecret: '',
+        webhookBarkDeviceKey: '',
+      });
+    } catch {
+      // Form.Item 会在字段下方展示校验错误，无效值不写入节点。
     }
   };
 
@@ -927,7 +1012,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 ? `已配置：${webhookConfig.endpoint_display || '******'}；留空保持原值`
                 : '仅支持 HTTP/HTTPS；钉钉必须使用官方机器人地址'}
             >
-              <Input.Password placeholder={endpointConfigured ? '留空保持已配置地址' : 'https://...'} />
+              <Input.Password
+                placeholder={endpointConfigured ? '留空保持已配置地址' : 'https://...'}
+                onBlur={() => void commitWebhookCredentials()}
+              />
             </Form.Item>
 
             <Form.Item noStyle shouldUpdate={(previous, current) => previous.webhookProvider !== current.webhookProvider}>
@@ -940,7 +1028,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                       name="webhookSigningSecret"
                       extra={signingSecretConfigured ? '已配置；留空保持原值' : '可选，对应钉钉机器人 SEC 密钥'}
                     >
-                      <Input.Password placeholder={signingSecretConfigured ? '留空保持原值' : 'SEC...'} />
+                      <Input.Password
+                        placeholder={signingSecretConfigured ? '留空保持原值' : 'SEC...'}
+                        onBlur={() => void commitWebhookCredentials()}
+                      />
                     </Form.Item>
                   );
                 }
@@ -957,7 +1048,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                         }]}
                         extra={barkKeyConfigured ? '已配置；留空保持原值' : undefined}
                       >
-                        <Input.Password placeholder={barkKeyConfigured ? '留空保持原值' : 'Bark Device Key'} />
+                        <Input.Password
+                          placeholder={barkKeyConfigured ? '留空保持原值' : 'Bark Device Key'}
+                          onBlur={() => void commitWebhookCredentials()}
+                        />
                       </Form.Item>
                       <Form.Item label="通知分组" name="webhookBarkGroup">
                         <Input placeholder="VideoBA" />
@@ -1921,7 +2015,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           type="text"
           size="small"
           icon={<DeleteOutlined />}
-          onClick={onDelete}
+          onClick={() => onDelete(node.id)}
           className="delete-btn"
         >
           删除
@@ -1940,6 +2034,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             form={form}
             layout="vertical"
             className="property-form"
+            onValuesChange={handleValuesChange}
           >
             <Form.Item
               label="节点名称"
@@ -1960,11 +2055,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
             {getNodeConfigFields()}
 
-            <Form.Item className="form-actions">
-              <Button type="primary" block size="small" onClick={handleUpdate}>
-                更新节点
-              </Button>
-            </Form.Item>
+            <div className="auto-update-hint" role="status">
+              <CheckCircleOutlined />
+              <span>修改会自动应用到画布，点击顶部“保存”后生效</span>
+            </div>
           </Form>
         </Tabs.TabPane>
 
@@ -2007,10 +2101,6 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           const currentValues = form.getFieldsValue();
           console.log('📝 当前表单值（更新前）:', currentValues);
 
-          // 🔑 关键：使用 ref 设置标志（同步更新，立即生效）
-          isUpdatingVideoSourceRef.current = true;
-          console.log('🚫 设置 isUpdatingVideoSourceRef.current = true');
-
           // 合并所有数据，保留其他字段
           const updatedData = {
             label: currentValues.label || node.data.label,
@@ -2036,9 +2126,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
           // 调用onUpdate更新节点数据
           console.log('📤 准备调用 onUpdate，参数:', updatedData);
-          console.log('🔍 调用时机检查 - isUpdatingVideoSourceRef.current:', isUpdatingVideoSourceRef.current);
-
-          onUpdate(updatedData);
+          updateVersionRef.current += 1;
+          onUpdate(node.id, updatedData);
           console.log('✅ 已调用onUpdate');
 
           setSelectorVisible(false);
@@ -2100,7 +2189,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           const updatedData = {
             roiRegions: regions,
           };
-          onUpdate(updatedData);
+          updateVersionRef.current += 1;
+          onUpdate(node.id, updatedData);
         }}
       />
     </div>

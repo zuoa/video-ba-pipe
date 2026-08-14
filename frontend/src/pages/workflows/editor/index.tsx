@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'umi';
 import { Space, message, Spin, Tag } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -40,7 +40,10 @@ export default function WorkflowEditorPage() {
   const navigate = useNavigate();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const selectedNode = selectedNodeId
+    ? nodes.find((node) => node.id === selectedNodeId) || null
+    : null;
   const [rightPanel, setRightPanel] = useState<'properties' | 'test'>('properties');
   const [workflow, setWorkflow] = useState<any>(null);
   const [videoSources, setVideoSources] = useState<any[]>([]);
@@ -50,22 +53,6 @@ export default function WorkflowEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resourcesLoaded, setResourcesLoaded] = useState(false);
-
-  // 使用 ref 保存 selectedNode 的最新值，防止闭包陷阱
-  const selectedNodeRef = useRef<Node | null>(null);
-  // 使用 ref 防止 onSelectionChange 覆盖正在更新的节点
-  const isUpdatingNodeRef = useRef(false);
-
-  // 当 selectedNode 变化时，同步更新 ref
-  useEffect(() => {
-    console.log('🔄 [EDITOR] useEffect: selectedNode 变化');
-    selectedNodeRef.current = selectedNode;
-    console.log('📌 [EDITOR] selectedNodeRef.current 已更新:', {
-      是否存在: !!selectedNodeRef.current,
-      id: selectedNodeRef.current?.id,
-      videoSourceId: selectedNodeRef.current?.data?.videoSourceId
-    });
-  }, [selectedNode]);
 
   // 先加载视频源列表，再加载工作流数据
   useEffect(() => {
@@ -494,28 +481,21 @@ export default function WorkflowEditorPage() {
   };
 
   const onNodeClick = (_: any, node: Node) => {
-    setSelectedNode(node);
+    setSelectedNodeId(node.id);
     setRightPanel('properties');
   };
 
   const onPaneClick = () => {
-    setSelectedNode(null);
+    setSelectedNodeId(null);
   };
 
-  const onSelectionChange = ({ nodes: selectedNodes, edges: selectedEdges }: any) => {
-    // 如果正在更新节点，不要覆盖 selectedNode
-    if (isUpdatingNodeRef.current) {
-      console.log('⏸️ [EDITOR] onSelectionChange 跳过，正在更新节点');
-      return;
-    }
-
+  const onSelectionChange = ({ nodes: selectedNodes }: any) => {
     if (selectedNodes && selectedNodes.length > 0) {
-      setSelectedNode(selectedNodes[0]);
+      setSelectedNodeId(selectedNodes[0].id);
       setRightPanel('properties');
     } else {
-      if (!selectedEdges || selectedEdges.length === 0) {
-        setSelectedNode(null);
-      }
+      // 选中连线或点击空白处时，节点属性面板不应继续指向旧节点。
+      setSelectedNodeId(null);
     }
   };
 
@@ -818,110 +798,44 @@ export default function WorkflowEditorPage() {
     setNodes((nds) => [...nds, newNode]);
   };
 
-  const handleUpdateNode = (updatedData: any) => {
-    console.log('🚀🚀🚀 [EDITOR] handleUpdateNode 函数入口 🚀🚀🚀');
-    console.log('🔍 [EDITOR] selectedNode (state) 是否存在:', !!selectedNode);
-    console.log('🔍 [EDITOR] selectedNodeRef.current 是否存在:', !!selectedNodeRef.current);
-
-    // 使用 ref 而不是 state，防止闭包陷阱
-    const currentNode = selectedNodeRef.current;
-
-    if (!currentNode) {
-      console.warn('⚠️ [EDITOR] currentNode 为空，无法更新');
-      console.trace('调用栈：');
-      return;
-    }
-
-    // 设置标志，防止 onSelectionChange 覆盖
-    isUpdatingNodeRef.current = true;
-    console.log('🔒 [EDITOR] 设置 isUpdatingNodeRef.current = true');
-
-    console.log('🔄 [EDITOR] handleUpdateNode 开始执行');
-    console.log('📍 [EDITOR] 当前节点ID:', currentNode.id);
-
-    // 打印所有当前节点的videoSourceId
-    console.log('📊 [EDITOR] 所有当前节点的videoSourceId:',
-      nodes.map(n => ({ id: n.id, type: n.data?.type, videoSourceId: n.data?.videoSourceId }))
-    );
-
-    const updatedNodes = nodes.map((node) => {
-      if (node.id === currentNode.id) {
-        const newNode = {
-          ...node,
-          data: {
-            ...node.data,
-            ...updatedData,
-          },
-        };
-        console.log('✅ [EDITOR] 更新后的节点:', {
-          id: newNode.id,
-          videoSourceId: newNode.data.videoSourceId,
-          videoSourceName: newNode.data.videoSourceName,
-          videoSourceCode: newNode.data.videoSourceCode,
-        });
-        return newNode;
-      }
-      return node;
-    });
-
-    // 打印更新后所有节点的videoSourceId
-    console.log('📊 [EDITOR] 更新后所有节点的videoSourceId:',
-      updatedNodes.map(n => ({ id: n.id, type: n.data?.type, videoSourceId: n.data?.videoSourceId }))
-    );
-
-    setNodes(updatedNodes);
-    const newSelectedNode = { ...currentNode, data: { ...currentNode.data, ...updatedData } };
-    console.log('🎯 [EDITOR] 设置新的 selectedNode:', {
-      id: newSelectedNode.id,
-      videoSourceId: newSelectedNode.data.videoSourceId,
-      videoSourceName: newSelectedNode.data.videoSourceName,
-    });
-    setSelectedNode(newSelectedNode);
-
-    // 使用 setTimeout 延迟重置标志，确保所有状态更新完成
-    setTimeout(() => {
-      isUpdatingNodeRef.current = false;
-      console.log('🔓 [EDITOR] 重置 isUpdatingNodeRef.current = false');
-    }, 100);
-
-    message.success('节点更新成功');
+  const handleUpdateNode = (nodeId: string, updatedData: any) => {
+    setNodes((currentNodes) => currentNodes.map((node) => (
+      node.id === nodeId
+        ? { ...node, data: { ...node.data, ...updatedData } }
+        : node
+    )));
   };
 
-  const handleDeleteNode = () => {
-    if (!selectedNode) return;
-
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-    setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
-    setSelectedNode(null);
+  const handleDeleteNode = (nodeId: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelectedNodeId((currentId) => currentId === nodeId ? null : currentId);
     message.success('节点删除成功');
   };
 
   const deleteSelected = () => {
-    const hasSelectedNodes = nodes.some((n) => n.selected);
-    const hasSelectedEdges = edges.some((e) => e.selected);
+    const selectedNodeIds = new Set(nodes.filter((node) => node.selected).map((node) => node.id));
+    const selectedEdgeIds = new Set(edges.filter((edge) => edge.selected).map((edge) => edge.id));
 
-    // 优先处理选中的节点（如果右侧面板选中的节点）
-    if (selectedNode) {
-      handleDeleteNode();
-      return;
-    }
-
-    // 如果有选中的节点（多选），删除节点和相关连线
-    if (hasSelectedNodes) {
-      const selectedIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
-      setNodes((nds) => nds.filter((n) => !n.selected));
+    if (selectedNodeIds.size > 0) {
+      setNodes((nds) => nds.filter((node) => !selectedNodeIds.has(node.id)));
       setEdges((eds) =>
-        eds.filter((e) => !selectedIds.has(e.source) && !selectedIds.has(e.target))
+        eds.filter((edge) => !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target))
       );
-      message.success(`已删除 ${selectedIds.size} 个节点`);
+      setSelectedNodeId(null);
+      message.success(`已删除 ${selectedNodeIds.size} 个节点`);
       return;
     }
 
-    // 如果只有选中的连线，只删除连线（不删除节点）
-    if (hasSelectedEdges) {
-      const selectedCount = edges.filter((e) => e.selected).length;
-      setEdges((eds) => eds.filter((e) => !e.selected));
-      message.success(`已删除 ${selectedCount} 条连线`);
+    if (selectedEdgeIds.size > 0) {
+      setEdges((eds) => eds.filter((edge) => !selectedEdgeIds.has(edge.id)));
+      message.success(`已删除 ${selectedEdgeIds.size} 条连线`);
+      return;
+    }
+
+    // 属性面板的目标作为键盘选中状态丢失时的保底，且仍使用显式 ID。
+    if (selectedNodeId) {
+      handleDeleteNode(selectedNodeId);
     }
   };
 
@@ -966,6 +880,7 @@ export default function WorkflowEditorPage() {
             <Button
               icon={<DeleteOutlined />}
               onClick={deleteSelected}
+              disabled={!selectedNodeId && !nodes.some((node) => node.selected) && !edges.some((edge) => edge.selected)}
               danger
             >
               删除
@@ -1010,6 +925,10 @@ export default function WorkflowEditorPage() {
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onSelectionChange={onSelectionChange}
+            onNodesDelete={(deletedNodes) => {
+              const deletedIds = new Set(deletedNodes.map((node) => node.id));
+              setSelectedNodeId((currentId) => currentId && deletedIds.has(currentId) ? null : currentId);
+            }}
             nodeTypes={nodeTypes}
             fitView
             deleteKeyCode="Delete"
