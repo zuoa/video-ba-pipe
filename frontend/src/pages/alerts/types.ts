@@ -22,8 +22,10 @@ export interface Alert {
 export interface Workflow {
   id: number;
   name: string;
-  description?: string;
-  enabled: boolean;
+  description?: string | null;
+  is_active: boolean;
+  is_template: boolean;
+  source_template_id?: number | null;
 }
 
 export interface DetectionImage {
@@ -62,6 +64,7 @@ export interface AlertsResponse {
 export interface AlertFilter {
   task_id?: string;
   workflow_id?: string;
+  source_template_id?: string;
   alert_type?: string;
   time_range?: string;
   start_time?: string;

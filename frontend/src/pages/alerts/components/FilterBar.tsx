@@ -18,14 +18,17 @@ const { RangePicker } = DatePicker;
 interface FilterBarProps {
   tasks: Task[];
   workflows: Workflow[];
+  workflowTemplates: Workflow[];
   alertTypes: string[];
   selectedTask?: string;
   selectedWorkflow?: string;
+  selectedSourceTemplate?: string;
   selectedAlertType?: string;
   selectedTimeRange?: string;
   customTimeRange?: { start: string; end: string };
   onTaskChange: (value: string) => void;
   onWorkflowChange: (value: string) => void;
+  onSourceTemplateChange: (value: string) => void;
   onAlertTypeChange: (value: string) => void;
   onTimeRangeChange: (value: string, customRange?: { start: string; end: string }) => void;
   onRefresh: () => void;
@@ -35,13 +38,16 @@ interface FilterBarProps {
 const FilterBar: React.FC<FilterBarProps> = ({
   tasks,
   workflows,
+  workflowTemplates,
   alertTypes,
   selectedTask,
   selectedWorkflow,
+  selectedSourceTemplate,
   selectedAlertType,
   selectedTimeRange,
   onTaskChange,
   onWorkflowChange,
+  onSourceTemplateChange,
   onAlertTypeChange,
   onTimeRangeChange,
   onRefresh,
@@ -84,6 +90,14 @@ const FilterBar: React.FC<FilterBarProps> = ({
     if (!selectedWorkflow) return null;
     const workflow = workflows.find(w => w.id === parseInt(selectedWorkflow));
     return workflow?.name || selectedWorkflow;
+  };
+
+  const getSourceTemplateLabel = () => {
+    if (!selectedSourceTemplate) return null;
+    const template = workflowTemplates.find(
+      workflow => workflow.id === parseInt(selectedSourceTemplate),
+    );
+    return template?.name || selectedSourceTemplate;
   };
 
   const getTimeRangeLabel = () => {
@@ -133,6 +147,19 @@ const FilterBar: React.FC<FilterBarProps> = ({
             }))}
           />
 
+          {/* 编排模板筛选 */}
+          <Select
+            placeholder={<span><ApartmentOutlined /> 选择编排模板</span>}
+            value={selectedSourceTemplate}
+            onChange={onSourceTemplateChange}
+            allowClear
+            style={{ width: 180 }}
+            options={workflowTemplates.map(workflow => ({
+              label: workflow.name,
+              value: workflow.id.toString(),
+            }))}
+          />
+
           {/* 告警类型筛选 */}
           <Select
             placeholder={<span><BugOutlined /> 告警类型</span>}
@@ -174,7 +201,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
           )}
 
           {/* 活跃筛选条件标签 */}
-          {(selectedTask || selectedWorkflow || selectedAlertType || selectedTimeRange) && (
+          {(selectedTask || selectedWorkflow || selectedSourceTemplate || selectedAlertType || selectedTimeRange) && (
             <Space wrap>
               {selectedTask && (
                 <Tag
@@ -194,6 +221,16 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   color="purple"
                 >
                   流程编排: {getWorkflowLabel()}
+                </Tag>
+              )}
+              {selectedSourceTemplate && (
+                <Tag
+                  closable
+                  onClose={() => onSourceTemplateChange('')}
+                  closeIcon={<CloseCircleOutlined />}
+                  color="geekblue"
+                >
+                  编排模板: {getSourceTemplateLabel()}
                 </Tag>
               )}
               {selectedAlertType && (

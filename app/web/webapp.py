@@ -1421,6 +1421,7 @@ def delete_video_file(filename):
 def get_alerts():
     source_id = request.args.get('source_id') or request.args.get('task_id')  # 兼容旧参数
     workflow_id = request.args.get('workflow_id')  # 流程编排筛选
+    source_template_id = request.args.get('source_template_id')  # 编排模板筛选
     alert_type = request.args.get('alert_type')
     start_time = request.args.get('start_time')  # 开始时间筛选
     end_time = request.args.get('end_time')  # 结束时间筛选
@@ -1433,6 +1434,11 @@ def get_alerts():
         query = query.where(Alert.video_source == source_id)
     if workflow_id:
         query = query.where(Alert.workflow == workflow_id)
+    if source_template_id:
+        derived_workflow_ids = Workflow.select(Workflow.id).where(
+            Workflow.source_template == source_template_id
+        )
+        query = query.where(Alert.workflow.in_(derived_workflow_ids))
     if alert_type:
         query = query.where(Alert.alert_type == alert_type)
     if start_time:

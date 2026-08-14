@@ -169,6 +169,12 @@ const AlertsPage: React.FC = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
+  // 处理编排模板筛选
+  const handleSourceTemplateChange = (value: string) => {
+    setFilter(prev => ({ ...prev, source_template_id: value || undefined }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   // 处理告警类型筛选
   const handleAlertTypeChange = (value: string) => {
     setFilter(prev => ({ ...prev, alert_type: value || undefined }));
@@ -214,6 +220,21 @@ const AlertsPage: React.FC = () => {
     () => new Map(tasks.map(task => [task.id, task])),
     [tasks],
   );
+  const runtimeWorkflows = useMemo(
+    () => workflows.filter(workflow => !workflow.is_template),
+    [workflows],
+  );
+  const workflowTemplates = useMemo(
+    () => workflows.filter(workflow => workflow.is_template),
+    [workflows],
+  );
+  const hasActiveFilters = Boolean(
+    filter.task_id
+    || filter.workflow_id
+    || filter.source_template_id
+    || filter.alert_type
+    || filter.time_range,
+  );
 
   return (
     <div className="alerts-page">
@@ -228,15 +249,18 @@ const AlertsPage: React.FC = () => {
       {/* 筛选栏 */}
       <FilterBar
         tasks={tasks}
-        workflows={workflows}
+        workflows={runtimeWorkflows}
+        workflowTemplates={workflowTemplates}
         alertTypes={alertTypes}
         selectedTask={filter.task_id}
         selectedWorkflow={filter.workflow_id}
+        selectedSourceTemplate={filter.source_template_id}
         selectedAlertType={filter.alert_type}
         selectedTimeRange={filter.time_range}
         customTimeRange={customTimeRange}
         onTaskChange={handleTaskChange}
         onWorkflowChange={handleWorkflowChange}
+        onSourceTemplateChange={handleSourceTemplateChange}
         onAlertTypeChange={handleAlertTypeChange}
         onTimeRangeChange={handleTimeRangeChange}
         onRefresh={loadAlerts}
@@ -256,7 +280,10 @@ const AlertsPage: React.FC = () => {
 
       {/* 告警卡片网格 */}
       {alerts.length === 0 ? (
-        <EmptyState type={filter.task_id || filter.alert_type ? 'search' : 'alerts'} onRefresh={loadAlerts} />
+        <EmptyState
+          type={hasActiveFilters ? 'search' : 'alerts'}
+          onRefresh={loadAlerts}
+        />
       ) : (
         <div className="alerts-grid">
           {alerts.map(alert => (
