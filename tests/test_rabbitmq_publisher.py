@@ -12,7 +12,7 @@ import pytest
 from app.core import rabbitmq_publisher
 
 
-def _make_alert(alert_id=42, workflow=None):
+def _make_alert(alert_id=42, workflow=None, alert_level="warning"):
     """构造最小 mock alert，覆盖 format_alert_message 访问的属性。"""
     video_source = types.SimpleNamespace(
         id=1, name="入口摄像头", source_code="CAM001"
@@ -22,6 +22,7 @@ def _make_alert(alert_id=42, workflow=None):
         video_source=video_source,
         alert_time=datetime.datetime(2026, 8, 5, 12, 0, 0),
         alert_type="person",
+        alert_level=alert_level,
         alert_message="检测到人员",
         alert_image="a.jpg",
         alert_image_ori="a_ori.jpg",
@@ -78,6 +79,13 @@ def test_format_alert_message_preserves_backward_compatible_fields():
     assert msg["source_code"] == "CAM001"
     assert msg["source_name"] == "入口摄像头"
     assert msg["alert_type"] == "person"
+
+
+def test_format_alert_message_includes_alert_level():
+    """MQTT 与 RabbitMQ 共用的消息体应携带告警级别。"""
+    msg = rabbitmq_publisher.format_alert_message(_make_alert(alert_level="critical"))
+
+    assert msg["alert_level"] == "critical"
 
 
 def test_format_alert_message_includes_workflow_when_present():

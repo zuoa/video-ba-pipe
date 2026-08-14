@@ -267,6 +267,7 @@ def format_alert_message(alert) -> Dict[str, Any]:
         'source_code': alert.video_source.source_code,
         'alert_time': alert.alert_time.isoformat() if hasattr(alert.alert_time, 'isoformat') else str(alert.alert_time),
         'alert_type': alert.alert_type,
+        'alert_level': alert.alert_level,
         'alert_message': alert.alert_message,
         'alert_image': alert.alert_image,
         'alert_image_url': build_public_media_url('image', alert.alert_image, config=media_config),
