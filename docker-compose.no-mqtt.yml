@@ -1,0 +1,245 @@
+version: '3.8'
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# api 与 worker 共享的应用环境变量（消息队列连接参数由系统设置页面管理）
+x-app-environment: &app-environment
+  TZ: Asia/Shanghai
+  DB_BACKEND: ${DB_BACKEND:-postgres}
+  DB_HOST: ${DB_HOST:-postgres}
+  DB_PORT: ${DB_PORT:-5432}
+  DB_NAME: ${DB_NAME:-video_ba_pipe}
+  DB_USER: ${DB_USER:-video_ba_pipe}
+  DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
+  DB_SSLMODE: ${DB_SSLMODE:-disable}
+  # 节点唯一编码；集群/多盒子部署每台必须唯一，留空则优先使用 MAC 并持久化到 /data/node_id.json
+  NODE_ID: ${NODE_ID:-}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+  MEDIA_URL_SIGNING_ENABLED: ${MEDIA_URL_SIGNING_ENABLED:-true}
+  MEDIA_URL_TTL_HOURS: ${MEDIA_URL_TTL_HOURS:-24}
+  MEDIA_URL_SIGNING_SECRET: ${MEDIA_URL_SIGNING_SECRET:-}
+  JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+  ALGORITHM_TEST_WORKER_URL: ${ALGORITHM_TEST_WORKER_URL:-http://worker:5010}
+  ALGORITHM_TEST_WORKER_HOST: 0.0.0.0
+  ALGORITHM_TEST_WORKER_PORT: ${ALGORITHM_TEST_WORKER_PORT:-5010}
+  ALGORITHM_TEST_WORKER_TOKEN: ${ALGORITHM_TEST_WORKER_TOKEN:-video-ba-pipe-internal-test-v1}
+  ALGORITHM_TEST_QUEUE_SIZE: ${ALGORITHM_TEST_QUEUE_SIZE:-2}
+  ALGORITHM_TEST_TIMEOUT_SECONDS: ${ALGORITHM_TEST_TIMEOUT_SECONDS:-180}
+  ALGORITHM_TEST_MAX_IMAGE_BYTES: ${ALGORITHM_TEST_MAX_IMAGE_BYTES:-20971520}
+  WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-oapi.dingtalk.com,api.day.app}
+  FRAME_SAVE_PATH: /data/frames
+  VIDEO_SAVE_PATH: /data/videos
+  VIDEO_SOURCE_PATH: /data/video_sources
+  MODEL_SAVE_PATH: /data/models
+  USER_SCRIPTS_ROOT: /data/user_scripts
+  SNAPSHOT_PATH: /data/snapshots
+  SNAPSHOT_ENABLED: "true"
+  SNAPSHOT_INTERVAL: "60"
+  IS_EXTREME_DECODE_MODE: "false"
+  RECORDING_ENABLED: ${RECORDING_ENABLED:-false}
+  PRE_ALERT_DURATION: "30"
+  POST_ALERT_DURATION: "30"
+  RECORDING_FPS: "10"
+  RINGBUFFER_DURATION: "60"
+  ALERT_SUPPRESSION_DURATION: "60"
+  ALERT_IMAGE_CLEANUP_ENABLED: "true"
+  ALERT_IMAGE_RETENTION_DAYS: "7"
+  WINDOW_DETECTION_RETENTION_HOURS: "24"
+  ALERT_IMAGE_MAX_STORAGE_GB: ${ALERT_IMAGE_MAX_STORAGE_GB:-10}
+  ALERT_VIDEO_MAX_STORAGE_GB: ${ALERT_VIDEO_MAX_STORAGE_GB:-20}
+  ALERT_IMAGE_MIN_FREE_GB: ${ALERT_IMAGE_MIN_FREE_GB:-10}
+  MEDIA_CLEANUP_INTERVAL_SECONDS: ${MEDIA_CLEANUP_INTERVAL_SECONDS:-60}
+  # MediaMTX / WebRTC 实时预览（按需拉流中继，默认关闭）
+  MEDIAMTX_ENABLED: ${MEDIAMTX_ENABLED:-false}
+  MEDIAMTX_API_HOST: mediamtx
+  MEDIAMTX_API_PORT: "9997"
+  MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-video-ba-api}
+  MEDIAMTX_API_PASSWORD: ${MEDIAMTX_API_PASSWORD:-video-ba-api-change-me}
+  MEDIAMTX_RTSP_PORT: "8554"
+  MEDIAMTX_WEBRTC_PORT: "8889"
+  MEDIAMTX_WEBRTC_PUBLIC_HOST: ${MEDIAMTX_WEBRTC_PUBLIC_HOST:-}
+  MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS: ${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: video-ba-pipe-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-video_ba_pipe}
+      - POSTGRES_USER=${POSTGRES_USER:-video_ba_pipe}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-video_ba_pipe}
+      - TZ=Asia/Shanghai
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_ba_pipe} -d ${POSTGRES_DB:-video_ba_pipe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  db-init:
+    image: ghcr.io/zuoa/video-ba-pipe:cpu
+    container_name: video-ba-pipe-db-init
+    restart: "no"
+    entrypoint: ["python3", "-m", "app.setup_database"]
+    environment:
+      DB_BACKEND: ${DB_BACKEND:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-video_ba_pipe}
+      DB_USER: ${DB_USER:-video_ba_pipe}
+      DB_PASSWORD: ${DB_PASSWORD:-video_ba_pipe}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      DB_SCHEMA_LOCK_TIMEOUT_SECONDS: ${DB_SCHEMA_LOCK_TIMEOUT_SECONDS:-120}
+      TZ: Asia/Shanghai
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ============================================
+  # CPU版本服务
+  # ============================================
+  api:
+    image: ghcr.io/zuoa/video-ba-pipe:cpu
+    container_name: video-ba-pipe-api
+    restart: unless-stopped
+    shm_size: '8gb'
+    entrypoint: ["gunicorn", "-w", "4", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
+
+    # 环境变量
+    environment:
+      <<: *app-environment
+      COMPANY_NAME: ${COMPANY_NAME:-码全科技}
+      HF_USE_MIRROR: ${HF_USE_MIRROR:-false}
+      HF_MIRROR_ENDPOINT: ${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
+      HF_DOWNLOAD_TIMEOUT_SECONDS: ${HF_DOWNLOAD_TIMEOUT_SECONDS:-120}
+      HF_TOKEN: ${HF_TOKEN:-}
+
+    # 数据卷挂载
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+    # 端口映射
+    ports:
+      - "5002:5002"
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/api/health/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # 网络配置
+    networks:
+      video-ba-network:
+        aliases:
+          - api
+
+    # 日志配置
+    logging: *default-logging
+
+  worker:
+    image: ghcr.io/zuoa/video-ba-pipe:cpu
+    container_name: video-ba-pipe-worker
+    restart: unless-stopped
+    init: true
+    shm_size: '8gb'
+    entrypoint: ["python", "main.py"]
+    environment:
+      <<: *app-environment
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - video-ba-network
+
+    # 日志配置
+    logging: *default-logging
+
+    # 性能优化建议
+    # CPU版本可能需要限制资源使用
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 8G
+
+  # ============================================
+  # 前端 (Nginx)
+  # ============================================
+  frontend:
+    image: ghcr.io/zuoa/video-ba-pipe-frontend:main
+    container_name: video-ba-pipe-frontend
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    networks:
+      - video-ba-network
+    logging: *default-logging
+
+  # MediaMTX 实时预览中继服务（可选，默认 MEDIAMTX_ENABLED=false）
+  # WebRTC(WHEP) 按需拉流：仅当有浏览器观众时才向摄像机拉 RTSP，观众离开自动断开。
+  # ============================================
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: video-ba-mediamtx
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - MTX_AUTHINTERNALUSERS_1_USER=${MEDIAMTX_API_USER:-video-ba-api}
+      - MTX_AUTHINTERNALUSERS_1_PASS=${MEDIAMTX_API_PASSWORD:-video-ba-api-change-me}
+      - MTX_WEBRTCADDITIONALHOSTS=${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
+    ports:
+      - "8889:8889/tcp" # WebRTC WHEP/HTTP signaling
+      - "8189:8189/udp" # WebRTC ICE media
+      - "8189:8189/tcp" # WebRTC ICE TCP fallback
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - video-ba-network
+    logging: *default-logging
+
+networks:
+  video-ba-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local

@@ -74,6 +74,24 @@ docker compose -f docker-compose.yml.x86+cuda logs db-init
 
 其他硬件部署将命令中的 Compose 文件替换为对应的 `.yml` 文件。
 
+### 不内置 MQTT 的部署文件
+
+如果使用外部 MQTT Broker，或完全不启用消息队列，可改用对应的 `no-mqtt` 文件。这些文件不创建 Mosquitto 服务，也不创建 `mqtt-data`、`mqtt-secrets` 卷；如需消息发布，请在“系统设置 → 消息队列”中填写外部 Broker 地址。
+
+```bash
+# CPU
+docker compose -f docker-compose.no-mqtt.yml up -d
+
+# X86 + CUDA/GPU
+docker compose -f docker-compose.no-mqtt.yml.x86+cuda up -d
+
+# RK3588/NPU
+docker compose -f docker-compose.no-mqtt.yml.rknn up -d
+
+# Jetson Orin NX
+docker compose -f docker-compose.no-mqtt.yml.jetson up -d
+```
+
 ## 访问地址
 
 - 前端：`http://localhost:8080`
@@ -172,9 +190,13 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 ├── frontend/             # 前端管理界面（UmiJS + React）
 ├── docs/                 # 部署和集成文档
 ├── docker-compose.yml
+├── docker-compose.no-mqtt.yml
 ├── docker-compose.yml.x86+cuda
+├── docker-compose.no-mqtt.yml.x86+cuda
 ├── docker-compose.yml.jetson
+├── docker-compose.no-mqtt.yml.jetson
 ├── docker-compose.yml.rknn
+├── docker-compose.no-mqtt.yml.rknn
 └── env.example
 ```
 

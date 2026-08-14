@@ -1,6 +1,8 @@
 import { defineConfig } from '@umijs/max';
+import { SYSTEM_NAME_ZH } from './src/constants/branding';
 
 export default defineConfig({
+  title: SYSTEM_NAME_ZH,
   antd: {
     configProvider: {
       theme: {
