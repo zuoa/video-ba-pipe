@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
 import threading
+import time
 import uuid
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -19,18 +23,73 @@ from app.core.node_identity import get_node_id
 
 
 logger = logging.getLogger(__name__)
+_MAX_ERROR_RESPONSE_CHARS = 2000
 
 
-def build_http_headers(config: HttpDeliveryConfig, event: Dict[str, Any]) -> Dict[str, str]:
+def serialize_http_event(event: Dict[str, Any]) -> bytes:
+    return json.dumps(
+        event,
+        ensure_ascii=False,
+        default=str,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def build_hmac_canonical_message(
+    *,
+    node_id: str,
+    timestamp: str,
+    nonce: str,
+    event_id: str,
+    event_type: str,
+    test_marker: str,
+    body: bytes,
+) -> bytes:
+    body_digest = hashlib.sha256(body).hexdigest()
+    return "\n".join(
+        (node_id, timestamp, nonce, event_id, event_type, test_marker, body_digest)
+    ).encode("utf-8")
+
+
+def build_http_headers(
+    config: HttpDeliveryConfig,
+    event: Dict[str, Any],
+    *,
+    body: Optional[bytes] = None,
+    timestamp: Optional[int] = None,
+    nonce: Optional[str] = None,
+) -> Dict[str, str]:
     headers = dict(config.custom_headers)
     headers["Content-Type"] = "application/json"
-    if config.auth_type == "bearer":
-        token = get_node_id() if config.use_node_id_as_token else config.bearer_token
-        headers["Authorization"] = f"Bearer {token}"
-    headers["X-VideoBA-Event-Id"] = str(event.get("event_id") or "")
-    headers["X-VideoBA-Event-Type"] = str(event.get("event_type") or "")
-    if event.get("test") is True:
-        headers["X-VideoBA-Test"] = "true"
+    event_id = str(event.get("event_id") or "")
+    event_type = str(event.get("event_type") or "")
+    test_marker = "true" if event.get("test") is True else "false"
+    headers["X-VideoBA-Event-Id"] = event_id
+    headers["X-VideoBA-Event-Type"] = event_type
+    headers["X-VideoBA-Test"] = test_marker
+    body = body if body is not None else serialize_http_event(event)
+    node_id = get_node_id()
+    timestamp_text = str(int(time.time()) if timestamp is None else int(timestamp))
+    nonce_text = str(nonce or uuid.uuid4().hex)
+    canonical = build_hmac_canonical_message(
+        node_id=node_id,
+        timestamp=timestamp_text,
+        nonce=nonce_text,
+        event_id=event_id,
+        event_type=event_type,
+        test_marker=test_marker,
+        body=body,
+    )
+    signature = hmac.new(
+        config.hmac_secret.encode("utf-8"),
+        canonical,
+        hashlib.sha256,
+    ).hexdigest()
+    headers["X-VideoBA-Node-Id"] = node_id
+    headers["X-VideoBA-Timestamp"] = timestamp_text
+    headers["X-VideoBA-Nonce"] = nonce_text
+    headers["X-VideoBA-Signature"] = f"sha256={signature}"
     for name, value in headers.items():
         validate_http_header_value(name, value)
     return headers
@@ -60,19 +119,21 @@ class HttpDeliveryPublisher:
         config = self._config_provider()
         try:
             validate_http_delivery_config(config)
-            headers = build_http_headers(config, alert_data)
+            body = serialize_http_event(alert_data)
+            headers = build_http_headers(config, alert_data, body=body)
             with self._lock:
                 if self._session is None:
                     self._session = requests.Session()
                 response = self._session.post(
                     config.endpoint_url,
                     headers=headers,
-                    json=alert_data,
+                    data=body,
                     timeout=config.timeout_seconds,
                     allow_redirects=False,
                 )
             try:
                 status_code = int(response.status_code)
+                response_text = str(getattr(response, "text", "") or "")
             finally:
                 try:
                     response.close()
@@ -87,10 +148,11 @@ class HttpDeliveryPublisher:
                 )
                 return True
             logger.error(
-                "HTTP 预警投递失败，endpoint=%s event_id=%s status=%s",
+                "HTTP 预警投递失败，endpoint=%s event_id=%s status=%s response=%s",
                 config.endpoint_url,
                 alert_data.get("event_id"),
                 status_code,
+                response_text[:_MAX_ERROR_RESPONSE_CHARS].replace("\r", "\\r").replace("\n", "\\n"),
             )
             return False
         except (requests.Timeout, requests.ConnectionError) as exc:

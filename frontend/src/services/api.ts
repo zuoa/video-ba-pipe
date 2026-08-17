@@ -352,10 +352,8 @@ export interface HttpCustomHeader {
 
 export interface HttpDeliveryConfig {
   endpoint_url: string;
-  auth_type: 'none' | 'bearer';
-  use_node_id_as_token: boolean;
-  bearer_token: string;
-  bearer_token_configured?: boolean;
+  hmac_secret: string;
+  hmac_secret_configured?: boolean;
   custom_headers: HttpCustomHeader[];
   timeout_seconds: number;
 }

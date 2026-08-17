@@ -39,12 +39,28 @@ HTTP 通道使用 `POST application/json` 将相同事件体投递到配置的�
 ```text
 X-VideoBA-Event-Id: {event_id}
 X-VideoBA-Event-Type: {event_type}
-Authorization: Bearer {token}
+X-VideoBA-Test: true|false
+X-VideoBA-Node-Id: {node_id}
+X-VideoBA-Timestamp: {unix_seconds}
+X-VideoBA-Nonce: {random_nonce}
+X-VideoBA-Signature: sha256={lowercase_hex_hmac}
 ```
 
-Bearer Token 默认动态使用当前设备的 `node_id`，也可在页面中切换为自定义 Token 或关闭鉴权。`node_id` 适合快速识别和对接，并非高强度密钥；公网或高安全场景应改用自定义 Token。测试按钮会真实发送 `event_type=system.test`、`test=true` 的事件，并额外附带 `X-VideoBA-Test: true`。自定义请求头值及自定义 Token 在读取配置时始终脱敏。
+HTTP 投递固定使用 HMAC-SHA256 请求签名，不支持无鉴权或 Bearer 模式。共享密钥签署节点身份、时间戳、Nonce、事件 ID、事件类型、测试标记和实际请求体摘要，且不会随请求发送。
 
-HTTP 配置区会根据当前 URL、鉴权、请求头和媒体交付方式生成可复制的 Vibe Coding Prompt，用于快速实现接收端 API。使用 node_id 鉴权时 Prompt 会包含当前设备 ID；自定义密钥只显示占位符。
+发送端先将实际发送的 UTF-8 JSON 字节记为 `raw_body`，然后计算：
+
+```text
+body_sha256 = lowercase_hex(SHA256(raw_body))
+canonical = node_id + "\n" + timestamp + "\n" + nonce + "\n" + event_id + "\n" + event_type + "\n" + test_marker + "\n" + body_sha256
+signature = lowercase_hex(HMAC-SHA256(shared_secret, UTF8(canonical)))
+```
+
+其中 `event_type` 是 `X-VideoBA-Event-Type` 的原始值；`test_marker` 是 `X-VideoBA-Test` 的原始值，发送端固定为小写 `true` 或 `false`。接收端必须基于未经重新序列化的原始请求体计算摘要，使用常量时间比较签名，并校验时间戳在当前时间前后 300 秒内。验签成功后，还必须确认 JSON 中的 `event_type` 与事件类型头一致，并确认 `X-VideoBA-Test` 等于 JSON `test` 严格为布尔值 `true` 时的 `true`，否则为 `false`；不一致的请求必须拒绝，不能用于分流。签名通过后再登记 Nonce，Nonce 至少保存 10 分钟并拒绝重复值；双方主机需要保持时间同步。HMAC 能验证真实性和完整性，但不会加密内容，生产环境仍必须使用 HTTPS。
+
+测试按钮会真实发送 `event_type=system.test`、`test=true` 的事件，并附带已签名的 `X-VideoBA-Test: true`；普通事件固定附带已签名的 `X-VideoBA-Test: false`。HMAC 共享密钥和自定义请求头值在读取配置时始终脱敏，留空保存会保留原值。
+
+HTTP 配置区会根据当前 URL、鉴权、请求头和媒体交付方式生成可复制的 Vibe Coding Prompt，用于快速实现接收端 API。HMAC Prompt 会给出完整签名原文、防重放、时钟窗口和测试要求；所有自定义密钥只显示占位符。
 
 ## 消息体与去重
 

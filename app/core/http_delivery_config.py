@@ -15,7 +15,6 @@ from app.core.node_identity import get_node_id
 
 
 HTTP_DELIVERY_SETTING_KEY = "http_delivery_config"
-VALID_AUTH_TYPES = ("none", "bearer")
 MIN_TIMEOUT_SECONDS = 1
 MAX_TIMEOUT_SECONDS = 300
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
@@ -29,6 +28,10 @@ _RESERVED_HEADERS = {
     "upgrade",
     "x-videoba-event-id",
     "x-videoba-event-type",
+    "x-videoba-node-id",
+    "x-videoba-timestamp",
+    "x-videoba-nonce",
+    "x-videoba-signature",
     "x-videoba-test",
 }
 
@@ -46,9 +49,7 @@ def validate_http_header_value(name: str, value: str) -> None:
 @dataclass(frozen=True)
 class HttpDeliveryConfig:
     endpoint_url: str = ""
-    auth_type: str = "bearer"
-    use_node_id_as_token: bool = True
-    bearer_token: str = ""
+    hmac_secret: str = ""
     custom_headers: Dict[str, str] = field(default_factory=dict)
     timeout_seconds: int = 10
 
@@ -56,25 +57,13 @@ class HttpDeliveryConfig:
         result = asdict(self)
         if include_secrets:
             return result
-        result["bearer_token_configured"] = bool(self.bearer_token)
-        result["bearer_token"] = ""
+        result["hmac_secret_configured"] = bool(self.hmac_secret)
+        result["hmac_secret"] = ""
         result["custom_headers"] = [
             {"name": name, "value": "", "value_configured": bool(value)}
             for name, value in self.custom_headers.items()
         ]
         return result
-
-
-def _safe_bool(value: Any, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"true", "1", "yes", "on"}:
-            return True
-        if normalized in {"false", "0", "no", "off", ""}:
-            return False
-    return default if value is None else bool(value)
 
 
 def _bounded_int(value: Any, default: int) -> int:
@@ -133,14 +122,8 @@ def normalize_http_delivery_config(
     defaults = HttpDeliveryConfig()
     current = existing or defaults
     data = data if isinstance(data, dict) else {}
-    auth_type = str(data.get("auth_type") or current.auth_type).strip().lower()
-    if auth_type not in VALID_AUTH_TYPES:
-        raise ValueError("HTTP 鉴权方式必须是 none 或 bearer")
-    use_node_id_as_token = _safe_bool(
-        data.get("use_node_id_as_token"), current.use_node_id_as_token
-    )
-    supplied_token = str(data.get("bearer_token") or "").strip()
-    bearer_token = "" if use_node_id_as_token else (supplied_token or current.bearer_token)
+    supplied_hmac_secret = str(data.get("hmac_secret") or "")
+    hmac_secret = supplied_hmac_secret or current.hmac_secret
     raw_headers = data.get("custom_headers", current.custom_headers)
     return HttpDeliveryConfig(
         endpoint_url=(
@@ -148,9 +131,7 @@ def normalize_http_delivery_config(
             if "endpoint_url" not in data
             else str(data.get("endpoint_url") or "").strip()
         ),
-        auth_type=auth_type,
-        use_node_id_as_token=use_node_id_as_token,
-        bearer_token=bearer_token,
+        hmac_secret=hmac_secret,
         custom_headers=_normalize_headers(raw_headers, current.custom_headers),
         timeout_seconds=_bounded_int(data.get("timeout_seconds"), current.timeout_seconds),
     )
@@ -178,19 +159,12 @@ def validate_http_delivery_config(
             raise ValueError("HTTP 接收地址必须是合法的 HTTP/HTTPS URL，且不能包含 userinfo")
     elif require_ready:
         raise ValueError("启用 HTTP 投递时必须填写接收地址")
-    if (
-        require_ready
-        and config.auth_type == "bearer"
-        and not config.use_node_id_as_token
-        and not config.bearer_token
-    ):
-        raise ValueError("使用自定义 Bearer Token 时必须填写 Token")
+    if require_ready and len(config.hmac_secret) < 16:
+        raise ValueError("HMAC-SHA256 共享密钥至少需要 16 个字符")
     if require_ready:
         node_id = get_node_id()
         validate_http_header_value("X-VideoBA-Event-Id", node_id)
-        if config.auth_type == "bearer":
-            token = node_id if config.use_node_id_as_token else config.bearer_token
-            validate_http_header_value("Authorization", f"Bearer {token}")
+        validate_http_header_value("X-VideoBA-Node-Id", node_id)
         for name, value in config.custom_headers.items():
             validate_http_header_value(name, value)
 

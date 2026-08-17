@@ -70,30 +70,31 @@ const EMPTY_HTTP_HEADERS: Array<{ name?: string; value?: string }> = [];
 
 const buildHttpReceiverPrompt = ({
   endpointUrl,
-  authType,
-  useNodeIdAsToken,
   nodeId,
   customHeaderNames,
   mediaDeliveryMode,
 }: {
   endpointUrl: string;
-  authType: string;
-  useNodeIdAsToken: boolean;
   nodeId: string;
   customHeaderNames: string[];
   mediaDeliveryMode: string;
 }) => {
-  const authInstruction = authType === 'none'
-    ? '不要求 Authorization 请求头。'
-    : useNodeIdAsToken
-      ? `校验 Authorization: Bearer ${nodeId || '<CURRENT_NODE_ID>'}。`
-      : '校验 Authorization: Bearer <YOUR_CUSTOM_TOKEN>，Token 从安全配置或环境变量读取。';
+  const signatureInstruction = `HMAC-SHA256 校验协议必须与发送端完全一致：
+   - 读取 X-VideoBA-Node-Id、X-VideoBA-Timestamp、X-VideoBA-Nonce、X-VideoBA-Event-Id、X-VideoBA-Event-Type、X-VideoBA-Test 和 X-VideoBA-Signature；保留各请求头的原始字符串值。
+   - 先读取未经重新序列化的原始 HTTP 请求体字节 raw_body，再解析 JSON；body_sha256 = SHA256(raw_body) 的小写十六进制。
+   - X-VideoBA-Test 只允许小写 true 或 false。canonical = node_id + "\\n" + timestamp + "\\n" + nonce + "\\n" + event_id + "\\n" + event_type + "\\n" + test_marker + "\\n" + body_sha256，其中 event_type 和 test_marker 分别是 X-VideoBA-Event-Type、X-VideoBA-Test 的原始值。
+   - expected = HMAC-SHA256(key=UTF8(<HMAC_SHARED_SECRET>), message=UTF8(canonical)) 的小写十六进制。
+   - X-VideoBA-Signature 的格式为 sha256=<expected>；使用常量时间比较，禁止普通字符串比较。
+   - timestamp 是 Unix 秒，只接受服务器当前时间前后 300 秒；nonce 必须非空并至少缓存 10 分钟，重复 nonce 返回 409。
+   - 先完成签名校验，再登记 nonce，避免伪造请求占满防重放缓存；发送端和接收端都要同步系统时间。
+   - X-VideoBA-Node-Id 必须等于已登记节点 ${nodeId || '<CURRENT_NODE_ID>'}；JSON 中的 node_id、event_id、event_type 必须分别等于对应请求头。JSON test 严格为布尔值 true 时 X-VideoBA-Test 必须为 true，否则必须为 false。任何重复字段不一致都要拒绝，不能用未核验的请求头分流。签名、时间戳或节点校验失败返回 401。`;
   const customHeaders = customHeaderNames.length > 0
     ? `还要校验这些自定义请求头（值从安全配置读取）：${customHeaderNames.map((name) => `${name}: <${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_VALUE>`).join('；')}。`
     : '没有额外的自定义请求头。';
   const example = {
     event_id: 'box-01-42:alert-created',
     event_type: 'alert.created',
+    test: false,
     source: 'video-ba-pipe',
     node_id: nodeId || 'box-01',
     external_alert_id: `${nodeId || 'box-01'}-42`,
@@ -114,14 +115,16 @@ const buildHttpReceiverPrompt = ({
   return `请在当前项目中实现 VideoBA 告警接收端 API，要求如下：
 
 1. 创建 POST ${endpointUrl || '<HTTP_ENDPOINT_URL>'}，接收 Content-Type: application/json；不要依赖重定向。
-2. ${authInstruction} ${customHeaders}
-3. 读取 X-VideoBA-Event-Id、X-VideoBA-Event-Type；当 X-VideoBA-Test: true 或 event_type=system.test 时，作为连通性测试处理。
-4. 请求体示例：
+2. 所有请求都必须使用下面定义的 HMAC-SHA256 请求签名，不发送 Authorization。共享密钥从环境变量或安全配置读取，示例中统一写作 <HMAC_SHARED_SECRET>。${customHeaders}
+3. ${signatureInstruction}
+4. 只有在验签及请求头/JSON 一致性校验全部成功后才能分流。仅当 event_type=system.test 且 test=true 时作为连通性测试；两者不一致时拒绝请求，不要按未签名或未核验的值分类。
+5. 请求体示例：
 ${JSON.stringify(example, null, 2)}
-5. event_type 可能是 alert.created、alert.media.ready 或 system.test。媒体模式是 ${mediaDeliveryMode}；代码应容忍可选字段和后续新增字段。
-6. 使用 event_id 建立唯一约束并实现幂等；使用 external_alert_id 关联同一告警的 created 与 media.ready 事件。
-7. 只有在事件已可靠接收或持久化后才返回任意 2xx。校验失败返回 4xx，临时故障返回 5xx；发送端会按至少一次语义重试所有非 2xx、超时和网络错误。
-8. 请给出可直接运行的实现、依赖安装命令、环境变量示例、数据库建表/迁移，以及测试正常事件、重复事件、测试事件和鉴权失败的自动化测试。`;
+6. event_type 可能是 alert.created、alert.media.ready 或 system.test。媒体模式是 ${mediaDeliveryMode}；代码应容忍可选字段和后续新增字段。
+7. 使用 event_id 建立唯一约束并实现幂等；同一 event_id 再次到达应返回原成功结果或其它 2xx，而不是唯一约束错误。使用 external_alert_id 关联同一告警的 created 与 media.ready 事件。
+8. 只有在事件已可靠接收或持久化后才返回任意 2xx。校验失败返回 4xx，临时故障返回 5xx；发送端会按至少一次语义重试所有非 2xx、超时和网络错误。
+9. 生产环境必须使用 HTTPS；HMAC 提供真实性和完整性，但不加密请求内容。
+10. 请给出可直接运行的实现、依赖安装命令、环境变量示例、数据库建表/迁移，以及测试正常事件、重复事件、测试事件、过期时间戳、重复 nonce、请求体被修改、事件类型头被修改、测试标记头被修改、重复字段不一致和签名失败的自动化测试。`;
 };
 
 const SystemSettingsPage: React.FC = () => {
@@ -158,8 +161,6 @@ const SystemSettingsPage: React.FC = () => {
   const oomCircuitEnabled = Form.useWatch('oom_circuit_breaker_enabled', inferenceForm) ?? false;
   const messageQueueEnabled = Form.useWatch('enabled', messageQueueForm) ?? false;
   const messageQueueProvider = Form.useWatch('provider', messageQueueForm) ?? 'mqtt';
-  const httpAuthType = Form.useWatch(['http', 'auth_type'], messageQueueForm) ?? 'bearer';
-  const httpUseNodeIdAsToken = Form.useWatch(['http', 'use_node_id_as_token'], messageQueueForm) ?? true;
   const httpEndpointUrl = Form.useWatch(['http', 'endpoint_url'], messageQueueForm) ?? '';
   const httpCustomHeaders = Form.useWatch(['http', 'custom_headers'], messageQueueForm) ?? EMPTY_HTTP_HEADERS;
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
@@ -177,14 +178,12 @@ const SystemSettingsPage: React.FC = () => {
   const inferenceModels = inferenceStatus?.models || [];
   const httpReceiverPrompt = useMemo(() => buildHttpReceiverPrompt({
     endpointUrl: httpEndpointUrl,
-    authType: httpAuthType,
-    useNodeIdAsToken: httpUseNodeIdAsToken,
     nodeId: systemInfo?.node_id || '',
     customHeaderNames: (Array.isArray(httpCustomHeaders) ? httpCustomHeaders : [])
       .map((header: any) => String(header?.name || '').trim())
       .filter(Boolean),
     mediaDeliveryMode,
-  }), [httpAuthType, httpCustomHeaders, httpEndpointUrl, httpUseNodeIdAsToken, mediaDeliveryMode, systemInfo?.node_id]);
+  }), [httpCustomHeaders, httpEndpointUrl, mediaDeliveryMode, systemInfo?.node_id]);
 
   const loadConfig = async () => {
     setLoading(true);
@@ -943,46 +942,24 @@ const SystemSettingsPage: React.FC = () => {
                             <Input placeholder="https://receiver.example.com/api/v1/video-ba/events" disabled={!messageQueueEnabled} />
                           </Form.Item>
 
-                          <Form.Item label="鉴权方式" name={['http', 'auth_type']} rules={[{ required: true, message: '请选择鉴权方式' }]}>
-                            <Select
-                              disabled={!messageQueueEnabled}
-                              options={[
-                                { value: 'bearer', label: 'Bearer Token（推荐）' },
-                                { value: 'none', label: '不鉴权' },
-                              ]}
-                            />
-                          </Form.Item>
-
                           <Form.Item label="请求超时（秒）" name={['http', 'timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入请求超时' }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
 
-                          {httpAuthType === 'bearer' ? (
-                            <>
-                              <Form.Item
-                                label="使用设备 ID 作为 Token"
-                                name={['http', 'use_node_id_as_token']}
-                                valuePropName="checked"
-                                extra={`开启后动态使用当前 node_id：${systemInfo?.node_id || '未获取'}。适合快速对接；强鉴权请使用自定义 Token。`}
-                              >
-                                <Switch disabled={!messageQueueEnabled} />
-                              </Form.Item>
-
-                              {!httpUseNodeIdAsToken ? (
-                                <Form.Item
-                                  label="自定义 Bearer Token"
-                                  name={['http', 'bearer_token']}
-                                  rules={[{
-                                    required: messageQueueEnabled && !messageQueueForm.getFieldValue(['http', 'bearer_token_configured']),
-                                    message: '请输入 Bearer Token',
-                                  }]}
-                                  extra="留空会保留已保存的 Token；接口不会返回原值。"
-                                >
-                                  <Input.Password placeholder="请输入接收端分配的 Token" disabled={!messageQueueEnabled} autoComplete="new-password" />
-                                </Form.Item>
-                              ) : null}
-                            </>
-                          ) : null}
+                          <Form.Item
+                            label="HMAC-SHA256 共享密钥"
+                            name={['http', 'hmac_secret']}
+                            rules={[
+                              {
+                                required: messageQueueEnabled && !messageQueueForm.getFieldValue(['http', 'hmac_secret_configured']),
+                                message: '请输入 HMAC 共享密钥',
+                              },
+                              { min: 16, message: '共享密钥至少需要 16 个字符' },
+                            ]}
+                            extra="HTTP 投递固定使用 HMAC-SHA256。发送端和接收端配置相同密钥；密钥不会随请求发送，留空会保留已保存的值。生产环境建议使用至少 32 位随机字符串。"
+                          >
+                            <Input.Password placeholder="请输入至少 16 个字符的共享密钥" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                          </Form.Item>
 
                           <Form.List name={['http', 'custom_headers']}>
                             {(fields, { add, remove }) => (
@@ -1041,7 +1018,7 @@ const SystemSettingsPage: React.FC = () => {
                               </Button>
                             </div>
                             <Typography.Paragraph className="http-prompt-card__hint">
-                              已根据当前 URL、鉴权、请求头和媒体模式生成。node_id 模式会写入当前设备 ID；自定义密钥始终使用占位符。
+                              已根据当前 URL、鉴权、请求头和媒体模式生成。HMAC Prompt 会说明签名原文、时钟窗口与防重放校验；所有密钥始终使用占位符。
                             </Typography.Paragraph>
                             <pre className="http-prompt-card__content">{httpReceiverPrompt}</pre>
                           </div>
