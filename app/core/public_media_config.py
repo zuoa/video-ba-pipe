@@ -8,7 +8,7 @@ import hmac
 import json
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlparse
@@ -18,6 +18,7 @@ from app.core.database_models import SystemSetting
 
 
 PUBLIC_MEDIA_SETTING_KEY = "public_media_config"
+VALID_DELIVERY_MODES = {"url", "inline", "object_storage"}
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -65,10 +66,55 @@ class PublicMediaConfig:
     public_base_url_override: str = ""
     sign_media_urls: bool = True
     media_url_ttl_hours: int = 24
+    delivery_mode: str = "url"
+    inline_max_bytes: int = 512 * 1024
+    inline_max_edge: int = 1280
+    inline_jpeg_quality: int = 80
+    object_storage_endpoint_url: str = ""
+    object_storage_region: str = ""
+    object_storage_bucket: str = ""
+    object_storage_access_key_id: str = ""
+    object_storage_secret_access_key: str = ""
+    object_storage_key_prefix: str = "alerts"
+    object_storage_force_path_style: bool = False
+    object_storage_verify_ssl: bool = True
+    object_storage_presigned_url_ttl_hours: int = 24
+    async_max_attempts: int = 10
+    async_initial_backoff_seconds: int = 2
+    async_max_backoff_seconds: int = 300
     config_source: str = "environment"
 
-    def to_dict(self) -> Dict[str, Any]:
-        result = asdict(self)
+    def to_dict(self, *, include_secret: bool = False) -> Dict[str, Any]:
+        result = {
+            "public_base_url": self.public_base_url,
+            "public_base_url_override": self.public_base_url_override,
+            "sign_media_urls": self.sign_media_urls,
+            "media_url_ttl_hours": self.media_url_ttl_hours,
+            "delivery_mode": self.delivery_mode,
+            "inline": {
+                "max_bytes": self.inline_max_bytes,
+                "max_edge": self.inline_max_edge,
+                "jpeg_quality": self.inline_jpeg_quality,
+            },
+            "object_storage": {
+                "endpoint_url": self.object_storage_endpoint_url,
+                "region": self.object_storage_region,
+                "bucket": self.object_storage_bucket,
+                "access_key_id": self.object_storage_access_key_id,
+                "secret_access_key": self.object_storage_secret_access_key if include_secret else "",
+                "secret_configured": bool(self.object_storage_secret_access_key),
+                "key_prefix": self.object_storage_key_prefix,
+                "force_path_style": self.object_storage_force_path_style,
+                "verify_ssl": self.object_storage_verify_ssl,
+                "presigned_url_ttl_hours": self.object_storage_presigned_url_ttl_hours,
+            },
+            "async_delivery": {
+                "max_attempts": self.async_max_attempts,
+                "initial_backoff_seconds": self.async_initial_backoff_seconds,
+                "max_backoff_seconds": self.async_max_backoff_seconds,
+            },
+            "config_source": self.config_source,
+        }
         result["signing_available"] = bool(_signing_secret())
         return result
 
@@ -77,6 +123,7 @@ def normalize_public_media_config(
     data: Optional[Dict[str, Any]],
     *,
     config_source: str = "database",
+    existing_secret: str = "",
 ) -> PublicMediaConfig:
     data = data if isinstance(data, dict) else {}
     override_value = data.get("public_base_url_override")
@@ -96,6 +143,37 @@ def normalize_public_media_config(
         ):
             raise ValueError("公共访问地址必须是合法的 HTTP/HTTPS 基础地址，不能包含认证信息、查询参数或片段")
 
+    delivery_mode = str(data.get("delivery_mode") or "url").strip().lower()
+    if delivery_mode not in VALID_DELIVERY_MODES:
+        raise ValueError("媒体交付模式必须是 url、inline 或 object_storage")
+    inline = data.get("inline") if isinstance(data.get("inline"), dict) else {}
+    object_storage = data.get("object_storage") if isinstance(data.get("object_storage"), dict) else {}
+    async_delivery = data.get("async_delivery") if isinstance(data.get("async_delivery"), dict) else {}
+    endpoint_url = str(object_storage.get("endpoint_url") or "").strip().rstrip("/")
+    if endpoint_url:
+        parsed_endpoint = urlparse(endpoint_url)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+            raise ValueError("对象存储 Endpoint 必须是合法的 HTTP/HTTPS 地址")
+    supplied_secret = str(object_storage.get("secret_access_key") or "")
+    bucket = str(object_storage.get("bucket") or "").strip()
+    access_key_id = str(object_storage.get("access_key_id") or "").strip()
+    if delivery_mode == "object_storage":
+        if not endpoint_url:
+            raise ValueError("对象存储模式必须填写 Endpoint")
+        if not bucket:
+            raise ValueError("对象存储模式必须填写 Bucket")
+        if not access_key_id:
+            raise ValueError("对象存储模式必须填写 Access Key ID")
+        if not (supplied_secret or existing_secret):
+            raise ValueError("对象存储模式必须填写 Secret Access Key")
+    initial_backoff_seconds = _bounded_int(
+        async_delivery.get("initial_backoff_seconds"), 2, 1, 300
+    )
+    max_backoff_seconds = max(
+        initial_backoff_seconds,
+        _bounded_int(async_delivery.get("max_backoff_seconds"), 300, 1, 86400),
+    )
+
     return PublicMediaConfig(
         public_base_url=public_base_url,
         public_base_url_override=public_base_url_override,
@@ -109,6 +187,24 @@ def normalize_public_media_config(
             1,
             720,
         ),
+        delivery_mode=delivery_mode,
+        inline_max_bytes=_bounded_int(inline.get("max_bytes"), 512 * 1024, 32 * 1024, 8 * 1024 * 1024),
+        inline_max_edge=_bounded_int(inline.get("max_edge"), 1280, 320, 4096),
+        inline_jpeg_quality=_bounded_int(inline.get("jpeg_quality"), 80, 30, 95),
+        object_storage_endpoint_url=endpoint_url,
+        object_storage_region=str(object_storage.get("region") or "").strip(),
+        object_storage_bucket=bucket,
+        object_storage_access_key_id=access_key_id,
+        object_storage_secret_access_key=supplied_secret or existing_secret,
+        object_storage_key_prefix=str(object_storage.get("key_prefix") or "alerts").strip().strip("/"),
+        object_storage_force_path_style=_safe_bool(object_storage.get("force_path_style"), False),
+        object_storage_verify_ssl=_safe_bool(object_storage.get("verify_ssl"), True),
+        object_storage_presigned_url_ttl_hours=_bounded_int(
+            object_storage.get("presigned_url_ttl_hours"), 24, 1, 168
+        ),
+        async_max_attempts=_bounded_int(async_delivery.get("max_attempts"), 10, 1, 100),
+        async_initial_backoff_seconds=initial_backoff_seconds,
+        async_max_backoff_seconds=max_backoff_seconds,
         config_source=config_source if public_base_url_override else "environment",
     )
 
@@ -130,7 +226,12 @@ def save_public_media_config(
 ) -> PublicMediaConfig:
     if not isinstance(data, dict):
         raise ValueError("配置必须是 JSON 对象")
-    config = normalize_public_media_config(data, config_source="database")
+    existing = get_public_media_config()
+    config = normalize_public_media_config(
+        data,
+        config_source="database",
+        existing_secret=existing.object_storage_secret_access_key,
+    )
     record, _ = SystemSetting.get_or_create(
         key=PUBLIC_MEDIA_SETTING_KEY,
         defaults={
@@ -140,11 +241,11 @@ def save_public_media_config(
             "updated_by": updated_by,
         },
     )
-    persisted = {
-        "public_base_url_override": config.public_base_url_override,
-        "sign_media_urls": config.sign_media_urls,
-        "media_url_ttl_hours": config.media_url_ttl_hours,
-    }
+    persisted = config.to_dict(include_secret=True)
+    persisted.pop("public_base_url", None)
+    persisted.pop("config_source", None)
+    persisted.pop("signing_available", None)
+    persisted["object_storage"].pop("secret_configured", None)
     record.value = json.dumps(persisted, ensure_ascii=False)
     record.description = "公共媒体访问与签名配置"
     record.updated_at = datetime.now()

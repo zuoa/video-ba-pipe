@@ -27,11 +27,15 @@ from app.config import (
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
 )
-from app.core.rabbitmq_publisher import format_alert_message
 from app.core.message_queue_publisher import (
-    publish_alert_to_mq,
     reload_message_queue_publishers,
 )
+from app.core.alert_delivery import (
+    enqueue_alert_delivery,
+    get_delivery_stats,
+    retry_failed_deliveries,
+)
+from app.core.object_storage import test_object_storage
 from app.core.message_queue_config import (
     get_message_queue_config,
     normalize_message_queue_config,
@@ -70,6 +74,7 @@ from app.core.public_media_config import (
     add_public_media_urls_to_detection_images,
     build_public_media_url,
     get_public_media_config,
+    normalize_public_media_config,
     save_public_media_config,
     verify_public_media_signature,
 )
@@ -535,7 +540,11 @@ def test_system_ops_notification_config():
 @require_admin
 def get_system_public_media_config():
     config = get_public_media_config()
-    return jsonify({'success': True, 'config': config.to_dict()})
+    return jsonify({
+        'success': True,
+        'config': config.to_dict(include_secret=False),
+        'delivery_stats': get_delivery_stats(),
+    })
 
 
 @app.route('/api/system/public-media-config', methods=['PUT'])
@@ -549,13 +558,51 @@ def update_system_public_media_config():
         )
         return jsonify({
             'success': True,
-            'config': config.to_dict(),
+            'config': config.to_dict(include_secret=False),
             'message': '公共媒体访问配置已更新',
         })
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         app.logger.error(f"更新公共媒体访问配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/public-media-config/test-object-storage', methods=['POST'])
+@require_auth
+@require_admin
+def test_system_object_storage_config():
+    try:
+        existing = get_public_media_config()
+        payload = dict(request.json or {})
+        payload['delivery_mode'] = 'object_storage'
+        config = normalize_public_media_config(
+            payload,
+            existing_secret=existing.object_storage_secret_access_key,
+        )
+        test_object_storage(config)
+        return jsonify({'success': True, 'message': '对象存储上传、读取与删除测试成功'})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"对象存储连接测试失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 502
+
+
+@app.route('/api/system/alert-deliveries/retry-failed', methods=['POST'])
+@require_auth
+@require_admin
+def retry_failed_alert_deliveries():
+    try:
+        count = retry_failed_deliveries()
+        return jsonify({
+            'success': True,
+            'retried': count,
+            'delivery_stats': get_delivery_stats(),
+            'message': f'已重新排队 {count} 条失败任务',
+        })
+    except Exception as exc:
+        app.logger.error(f"重新排队失败投递任务失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
@@ -1534,17 +1581,9 @@ def create_alert():
             except Workflow.DoesNotExist:
                 return jsonify({'error': f'Workflow {workflow_id} does not exist'}), 400
 
-        alert = Alert.create(**alert_params)
-        
-        # 发布预警消息到当前消息队列提供方
-        try:
-            alert_message = format_alert_message(alert)
-            if publish_alert_to_mq(alert_message):
-                print(f"预警消息已成功发布到消息队列: {alert.id}")
-            else:
-                print(f"预警消息发布到消息队列失败或未启用: {alert.id}")
-        except Exception as e:
-            print(f"发布预警消息到消息队列时发生错误: {e}")
+        with db.atomic():
+            alert = Alert.create(**alert_params)
+            enqueue_alert_delivery(alert)
         
         return jsonify({'id': alert.id, 'message': 'Alert created'}), 201
     except Exception as e:

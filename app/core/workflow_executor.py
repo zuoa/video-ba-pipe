@@ -54,8 +54,7 @@ from app.core.frame_utils import (
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.utils import save_frame
 from app.core.video_recorder import VideoRecorderManager
-from app.core.rabbitmq_publisher import format_alert_message
-from app.core.message_queue_publisher import publish_alert_to_mq
+from app.core.alert_delivery import enqueue_alert_delivery
 from app.core.recording_storage_config import get_recording_storage_config
 from app.core.storage_pressure import (
     StoragePressure,
@@ -79,7 +78,7 @@ from app.core.webhook_notifier import (
 from app.core.public_media_config import build_public_media_url
 
 try:
-    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi
+    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi, db
 except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
     _WORKFLOW_EXECUTOR_IMPORT_ERROR = exc
 
@@ -3475,21 +3474,47 @@ class WorkflowExecutor:
 
         # 创建告警记录
         logger.info(f"[Workflow-{self.workflow_id}] 准备创建 Alert，alert_message: {alert_message[:200] if alert_message else 'None'}...")
-        alert = Alert.create(
-            video_source=self.video_source,
-            workflow=self.workflow,
-            alert_time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger_time)),
-            alert_type=alert_type,
-            alert_level=alert_level,
-            alert_message=alert_message,
-            alert_image=main_image,
-            alert_image_ori=main_image_ori,
-            alert_video=None,
-            detection_count=(detection_count if not media_allowed else len(detection_images)),
-            window_stats=json.dumps(trigger_stats) if trigger_stats else None,
-            detection_images=json.dumps(detection_images) if detection_images else None,
-            created_by=getattr(self.video_source, 'created_by', 'admin'),
-        )
+        with db.atomic():
+            alert = Alert.create(
+                video_source=self.video_source,
+                workflow=self.workflow,
+                alert_time=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(trigger_time)),
+                alert_type=alert_type,
+                alert_level=alert_level,
+                alert_message=alert_message,
+                alert_image=main_image,
+                alert_image_ori=main_image_ori,
+                alert_video=None,
+                detection_count=(detection_count if not media_allowed else len(detection_images)),
+                window_stats=json.dumps(trigger_stats) if trigger_stats else None,
+                detection_images=json.dumps(detection_images) if detection_images else None,
+                created_by=getattr(self.video_source, 'created_by', 'admin'),
+            )
+
+            # 先取得并保存录像路径，再创建 outbox。事务提交前 delivery worker
+            # 看不到任务，因此 URL 模式不会发布缺少 alert_video_url 的半成品消息。
+            if self.video_recorder and storage_pressure is not None and storage_pressure.allow_recording:
+                try:
+                    video_path = self.video_recorder.start_recording(
+                        source_id=self.video_source.id,
+                        alert_id=alert.id,
+                        trigger_time=trigger_time,
+                        pre_seconds=self.recording_config.pre_alert_seconds,
+                        post_seconds=self.recording_config.post_alert_seconds
+                    )
+                    alert.alert_video = video_path
+                    alert.save(only=[Alert.alert_video])
+                    logger.info(f"[Workflow-{self.workflow_id}] 已启动视频录制任务: {video_path}")
+                except Exception as rec_err:
+                    logger.error(f"[Workflow-{self.workflow_id}] 启动视频录制失败: {rec_err}", exc_info=True)
+            elif self.video_recorder and storage_pressure is not None:
+                logger.warning(
+                    f"[Workflow-{self.workflow_id}] 磁盘使用率 {storage_pressure.used_percent:.1f}% "
+                    "已达到停录像水位，本次告警不录像"
+                )
+
+            if getattr(alert_node, 'publish_to_mq', True):
+                enqueue_alert_delivery(alert)
         self._cache_output_result(
             node_id=node_id,
             alert_triggered=True,
@@ -3499,27 +3524,6 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] Alert 创建成功，ID: {alert.id}")
         logger.info(f"[Workflow-{self.workflow_id}] 数据库中的 alert_message: {alert.alert_message[:200] if alert.alert_message else 'None'}...")
         logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 创建告警，类型: {alert_type}, 级别: {alert_level}, 检测序列包含 {len(detection_images)} 张图片")
-
-        # 启动视频录制
-        if self.video_recorder and storage_pressure is not None and storage_pressure.allow_recording:
-            try:
-                video_path = self.video_recorder.start_recording(
-                    source_id=self.video_source.id,
-                    alert_id=alert.id,
-                    trigger_time=trigger_time,
-                    pre_seconds=self.recording_config.pre_alert_seconds,
-                    post_seconds=self.recording_config.post_alert_seconds
-                )
-                alert.alert_video = video_path
-                alert.save()
-                logger.info(f"[Workflow-{self.workflow_id}] 已启动视频录制任务: {video_path}")
-            except Exception as rec_err:
-                logger.error(f"[Workflow-{self.workflow_id}] 启动视频录制失败: {rec_err}", exc_info=True)
-        elif self.video_recorder and storage_pressure is not None:
-            logger.warning(
-                f"[Workflow-{self.workflow_id}] 磁盘使用率 {storage_pressure.used_percent:.1f}% "
-                "已达到停录像水位，本次告警不录像"
-            )
 
         # 缓存标准事件供下游 Webhook 节点消费。绝对媒体 URL 在每个 Webhook
         # 节点执行时按其 public_base_url 独立补齐。
@@ -3532,18 +3536,11 @@ class WorkflowExecutor:
             alert_event=alert_event,
         )
 
-        # 发布到当前消息队列提供方（受节点与系统设置总开关控制）
+        # 告警与 outbox 已在同一事务落库；网络投递由主 worker 异步执行。
         if not getattr(alert_node, 'publish_to_mq', True):
             logger.info(f"[Workflow-{self.workflow_id}] 输出节点 {node_id} 已关闭 MQ 输出，跳过消息队列发布: {alert.id}")
         else:
-            try:
-                alert_message = format_alert_message(alert)
-                if publish_alert_to_mq(alert_message):
-                    logger.info(f"[Workflow-{self.workflow_id}] 预警消息已发布到消息队列: {alert.id}")
-                else:
-                    logger.warning(f"[Workflow-{self.workflow_id}] 预警消息发布到消息队列失败或未启用: {alert.id}")
-            except Exception as e:
-                logger.error(f"[Workflow-{self.workflow_id}] 发布预警消息到消息队列时发生错误: {e}")
+            logger.info(f"[Workflow-{self.workflow_id}] 预警消息已进入异步投递队列: {alert.id}")
 
     def test_execute(self, test_frame: np.ndarray, test_image_bgr: np.ndarray = None):
         """

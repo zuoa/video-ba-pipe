@@ -31,14 +31,17 @@ import {
   RecordingStorageUsage,
   InferenceResourceResponse,
   PublicMediaConfig,
+  AlertDeliveryStats,
   SystemInfo,
   testOpsNotificationConfig,
+  testObjectStorageConfig,
   testMessageQueueConfig,
   updateSourceRotationConfig,
   updateInferenceResourceConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
   updatePublicMediaConfig,
+  retryFailedAlertDeliveries,
   updateMessageQueueConfig,
   updateVlConfig,
 } from '@/services/api';
@@ -71,11 +74,14 @@ const SystemSettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [testingMq, setTestingMq] = useState(false);
+  const [testingObjectStorage, setTestingObjectStorage] = useState(false);
+  const [retryingDeliveries, setRetryingDeliveries] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState('inference');
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
   const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
   const [publicMediaConfig, setPublicMediaConfig] = useState<PublicMediaConfig | null>(null);
+  const [deliveryStats, setDeliveryStats] = useState<AlertDeliveryStats>({ pending: 0, processing: 0, retrying: 0, failed: 0 });
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
   const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
@@ -83,6 +89,7 @@ const SystemSettingsPage: React.FC = () => {
   const rotationEnabled = Form.useWatch('enabled', rotationForm) ?? false;
   const opsEnabled = Form.useWatch('enabled', opsForm) ?? false;
   const mediaSigningEnabled = Form.useWatch('sign_media_urls', publicMediaForm) ?? true;
+  const mediaDeliveryMode = Form.useWatch('delivery_mode', publicMediaForm) ?? 'url';
   const alertGrowthEnabled = Form.useWatch('notify_alert_growth', opsForm) ?? true;
   const sharedInferenceEnabled = Form.useWatch('shared_inference_enabled', inferenceForm) ?? false;
   const inferenceAdmissionEnabled = Form.useWatch('inference_admission_enabled', inferenceForm) ?? false;
@@ -135,6 +142,7 @@ const SystemSettingsPage: React.FC = () => {
       inferenceForm.setFieldsValue(inferenceResponse.config);
       publicMediaForm.setFieldsValue(publicMediaResponse.config);
       setPublicMediaConfig(publicMediaResponse.config);
+      setDeliveryStats(publicMediaResponse.delivery_stats || { pending: 0, processing: 0, retrying: 0, failed: 0 });
       setInferenceResource(inferenceResponse);
       messageQueueForm.setFieldsValue(messageQueueResponse.config);
       setSystemInfo(systemInfoResponse);
@@ -243,6 +251,33 @@ const SystemSettingsPage: React.FC = () => {
       message.error(`测试连接失败: ${error.message || error.error || '未知错误'}`);
     } finally {
       setTestingMq(false);
+    }
+  };
+
+  const handleTestObjectStorage = async () => {
+    try {
+      const values = await validateAndGetAllFields(publicMediaForm);
+      setTestingObjectStorage(true);
+      const response = await testObjectStorageConfig(values);
+      message.success(response.message || '对象存储连接正常');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(`对象存储测试失败: ${error.message || error.error || '未知错误'}`);
+    } finally {
+      setTestingObjectStorage(false);
+    }
+  };
+
+  const handleRetryFailedDeliveries = async () => {
+    try {
+      setRetryingDeliveries(true);
+      const response = await retryFailedAlertDeliveries();
+      setDeliveryStats(response.delivery_stats);
+      message.success(response.message);
+    } catch (error: any) {
+      message.error(`重新投递失败: ${error.message || error.error || '未知错误'}`);
+    } finally {
+      setRetryingDeliveries(false);
     }
   };
 
@@ -577,50 +612,127 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'publicMedia',
-              label: (<span><GlobalOutlined /> 公共媒体</span>),
+              label: (<span><GlobalOutlined /> 告警媒体</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><GlobalOutlined /> 公共访问与媒体链接</span>}
-                  extra={(
-                    <span className="inference-config-source">
-                      {publicMediaConfig?.public_base_url_override ? '系统设置覆盖' : '环境变量回退'}
-                    </span>
-                  )}
+                  title={<span><GlobalOutlined /> 告警媒体交付</span>}
+                  extra={mediaDeliveryMode === 'object_storage' ? (
+                    <Button icon={<ApiOutlined />} loading={testingObjectStorage} onClick={handleTestObjectStorage}>
+                      测试对象存储
+                    </Button>
+                  ) : undefined}
                 >
                   <Alert
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="用于 Webhook、消息队列和告警 API 输出可直接访问的媒体地址"
-                    description="节点未单独覆盖 Host 时使用这里的全局地址。开启签名后，告警图片和录像链接会携带过期时间与签名。"
+                    message="消息队列使用持久化异步投递"
+                    description="URL 模式保持当前行为；消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。"
                   />
 
                   <Form form={publicMediaForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item
-                        className="system-settings-field-span-2"
-                        label="公共访问地址"
-                        name="public_base_url_override"
-                        rules={[{ type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}
-                        extra={`例如 https://video.example.com；留空时继承环境变量。当前生效：${publicMediaConfig?.public_base_url || '仅相对路径'}`}
-                      >
-                        <Input placeholder="https://video.example.com" />
+                      <Form.Item label="媒体交付模式" name="delivery_mode" rules={[{ required: true, message: '请选择媒体交付模式' }]}>
+                        <Select options={[
+                          { value: 'url', label: '盒子 URL（默认）' },
+                          { value: 'inline', label: '消息内嵌图片' },
+                          { value: 'object_storage', label: 'S3 兼容对象存储' },
+                        ]} />
                       </Form.Item>
 
-                      <Form.Item label="生成签名媒体 URL" name="sign_media_urls" valuePropName="checked">
-                        <Switch />
-                      </Form.Item>
+                      {mediaDeliveryMode === 'url' ? (
+                        <>
+                          <Form.Item
+                            className="system-settings-field-span-2"
+                            label="公共访问地址"
+                            name="public_base_url_override"
+                            rules={[{ type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}
+                            extra={`例如 https://video.example.com；留空时继承环境变量。当前生效：${publicMediaConfig?.public_base_url || '仅相对路径'}`}
+                          >
+                            <Input placeholder="https://video.example.com" />
+                          </Form.Item>
+                          <Form.Item label="生成签名媒体 URL" name="sign_media_urls" valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item label="链接有效期（小时）" name="media_url_ttl_hours" rules={[{ required: mediaSigningEnabled, message: '请输入链接有效期' }]}>
+                            <InputNumber min={1} max={720} precision={0} disabled={!mediaSigningEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </>
+                      ) : null}
 
-                      <Form.Item
-                        label="链接有效期（小时）"
-                        name="media_url_ttl_hours"
-                        rules={[{ required: mediaSigningEnabled, message: '请输入链接有效期' }]}
-                      >
-                        <InputNumber min={1} max={720} precision={0} disabled={!mediaSigningEnabled} style={{ width: '100%' }} />
+                      {mediaDeliveryMode === 'inline' ? (
+                        <>
+                          <Form.Item label="最大消息图片（字节）" name={['inline', 'max_bytes']} rules={[{ required: true, message: '请输入大小上限' }]}>
+                            <InputNumber min={32768} max={8388608} precision={0} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="图片最大边（像素）" name={['inline', 'max_edge']} rules={[{ required: true, message: '请输入最大边' }]}>
+                            <InputNumber min={320} max={4096} precision={0} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="JPEG 初始质量" name={['inline', 'jpeg_quality']} rules={[{ required: true, message: '请输入图片质量' }]}>
+                            <InputNumber min={30} max={95} precision={0} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </>
+                      ) : null}
+
+                      {mediaDeliveryMode === 'object_storage' ? (
+                        <>
+                          <Form.Item className="system-settings-field-span-2" label="Endpoint" name={['object_storage', 'endpoint_url']} rules={[{ required: true, message: '请输入 Endpoint' }, { type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}>
+                            <Input placeholder="https://s3.example.com" />
+                          </Form.Item>
+                          <Form.Item label="Region" name={['object_storage', 'region']}>
+                            <Input placeholder="us-east-1（可选）" />
+                          </Form.Item>
+                          <Form.Item label="Bucket" name={['object_storage', 'bucket']} rules={[{ required: true, message: '请输入 Bucket' }]}>
+                            <Input placeholder="video-alerts" />
+                          </Form.Item>
+                          <Form.Item label="Access Key ID" name={['object_storage', 'access_key_id']} rules={[{ required: true, message: '请输入 Access Key ID' }]}>
+                            <Input autoComplete="off" />
+                          </Form.Item>
+                          <Form.Item
+                            label="Secret Access Key"
+                            name={['object_storage', 'secret_access_key']}
+                            rules={[{ required: !publicMediaConfig?.object_storage?.secret_configured, message: '请输入 Secret Access Key' }]}
+                            extra={publicMediaConfig?.object_storage?.secret_configured ? '已配置；留空保持原值' : '尚未配置'}
+                          >
+                            <Input.Password autoComplete="new-password" />
+                          </Form.Item>
+                          <Form.Item label="对象前缀" name={['object_storage', 'key_prefix']}>
+                            <Input placeholder="alerts" />
+                          </Form.Item>
+                          <Form.Item label="预签名有效期（小时）" name={['object_storage', 'presigned_url_ttl_hours']} rules={[{ required: true, message: '请输入有效期' }]}>
+                            <InputNumber min={1} max={168} precision={0} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item label="Path-style 寻址" name={['object_storage', 'force_path_style']} valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item label="验证 TLS 证书" name={['object_storage', 'verify_ssl']} valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                        </>
+                      ) : null}
+
+                      <Form.Item label="最大尝试次数" name={['async_delivery', 'max_attempts']} rules={[{ required: true, message: '请输入最大尝试次数' }]}>
+                        <InputNumber min={1} max={100} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="初始退避（秒）" name={['async_delivery', 'initial_backoff_seconds']} rules={[{ required: true, message: '请输入初始退避' }]}>
+                        <InputNumber min={1} max={300} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="最大退避（秒）" name={['async_delivery', 'max_backoff_seconds']} rules={[{ required: true, message: '请输入最大退避' }]}>
+                        <InputNumber min={1} max={86400} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
                   </Form>
+
+                  <div className="delivery-status-row" aria-label="异步投递状态">
+                    <Tag>待投递 {deliveryStats.pending}</Tag>
+                    <Tag color="processing">处理中 {deliveryStats.processing}</Tag>
+                    <Tag color="warning">重试中 {deliveryStats.retrying}</Tag>
+                    <Tag color={deliveryStats.failed ? 'error' : 'default'}>失败 {deliveryStats.failed}</Tag>
+                    <Button size="small" icon={<SyncOutlined />} loading={retryingDeliveries} disabled={!deliveryStats.failed} onClick={handleRetryFailedDeliveries}>
+                      重试失败任务
+                    </Button>
+                  </div>
                 </Card>
               ),
             },

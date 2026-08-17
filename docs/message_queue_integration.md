@@ -33,3 +33,11 @@ python3 scripts/mqtt_consumer.py
 ## 消息体与去重
 
 两个协议使用相同 JSON 消息体。集群消费端应使用 `external_alert_id` 去重，并使用 `node_id` 识别告警来源。MQTT QoS 1 允许重复投递，因此消费端必须保证去重处理具有幂等性。
+
+告警媒体在“系统设置 → 告警媒体”中选择交付方式，默认保持盒子 URL：
+
+- `url`：沿用 `alert_image_url`、`alert_image_ori_url`、`alert_video_url`。
+- `inline`：标注图经过压缩后放在 `media.image.data`，编码为 Base64；`media.image.content_type` 为 `image/jpeg`。
+- `object_storage`：先发送 `event_type=alert.created`、`media.status=pending` 的文字告警；上传 S3 兼容对象存储成功后，再发送 `event_type=alert.media.ready` 和私有对象的预签名 URL。
+
+所有模式均通过数据库 outbox 异步投递，属于至少一次语义。消费者应优先使用 `event_id` 做事件级去重；`external_alert_id` 用于把 `alert.created` 和后续的 `alert.media.ready` 关联为同一条告警。

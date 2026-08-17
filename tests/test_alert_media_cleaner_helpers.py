@@ -398,3 +398,34 @@ def test_startup_cleanup_uses_loaded_persisted_config(
     cleaner.run_startup_filesystem_cleanup()
 
     assert captured == [persisted]
+
+
+def test_filesystem_capacity_cleanup_continues_when_delivery_query_fails(
+    tmp_path: Path,
+    alert_media_cleaner_module,
+    monkeypatch,
+):
+    frame_dir = tmp_path / "frames"
+    video_dir = tmp_path / "videos"
+    frame_dir.mkdir()
+    video_dir.mkdir()
+    monkeypatch.setattr(alert_media_cleaner_module, "FRAME_SAVE_PATH", str(frame_dir))
+    monkeypatch.setattr(alert_media_cleaner_module, "VIDEO_SAVE_PATH", str(video_dir))
+    cleaner = alert_media_cleaner_module.AlertMediaCleaner()
+    monkeypatch.setattr(
+        cleaner,
+        "_pending_delivery_paths",
+        lambda: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    calls = []
+    monkeypatch.setattr(
+        alert_media_cleaner_module,
+        "cleanup_directory_to_limit",
+        lambda base_dir, max_bytes, **kwargs: calls.append(base_dir)
+        or alert_media_cleaner_module.FilesystemCleanupResult(),
+    )
+    config = types.SimpleNamespace(video_max_gb=1, image_max_gb=1, min_free_gb=0)
+
+    cleaner.run_filesystem_cleanup_once(config)
+
+    assert calls == [str(video_dir), str(frame_dir)]

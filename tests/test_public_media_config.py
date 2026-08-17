@@ -96,3 +96,26 @@ def test_detection_images_are_enriched_and_container_type_is_preserved():
         "image_path": "gate/other.jpg",
         "image_url": "https://video.example.com/api/image/frames/gate/other.jpg",
     }]
+
+
+def test_delivery_modes_default_to_url_and_preserve_object_storage_secret():
+    default_config = normalize_public_media_config({})
+    assert default_config.delivery_mode == "url"
+    assert default_config.inline_max_bytes == 512 * 1024
+
+    object_config = normalize_public_media_config(
+        {
+            "delivery_mode": "object_storage",
+            "object_storage": {
+                "endpoint_url": "https://s3.example.com",
+                "bucket": "alerts",
+                "access_key_id": "key-id",
+                "secret_access_key": "",
+            },
+        },
+        existing_secret="saved-secret",
+    )
+    assert object_config.object_storage_secret_access_key == "saved-secret"
+    public_dict = object_config.to_dict(include_secret=False)
+    assert public_dict["object_storage"]["secret_access_key"] == ""
+    assert public_dict["object_storage"]["secret_configured"] is True

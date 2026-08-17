@@ -292,6 +292,30 @@ class Alert(BaseModel):
     created_by = pw.CharField(default='admin')
 
 
+class AlertDeliveryTask(BaseModel):
+    """Persistent outbox entry for at-least-once alert delivery."""
+
+    id = pw.AutoField()
+    alert = pw.ForeignKeyField(Alert, backref='delivery_tasks', on_delete='CASCADE')
+    event_type = pw.CharField(default='alert.created')
+    delivery_mode = pw.CharField(default='url')
+    status = pw.CharField(default='pending')
+    attempts = pw.IntegerField(default=0)
+    next_attempt_at = pw.DateTimeField()
+    locked_at = pw.DateTimeField(null=True)
+    last_error = pw.TextField(null=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    completed_at = pw.DateTimeField(null=True)
+
+    class Meta:
+        table_name = 'alert_delivery_tasks'
+        indexes = (
+            (('alert', 'event_type'), True),
+            (('status', 'next_attempt_at'), False),
+        )
+
+
 class WorkflowTestResult(BaseModel):
     """工作流测试结果（独立于 Alert，不参与告警统计）"""
     id = pw.AutoField()

@@ -256,12 +256,42 @@ export interface PublicMediaConfig {
   public_base_url_override?: string;
   sign_media_urls: boolean;
   media_url_ttl_hours: number;
+  delivery_mode: 'url' | 'inline' | 'object_storage';
+  inline: {
+    max_bytes: number;
+    max_edge: number;
+    jpeg_quality: number;
+  };
+  object_storage: {
+    endpoint_url: string;
+    region: string;
+    bucket: string;
+    access_key_id: string;
+    secret_access_key: string;
+    secret_configured?: boolean;
+    key_prefix: string;
+    force_path_style: boolean;
+    verify_ssl: boolean;
+    presigned_url_ttl_hours: number;
+  };
+  async_delivery: {
+    max_attempts: number;
+    initial_backoff_seconds: number;
+    max_backoff_seconds: number;
+  };
   signing_available?: boolean;
   config_source?: string;
 }
 
+export interface AlertDeliveryStats {
+  pending: number;
+  processing: number;
+  retrying: number;
+  failed: number;
+}
+
 export async function getPublicMediaConfig() {
-  return request<{ success: boolean; config: PublicMediaConfig }>(
+  return request<{ success: boolean; config: PublicMediaConfig; delivery_stats: AlertDeliveryStats }>(
     '/api/system/public-media-config',
   );
 }
@@ -271,6 +301,20 @@ export async function updatePublicMediaConfig(data: PublicMediaConfig) {
     method: 'PUT',
     data,
   });
+}
+
+export async function testObjectStorageConfig(data: PublicMediaConfig) {
+  return request<{ success: boolean; message?: string; error?: string }>(
+    '/api/system/public-media-config/test-object-storage',
+    { method: 'POST', data },
+  );
+}
+
+export async function retryFailedAlertDeliveries() {
+  return request<{ success: boolean; retried: number; delivery_stats: AlertDeliveryStats; message: string }>(
+    '/api/system/alert-deliveries/retry-failed',
+    { method: 'POST' },
+  );
 }
 
 export interface RabbitMqConfig {

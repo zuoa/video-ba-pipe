@@ -20,6 +20,10 @@ from app.config import (
     WINDOW_DETECTION_RETENTION_HOURS,
 )
 from app.core.database_models import Alert, WorkflowTestResult, db
+try:
+    from app.core.database_models import AlertDeliveryTask
+except ImportError:  # pragma: no cover - lightweight helper tests
+    AlertDeliveryTask = None
 from app.core.recording_storage_config import (
     RecordingStorageConfig,
     get_recording_storage_config,
@@ -83,6 +87,7 @@ def cleanup_directory_to_limit(
     *,
     target_ratio: float = CAPACITY_CLEANUP_TARGET_RATIO,
     now: Optional[float] = None,
+    protected_paths: Optional[Set[Path]] = None,
 ) -> FilesystemCleanupResult:
     """超过容量上限时删除最老文件，回收到目标水位。"""
     result = FilesystemCleanupResult()
@@ -102,9 +107,12 @@ def cleanup_directory_to_limit(
     # 正常优先保护刚写入文件；若没有足够旧文件，再按时间处理全部文件，
     # 确保容量保护不会因持续高写入而失效。
     candidates = old_files if sum(item[1] for item in old_files) >= total_bytes - target_bytes else files
+    protected_paths = protected_paths or set()
     for _mtime, size, path in sorted(candidates, key=lambda item: item[0]):
         if total_bytes <= target_bytes:
             break
+        if path.resolve() in protected_paths:
+            continue
         try:
             path.unlink()
             total_bytes -= size
@@ -123,6 +131,7 @@ def cleanup_directory_for_free_space(
     min_free_bytes: int,
     *,
     now: Optional[float] = None,
+    protected_paths: Optional[Set[Path]] = None,
 ) -> FilesystemCleanupResult:
     """所在分区低于安全水位时，独立于数据库删除最老媒体文件。"""
     result = FilesystemCleanupResult()
@@ -141,9 +150,12 @@ def cleanup_directory_for_free_space(
         item for item in files
         if now_ts - item[0] >= ACTIVE_FILE_GRACE_SECONDS
     ]
+    protected_paths = protected_paths or set()
     for _mtime, size, path in sorted(candidates, key=lambda item: item[0]):
         if free_bytes >= min_free_bytes:
             break
+        if path.resolve() in protected_paths:
+            continue
         try:
             path.unlink()
             result.removed_files += 1
@@ -498,6 +510,17 @@ class AlertMediaCleaner:
             return result
 
         config = config or get_recording_storage_config()
+        try:
+            protected_paths = self._pending_delivery_paths()
+        except Exception as exc:
+            # Disk-pressure recovery must remain available even if the database is down.
+            # In that degraded case we cannot identify protected outbox media, so proceed
+            # with the original filesystem-only cleanup behavior.
+            protected_paths = set()
+            logger.warning(
+                "[AlertMediaCleaner] 查询待投递媒体失败，继续执行文件系统容量清理: %s",
+                exc,
+            )
         result.add(cleanup_directory_to_limit(
             VIDEO_SAVE_PATH,
             int(config.video_max_gb * GIB),
@@ -505,6 +528,7 @@ class AlertMediaCleaner:
         result.add(cleanup_directory_to_limit(
             FRAME_SAVE_PATH,
             int(config.image_max_gb * GIB),
+            protected_paths=protected_paths,
         ))
 
         min_free_bytes = int(config.min_free_gb * GIB)
@@ -520,7 +544,11 @@ class AlertMediaCleaner:
             # 同盘时优先淘汰录像，再淘汰图片。
             roots = (VIDEO_SAVE_PATH, FRAME_SAVE_PATH) if media_path == VIDEO_SAVE_PATH else (media_path,)
             for root in roots:
-                result.add(cleanup_directory_for_free_space(root, min_free_bytes))
+                result.add(cleanup_directory_for_free_space(
+                    root,
+                    min_free_bytes,
+                    protected_paths=protected_paths,
+                ))
                 if shutil.disk_usage(root).free >= min_free_bytes:
                     break
         return result
@@ -645,6 +673,11 @@ class AlertMediaCleaner:
         return False
 
     def _purge_alert_media(self, alert: Alert, purge_images: bool, purge_video: bool) -> bool:
+        if purge_images and AlertDeliveryTask is not None and AlertDeliveryTask.select().where(
+            (AlertDeliveryTask.alert == alert)
+            & AlertDeliveryTask.status.in_(("pending", "processing", "retrying"))
+        ).exists():
+            purge_images = False
         image_paths = collect_alert_media_paths(
             alert.alert_image,
             alert.alert_image_ori,
@@ -703,6 +736,27 @@ class AlertMediaCleaner:
         if fields_to_save:
             alert.save(only=fields_to_save)
         return deleted_any_file or bool(fields_to_save)
+
+    @staticmethod
+    def _pending_delivery_paths() -> Set[Path]:
+        protected: Set[Path] = set()
+        if AlertDeliveryTask is None:
+            return protected
+        with db.connection_context():
+            query = (
+                Alert.select(Alert.alert_image)
+                .join(AlertDeliveryTask)
+                .where(
+                    Alert.alert_image.is_null(False)
+                    & AlertDeliveryTask.status.in_(("pending", "processing", "retrying"))
+                )
+                .distinct()
+            )
+            for alert in query.iterator():
+                resolved = resolve_frame_media_path(alert.alert_image)
+                if resolved is not None:
+                    protected.add(resolved.resolve())
+        return protected
 
     @staticmethod
     def _get_free_bytes() -> int:
