@@ -13,7 +13,7 @@ from app.core.rabbitmq_config import RABBITMQ_SETTING_KEY, get_rabbitmq_config
 
 
 MESSAGE_QUEUE_SETTING_KEY = "message_queue_config"
-VALID_PROVIDERS = ("mqtt", "rabbitmq")
+VALID_PROVIDERS = ("mqtt", "rabbitmq", "http")
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ def normalize_message_queue_config(data: Optional[Dict[str, Any]]) -> MessageQue
     data = data if isinstance(data, dict) else {}
     provider = str(data.get("provider") or defaults.provider).strip().lower()
     if provider not in VALID_PROVIDERS:
-        raise ValueError("消息队列提供方必须是 mqtt 或 rabbitmq")
+        raise ValueError("消息投递提供方必须是 mqtt、rabbitmq 或 http")
     return MessageQueueConfig(
         enabled=_safe_bool(data.get("enabled"), defaults.enabled),
         provider=provider,
@@ -76,13 +76,13 @@ def save_message_queue_config(
         key=MESSAGE_QUEUE_SETTING_KEY,
         defaults={
             "value": "",
-            "description": "消息队列提供方配置",
+            "description": "消息投递通道配置",
             "updated_at": datetime.now(),
             "updated_by": updated_by,
         },
     )
     record.value = json.dumps(config.to_dict(), ensure_ascii=False)
-    record.description = "消息队列提供方配置"
+    record.description = "消息投递通道配置"
     record.updated_at = datetime.now()
     record.updated_by = updated_by
     record.save()

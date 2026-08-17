@@ -151,7 +151,7 @@ def _base_event(alert: Alert, *, event_type: str, delivery_mode: str) -> Dict[st
 
 def _publish_or_raise(event: Dict[str, Any]) -> None:
     if not publish_alert_to_mq(event):
-        raise RuntimeError("消息队列发布失败或已停用")
+        raise RuntimeError("消息投递失败或已停用")
 
 
 def _created_event(task: AlertDeliveryTask, alert: Alert, config: PublicMediaConfig) -> Dict[str, Any]:

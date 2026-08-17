@@ -7,6 +7,7 @@ import threading
 from typing import Any, Dict
 
 from app.core.message_queue_config import get_message_queue_config
+from app.core.http_delivery_publisher import publish_alert_to_http, reload_http_delivery_publisher
 from app.core.mqtt_publisher import publish_alert_to_mqtt, reload_mqtt_publisher
 from app.core.rabbitmq_publisher import publish_alert_to_rabbitmq, reload_rabbitmq_publisher
 
@@ -26,10 +27,16 @@ def _apply_selector_transition(enabled: bool, provider: str) -> None:
         if not enabled:
             reload_mqtt_publisher()
             reload_rabbitmq_publisher()
+            reload_http_delivery_publisher()
         elif provider == "mqtt":
             reload_rabbitmq_publisher()
+            reload_http_delivery_publisher()
         elif provider == "rabbitmq":
             reload_mqtt_publisher()
+            reload_http_delivery_publisher()
+        elif provider == "http":
+            reload_mqtt_publisher()
+            reload_rabbitmq_publisher()
         _last_selector_fingerprint = fingerprint
 
 
@@ -43,7 +50,9 @@ def publish_alert_to_mq(alert_data: Dict[str, Any]) -> bool:
         return publish_alert_to_mqtt(alert_data)
     if config.provider == "rabbitmq":
         return publish_alert_to_rabbitmq(alert_data)
-    logger.error("不支持的消息队列提供方: %s", config.provider)
+    if config.provider == "http":
+        return publish_alert_to_http(alert_data)
+    logger.error("不支持的消息投递通道: %s", config.provider)
     return False
 
 
@@ -51,5 +60,6 @@ def reload_message_queue_publishers() -> None:
     global _last_selector_fingerprint
     reload_mqtt_publisher()
     reload_rabbitmq_publisher()
+    reload_http_delivery_publisher()
     with _selector_lock:
         _last_selector_fingerprint = None

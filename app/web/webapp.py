@@ -48,6 +48,13 @@ from app.core.mqtt_config import (
     save_mqtt_config,
     test_mqtt_connection,
 )
+from app.core.http_delivery_config import (
+    get_http_delivery_config,
+    normalize_http_delivery_config,
+    save_http_delivery_config,
+    validate_http_delivery_config,
+)
+from app.core.http_delivery_publisher import test_http_delivery_connection
 from app.core.rabbitmq_config import (
     get_rabbitmq_config,
     normalize_rabbitmq_config,
@@ -666,12 +673,14 @@ def get_system_message_queue_config():
     selector = get_message_queue_config()
     mqtt_config = get_mqtt_config()
     rabbitmq_config = get_rabbitmq_config()
+    http_config = get_http_delivery_config()
     return jsonify({
         'success': True,
         'config': {
             **selector.to_dict(),
             'mqtt': mqtt_config.to_dict(include_password=False),
             'rabbitmq': rabbitmq_config.to_dict(include_password=False),
+            'http': http_config.to_dict(include_secrets=False),
         },
     })
 
@@ -685,6 +694,7 @@ def update_system_message_queue_config():
         selector = normalize_message_queue_config(payload)
         mqtt_payload = payload.get('mqtt') or get_mqtt_config().to_dict()
         rabbitmq_payload = payload.get('rabbitmq') or get_rabbitmq_config().to_dict()
+        http_payload = payload.get('http') or get_http_delivery_config().to_dict()
         rabbitmq_payload = {
             **rabbitmq_payload,
             'enabled': selector.enabled and selector.provider == 'rabbitmq',
@@ -693,6 +703,11 @@ def update_system_message_queue_config():
         with db.atomic():
             mqtt_config = save_mqtt_config(mqtt_payload, updated_by=updated_by)
             rabbitmq_config = save_rabbitmq_config(rabbitmq_payload, updated_by=updated_by)
+            http_config = save_http_delivery_config(
+                http_payload,
+                updated_by=updated_by,
+                require_ready=selector.enabled and selector.provider == 'http',
+            )
             selector = save_message_queue_config(payload, updated_by=updated_by)
         reload_message_queue_publishers()
         return jsonify({
@@ -701,13 +716,14 @@ def update_system_message_queue_config():
                 **selector.to_dict(),
                 'mqtt': mqtt_config.to_dict(include_password=False),
                 'rabbitmq': rabbitmq_config.to_dict(include_password=False),
+                'http': http_config.to_dict(include_secrets=False),
             },
-            'message': '消息队列配置已更新，下次发布时按新配置连接',
+            'message': '消息投递配置已更新，下次发布时按新配置连接',
         })
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
-        app.logger.error(f"更新消息队列配置失败: {exc}")
+        app.logger.error(f"更新消息投递配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
@@ -725,20 +741,28 @@ def test_system_message_queue_config():
                 existing_password=existing.password,
             )
             ok, detail = test_mqtt_connection(config)
-        else:
+        elif selector.provider == 'rabbitmq':
             existing = get_rabbitmq_config()
             config = normalize_rabbitmq_config(
                 payload.get('rabbitmq') or {},
                 existing_password=existing.password,
             )
             ok, detail = test_rabbitmq_connection(config)
+        else:
+            existing = get_http_delivery_config()
+            config = normalize_http_delivery_config(
+                payload.get('http') or {},
+                existing=existing,
+            )
+            validate_http_delivery_config(config)
+            ok, detail = test_http_delivery_connection(config)
         if ok:
             return jsonify({'success': True, 'message': detail})
         return jsonify({'success': False, 'error': detail}), 502
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
-        app.logger.error(f"测试消息队列连接失败: {exc}")
+        app.logger.error(f"测试消息投递连接失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 502
 
 

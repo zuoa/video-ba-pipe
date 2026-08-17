@@ -36,6 +36,13 @@ def test_invalid_provider_is_rejected():
     try:
         normalize_message_queue_config({"provider": "kafka"})
     except ValueError as exc:
-        assert "mqtt 或 rabbitmq" in str(exc)
+        assert "mqtt、rabbitmq 或 http" in str(exc)
     else:
         raise AssertionError("invalid provider should fail")
+
+
+def test_http_provider_is_supported():
+    assert normalize_message_queue_config({"enabled": True, "provider": "http"}) == MessageQueueConfig(
+        enabled=True,
+        provider="http",
+    )

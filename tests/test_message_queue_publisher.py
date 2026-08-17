@@ -51,6 +51,22 @@ def test_rabbitmq_provider_never_double_publishes(monkeypatch):
     assert calls == ["rabbitmq"]
 
 
+def test_http_provider_never_double_publishes(monkeypatch):
+    _reset_selector_state(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        message_queue_publisher,
+        "get_message_queue_config",
+        lambda: MessageQueueConfig(enabled=True, provider="http"),
+    )
+    monkeypatch.setattr(message_queue_publisher, "publish_alert_to_mqtt", lambda data: calls.append("mqtt") or True)
+    monkeypatch.setattr(message_queue_publisher, "publish_alert_to_rabbitmq", lambda data: calls.append("rabbitmq") or True)
+    monkeypatch.setattr(message_queue_publisher, "publish_alert_to_http", lambda data: calls.append("http") or True)
+
+    assert message_queue_publisher.publish_alert_to_mq({}) is True
+    assert calls == ["http"]
+
+
 def test_selector_changes_disconnect_inactive_publishers(monkeypatch):
     _reset_selector_state(monkeypatch)
     selectors = iter((

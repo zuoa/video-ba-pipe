@@ -344,11 +344,28 @@ export interface MqttConfig {
   keepalive_seconds: number;
 }
 
+export interface HttpCustomHeader {
+  name: string;
+  value: string;
+  value_configured?: boolean;
+}
+
+export interface HttpDeliveryConfig {
+  endpoint_url: string;
+  auth_type: 'none' | 'bearer';
+  use_node_id_as_token: boolean;
+  bearer_token: string;
+  bearer_token_configured?: boolean;
+  custom_headers: HttpCustomHeader[];
+  timeout_seconds: number;
+}
+
 export interface MessageQueueConfig {
   enabled: boolean;
-  provider: 'mqtt' | 'rabbitmq';
+  provider: 'mqtt' | 'rabbitmq' | 'http';
   mqtt: MqttConfig;
   rabbitmq: RabbitMqConfig;
+  http: HttpDeliveryConfig;
 }
 
 export async function getMessageQueueConfig() {

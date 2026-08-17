@@ -9,7 +9,7 @@
 - 脚本算法：支持 Python 脚本上传、编辑与测试
 - 组合检测：用画布连接 YOLO/ONNX/RKNN 检测数据流与 AND、OR、NOT 业务规则
 - 告警闭环：保存告警图片/视频并提供检索
-- 消息集成：默认通过 MQTT 发布预警事件，也可切换到 RabbitMQ
+- 消息集成：默认通过 MQTT 发布预警事件，也可切换到 RabbitMQ 或 HTTP API
 
 ## 系统组成
 
@@ -18,6 +18,7 @@
 - `frontend`：前端管理界面（默认 `8080`）
 - `mqtt`：内置 Mosquitto Broker（默认主通道）
 - `rabbitmq`：兼容消息队列（CUDA compose 中内置）
+- `http`：直接异步投递到外部接收端 API
 
 ## 快速开始（Docker 推荐）
 
@@ -27,7 +28,7 @@
 docker compose -f docker-compose.yml up -d
 ```
 
-消息队列默认关闭。启动后在“系统设置 → 消息队列”中启用并配置 MQTT 或 RabbitMQ；连接参数不使用环境变量。内置 MQTT 地址为 `mqtt:1883`、用户名为 `video-ba`，密码在每个部署首次启动时随机生成并持久化，且默认不向宿主机映射 1883 端口。使用相同 Compose 文件执行以下命令获取密码后填入页面：
+消息投递默认关闭。启动后在“系统设置 → 消息投递”中启用并配置 MQTT、RabbitMQ 或 HTTP API；连接参数不使用环境变量。内置 MQTT 地址为 `mqtt:1883`、用户名为 `video-ba`，密码在每个部署首次启动时随机生成并持久化，且默认不向宿主机映射 1883 端口。使用相同 Compose 文件执行以下命令获取密码后填入页面：
 
 ```bash
 docker compose exec mqtt cat /mosquitto/secrets/initial-password
@@ -76,7 +77,7 @@ docker compose -f docker-compose.yml.x86+cuda logs db-init
 
 ### 不内置 MQTT 的部署文件
 
-如果使用外部 MQTT Broker，或完全不启用消息队列，可改用对应的 `no-mqtt` 文件。这些文件不创建 Mosquitto 服务，也不创建 `mqtt-data`、`mqtt-secrets` 卷；如需消息发布，请在“系统设置 → 消息队列”中填写外部 Broker 地址。
+如果使用外部 MQTT Broker，或改用 RabbitMQ/HTTP，可使用对应的 `no-mqtt` 文件。这些文件不创建 Mosquitto 服务，也不创建 `mqtt-data`、`mqtt-secrets` 卷；如需消息投递，请在“系统设置 → 消息投递”中选择并配置目标通道。
 
 ```bash
 # CPU
@@ -170,7 +171,7 @@ cp env.example .env
 - `RESOURCE_PROFILING_ENABLED`：输出帧拷贝、录制编码、工作流执行等性能埋点
 - `WORKFLOW_ZERO_COPY_FRAMES`：source host 使用共享内存只读视图读取最新帧，减少复制（需确保处理耗时小于缓冲窗口）
 - `SOURCE_HOST_WORKFLOW_NODE_WORKERS`：实时工作流同层节点并行 worker 数，`0` 表示关闭
-- MQTT / RabbitMQ 连接参数仅通过“系统设置 → 消息队列”配置
+- MQTT / RabbitMQ / HTTP 连接参数仅通过“系统设置 → 消息投递”配置
 
 ## 资源估算
 
@@ -207,5 +208,5 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 - Jetson Orin NX Super 镜像与部署：`docs/jetson_orin_nx_docker.md`
 - RK3588 镜像与构建说明：`docs/rk3588_docker.md`
 - RK3588 板端部署/排障：`docs/rk_usage_manual.md`
-- MQTT / RabbitMQ 消息格式与接入：`docs/message_queue_integration.md`
+- MQTT / RabbitMQ / HTTP 消息格式与接入：`docs/message_queue_integration.md`
 - 前端说明：`frontend/README.md`

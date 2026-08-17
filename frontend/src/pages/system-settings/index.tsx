@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Form, Input, InputNumber, Progress, Select, Switch, Tabs, Tag, Typography, message, Spin } from 'antd';
 import type { FormInstance } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -17,6 +17,9 @@ import {
   ThunderboltOutlined,
   VideoCameraOutlined,
   GlobalOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import {
@@ -62,6 +65,64 @@ const NODE_ID_SOURCE_LABELS: Record<string, string> = {
   hostname: '主机名回退',
 };
 
+const EMPTY_HTTP_HEADERS: Array<{ name?: string; value?: string }> = [];
+
+const buildHttpReceiverPrompt = ({
+  endpointUrl,
+  authType,
+  useNodeIdAsToken,
+  nodeId,
+  customHeaderNames,
+  mediaDeliveryMode,
+}: {
+  endpointUrl: string;
+  authType: string;
+  useNodeIdAsToken: boolean;
+  nodeId: string;
+  customHeaderNames: string[];
+  mediaDeliveryMode: string;
+}) => {
+  const authInstruction = authType === 'none'
+    ? '不要求 Authorization 请求头。'
+    : useNodeIdAsToken
+      ? `校验 Authorization: Bearer ${nodeId || '<CURRENT_NODE_ID>'}。`
+      : '校验 Authorization: Bearer <YOUR_CUSTOM_TOKEN>，Token 从安全配置或环境变量读取。';
+  const customHeaders = customHeaderNames.length > 0
+    ? `还要校验这些自定义请求头（值从安全配置读取）：${customHeaderNames.map((name) => `${name}: <${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_VALUE>`).join('；')}。`
+    : '没有额外的自定义请求头。';
+  const example = {
+    event_id: 'box-01-42:alert-created',
+    event_type: 'alert.created',
+    source: 'video-ba-pipe',
+    node_id: nodeId || 'box-01',
+    external_alert_id: `${nodeId || 'box-01'}-42`,
+    alert_id: 42,
+    alert_type: 'person',
+    alert_level: 'warning',
+    alert_message: '检测到人员',
+    media_delivery_mode: mediaDeliveryMode,
+    media: {
+      status: mediaDeliveryMode === 'object_storage' ? 'pending' : 'ready',
+      image: mediaDeliveryMode === 'inline'
+        ? { kind: 'inline', content_type: 'image/jpeg', encoding: 'base64', data: '<BASE64_DATA>' }
+        : mediaDeliveryMode === 'url'
+          ? { kind: 'url', url: 'https://video.example.com/api/alerts/image/42' }
+          : null,
+    },
+  };
+  return `请在当前项目中实现 VideoBA 告警接收端 API，要求如下：
+
+1. 创建 POST ${endpointUrl || '<HTTP_ENDPOINT_URL>'}，接收 Content-Type: application/json；不要依赖重定向。
+2. ${authInstruction} ${customHeaders}
+3. 读取 X-VideoBA-Event-Id、X-VideoBA-Event-Type；当 X-VideoBA-Test: true 或 event_type=system.test 时，作为连通性测试处理。
+4. 请求体示例：
+${JSON.stringify(example, null, 2)}
+5. event_type 可能是 alert.created、alert.media.ready 或 system.test。媒体模式是 ${mediaDeliveryMode}；代码应容忍可选字段和后续新增字段。
+6. 使用 event_id 建立唯一约束并实现幂等；使用 external_alert_id 关联同一告警的 created 与 media.ready 事件。
+7. 只有在事件已可靠接收或持久化后才返回任意 2xx。校验失败返回 4xx，临时故障返回 5xx；发送端会按至少一次语义重试所有非 2xx、超时和网络错误。
+8. 请给出可直接运行的实现、依赖安装命令、环境变量示例、数据库建表/迁移，以及测试正常事件、重复事件、测试事件和鉴权失败的自动化测试。`;
+};
+
 const SystemSettingsPage: React.FC = () => {
   const [vlForm] = Form.useForm();
   const [rotationForm] = Form.useForm();
@@ -96,6 +157,10 @@ const SystemSettingsPage: React.FC = () => {
   const oomCircuitEnabled = Form.useWatch('oom_circuit_breaker_enabled', inferenceForm) ?? false;
   const messageQueueEnabled = Form.useWatch('enabled', messageQueueForm) ?? false;
   const messageQueueProvider = Form.useWatch('provider', messageQueueForm) ?? 'mqtt';
+  const httpAuthType = Form.useWatch(['http', 'auth_type'], messageQueueForm) ?? 'bearer';
+  const httpUseNodeIdAsToken = Form.useWatch(['http', 'use_node_id_as_token'], messageQueueForm) ?? true;
+  const httpEndpointUrl = Form.useWatch(['http', 'endpoint_url'], messageQueueForm) ?? '';
+  const httpCustomHeaders = Form.useWatch(['http', 'custom_headers'], messageQueueForm) ?? EMPTY_HTTP_HEADERS;
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
   const dwellSeconds = Form.useWatch('dwell_seconds', rotationForm) ?? 30;
   const estimatedBatches = eligibleSourceCount > 0
@@ -109,6 +174,16 @@ const SystemSettingsPage: React.FC = () => {
   const sharedServiceRunning = inferenceStatus?.service_running ?? false;
   const inferenceMemory = inferenceStatus?.memory;
   const inferenceModels = inferenceStatus?.models || [];
+  const httpReceiverPrompt = useMemo(() => buildHttpReceiverPrompt({
+    endpointUrl: httpEndpointUrl,
+    authType: httpAuthType,
+    useNodeIdAsToken: httpUseNodeIdAsToken,
+    nodeId: systemInfo?.node_id || '',
+    customHeaderNames: (Array.isArray(httpCustomHeaders) ? httpCustomHeaders : [])
+      .map((header: any) => String(header?.name || '').trim())
+      .filter(Boolean),
+    mediaDeliveryMode,
+  }), [httpAuthType, httpCustomHeaders, httpEndpointUrl, httpUseNodeIdAsToken, mediaDeliveryMode, systemInfo?.node_id]);
 
   const loadConfig = async () => {
     setLoading(true);
@@ -243,7 +318,7 @@ const SystemSettingsPage: React.FC = () => {
       const values = await messageQueueForm.validateFields();
       const response = await testMessageQueueConfig(values);
       if (response?.success) {
-        message.success(response.message || '消息队列连接正常');
+        message.success(response.message || '消息投递连接正常');
       } else {
         message.error(response?.error || '测试连接失败');
       }
@@ -251,6 +326,15 @@ const SystemSettingsPage: React.FC = () => {
       message.error(`测试连接失败: ${error.message || error.error || '未知错误'}`);
     } finally {
       setTestingMq(false);
+    }
+  };
+
+  const handleCopyHttpPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(httpReceiverPrompt);
+      message.success('接收端 Prompt 已复制');
+    } catch (error: any) {
+      message.error(`复制失败: ${error.message || '请手动复制'}`);
     }
   };
 
@@ -287,7 +371,7 @@ const SystemSettingsPage: React.FC = () => {
         icon={<SettingOutlined />}
         eyebrow="SYSTEM CONTROL"
         title="系统设置"
-        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息队列配置。"
+        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。"
         extra={activeTabKey !== 'apiKeys' ? (
           <Button
             type="primary"
@@ -627,7 +711,7 @@ const SystemSettingsPage: React.FC = () => {
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="消息队列使用持久化异步投递"
+                    message="消息投递使用持久化异步任务"
                     description="URL 模式保持当前行为；消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。"
                   />
 
@@ -738,11 +822,11 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'messageQueue',
-              label: (<span><ApiOutlined /> 消息队列</span>),
+              label: (<span><ApiOutlined /> 消息投递</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><ApiOutlined /> 消息队列</span>}
+                  title={<span><ApiOutlined /> 消息投递</span>}
                   extra={
                     <Button
                       icon={<ApiOutlined />}
@@ -750,7 +834,7 @@ const SystemSettingsPage: React.FC = () => {
                       onClick={handleTestMessageQueue}
                       disabled={!messageQueueEnabled}
                     >
-                      测试连接
+                      {messageQueueProvider === 'http' ? '发送测试事件' : '测试连接'}
                     </Button>
                   }
                 >
@@ -758,18 +842,18 @@ const SystemSettingsPage: React.FC = () => {
                     type={messageQueueEnabled ? 'info' : 'warning'}
                     showIcon
                     className="system-settings-alert"
-                    message={messageQueueEnabled ? `${messageQueueProvider.toUpperCase()} 预警发布已启用` : '消息队列预警发布未启用'}
-                    description="系统每次只使用一个提供方。MQTT 为默认通道，RabbitMQ 用于兼容现有消费端。所有连接参数均保存在系统设置中。"
+                    message={messageQueueEnabled ? `${messageQueueProvider.toUpperCase()} 预警投递已启用` : '预警消息投递未启用'}
+                    description="系统每次只使用一个通道。MQTT 为默认通道，RabbitMQ 用于兼容现有消费端，HTTP 用于直接调用接收端 API。所有通道均复用持久化异步投递与失败重试。"
                   />
 
                   <Form form={messageQueueForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用消息队列" name="enabled" valuePropName="checked" extra="关闭后不再连接或发布。">
+                      <Form.Item label="启用消息投递" name="enabled" valuePropName="checked" extra="关闭后不再连接或投递。">
                         <Switch />
                       </Form.Item>
 
                       <Form.Item
-                        label="消息队列提供方"
+                        label="投递通道"
                         name="provider"
                         rules={[{ required: true, message: '请选择提供方' }]}
                       >
@@ -778,6 +862,7 @@ const SystemSettingsPage: React.FC = () => {
                           options={[
                             { value: 'mqtt', label: 'MQTT（推荐）' },
                             { value: 'rabbitmq', label: 'RabbitMQ（兼容）' },
+                            { value: 'http', label: 'HTTP API' },
                           ]}
                         />
                       </Form.Item>
@@ -809,7 +894,7 @@ const SystemSettingsPage: React.FC = () => {
                             <InputNumber min={5} max={3600} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
                         </>
-                      ) : (
+                      ) : messageQueueProvider === 'rabbitmq' ? (
                         <>
                           <Form.Item label="主机地址" name={['rabbitmq', 'host']} rules={[{ required: messageQueueEnabled, message: '请输入主机地址' }]}>
                             <Input placeholder="rabbitmq 或 10.0.4.15" disabled={!messageQueueEnabled} />
@@ -841,6 +926,124 @@ const SystemSettingsPage: React.FC = () => {
                           <Form.Item label="连接超时（秒）" name={['rabbitmq', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入连接超时' }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
+                        </>
+                      ) : (
+                        <>
+                          <Form.Item
+                            className="system-settings-field-span-2"
+                            label="接收端 URL"
+                            name={['http', 'endpoint_url']}
+                            rules={[
+                              { required: messageQueueEnabled, message: '请输入接收端 URL' },
+                              { type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' },
+                            ]}
+                            extra="告警和测试事件都会以 application/json POST 到该地址；不会跟随重定向。"
+                          >
+                            <Input placeholder="https://receiver.example.com/api/v1/video-ba/events" disabled={!messageQueueEnabled} />
+                          </Form.Item>
+
+                          <Form.Item label="鉴权方式" name={['http', 'auth_type']} rules={[{ required: true, message: '请选择鉴权方式' }]}>
+                            <Select
+                              disabled={!messageQueueEnabled}
+                              options={[
+                                { value: 'bearer', label: 'Bearer Token（推荐）' },
+                                { value: 'none', label: '不鉴权' },
+                              ]}
+                            />
+                          </Form.Item>
+
+                          <Form.Item label="请求超时（秒）" name={['http', 'timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入请求超时' }]}>
+                            <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
+                          </Form.Item>
+
+                          {httpAuthType === 'bearer' ? (
+                            <>
+                              <Form.Item
+                                label="使用设备 ID 作为 Token"
+                                name={['http', 'use_node_id_as_token']}
+                                valuePropName="checked"
+                                extra={`开启后动态使用当前 node_id：${systemInfo?.node_id || '未获取'}。适合快速对接；强鉴权请使用自定义 Token。`}
+                              >
+                                <Switch disabled={!messageQueueEnabled} />
+                              </Form.Item>
+
+                              {!httpUseNodeIdAsToken ? (
+                                <Form.Item
+                                  label="自定义 Bearer Token"
+                                  name={['http', 'bearer_token']}
+                                  rules={[{
+                                    required: messageQueueEnabled && !messageQueueForm.getFieldValue(['http', 'bearer_token_configured']),
+                                    message: '请输入 Bearer Token',
+                                  }]}
+                                  extra="留空会保留已保存的 Token；接口不会返回原值。"
+                                >
+                                  <Input.Password placeholder="请输入接收端分配的 Token" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                                </Form.Item>
+                              ) : null}
+                            </>
+                          ) : null}
+
+                          <Form.List name={['http', 'custom_headers']}>
+                            {(fields, { add, remove }) => (
+                              <div className="http-header-editor system-settings-field-span-2">
+                                <div className="http-header-editor__heading">
+                                  <div>
+                                    <strong>自定义请求头</strong>
+                                    <span>请求头值保存后全部脱敏；留空保留原值。</span>
+                                  </div>
+                                  <Button
+                                    size="small"
+                                    icon={<PlusOutlined />}
+                                    onClick={() => add({ name: '', value: '' })}
+                                    disabled={!messageQueueEnabled}
+                                  >
+                                    添加请求头
+                                  </Button>
+                                </div>
+                                {fields.length === 0 ? (
+                                  <div className="http-header-editor__empty">没有额外请求头</div>
+                                ) : fields.map((field) => (
+                                  <div className="http-header-editor__row" key={field.key}>
+                                    <Form.Item
+                                      {...field}
+                                      key={`${field.key}-name`}
+                                      name={[field.name, 'name']}
+                                      rules={[{ required: true, message: '请输入请求头名称' }]}
+                                    >
+                                      <Input placeholder="X-API-Key" disabled={!messageQueueEnabled} />
+                                    </Form.Item>
+                                    <Form.Item {...field} key={`${field.key}-value`} name={[field.name, 'value']}>
+                                      <Input.Password placeholder="留空保留已保存值" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                                    </Form.Item>
+                                    <Button
+                                      type="text"
+                                      danger
+                                      aria-label="删除请求头"
+                                      icon={<DeleteOutlined />}
+                                      onClick={() => remove(field.name)}
+                                      disabled={!messageQueueEnabled}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </Form.List>
+
+                          <div className="http-prompt-card system-settings-field-span-2">
+                            <div className="http-prompt-card__header">
+                              <div>
+                                <span className="http-prompt-card__eyebrow">RECEIVER CONTRACT</span>
+                                <strong>Vibe Coding 接收端 Prompt</strong>
+                              </div>
+                              <Button size="small" icon={<CopyOutlined />} onClick={handleCopyHttpPrompt}>
+                                复制 Prompt
+                              </Button>
+                            </div>
+                            <Typography.Paragraph className="http-prompt-card__hint">
+                              已根据当前 URL、鉴权、请求头和媒体模式生成。node_id 模式会写入当前设备 ID；自定义密钥始终使用占位符。
+                            </Typography.Paragraph>
+                            <pre className="http-prompt-card__content">{httpReceiverPrompt}</pre>
+                          </div>
                         </>
                       )}
                     </div>

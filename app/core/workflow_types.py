@@ -158,9 +158,9 @@ class AlertNodeData(NodeContext):
 
     publish_to_mq: bool = True
     """
-    是否将该节点的告警输出到当前消息队列提供方。
+    是否将该节点的告警输出到当前消息投递通道。
     仅在告警真正触发（通过触发条件、抑制期、VL 核验之后）时生效。
-    默认 True；关闭后该节点告警不会推送 MQ（全局开关及提供方由系统设置控制）。
+    默认 True；关闭后该节点告警不会异步投递（全局开关及通道由系统设置控制）。
     """
 
 OutputNodeData = AlertNodeData  # Output节点与Alert节点配置相同
