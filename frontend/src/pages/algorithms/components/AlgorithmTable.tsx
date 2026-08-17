@@ -33,6 +33,7 @@ export interface Algorithm {
   window_threshold?: number;
   created_at?: string;
   updated_at?: string;
+  license_runtime_allowed?: boolean;
   vl_config?: {
     base_url?: string;
     model_name?: string;
@@ -102,6 +103,11 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
               >
                 {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? '组合检测' : '脚本'}
               </Tag>
+              {record.license_runtime_allowed === false ? (
+                <Tooltip title="该算法超出当前授权运行范围，配置会保留但不会执行">
+                  <Tag color="default">未获运行授权</Tag>
+                </Tooltip>
+              ) : null}
             </div>
             {record.description && (
               <div className="algorithm-description">{record.description}</div>

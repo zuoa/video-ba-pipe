@@ -86,6 +86,12 @@ from app.core.public_media_config import (
     verify_public_media_signature,
 )
 from app.core.node_identity import get_node_identity
+from app.core.license_service import (
+    LicenseError,
+    ensure_resource_entitled,
+    quota_capacity,
+    runtime_entitlements,
+)
 from app.core.inference_resource_config import (
     detect_inference_capabilities,
     effective_inference_resource_config,
@@ -177,7 +183,7 @@ from app.web.api.auth import (
 app.register_blueprint(auth_bp)
 
 
-def serialize_algorithm(algorithm):
+def serialize_algorithm(algorithm, runtime_allowed=None):
     ext_config = dict(algorithm.ext_config if hasattr(algorithm, 'ext_config') else {})
     algorithm_type = ext_config.get('algorithm_type') or 'script'
     if algorithm_type == 'vl':
@@ -185,7 +191,7 @@ def serialize_algorithm(algorithm):
         api_key = vl_config.pop('api_key', '')
         vl_config['api_key_configured'] = bool(api_key)
         ext_config['vl_config'] = vl_config
-    return {
+    payload = {
         'id': algorithm.id,
         'name': algorithm.name,
         'description': algorithm.description,
@@ -199,6 +205,9 @@ def serialize_algorithm(algorithm):
         'runtime_available': algorithm_type != 'ocr' or is_ocr_runtime_available(),
         **ext_config,
     }
+    if runtime_allowed is not None:
+        payload['license_runtime_allowed'] = bool(runtime_allowed)
+    return payload
 
 
 def _forward_algorithm_test(image_file, job):
@@ -228,8 +237,8 @@ def _bump_active_workflows_for_algorithm(algorithm_id):
     return affected_ids
 
 
-def serialize_video_source(source):
-    return {
+def serialize_video_source(source, runtime_allowed=None):
+    payload = {
         'id': source.id,
         'name': source.name,
         'enabled': source.enabled,
@@ -244,6 +253,9 @@ def serialize_video_source(source):
         'decoder_pid': source.decoder_pid,
         'created_by': getattr(source, 'created_by', 'admin'),
     }
+    if runtime_allowed is not None:
+        payload['license_runtime_allowed'] = bool(runtime_allowed)
+    return payload
 
 # ========== API 端点 ==========
 
@@ -770,11 +782,16 @@ def test_system_message_queue_config():
 @app.route('/api/algorithms', methods=['GET'])
 @require_auth
 def get_algorithms():
+    entitlements = runtime_entitlements()
+    allowed_ids = entitlements['algorithm_ids']
     algorithms = apply_owner_scope(
         Algorithm.select().order_by(Algorithm.created_at.desc()),
         Algorithm,
     )
-    return jsonify([serialize_algorithm(a) for a in algorithms])
+    return jsonify([
+        serialize_algorithm(a, allowed_ids is None or a.id in allowed_ids)
+        for a in algorithms
+    ])
 
 @app.route('/api/algorithms/<int:id>', methods=['GET'])
 @require_auth
@@ -834,20 +851,23 @@ def create_algorithm():
             )
             ext_config['model_ids'] = list(cascade_model_ids(ext_config['cascade_config']))
 
-        # 创建算法
-        algorithm = Algorithm.create(
-            name=data['name'],
-            description=data.get('description'),
-            script_path=data.get('script_path') or '',
-            script_config=data.get('script_config', '{}'),
-            ext_config_json=json.dumps(ext_config),
-            enabled_hooks=data.get('enabled_hooks'),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            created_by=current_username('admin'),
-        )
+        # 配额检查与创建在同一事务/锁中，避免多 worker 并发超额。
+        with quota_capacity('algorithms'):
+            algorithm = Algorithm.create(
+                name=data['name'],
+                description=data.get('description'),
+                script_path=data.get('script_path') or '',
+                script_config=data.get('script_config', '{}'),
+                ext_config_json=json.dumps(ext_config),
+                enabled_hooks=data.get('enabled_hooks'),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                created_by=current_username('admin'),
+            )
 
         return jsonify({'id': algorithm.id, 'message': 'Algorithm created'}), 201
+    except LicenseError as e:
+        return jsonify(e.to_dict()), 403
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -1003,6 +1023,11 @@ def test_algorithm():
     if owner_response:
         return owner_response
 
+    try:
+        ensure_resource_entitled('algorithms', algorithm.id)
+    except LicenseError as exc:
+        return jsonify({'success': False, **exc.to_dict()}), 403
+
     body, status = _forward_algorithm_test(
         uploaded,
         {'kind': 'saved_algorithm', 'algorithm_id': algorithm_id},
@@ -1035,11 +1060,16 @@ def preview_cascade_algorithm():
 @app.route('/api/video-sources', methods=['GET'])
 @require_auth
 def get_video_sources():
+    entitlements = runtime_entitlements()
+    allowed_ids = entitlements['source_ids']
     sources = apply_owner_scope(
         VideoSource.select().order_by(VideoSource.id.desc()),
         VideoSource,
     )
-    return jsonify([serialize_video_source(s) for s in sources])
+    return jsonify([
+        serialize_video_source(s, allowed_ids is None or s.id in allowed_ids)
+        for s in sources
+    ])
 
 @app.route('/api/video-sources/<int:id>', methods=['GET'])
 @require_auth
@@ -1058,23 +1088,26 @@ def get_video_source(id):
 def create_video_source():
     data = request.json
     try:
-        source = VideoSource.create(
-            name=data['name'],
-            enabled=data.get('enabled', True),
-            source_code=data['source_code'],
-            source_url=data['source_url'],
-            source_decode_width=data.get('source_decode_width', 960),
-            source_decode_height=data.get('source_decode_height', 540),
-            source_fps=data.get('source_fps', 10),
-            source_codec=normalize_video_codec(
-                data.get('source_codec'),
-                allow_unknown=True,
-            ),
-            status='STOPPED',
-            decoder_pid=None,
-            created_by=current_username('admin'),
-        )
+        with quota_capacity('video_sources'):
+            source = VideoSource.create(
+                name=data['name'],
+                enabled=data.get('enabled', True),
+                source_code=data['source_code'],
+                source_url=data['source_url'],
+                source_decode_width=data.get('source_decode_width', 960),
+                source_decode_height=data.get('source_decode_height', 540),
+                source_fps=data.get('source_fps', 10),
+                source_codec=normalize_video_codec(
+                    data.get('source_codec'),
+                    allow_unknown=True,
+                ),
+                status='STOPPED',
+                decoder_pid=None,
+                created_by=current_username('admin'),
+            )
         return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
+    except LicenseError as e:
+        return jsonify(e.to_dict()), 403
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -2343,6 +2376,10 @@ try:
     app.logger.info("实时预览API已注册")
 except ImportError as e:
     app.logger.warning(f"实时预览API注册失败: {e}")
+
+# ========== 注册离线许可证 API ==========
+from app.web.api.license import register_license_api
+register_license_api(app)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)

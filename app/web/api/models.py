@@ -11,6 +11,7 @@ import stat
 import tarfile
 import tempfile
 import zipfile
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime
 from functools import lru_cache
@@ -25,6 +26,7 @@ from werkzeug.utils import secure_filename
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.core.database_models import MLModel, Algorithm, Workflow, db
+from app.core.license_service import LicenseError, quota_capacity
 from app.core.script_loader import get_script_loader
 from app.core.workflow_runtime import (
     build_template_workflow_data,
@@ -1230,7 +1232,8 @@ def create_model_quick_setup(model_id):
     algorithm_created = False
     template_created = False
     try:
-        with db.atomic():
+        quota_guard = quota_capacity('algorithms') if existing_algorithm is None else nullcontext()
+        with quota_guard, db.atomic():
             algorithm = existing_algorithm
             if algorithm is None:
                 performance = definition['performance']
@@ -1316,6 +1319,8 @@ def create_model_quick_setup(model_id):
             'algorithm': _serialize_quick_resource(algorithm, algorithm_created),
             'workflow_template': _serialize_quick_resource(template, template_created),
         }), status_code
+    except LicenseError as exc:
+        return jsonify({'success': False, **exc.to_dict()}), 403
     except IntegrityError as exc:
         logger.warning(f'模型快速创建发生名称冲突 (model_id={model_id}): {exc}')
         return jsonify({

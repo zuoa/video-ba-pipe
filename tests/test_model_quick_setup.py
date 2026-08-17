@@ -5,7 +5,8 @@ import pytest
 from flask import Flask
 from peewee import SqliteDatabase
 
-from app.core.database_models import Algorithm, MLModel, User, VideoSource, Workflow
+from app.core.database_models import Algorithm, MLModel, SystemSetting, User, VideoSource, Workflow
+from app.core import license_service
 from app.web.api import models as models_api
 from app.web.api.auth import generate_token
 
@@ -13,12 +14,13 @@ from app.web.api.auth import generate_token
 @pytest.fixture
 def quick_setup_api(monkeypatch):
     test_db = SqliteDatabase(':memory:', pragmas={'foreign_keys': 1})
-    bound_models = [User, VideoSource, Algorithm, MLModel, Workflow]
+    bound_models = [User, VideoSource, Algorithm, MLModel, Workflow, SystemSetting]
 
     with test_db.bind_ctx(bound_models):
         test_db.connect()
         test_db.create_tables(bound_models)
         monkeypatch.setattr(models_api, 'db', test_db)
+        monkeypatch.setattr(license_service, 'db', test_db)
 
         user = User.create(
             username='quick-admin',

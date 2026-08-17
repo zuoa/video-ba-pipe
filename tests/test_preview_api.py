@@ -4,7 +4,7 @@ import pytest
 from flask import Flask
 from peewee import SqliteDatabase
 
-from app.core.database_models import User, VideoSource
+from app.core.database_models import User, VideoSource, Workflow
 from app.web.api import preview as preview_api
 from app.web.api.auth import generate_token
 
@@ -12,7 +12,7 @@ from app.web.api.auth import generate_token
 @pytest.fixture
 def preview_client(monkeypatch):
     test_db = SqliteDatabase(':memory:')
-    models = [User, VideoSource]
+    models = [User, VideoSource, Workflow]
     with test_db.bind_ctx(models):
         test_db.connect()
         test_db.create_tables(models)
@@ -26,6 +26,16 @@ def preview_client(monkeypatch):
             name='Lobby',
             source_code='lobby-1',
             source_url='rtsp://camera/live',
+            created_by=user.username,
+        )
+        Workflow.create(
+            name='preview-workflow',
+            workflow_data='{}',
+            is_active=True,
+            is_template=False,
+            video_source=source,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
             created_by=user.username,
         )
         monkeypatch.setattr(preview_api, 'MEDIAMTX_ENABLED', True)

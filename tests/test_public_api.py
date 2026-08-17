@@ -5,7 +5,8 @@ import pytest
 from flask import Flask
 from peewee import SqliteDatabase
 
-from app.core.database_models import ApiKey, User, VideoSource, Workflow
+from app.core.database_models import ApiKey, SystemSetting, User, VideoSource, Workflow
+from app.core import license_service
 from app.core.orchestrator import Orchestrator
 from app.core.workflow_runtime import build_template_workflow_data
 from app.web.api.auth import generate_token
@@ -15,12 +16,13 @@ from app.web.api import public_api
 @pytest.fixture
 def public_api_client(monkeypatch):
     test_db = SqliteDatabase(':memory:', pragmas={'foreign_keys': 1})
-    models = [User, ApiKey, VideoSource, Workflow]
+    models = [User, ApiKey, VideoSource, Workflow, SystemSetting]
 
     with test_db.bind_ctx(models):
         test_db.connect()
         test_db.create_tables(models)
         monkeypatch.setattr(public_api, 'db', test_db)
+        monkeypatch.setattr(license_service, 'db', test_db)
         monkeypatch.setattr(
             public_api.mediamtx_client,
             'register_path',

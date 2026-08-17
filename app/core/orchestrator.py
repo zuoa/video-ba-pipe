@@ -84,12 +84,14 @@ from app.core.shared_inference import (
     request_service_stats,
 )
 from app.core.algorithm_test_service import AlgorithmTestServiceController
+from app.core.license_service import runtime_entitlements
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.recording_storage_config import (
     get_recording_storage_config,
 )
 from app.core.workflow_runtime import (
     build_workflow_signature,
+    extract_algorithm_ids,
     extract_source_id_from_workflow_data,
     get_node_type,
 )
@@ -1757,6 +1759,10 @@ class Orchestrator:
         self._refresh_recording_config(now)
         self._maybe_sync_mediamtx_paths(now)
         self.desired_source_ids = self._update_rotation_schedule(now)
+        self.license_entitlements = runtime_entitlements()
+        licensed_source_ids = self.license_entitlements['source_ids']
+        if licensed_source_ids is not None:
+            self.desired_source_ids &= licensed_source_ids
 
         # 启动限流:每个周期最多启动 SOURCE_MAX_CONCURRENT_STARTS 个源，
         # 防止批量启动时 ffprobe/硬解通道惊群
@@ -2063,6 +2069,24 @@ class Orchestrator:
     
     def manage_workflows(self):
         active_groups = self._build_active_workflow_groups()
+        entitlements = getattr(self, 'license_entitlements', None) or runtime_entitlements()
+        licensed_algorithm_ids = entitlements['algorithm_ids']
+        if licensed_algorithm_ids is not None:
+            active_groups = {
+                source_id: [
+                    workflow
+                    for workflow in workflows
+                    if set(extract_algorithm_ids(workflow.data_dict)).issubset(
+                        licensed_algorithm_ids
+                    )
+                ]
+                for source_id, workflows in active_groups.items()
+            }
+            active_groups = {
+                source_id: workflows
+                for source_id, workflows in active_groups.items()
+                if workflows
+            }
         active_groups = {
             source_id: workflows
             for source_id, workflows in active_groups.items()

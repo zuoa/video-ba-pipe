@@ -5,6 +5,7 @@ from flask import jsonify, request
 from app.core.database_models import VideoSource, db
 from app.web.api.auth import require_auth
 from app.core.mediamtx_client import mediamtx_client
+from app.core.license_service import LicenseError, ensure_resource_entitled
 from app.config import (
     MEDIAMTX_ENABLED,
     MEDIAMTX_WEBRTC_PORT,
@@ -47,6 +48,10 @@ def register_preview_api(app):
             source = VideoSource.get_by_id(source_id)
         except VideoSource.DoesNotExist:
             return jsonify({'success': False, 'message': '视频源不存在'}), 404
+        try:
+            ensure_resource_entitled('video_sources', source.id)
+        except LicenseError as exc:
+            return jsonify({'success': False, **exc.to_dict()}), 403
 
         if not MEDIAMTX_ENABLED:
             return jsonify({

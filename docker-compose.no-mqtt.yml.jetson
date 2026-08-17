@@ -18,6 +18,7 @@ x-jetson-environment: &jetson-environment
   DB_SCHEMA_LOCK_TIMEOUT_SECONDS: ${DB_SCHEMA_LOCK_TIMEOUT_SECONDS:-120}
   # 节点唯一编码；集群/多盒子部署每台必须唯一，留空则优先使用 MAC 并持久化到 /data/node_id.json
   NODE_ID: ${NODE_ID:-}
+  LICENSE_PUBLIC_KEY_PATH: ${LICENSE_PUBLIC_KEY_PATH:-/app/app/license_public_key.pem}
   PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
   MEDIA_URL_SIGNING_ENABLED: ${MEDIA_URL_SIGNING_ENABLED:-true}
   MEDIA_URL_TTL_HOURS: ${MEDIA_URL_TTL_HOURS:-24}

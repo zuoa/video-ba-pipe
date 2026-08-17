@@ -19,6 +19,7 @@ from app import logger
 from app.config import FRAME_SAVE_PATH, VIDEO_SAVE_PATH
 from app.core.database_models import Workflow, VideoSource, WorkflowTestResult
 from app.core.workflow_executor import WorkflowExecutor
+from app.core.license_service import LicenseError, ensure_workflow_entitled
 from app.core.public_media_config import (
     add_public_media_urls_to_detection_images,
     build_public_media_url,
@@ -388,6 +389,11 @@ def register_workflow_test_api(app):
             owner_response = require_resource_owner(workflow)
             if owner_response:
                 return owner_response
+
+            try:
+                ensure_workflow_entitled(workflow)
+            except LicenseError as exc:
+                return jsonify({'success': False, **exc.to_dict()}), 403
 
             source = _extract_source_from_workflow(workflow)
             if source is not None:

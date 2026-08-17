@@ -2,6 +2,7 @@ from flask import jsonify, request
 from app.core.database_models import VideoSource
 from app.core.video_probe import normalize_video_codec
 from app.core.mediamtx_client import mediamtx_client
+from app.core.license_service import LicenseError, quota_capacity
 
 
 def _sync_mediamtx_create(source):
@@ -66,23 +67,26 @@ def register_video_sources_api(app):
     def create_video_source():
         data = request.json
         try:
-            source = VideoSource.create(
-                name=data['name'],
-                enabled=data.get('enabled', True),
-                source_code=data['source_code'],
-                source_url=data['source_url'],
-                source_decode_width=data.get('source_decode_width', 960),
-                source_decode_height=data.get('source_decode_height', 540),
-                source_fps=data.get('source_fps', 10),
-                source_codec=normalize_video_codec(
-                    data.get('source_codec'),
-                    allow_unknown=True,
-                ),
-                status=data.get('status', 'STOPPED'),
-                decoder_pid=data.get('decoder_pid')
-            )
+            with quota_capacity('video_sources'):
+                source = VideoSource.create(
+                    name=data['name'],
+                    enabled=data.get('enabled', True),
+                    source_code=data['source_code'],
+                    source_url=data['source_url'],
+                    source_decode_width=data.get('source_decode_width', 960),
+                    source_decode_height=data.get('source_decode_height', 540),
+                    source_fps=data.get('source_fps', 10),
+                    source_codec=normalize_video_codec(
+                        data.get('source_codec'),
+                        allow_unknown=True,
+                    ),
+                    status=data.get('status', 'STOPPED'),
+                    decoder_pid=data.get('decoder_pid')
+                )
             _sync_mediamtx_create(source)
             return jsonify({'id': source.id, 'message': '视频源创建成功'}), 201
+        except LicenseError as e:
+            return jsonify(e.to_dict()), 403
         except Exception as e:
             return jsonify({'error': str(e)}), 400
     

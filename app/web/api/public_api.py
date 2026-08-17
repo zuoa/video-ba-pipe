@@ -16,6 +16,7 @@ from peewee import IntegrityError
 
 from app.core.database_models import ApiKey, VideoSource, Workflow, db
 from app.core.mediamtx_client import mediamtx_client
+from app.core.license_service import LicenseError, quota_capacity
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
 from app.core.video_probe import normalize_video_codec
 from app.core.webhook_workflow_config import mask_workflow_webhook_secrets
@@ -295,25 +296,28 @@ def register_public_api(app):
             return _error('invalid_field', 'enabled 必须是布尔值', 400)
 
         try:
-            source = VideoSource.create(
-                name=name,
-                enabled=data.get('enabled', True),
-                source_code=source_code,
-                source_url=source_url,
-                source_decode_width=_validate_positive_integer(
-                    data, 'source_decode_width', 960
-                ),
-                source_decode_height=_validate_positive_integer(
-                    data, 'source_decode_height', 540
-                ),
-                source_fps=_validate_positive_integer(data, 'source_fps', 10),
-                source_codec=normalize_video_codec(
-                    data.get('source_codec'), allow_unknown=True
-                ),
-                status='STOPPED',
-                decoder_pid=None,
-                created_by=API_INTEGRATION_OWNER,
-            )
+            with quota_capacity('video_sources'):
+                source = VideoSource.create(
+                    name=name,
+                    enabled=data.get('enabled', True),
+                    source_code=source_code,
+                    source_url=source_url,
+                    source_decode_width=_validate_positive_integer(
+                        data, 'source_decode_width', 960
+                    ),
+                    source_decode_height=_validate_positive_integer(
+                        data, 'source_decode_height', 540
+                    ),
+                    source_fps=_validate_positive_integer(data, 'source_fps', 10),
+                    source_codec=normalize_video_codec(
+                        data.get('source_codec'), allow_unknown=True
+                    ),
+                    status='STOPPED',
+                    decoder_pid=None,
+                    created_by=API_INTEGRATION_OWNER,
+                )
+        except LicenseError as exc:
+            return _error(exc.code, exc.message, 403)
         except IntegrityError:
             return _error('source_code_exists', '视频源编码已存在', 409)
         except ValueError as exc:

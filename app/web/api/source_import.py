@@ -8,6 +8,7 @@ from flask import jsonify, request
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 from app.core.database_models import VideoSource, db
+from app.core.license_service import LicenseError, quota_capacity
 from app.web.api.auth import require_auth, current_username
 
 
@@ -244,7 +245,8 @@ def _commit_hikvision_import(data: Dict[str, Any], owner_username: str) -> Dict[
     created = []
     errors = []
 
-    with db.atomic():
+    # Batch import is all-or-nothing from a license quota perspective.
+    with quota_capacity('video_sources', requested=len(channels)), db.atomic():
         for item in channels:
             try:
                 channel_no = int(item['channel_no'])
@@ -316,6 +318,8 @@ def register_source_import_api(app):
             return jsonify({'success': True, **result})
         except SourceImportError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
+        except LicenseError as exc:
+            return jsonify({'success': False, **exc.to_dict()}), 403
         except Exception as exc:
             app.logger.error(f'发现导入通道失败: {exc}')
             return jsonify({'success': False, 'error': str(exc)}), 500

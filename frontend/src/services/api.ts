@@ -37,6 +37,36 @@ export async function getSystemMetrics() {
   return request('/api/system/metrics');
 }
 
+export interface LicenseStatus {
+  success: boolean;
+  tier: 'free' | 'licensed';
+  license_status: string;
+  message: string;
+  limits: { video_sources: number; algorithms: number };
+  usage: { video_sources: number; algorithms: number };
+  over_limit: { video_sources: boolean; algorithms: boolean };
+  expires_at?: string | null;
+  license_id?: string | null;
+  customer?: string | null;
+  node_id?: string;
+  licensed_node_id?: string | null;
+  entitled_source_ids?: number[] | null;
+  entitled_algorithm_ids?: number[] | null;
+}
+
+export async function getLicenseStatus() {
+  return request<LicenseStatus>('/api/license/status');
+}
+
+export async function installLicense(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<LicenseStatus & { message: string }>('/api/license/install', {
+    method: 'POST',
+    data: formData,
+  });
+}
+
 export interface ManagedApiKey {
   id: number;
   name: string;

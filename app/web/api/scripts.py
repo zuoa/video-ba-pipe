@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from app.core.script_loader import get_script_loader, ScriptLoadError, ScriptValidationError
 from app.core.database_models import Algorithm, ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, db
+from app.core.license_service import LicenseError, quota_capacity
 from app import logger
 from app.web.api.auth import require_auth, require_admin, current_username
 
@@ -272,16 +273,21 @@ def upload_script():
                 'interval_seconds': 1,
             }
 
-            algorithm = Algorithm.create(
-                name=metadata.get('name', path[:-3]),
-                description=metadata.get('description'),
-                script_path=path,
-                script_config=json.dumps(metadata.get('config', {}), ensure_ascii=False),
-                ext_config_json=json.dumps(ext_config, ensure_ascii=False),
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-                created_by=current_username('admin'),
-            )
+            try:
+                with quota_capacity('algorithms'):
+                    algorithm = Algorithm.create(
+                        name=metadata.get('name', path[:-3]),
+                        description=metadata.get('description'),
+                        script_path=path,
+                        script_config=json.dumps(metadata.get('config', {}), ensure_ascii=False),
+                        ext_config_json=json.dumps(ext_config, ensure_ascii=False),
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                        created_by=current_username('admin'),
+                    )
+            except LicenseError:
+                os.remove(abs_path)
+                raise
 
             algorithm_id = algorithm.id
 
@@ -292,6 +298,8 @@ def upload_script():
             'message': '脚本创建成功'
         })
 
+    except LicenseError as e:
+        return jsonify({'success': False, **e.to_dict()}), 403
     except Exception as e:
         logger.error(f"上传脚本失败: {e}")
         return jsonify({

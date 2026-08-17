@@ -68,6 +68,13 @@ HF_DOWNLOAD_TIMEOUT_SECONDS = max(1, int(os.getenv('HF_DOWNLOAD_TIMEOUT_SECONDS'
 USER_SCRIPTS_ROOT = _resolve_data_path('USER_SCRIPTS_ROOT', 'user_scripts')
 os.makedirs(USER_SCRIPTS_ROOT, exist_ok=True)
 
+# Offline license verification. Release builds replace this bundled public key
+# with the vendor's Ed25519 public key; private signing material never ships.
+LICENSE_PUBLIC_KEY_PATH = os.getenv(
+    'LICENSE_PUBLIC_KEY_PATH',
+    os.path.join(APP_DIR, 'license_public_key.pem'),
+).strip() or os.path.join(APP_DIR, 'license_public_key.pem')
+
 LOG_SAVE_PATH = _resolve_data_path('LOG_SAVE_PATH', 'logs')
 os.makedirs(LOG_SAVE_PATH, exist_ok=True)
 

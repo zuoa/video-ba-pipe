@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table, Space, Image, Tooltip } from 'antd';
+import { Table, Space, Image, Tag, Tooltip } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
   EditOutlined,
@@ -57,7 +57,14 @@ const SourceTable: React.FC<SourceTableProps> = ({
             <VideoCameraOutlined />
           </div>
           <div className="name-content">
-            <div className="name-text">{name}</div>
+            <div className="name-text">
+              {name}
+              {record.license_runtime_allowed === false ? (
+                <Tooltip title="该视频源超出当前授权运行范围，配置会保留但不会启动分析">
+                  <Tag color="default" style={{ marginLeft: 8 }}>未获运行授权</Tag>
+                </Tooltip>
+              ) : null}
+            </div>
             <div className="name-code">{record.buffer_name}</div>
           </div>
         </div>

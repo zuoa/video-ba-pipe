@@ -2,6 +2,27 @@
   min-height: 100%;
 }
 
+.license-quota-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.license-quota-item {
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  border-radius: 8px;
+}
+
+.license-quota-item > span {
+  float: right;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.45));
+}
+
+@media (max-width: 640px) {
+  .license-quota-grid { grid-template-columns: 1fr; }
+}
+
 .system-settings-card {
   border-radius: 20px;
   border: 1px solid var(--app-line-soft);

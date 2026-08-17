@@ -13,6 +13,7 @@ paho-mqtt>=2.1,<3
 boto3>=1.34,<2
 gunicorn
 PyJWT
+cryptography>=42,<46
 requests
 psutil
 pynvml  # 可选:NVIDIA GPU 指标采集与 NVDEC 容量探针(仅 X86+CUDA 需要)

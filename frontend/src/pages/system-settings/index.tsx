@@ -50,6 +50,7 @@ import {
   updateVlConfig,
 } from '@/services/api';
 import ApiKeySettingsCard from './ApiKeySettingsCard';
+import LicenseSettingsCard from './LicenseSettingsCard';
 import './index.css';
 
 const validateAndGetAllFields = async (form: FormInstance) => {
@@ -372,7 +373,7 @@ const SystemSettingsPage: React.FC = () => {
         eyebrow="SYSTEM CONTROL"
         title="系统设置"
         subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。"
-        extra={activeTabKey !== 'apiKeys' ? (
+        extra={!['apiKeys', 'license'].includes(activeTabKey) ? (
           <Button
             type="primary"
             icon={<SaveOutlined />}
@@ -421,6 +422,15 @@ const SystemSettingsPage: React.FC = () => {
             activeKey={activeTabKey}
             onChange={setActiveTabKey}
             items={[
+            {
+              key: 'license',
+              label: (<span><SafetyCertificateOutlined /> 许可证</span>),
+              children: (
+                <Card className="system-settings-card" title={<span><SafetyCertificateOutlined /> 许可证与资源额度</span>}>
+                  <LicenseSettingsCard />
+                </Card>
+              ),
+            },
             {
               key: 'inference',
               label: (<span><SafetyCertificateOutlined /> 推理资源保护</span>),
