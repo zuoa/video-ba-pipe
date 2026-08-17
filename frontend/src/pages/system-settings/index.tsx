@@ -22,6 +22,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
+import { copyToClipboard } from '@/utils/clipboard';
 import {
   getSourceRotationConfig,
   getSystemInfo,
@@ -330,11 +331,11 @@ const SystemSettingsPage: React.FC = () => {
   };
 
   const handleCopyHttpPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(httpReceiverPrompt);
+    const copied = await copyToClipboard(httpReceiverPrompt);
+    if (copied) {
       message.success('接收端 Prompt 已复制');
-    } catch (error: any) {
-      message.error(`复制失败: ${error.message || '请手动复制'}`);
+    } else {
+      message.error('复制失败，请手动选择并复制');
     }
   };
 
