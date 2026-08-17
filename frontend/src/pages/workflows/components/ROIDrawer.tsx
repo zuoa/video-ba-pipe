@@ -22,10 +22,46 @@ export interface Point {
   y: number; // 相对坐标 0-1
 }
 
+export type ROIAnchor =
+  | 'top_left'
+  | 'top_center'
+  | 'top_right'
+  | 'center_left'
+  | 'center'
+  | 'center_right'
+  | 'bottom_left'
+  | 'bottom_center'
+  | 'bottom_right';
+
+const ROI_ANCHOR_OPTIONS: Array<{ value: ROIAnchor; label: string }> = [
+  { value: 'top_left', label: '左上角' },
+  { value: 'top_center', label: '上边中点' },
+  { value: 'top_right', label: '右上角' },
+  { value: 'center_left', label: '左边中点' },
+  { value: 'center', label: '中心点' },
+  { value: 'center_right', label: '右边中点' },
+  { value: 'bottom_left', label: '左下角' },
+  { value: 'bottom_center', label: '下边中点' },
+  { value: 'bottom_right', label: '右下角' },
+];
+
+const LEGACY_ANCHOR_VALUE = '__legacy__';
+
+const normalizeROIAnchor = (anchor?: string): ROIAnchor | undefined =>
+  ROI_ANCHOR_OPTIONS.some(option => option.value === anchor) ? anchor as ROIAnchor : undefined;
+
+export const getROIAnchorLabel = (anchor?: string): string => {
+  const normalized = normalizeROIAnchor(anchor);
+  return normalized
+    ? ROI_ANCHOR_OPTIONS.find(option => option.value === normalized)!.label
+    : '原有规则（兼容）';
+};
+
 export interface ROIRegion {
   name: string;
   mode: 'pre_mask' | 'post_filter'; // 检测模式
   polygon: Point[]; // 多边形顶点（相对坐标）
+  anchor?: ROIAnchor; // 后置过滤时使用的目标框判定点；缺失时沿用算法原有规则
 }
 
 export interface ROIDrawerProps {
@@ -53,6 +89,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   const [savedRegions, setSavedRegions] = useState<ROIRegion[]>(initialRegions); // 已保存的区域列表
   const [currentRegionName, setCurrentRegionName] = useState<string>(''); // 当前正在编辑的区域名称
   const [currentRegionMode, setCurrentRegionMode] = useState<'pre_mask' | 'post_filter'>('post_filter'); // 当前区域模式
+  const [currentRegionAnchor, setCurrentRegionAnchor] = useState<ROIAnchor | undefined>('center');
   const [editingIndex, setEditingIndex] = useState<number>(-1); // -1 表示新建，>=0 表示编辑第几个区域
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -152,6 +189,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
       setSavedRegions(initialRegions);
       setCurrentRegionName('');
       setCurrentRegionMode('post_filter');
+      setCurrentRegionAnchor('center');
       setEditingIndex(-1);
     }
   }, [visible, videoSourceId]);
@@ -341,11 +379,18 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
       y: point.y / canvas.height,
     }));
 
+    const existingRegion = editingIndex >= 0 ? savedRegions[editingIndex] : undefined;
     const newRegion: ROIRegion = {
+      ...(existingRegion || {}),
       name: currentRegionName,
       mode: currentRegionMode,
       polygon: normalizedPolygon,
     };
+    if (currentRegionMode === 'post_filter' && currentRegionAnchor) {
+      newRegion.anchor = currentRegionAnchor;
+    } else {
+      delete newRegion.anchor;
+    }
 
     if (editingIndex >= 0) {
       // 编辑模式：更新现有区域
@@ -362,6 +407,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     // 重置当前绘制状态
     setCurrentPolygon([]);
     setCurrentRegionName('');
+    setCurrentRegionAnchor('center');
     setEditingIndex(-1);
   };
 
@@ -369,6 +415,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   const handleClearCurrent = () => {
     setCurrentPolygon([]);
     setCurrentRegionName('');
+    setCurrentRegionAnchor('center');
     setEditingIndex(-1);
   };
 
@@ -394,6 +441,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     setCurrentPolygon(pixelPolygon);
     setCurrentRegionName(region.name);
     setCurrentRegionMode(region.mode);
+    setCurrentRegionAnchor(normalizeROIAnchor(region.anchor));
     setEditingIndex(index);
     message.info(`正在编辑区域 "${region.name}"`);
   };
@@ -403,6 +451,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     setSavedRegions([]);
     setCurrentPolygon([]);
     setCurrentRegionName('');
+    setCurrentRegionAnchor('center');
     setEditingIndex(-1);
     message.success('所有 ROI 区域已清除');
   };
@@ -493,6 +542,31 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                 <Option value="pre_mask">前置掩码 (检测前屏蔽)</Option>
                 <Option value="post_filter">后置过滤 (检测后过滤)</Option>
               </Select>
+              <label
+                htmlFor="roi-anchor-select"
+                style={{ display: 'block', marginTop: 10, marginBottom: 4, color: '#595959' }}
+              >
+                目标框判定点
+              </label>
+              <Select
+                id="roi-anchor-select"
+                aria-label="目标框判定点"
+                value={currentRegionAnchor || LEGACY_ANCHOR_VALUE}
+                onChange={(value: ROIAnchor | typeof LEGACY_ANCHOR_VALUE) => {
+                  setCurrentRegionAnchor(value === LEGACY_ANCHOR_VALUE ? undefined : value);
+                }}
+                style={{ width: '100%' }}
+                disabled={currentRegionMode !== 'post_filter'}
+              >
+                {!currentRegionAnchor && (
+                  <Option value={LEGACY_ANCHOR_VALUE} disabled>
+                    原有规则（兼容）
+                  </Option>
+                )}
+                {ROI_ANCHOR_OPTIONS.map(option => (
+                  <Option key={option.value} value={option.value}>{option.label}</Option>
+                ))}
+              </Select>
             </div>
 
             <div className="control-divider" />
@@ -553,6 +627,9 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                           <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
                             {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
                           </Tag>
+                          {region.mode === 'post_filter' && (
+                            <Tag>{getROIAnchorLabel(region.anchor)}</Tag>
+                          )}
                           <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4 }}>
                             {region.polygon.length} 个顶点
                           </div>

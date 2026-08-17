@@ -5,6 +5,7 @@ import types
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -184,6 +185,44 @@ def _square_region(x1, y1, x2, y2, mode="crop_infer"):
     }
 
 
+@pytest.mark.parametrize(
+    ("anchor", "point"),
+    [
+        ("top_left", (20, 20)),
+        ("top_center", (40, 20)),
+        ("top_right", (60, 20)),
+        ("center_left", (20, 40)),
+        ("center", (40, 40)),
+        ("center_right", (60, 40)),
+        ("bottom_left", (20, 60)),
+        ("bottom_center", (40, 60)),
+        ("bottom_right", (60, 60)),
+    ],
+)
+def test_filter_items_by_regions_supports_all_anchor_presets(anchor, point):
+    roi_module = load_roi_module()
+    point_x, point_y = point
+    region = _square_region(
+        point_x - 1,
+        point_y - 1,
+        point_x + 1,
+        point_y + 1,
+        mode="post_filter",
+    )
+    region["anchor"] = anchor
+    detection = {"box": [20, 20, 60, 60], "label": anchor}
+
+    filtered = roi_module.filter_items_by_regions(
+        [detection],
+        frame_shape=(100, 100, 3),
+        roi_regions=[region],
+        metric="ioa",
+        threshold=0.9,
+    )
+
+    assert filtered == [detection]
+
+
 def test_split_regions_supports_crop_infer():
     roi_module = load_roi_module()
     pre_mask, crop_infer, post_filter = roi_module.split_regions([
@@ -233,6 +272,61 @@ def test_filter_items_by_regions_uses_ioa_threshold():
     )
 
     assert [item["label"] for item in filtered] == ["inside"]
+
+
+def test_region_anchor_overrides_legacy_metric_and_mixed_regions_use_or_semantics():
+    roi_module = load_roi_module()
+    anchored_region = _square_region(19, 59, 41, 61, mode="post_filter")
+    anchored_region["anchor"] = "bottom_center"
+    legacy_region = _square_region(70, 70, 90, 90, mode="post_filter")
+    detections = [
+        {"box": [20, 20, 60, 60], "label": "anchor-hit"},
+        {"box": [72, 72, 80, 80], "label": "legacy-hit"},
+        {"box": [0, 0, 10, 10], "label": "outside"},
+    ]
+
+    filtered = roi_module.filter_items_by_regions(
+        detections,
+        frame_shape=(100, 100, 3),
+        roi_regions=[anchored_region, legacy_region],
+        metric="ioa",
+        threshold=0.9,
+    )
+
+    assert [item["label"] for item in filtered] == ["anchor-hit", "legacy-hit"]
+
+
+def test_invalid_anchor_uses_legacy_fallback_and_unboxed_items_can_be_preserved():
+    roi_module = load_roi_module()
+    region = _square_region(20, 20, 60, 60, mode="post_filter")
+    region["anchor"] = "not-a-real-anchor"
+    unboxed = {"label": "semantic"}
+    center_hit = {"box": [30, 30, 40, 40], "label": "center-hit"}
+
+    filtered = roi_module.filter_items_by_regions(
+        [unboxed, center_hit],
+        frame_shape=(100, 100, 3),
+        roi_regions=[region],
+        metric="center",
+        keep_unboxed=True,
+    )
+
+    assert filtered == [unboxed, center_hit]
+
+
+def test_pre_mask_anchor_does_not_post_filter_detections():
+    roi_module = load_roi_module()
+    region = _square_region(20, 20, 60, 60, mode="pre_mask")
+    region["anchor"] = "bottom_center"
+    outside = {"box": [70, 70, 90, 90], "label": "outside"}
+
+    _, detections = roi_module.apply_roi(
+        np.zeros((100, 100, 3), dtype=np.uint8),
+        [outside],
+        [region],
+    )
+
+    assert detections == [outside]
 
 
 def test_global_nms_deduplicates_same_class_crop_detections():

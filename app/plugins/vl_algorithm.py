@@ -16,6 +16,7 @@ from app.config import VIDEO_FRAME_PIXEL_FORMAT
 from app.core.algorithm import BaseAlgorithm
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_frame_dimensions
+from app.user_scripts.common.roi import filter_items_by_regions, split_regions
 
 
 VL_RESPONSE_SCHEMA = {
@@ -265,10 +266,13 @@ class VLAlgorithm(BaseAlgorithm):
                 height=frame_height,
             )
             roi_mask = None
+            roi_filter_regions = []
             request_frame_rgb = frame_rgb
             if roi_regions:
                 roi_mask = self.create_roi_mask(frame_rgb.shape, roi_regions)
                 request_frame_rgb = self.apply_roi_mask(frame_rgb, roi_mask)
+                _, crop_infer_regions, post_filter_regions = split_regions(roi_regions)
+                roi_filter_regions = crop_infer_regions + post_filter_regions
             prompt = self._render_prompt(frame_width, frame_height, upstream_results, roi_regions)
             image_detail = self.vl_config.get("image_detail") or "auto"
             payload = {
@@ -327,19 +331,15 @@ class VLAlgorithm(BaseAlgorithm):
             )
             detections = normalized["detections"]
             detections_before_roi = len(detections)
-            if roi_mask is not None:
-                roi_filtered = []
-                for detection in detections:
-                    box = detection.get("box")
-                    if box is None:
-                        # 无框语义结果来自已经遮蔽 ROI 外区域的图像，可以继续参与条件判断。
-                        roi_filtered.append(detection)
-                        continue
-                    center_x = min(max(int((box[0] + box[2]) / 2), 0), frame_width - 1)
-                    center_y = min(max(int((box[1] + box[3]) / 2), 0), frame_height - 1)
-                    if roi_mask[center_y, center_x] > 0:
-                        roi_filtered.append(detection)
-                detections = roi_filtered
+            if roi_filter_regions:
+                detections = filter_items_by_regions(
+                    detections,
+                    frame_shape=frame_rgb.shape,
+                    roi_regions=roi_filter_regions,
+                    metric="center",
+                    # 无框语义结果来自已经遮蔽 ROI 外区域的图像，可以继续参与条件判断。
+                    keep_unboxed=True,
+                )
             latency_ms = (time.perf_counter() - started_at) * 1000
             return {
                 "detections": detections,

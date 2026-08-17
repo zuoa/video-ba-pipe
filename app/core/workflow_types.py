@@ -81,6 +81,7 @@ class RoiDrawNodeData(NodeContext):
     - name: 区域名称（如：大门、停车场）
     - mode: 检测模式 ("pre_mask"、"crop_infer" 或 "post_filter")
     - polygon: 多边形顶点坐标数组 [[x1,y1], [x2,y2], ...]（相对坐标 0-1）
+    - anchor: 可选的目标框判定点；缺失时沿用算法原有过滤规则
 
     该节点功能：
     1. 记录热区坐标信息到context['roi_regions']
@@ -95,7 +96,8 @@ class RoiDrawNodeData(NodeContext):
     [
       {
         "name": "区域1",
-        "mode": "pre_mask",
+        "mode": "post_filter",
+        "anchor": "bottom_center",
         "polygon": [{"x": 0.1, "y": 0.2}, {"x": 0.3, "y": 0.4}, ...]
       },
       {

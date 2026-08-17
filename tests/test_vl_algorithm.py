@@ -210,6 +210,46 @@ def test_vl_algorithm_masks_roi_and_filters_outside_boxes(monkeypatch):
     assert "只允许判断以下 ROI 内" in captured["prompt"]
 
 
+def test_vl_algorithm_honors_region_anchor_and_preserves_semantic_results(monkeypatch):
+    def fake_post(url, headers, json, timeout):
+        return _FakeResponse(
+            {
+                "choices": [{
+                    "message": {
+                        "content": (
+                            '{"has_detection":true,"detections":['
+                            '{"label_name":"crossing","confidence":0.9,"bbox":[0.4,0.2,0.8,0.8]},'
+                            '{"label_name":"semantic","confidence":0.8,"bbox":null}],'
+                            '"reason":"测试"}'
+                        )
+                    }
+                }]
+            }
+        )
+
+    roi_regions = [{
+        "name": "left",
+        "mode": "post_filter",
+        "anchor": "top_left",
+        "polygon": [
+            {"x": 0.0, "y": 0.0},
+            {"x": 0.5, "y": 0.0},
+            {"x": 0.5, "y": 1.0},
+            {"x": 0.0, "y": 1.0},
+        ],
+    }]
+    monkeypatch.setattr("app.plugins.vl_algorithm.requests.post", fake_post)
+    monkeypatch.setattr(VLAlgorithm, "_frame_to_data_url", lambda self, frame: "data:image/jpeg;base64,AA==")
+
+    result = VLAlgorithm(_config()).process(
+        np.full((20, 40, 3), 255, dtype=np.uint8),
+        roi_regions=roi_regions,
+    )
+
+    assert [item["label_name"] for item in result["detections"]] == ["crossing", "semantic"]
+    assert result["metadata"]["roi_filtered_count"] == 0
+
+
 def test_vl_algorithm_failure_returns_empty_detections(monkeypatch):
     def fake_post(*args, **kwargs):
         raise TimeoutError("request timed out")

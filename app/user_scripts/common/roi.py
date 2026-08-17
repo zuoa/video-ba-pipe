@@ -5,6 +5,7 @@ Rules:
 - mode == "pre_mask": apply mask before inference
 - mode == "crop_infer": crop ROI bounds for local inference
 - mode == "post_filter": filter detections after inference
+- region.anchor: optional per-region detection-box anchor; absent values use the caller's legacy metric
 """
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -19,6 +20,18 @@ ROI_MODE_PRE_MASK = "pre_mask"
 ROI_MODE_CROP_INFER = "crop_infer"
 ROI_MODE_POST_FILTER = "post_filter"
 
+ROI_ANCHOR_RATIOS = {
+    "top_left": (0.0, 0.0),
+    "top_center": (0.5, 0.0),
+    "top_right": (1.0, 0.0),
+    "center_left": (0.0, 0.5),
+    "center": (0.5, 0.5),
+    "center_right": (1.0, 0.5),
+    "bottom_left": (0.0, 1.0),
+    "bottom_center": (0.5, 1.0),
+    "bottom_right": (1.0, 1.0),
+}
+
 
 def normalize_roi_mode(mode: Any, default: str = ROI_MODE_POST_FILTER) -> str:
     normalized = str(mode or "").strip().lower()
@@ -31,6 +44,11 @@ def normalize_roi_mode(mode: Any, default: str = ROI_MODE_POST_FILTER) -> str:
         "crop_infer": ROI_MODE_CROP_INFER,
     }
     return aliases.get(normalized, default)
+
+
+def normalize_roi_anchor(anchor: Any) -> Optional[str]:
+    normalized = str(anchor or "").strip().lower()
+    return normalized if normalized in ROI_ANCHOR_RATIOS else None
 
 
 def split_regions(
@@ -192,9 +210,11 @@ def _mask_keep(box: Sequence[float], mask: np.ndarray, metric: str, threshold: f
         return False
 
     x1, y1, x2, y2 = normalized_box
-    if metric == "bottom_center":
-        point_x = int(round((x1 + x2) / 2.0))
-        point_y = y2
+    anchor = normalize_roi_anchor(metric)
+    if anchor is not None:
+        ratio_x, ratio_y = ROI_ANCHOR_RATIOS[anchor]
+        point_x = int(round(x1 + (x2 - x1) * ratio_x))
+        point_y = int(round(y1 + (y2 - y1) * ratio_y))
         return bool(mask[point_y, point_x] > 0)
 
     if metric == "ioa":
@@ -219,18 +239,44 @@ def filter_items_by_regions(
     roi_regions: Optional[List[Dict[str, Any]]],
     metric: str = "center",
     threshold: float = 0.3,
+    keep_unboxed: bool = False,
 ) -> List[Dict[str, Any]]:
+    """Keep items matching any ROI, with explicit region anchors taking precedence.
+
+    Regions without a valid ``anchor`` are evaluated together using the caller's
+    legacy ``metric`` and ``threshold`` so existing workflows retain their behavior.
+    """
     if not items or not roi_regions:
         return list(items or [])
 
-    mask = BaseAlgorithm.create_roi_mask(tuple(frame_shape), roi_regions)
     metric_normalized = str(metric or "center").strip().lower()
+    anchored_masks = []
+    fallback_regions = []
+    for region in roi_regions:
+        anchor = normalize_roi_anchor(region.get("anchor"))
+        if anchor is None:
+            fallback_regions.append(region)
+            continue
+        anchored_masks.append((
+            anchor,
+            BaseAlgorithm.create_roi_mask(tuple(frame_shape), [region]),
+        ))
+
+    fallback_mask = None
+    if fallback_regions:
+        fallback_mask = BaseAlgorithm.create_roi_mask(tuple(frame_shape), fallback_regions)
+
     filtered = []
     for item in items:
         box = BaseAlgorithm._get_detection_box(item)
         if box is None:
+            if keep_unboxed:
+                filtered.append(item)
             continue
-        if _mask_keep(box, mask, metric_normalized, threshold):
+        if fallback_mask is not None and _mask_keep(box, fallback_mask, metric_normalized, threshold):
+            filtered.append(item)
+            continue
+        if any(_mask_keep(box, mask, anchor, threshold) for anchor, mask in anchored_masks):
             filtered.append(item)
     return filtered
 

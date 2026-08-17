@@ -13,7 +13,7 @@ import {
 } from '@ant-design/icons';
 import { getNodeTypes } from './nodes';
 import VideoSourceSelector from './VideoSourceSelector';
-import ROIDrawer, { ROIRegion } from './ROIDrawer';
+import ROIDrawer, { getROIAnchorLabel, ROIRegion } from './ROIDrawer';
 import TimeScheduleEditor from './TimeScheduleEditor';
 import {
   createDefaultWeeklySchedule,
@@ -1692,9 +1692,14 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                         <div style={{ width: '100%' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                             <Text strong>{region.name}</Text>
-                            <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
-                              {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
-                            </Tag>
+                            <Space size={4}>
+                              <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
+                                {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
+                              </Tag>
+                              {region.mode === 'post_filter' && (
+                                <Tag>{getROIAnchorLabel(region.anchor)}</Tag>
+                              )}
+                            </Space>
                           </div>
                           <div style={{ fontSize: 11, color: '#8c8c8c' }}>
                             {region.polygon.length} 个顶点

@@ -13,6 +13,7 @@ from app.core.algorithm import BaseAlgorithm
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_frame_dimensions
 from app.core.model_resolver import get_model_resolver
+from app.user_scripts.common.roi import filter_items_by_regions, split_regions
 
 
 def _jsonable_result(result: Any) -> Dict[str, Any]:
@@ -166,10 +167,13 @@ class OCRAlgorithm(BaseAlgorithm):
                 height=frame_height,
             )
             roi_mask = None
+            roi_filter_regions = []
             input_rgb = frame_rgb
             if roi_regions:
                 roi_mask = self.create_roi_mask(frame_rgb.shape, roi_regions)
                 input_rgb = self.apply_roi_mask(frame_rgb, roi_mask)
+                _, crop_infer_regions, post_filter_regions = split_regions(roi_regions)
+                roi_filter_regions = crop_infer_regions + post_filter_regions
 
             require_cv2()
             input_bgr = cv2.cvtColor(input_rgb, cv2.COLOR_RGB2BGR)
@@ -181,17 +185,13 @@ class OCRAlgorithm(BaseAlgorithm):
 
             detections = normalized["detections"]
             before_roi = len(detections)
-            if roi_mask is not None:
-                filtered = []
-                for detection in detections:
-                    box = detection.get("box")
-                    if not box:
-                        continue
-                    center_x = max(0, min(int((box[0] + box[2]) / 2), frame_width - 1))
-                    center_y = max(0, min(int((box[1] + box[3]) / 2), frame_height - 1))
-                    if roi_mask[center_y, center_x] > 0:
-                        filtered.append(detection)
-                detections = filtered
+            if roi_filter_regions:
+                detections = filter_items_by_regions(
+                    detections,
+                    frame_shape=frame_rgb.shape,
+                    roi_regions=roi_filter_regions,
+                    metric="center",
+                )
 
             latency_ms = (time.perf_counter() - started_at) * 1000
             full_text = "\n".join(item["text"] for item in detections)
