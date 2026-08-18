@@ -107,6 +107,44 @@ def test_all_streamers_emit_hevc_when_decoder_uses_h265(tmp_path):
     ]
 
 
+def test_rtsp_streamer_uses_low_latency_demux_and_pipe_options():
+    command = RTSPStreamer("rtsp://camera/stream")._build_command()
+
+    assert command[command.index("-fflags") + 1] == "nobuffer+discardcorrupt"
+    assert command[command.index("-analyzeduration") + 1] == "0"
+    assert command[command.index("-probesize") + 1] == "32768"
+    assert command[command.index("-max_delay") + 1] == "0"
+    assert command[command.index("-map") + 1] == "0:v:0"
+    assert command[command.index("-flush_packets") + 1] == "1"
+    assert "-avoid_negative_ts" not in command
+
+
+def test_streamer_reader_forwards_available_bytes_with_read1():
+    class FakeStdout:
+        def __init__(self):
+            self.read1_calls = []
+
+        def read1(self, size):
+            self.read1_calls.append(size)
+            return b"packet" if len(self.read1_calls) == 1 else b""
+
+        def read(self, _size):
+            raise AssertionError("buffered read() must not be used when read1() exists")
+
+    stdout = FakeStdout()
+    streamer = RTSPStreamer("rtsp://camera/stream")
+    streamer.process = SimpleNamespace(stdout=stdout)
+    streamer._running = True
+    packets = []
+    streamer.add_packet_handler(packets.append)
+
+    streamer._reader_loop()
+
+    assert packets == [b"packet"]
+    assert stdout.read1_calls == [65536, 65536]
+    assert streamer._running is False
+
+
 def test_decoder_worker_passes_decoder_codec_to_streamer():
     worker = DecoderWorker(
         stream_url="rtsp://camera/stream",

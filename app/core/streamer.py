@@ -112,10 +112,16 @@ class BaseStreamer(ABC):
         读取数据并分发给所有注册的处理器。
         """
         logger.info(f"{self.__class__.__name__} 读取线程已启动。")
+        stdout = self.process.stdout
+        # BufferedReader.read(size) may wait until ``size`` bytes have been
+        # accumulated.  For low-bitrate live streams that turns the pipe into
+        # an avoidable latency buffer.  read1() performs at most one raw read
+        # and forwards whatever is currently available.
+        read_packet = getattr(stdout, 'read1', stdout.read)
         while self._running:
             try:
                 # 从进程读取数据块
-                packet = self.process.stdout.read(65536)
+                packet = read_packet(65536)
                 if not packet:
                     logger.warning(f"{self.__class__.__name__} 流已断开或结束。")
                     break
@@ -225,12 +231,16 @@ class RTSPStreamer(BaseStreamer):
         return [
             'ffmpeg',
             '-rtsp_transport', self.transport,
-            '-fflags', '+genpts+igndts',
-            '-avoid_negative_ts', 'make_zero',
+            '-fflags', 'nobuffer+discardcorrupt',
+            '-analyzeduration', '0',
+            '-probesize', '32768',
+            '-max_delay', '0',
             '-i', self.source,
+            '-map', '0:v:0',  # 只处理第一路视频
             '-an',  # 禁用音频
             '-dn',  # 禁用数据流
             '-vcodec', 'copy',  # 复制视频编码
+            '-flush_packets', '1',  # 立即向 pipe 刷出数据包
             '-f', output_format,
             'pipe:1'
         ]
