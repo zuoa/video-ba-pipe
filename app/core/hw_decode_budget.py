@@ -28,6 +28,9 @@ HW_DECODER_TYPES = {
 # NVDEC(CUDA)解码器类型
 NVDEC_DECODER_TYPES = {'ffmpeg_nvdec', 'nvdec'}
 
+# Rockchip MPP 解码器类型
+RKMPP_DECODER_TYPES = {'rk_mpp', 'rkmpp', 'ffmpeg_rkmpp'}
+
 # 软解兜底使用的解码器类型
 SW_FALLBACK_DECODER_TYPE = 'ffmpeg_sw'
 

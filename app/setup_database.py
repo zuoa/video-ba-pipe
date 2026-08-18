@@ -505,6 +505,11 @@ def _ensure_video_source_columns():
         'source_codec',
         'unknown',
     )
+    if not _column_exists(VideoSource._meta.table_name, 'decode_keyframes_only'):
+        db.execute_sql(
+            f"ALTER TABLE {VideoSource._meta.table_name} "
+            "ADD COLUMN decode_keyframes_only BOOLEAN NULL"
+        )
 
 
 def _ensure_model_columns():

@@ -37,6 +37,7 @@ def register_video_sources_api(app):
             'source_decode_height': s.source_decode_height,
             'source_fps': s.source_fps,
             'source_codec': getattr(s, 'source_codec', 'unknown'),
+            'decode_keyframes_only': getattr(s, 'decode_keyframes_only', None),
             'buffer_name': s.buffer_name,
             'status': s.status,
             'decoder_pid': s.decoder_pid
@@ -56,6 +57,7 @@ def register_video_sources_api(app):
                 'source_decode_height': source.source_decode_height,
                 'source_fps': source.source_fps,
                 'source_codec': getattr(source, 'source_codec', 'unknown'),
+                'decode_keyframes_only': getattr(source, 'decode_keyframes_only', None),
                 'buffer_name': source.buffer_name,
                 'status': source.status,
                 'decoder_pid': source.decoder_pid
@@ -67,6 +69,9 @@ def register_video_sources_api(app):
     def create_video_source():
         data = request.json
         try:
+            decode_keyframes_only = data.get('decode_keyframes_only')
+            if decode_keyframes_only is not None and not isinstance(decode_keyframes_only, bool):
+                return jsonify({'error': 'decode_keyframes_only 必须是布尔值或 null'}), 400
             with quota_capacity('video_sources'):
                 source = VideoSource.create(
                     name=data['name'],
@@ -80,6 +85,7 @@ def register_video_sources_api(app):
                         data.get('source_codec'),
                         allow_unknown=True,
                     ),
+                    decode_keyframes_only=decode_keyframes_only,
                     status=data.get('status', 'STOPPED'),
                     decoder_pid=data.get('decoder_pid')
                 )
@@ -104,6 +110,11 @@ def register_video_sources_api(app):
             source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
             source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
             source.source_fps = data.get('source_fps', source.source_fps)
+            if 'decode_keyframes_only' in data:
+                value = data['decode_keyframes_only']
+                if value is not None and not isinstance(value, bool):
+                    return jsonify({'error': 'decode_keyframes_only 必须是布尔值或 null'}), 400
+                source.decode_keyframes_only = value
             if 'source_codec' in data:
                 source.source_codec = normalize_video_codec(
                     data.get('source_codec'),

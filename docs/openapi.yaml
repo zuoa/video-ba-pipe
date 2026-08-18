@@ -240,6 +240,11 @@ components:
           type: string
           enum: [unknown, h264, h265]
           default: unknown
+        decode_keyframes_only:
+          type: boolean
+          nullable: true
+          default: null
+          description: null 表示继承系统设置，系统默认关闭
     VideoSourceUpdate:
       type: object
       minProperties: 1
@@ -253,6 +258,10 @@ components:
         source_codec:
           type: string
           enum: [unknown, h264, h265]
+        decode_keyframes_only:
+          type: boolean
+          nullable: true
+          description: null 表示继承系统设置
     VideoSource:
       type: object
       properties:
@@ -265,6 +274,7 @@ components:
         source_decode_height: { type: integer }
         source_fps: { type: integer }
         source_codec: { type: string }
+        decode_keyframes_only: { type: boolean, nullable: true }
         status: { type: string }
     VideoSourceResponse:
       type: object

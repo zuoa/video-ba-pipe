@@ -71,6 +71,10 @@ from app.core.recording_storage_config import (
     get_recording_storage_config,
     save_recording_storage_config,
 )
+from app.core.video_decode_config import (
+    load_video_decode_config,
+    save_video_decode_config,
+)
 from app.core.storage_pressure import measure_storage_pressure
 from app.core.ops_notification_config import (
     get_ops_notification_config,
@@ -248,6 +252,7 @@ def serialize_video_source(source, runtime_allowed=None):
         'source_decode_height': source.source_decode_height,
         'source_fps': source.source_fps,
         'source_codec': getattr(source, 'source_codec', 'unknown'),
+        'decode_keyframes_only': getattr(source, 'decode_keyframes_only', None),
         'buffer_name': source.buffer_name,
         'status': source.status,
         'decoder_pid': source.decoder_pid,
@@ -387,6 +392,42 @@ def update_system_source_rotation_config():
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         app.logger.error(f"更新视频轮转配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/video-decode-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_video_decode_config():
+    config, source, _database_available = load_video_decode_config()
+    return jsonify({
+        'success': True,
+        'config': config.to_dict(),
+        'config_source': source,
+        'apply_mode': 'worker_auto_restart',
+    })
+
+
+@app.route('/api/system/video-decode-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_video_decode_config():
+    try:
+        config = save_video_decode_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(),
+            'config_source': 'database',
+            'apply_mode': 'worker_auto_restart',
+            'message': '视频解码配置已保存，worker 将在 5 秒内自动应用',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新视频解码配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
@@ -1088,6 +1129,9 @@ def get_video_source(id):
 def create_video_source():
     data = request.json
     try:
+        decode_keyframes_only = data.get('decode_keyframes_only')
+        if decode_keyframes_only is not None and not isinstance(decode_keyframes_only, bool):
+            return jsonify({'error': 'decode_keyframes_only 必须是布尔值或 null'}), 400
         with quota_capacity('video_sources'):
             source = VideoSource.create(
                 name=data['name'],
@@ -1101,6 +1145,7 @@ def create_video_source():
                     data.get('source_codec'),
                     allow_unknown=True,
                 ),
+                decode_keyframes_only=decode_keyframes_only,
                 status='STOPPED',
                 decoder_pid=None,
                 created_by=current_username('admin'),
@@ -1128,6 +1173,11 @@ def update_video_source(id):
         source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
         source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
         source.source_fps = data.get('source_fps', source.source_fps)
+        if 'decode_keyframes_only' in data:
+            value = data['decode_keyframes_only']
+            if value is not None and not isinstance(value, bool):
+                return jsonify({'error': 'decode_keyframes_only 必须是布尔值或 null'}), 400
+            source.decode_keyframes_only = value
         if 'source_codec' in data:
             source.source_codec = normalize_video_codec(
                 data.get('source_codec'),

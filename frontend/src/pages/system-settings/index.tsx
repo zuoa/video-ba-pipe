@@ -25,6 +25,7 @@ import { PageHeader } from '@/components/common';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
   getSourceRotationConfig,
+  getVideoDecodeConfig,
   getSystemInfo,
   getInferenceResourceConfig,
   getRecordingStorageConfig,
@@ -41,6 +42,7 @@ import {
   testObjectStorageConfig,
   testMessageQueueConfig,
   updateSourceRotationConfig,
+  updateVideoDecodeConfig,
   updateInferenceResourceConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
@@ -92,7 +94,7 @@ const buildHttpReceiverPrompt = ({
   const customHeaders = customHeaderNames.length > 0
     ? `还要校验这些自定义请求头（值从安全配置读取）：${customHeaderNames.map((name) => `${name}: <${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_VALUE>`).join('；')}。`
     : '没有额外的自定义请求头。';
-  const example = {
+  const commonExample = {
     event_id: 'box-01-42:alert-created',
     event_type: 'alert.created',
     test: false,
@@ -103,6 +105,9 @@ const buildHttpReceiverPrompt = ({
     alert_type: 'person',
     alert_level: 'warning',
     alert_message: '检测到人员',
+  };
+  const example = {
+    ...commonExample,
     media_delivery_mode: mediaDeliveryMode,
     media: {
       status: mediaDeliveryMode === 'object_storage' ? 'pending' : 'ready',
@@ -113,6 +118,47 @@ const buildHttpReceiverPrompt = ({
           : null,
     },
   };
+  const mediaContracts = {
+    url: {
+      media_delivery_mode: 'url',
+      media: {
+        status: 'ready',
+        image: { kind: 'url', url: 'https://video.example.com/api/image/frames/alert.jpg' },
+      },
+    },
+    inline: {
+      media_delivery_mode: 'inline',
+      media: {
+        status: 'ready',
+        image: {
+          kind: 'inline',
+          content_type: 'image/jpeg',
+          encoding: 'base64',
+          size_bytes: 123456,
+          encoded_size_bytes: 164608,
+          data: '<BASE64_DATA>',
+        },
+      },
+    },
+    object_storage_created: {
+      event_type: 'alert.created',
+      media_delivery_mode: 'object_storage',
+      media: { status: 'pending', image: null },
+    },
+    object_storage_ready: {
+      event_type: 'alert.media.ready',
+      media_delivery_mode: 'object_storage',
+      media: {
+        status: 'ready',
+        image: {
+          kind: 'url',
+          url: 'https://object-storage.example.com/signed/alert.jpg',
+          object_key: 'alerts/box-01/42.jpg',
+          expires_at: '2030-01-01T00:00:00',
+        },
+      },
+    },
+  };
   return `请在当前项目中实现 VideoBA 告警接收端 API，要求如下：
 
 1. 创建 POST ${endpointUrl || '<HTTP_ENDPOINT_URL>'}，接收 Content-Type: application/json；不要依赖重定向。
@@ -121,7 +167,12 @@ const buildHttpReceiverPrompt = ({
 4. 只有在验签及请求头/JSON 一致性校验全部成功后才能分流。仅当 event_type=system.test 且 test=true 时作为连通性测试；两者不一致时拒绝请求，不要按未签名或未核验的值分类。
 5. 请求体示例：
 ${JSON.stringify(example, null, 2)}
-6. event_type 可能是 alert.created、alert.media.ready 或 system.test。媒体模式是 ${mediaDeliveryMode}；代码应容忍可选字段和后续新增字段。
+6. 当前发送端选择的媒体模式是 ${mediaDeliveryMode}，但接收端必须按 media_delivery_mode 和 media.image.kind 明确实现以下三种协议分支：
+${JSON.stringify(mediaContracts, null, 2)}
+   - inline：图片已经随本次 JSON 请求放在 media.image.data 中。只在 encoding=base64 且 content_type 是允许的图片类型时解码并落盘；校验解码后的字节数与 size_bytes 一致。禁止再根据 alert_image、alert_image_url 或本地相对路径反向请求发送端。
+   - url：从 media.image.url 获取图片；设置连接/读取超时、响应大小上限，并采取 SSRF 防护。不要把 URL 字符串当作 Base64。
+   - object_storage：alert.created 且 media.status=pending 时先持久化文字告警；后续用 external_alert_id 关联 alert.media.ready，再处理其中 media.image.url。不要把 pending 当成图片丢失。
+   media 字段是媒体处理的权威来源；alert_image、alert_image_ori 等顶层本地路径只作为兼容元数据，接收端不得将其拼接成回源地址。未知 media_delivery_mode 或 kind 返回 422 并记录原因；其它新增可选字段可以忽略。
 7. 使用 event_id 建立唯一约束并实现幂等；同一 event_id 再次到达应返回原成功结果或其它 2xx，而不是唯一约束错误。使用 external_alert_id 关联同一告警的 created 与 media.ready 事件。
 8. 只有在事件已可靠接收或持久化后才返回任意 2xx。校验失败返回 4xx，临时故障返回 5xx；发送端会按至少一次语义重试所有非 2xx、超时和网络错误。
 9. 生产环境必须使用 HTTPS；HMAC 提供真实性和完整性，但不加密请求内容。
@@ -131,6 +182,7 @@ ${JSON.stringify(example, null, 2)}
 const SystemSettingsPage: React.FC = () => {
   const [vlForm] = Form.useForm();
   const [rotationForm] = Form.useForm();
+  const [videoDecodeForm] = Form.useForm();
   const [recordingForm] = Form.useForm();
   const [opsForm] = Form.useForm();
   const [publicMediaForm] = Form.useForm();
@@ -149,10 +201,12 @@ const SystemSettingsPage: React.FC = () => {
   const [publicMediaConfig, setPublicMediaConfig] = useState<PublicMediaConfig | null>(null);
   const [deliveryStats, setDeliveryStats] = useState<AlertDeliveryStats>({ pending: 0, processing: 0, retrying: 0, failed: 0 });
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [videoDecodeConfigSource, setVideoDecodeConfigSource] = useState<'database' | 'environment'>('environment');
   const recordingEnabled = Form.useWatch('recording_enabled', recordingForm) ?? false;
   const videoMaxGb = Form.useWatch('video_max_gb', recordingForm) ?? 20;
   const imageMaxGb = Form.useWatch('image_max_gb', recordingForm) ?? 10;
   const rotationEnabled = Form.useWatch('enabled', rotationForm) ?? false;
+  const decodeKeyframesOnly = Form.useWatch('decode_keyframes_only', videoDecodeForm) ?? false;
   const opsEnabled = Form.useWatch('enabled', opsForm) ?? false;
   const mediaSigningEnabled = Form.useWatch('sign_media_urls', publicMediaForm) ?? true;
   const mediaDeliveryMode = Form.useWatch('delivery_mode', publicMediaForm) ?? 'url';
@@ -189,9 +243,10 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse, systemInfoResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, videoDecodeResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse, systemInfoResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
+        getVideoDecodeConfig(),
         getRecordingStorageConfig(),
         getOpsNotificationConfig(),
         getInferenceResourceConfig(),
@@ -212,6 +267,8 @@ const SystemSettingsPage: React.FC = () => {
         dwell_seconds: rotationResponse?.config?.dwell_seconds || 30,
       });
       setEligibleSourceCount(rotationResponse?.eligible_source_count || 0);
+      videoDecodeForm.setFieldsValue(videoDecodeResponse.config);
+      setVideoDecodeConfigSource(videoDecodeResponse.config_source);
       recordingForm.setFieldsValue(recordingResponse.config);
       setStorageUsage(recordingResponse.usage);
       opsForm.setFieldsValue(opsResponse.config);
@@ -252,6 +309,7 @@ const SystemSettingsPage: React.FC = () => {
     // 逐个校验，第一个出错的页签自动切过去，避免错误藏在其它页签里
     const sections = [
       { key: 'inference', validate: () => validateAndGetAllFields(inferenceForm) },
+      { key: 'videoDecode', validate: () => validateAndGetAllFields(videoDecodeForm) },
       { key: 'recording', validate: () => validateAndGetAllFields(recordingForm) },
       { key: 'publicMedia', validate: () => validateAndGetAllFields(publicMediaForm) },
       { key: 'messageQueue', validate: () => validateAndGetAllFields(messageQueueForm) },
@@ -268,6 +326,7 @@ const SystemSettingsPage: React.FC = () => {
     }
     const [
       inferenceValues,
+      videoDecodeValues,
       recordingValues,
       publicMediaValues,
       messageQueueValues,
@@ -277,9 +336,10 @@ const SystemSettingsPage: React.FC = () => {
     ] = results.map((result) => (result.status === 'fulfilled' ? result.value : undefined));
     try {
       setSaving(true);
-      const [, , , , inferenceResponse] = await Promise.all([
+      const [, , , , , inferenceResponse] = await Promise.all([
         updateVlConfig(vlValues),
         updateSourceRotationConfig(rotationValues),
+        updateVideoDecodeConfig(videoDecodeValues),
         updateRecordingStorageConfig(recordingValues),
         updateOpsNotificationConfig(opsValues),
         updateInferenceResourceConfig(inferenceValues),
@@ -569,6 +629,38 @@ const SystemSettingsPage: React.FC = () => {
                       ))}
                     </div>
                   ) : null}
+                </Card>
+              ),
+            },
+            {
+              key: 'videoDecode',
+              label: (<span><VideoCameraOutlined /> 视频解码</span>),
+              children: (
+                <Card
+                  className="system-settings-card"
+                  title={<span><VideoCameraOutlined /> 视频解码策略</span>}
+                  extra={<span className="inference-config-source">来源：{videoDecodeConfigSource === 'database' ? '系统配置' : '环境变量默认值'}</span>}
+                >
+                  <Alert
+                    type={decodeKeyframesOnly ? 'warning' : 'success'}
+                    showIcon
+                    className="system-settings-alert"
+                    message={decodeKeyframesOnly ? '仅解码关键帧已开启' : '当前解码全部帧'}
+                    description={decodeKeyframesOnly
+                      ? '仅适合明确接受降低时间分辨率的场景；保存后，继承系统配置的视频源会在 5 秒内自动重启。'
+                      : '默认推荐配置。算法始终消费解码队列中的最新帧，减少队列堆积造成的画面延迟。'}
+                  />
+
+                  <Form form={videoDecodeForm} layout="vertical">
+                    <Form.Item
+                      label="仅解码关键帧"
+                      name="decode_keyframes_only"
+                      valuePropName="checked"
+                      extra="单个视频源中明确设置的开关优先于此全局配置；选择“继承系统配置”的视频源使用这里的值。"
+                    >
+                      <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                    </Form.Item>
+                  </Form>
                 </Card>
               ),
             },
@@ -1028,7 +1120,7 @@ const SystemSettingsPage: React.FC = () => {
                               </Button>
                             </div>
                             <Typography.Paragraph className="http-prompt-card__hint">
-                              已根据当前 URL、鉴权、请求头和媒体模式生成。HMAC Prompt 会说明签名原文、时钟窗口与防重放校验；所有密钥始终使用占位符。
+                              已根据当前 URL、鉴权、请求头和媒体模式生成，并包含 URL、Base64 内嵌、对象存储三种接收分支。HMAC Prompt 会说明签名原文、时钟窗口与防重放校验；所有密钥始终使用占位符。
                             </Typography.Paragraph>
                             <pre className="http-prompt-card__content">{httpReceiverPrompt}</pre>
                           </div>

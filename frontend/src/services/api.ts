@@ -211,6 +211,29 @@ export async function updateInferenceResourceConfig(data: InferenceResourceConfi
   });
 }
 
+export interface VideoDecodeConfig {
+  decode_keyframes_only: boolean;
+}
+
+export interface VideoDecodeConfigResponse {
+  success: boolean;
+  config: VideoDecodeConfig;
+  config_source: 'database' | 'environment';
+  apply_mode: 'worker_auto_restart';
+  message?: string;
+}
+
+export async function getVideoDecodeConfig() {
+  return request<VideoDecodeConfigResponse>('/api/system/video-decode-config');
+}
+
+export async function updateVideoDecodeConfig(data: VideoDecodeConfig) {
+  return request<VideoDecodeConfigResponse>('/api/system/video-decode-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
 export interface RecordingStorageConfig {
   recording_enabled: boolean;
   pre_alert_seconds: number;
@@ -493,6 +516,11 @@ export interface VideoSource {
   status: string;
   enabled?: boolean;
   source_codec?: string;
+  source_url?: string;
+  source_decode_width?: number;
+  source_decode_height?: number;
+  source_fps?: number;
+  decode_keyframes_only?: boolean | null;
 }
 
 export interface BatchCopyWorkflowResponse {

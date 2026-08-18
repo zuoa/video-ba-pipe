@@ -122,8 +122,11 @@ DETECTION_SNAPSHOT_SAVE_PATH = _resolve_data_path('DETECTION_SNAPSHOT_PATH', 'de
 os.makedirs(DETECTION_SNAPSHOT_SAVE_PATH, exist_ok=True)
 
 
-# 极速解码模式，每次取最新的帧，扔掉所有老的帧
+# 已弃用：分析链路现在固定只消费最新解码帧，不再由该开关控制。
 IS_EXTREME_DECODE_MODE = os.getenv('IS_EXTREME_DECODE_MODE', 'false').lower() in ('true', '1', 'yes')
+
+# 是否只解码关键帧。默认关闭；视频源可通过 decode_keyframes_only 覆盖。
+DECODE_KEYFRAMES_ONLY = os.getenv('DECODE_KEYFRAMES_ONLY', 'false').lower() in ('true', '1', 'yes', 'on')
 
 # 默认视频解码器类型
 # RK3588 推荐使用 rk_mpp；Jetson 推荐使用 jetson_gst；其他环境默认 ffmpeg_sw。
@@ -136,8 +139,8 @@ VIDEO_FRAME_PIXEL_FORMAT = (os.getenv('VIDEO_FRAME_PIXEL_FORMAT') or 'nv12').str
 # ffmpeg 软解默认限制为单线程，避免多路并发时每路自动拉满 CPU。
 FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1')))
 
-# 软解默认只解关键帧以节省 CPU。如果已持续收到足量码流但仍无帧输出，
-# decoder worker 会以专用退出码通知 orchestrator，仅将该视频源切换为全帧软解。
+# 如果主动开启关键帧软解后持续收到足量码流但仍无帧输出，decoder worker
+# 会以专用退出码通知 orchestrator，仅将该视频源切换为全帧软解。
 FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS = max(
     1.0,
     float(os.getenv('FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS', '10')),

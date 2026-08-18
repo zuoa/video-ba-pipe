@@ -264,6 +264,14 @@ def _commit_hikvision_import(data: Dict[str, Any], owner_username: str) -> Dict[
                     channel_no,
                     stream,
                 )
+                decode_keyframes_only = item.get('decode_keyframes_only')
+                if (
+                    decode_keyframes_only is not None
+                    and not isinstance(decode_keyframes_only, bool)
+                ):
+                    raise SourceImportError(
+                        'decode_keyframes_only 必须是布尔值或 null'
+                    )
 
                 source = VideoSource.create(
                     name=source_name,
@@ -273,6 +281,7 @@ def _commit_hikvision_import(data: Dict[str, Any], owner_username: str) -> Dict[
                     source_decode_width=int(item.get('source_decode_width') or 960),
                     source_decode_height=int(item.get('source_decode_height') or 540),
                     source_fps=int(item.get('source_fps') or 10),
+                    decode_keyframes_only=decode_keyframes_only,
                     status='STOPPED',
                     created_by=owner_username,
                 )

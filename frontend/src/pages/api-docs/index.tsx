@@ -78,6 +78,7 @@ const ENDPOINTS: EndpointDoc[] = [
       { name: 'source_decode_height', type: 'integer', defaultValue: '540', description: '解码高度' },
       { name: 'source_fps', type: 'integer', defaultValue: '10', description: '目标帧率' },
       { name: 'source_codec', type: 'string', defaultValue: 'unknown', description: '编码格式:unknown / h264 / h265' },
+      { name: 'decode_keyframes_only', type: 'boolean | null', defaultValue: 'null', description: '仅解码关键帧；null 继承系统设置（默认关闭）' },
     ],
     curl: `curl -X POST ${BASE_URL_PLACEHOLDER}/video-sources \\
   -H "X-API-Key: ${API_KEY_PLACEHOLDER}" \\
@@ -103,6 +104,7 @@ const ENDPOINTS: EndpointDoc[] = [
     "source_decode_height": 540,
     "source_fps": 10,
     "source_codec": "unknown",
+    "decode_keyframes_only": null,
     "status": "STOPPED"
   }
 }`,
@@ -120,6 +122,7 @@ const ENDPOINTS: EndpointDoc[] = [
       { name: 'source_decode_height', type: 'integer', description: '解码高度' },
       { name: 'source_fps', type: 'integer', description: '目标帧率' },
       { name: 'source_codec', type: 'string', description: '编码格式:unknown / h264 / h265' },
+      { name: 'decode_keyframes_only', type: 'boolean | null', description: '仅解码关键帧；null 继承系统设置' },
     ],
     curl: `curl -X PATCH ${BASE_URL_PLACEHOLDER}/video-sources/cam-gate-01 \\
   -H "X-API-Key: ${API_KEY_PLACEHOLDER}" \\

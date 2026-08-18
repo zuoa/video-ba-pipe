@@ -132,12 +132,22 @@ def test_video_source_create_edit_and_url_update(public_api_client):
             'name': '东门摄像头',
             'source_url': 'rtsp://camera/old',
             'source_fps': 12,
+            'decode_keyframes_only': True,
         },
         headers=headers,
     )
     assert created.status_code == 201
     source = VideoSource.get(VideoSource.source_code == 'camera-001')
     assert source.created_by == 'api-integration'
+    assert source.decode_keyframes_only is True
+
+    decode_updated = client.patch(
+        '/openapi/v1/video-sources/camera-001',
+        json={'decode_keyframes_only': None},
+        headers=headers,
+    )
+    assert decode_updated.status_code == 200
+    assert VideoSource.get_by_id(source.id).decode_keyframes_only is None
 
     forbidden = client.patch(
         '/openapi/v1/video-sources/camera-001',
@@ -289,10 +299,12 @@ def test_decoder_source_signature_detects_url_and_runtime_changes():
             'source_decode_height': 540,
             'source_fps': 10,
             'source_codec': 'h264',
+            'decode_keyframes_only': None,
         },
     )()
     orchestrator = Orchestrator.__new__(Orchestrator)
-    signature = Orchestrator._source_config_signature(source)
+    orchestrator.decode_keyframes_only = False
+    signature = orchestrator._runtime_source_config_signature(source)
     orchestrator.running_processes = {
         source.id: {'source_config_signature': signature}
     }
@@ -302,4 +314,7 @@ def test_decoder_source_signature_detects_url_and_runtime_changes():
     assert orchestrator._source_config_requires_reload(source) is True
     source.source_url = 'rtsp://camera/old'
     source.source_fps = 15
+    assert orchestrator._source_config_requires_reload(source) is True
+    source.source_fps = 10
+    source.decode_keyframes_only = True
     assert orchestrator._source_config_requires_reload(source) is True

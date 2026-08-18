@@ -192,7 +192,7 @@ def test_orchestrator_decoder_args_can_select_full_frame_software_decode():
         software_decode_keyframes_only=False,
     )
 
-    option_index = arguments.index("--software-decode-keyframes-only")
+    option_index = arguments.index("--decode-keyframes-only")
     assert arguments[option_index + 1] == "false"
 
 

@@ -80,11 +80,7 @@ class AsyncFFmpegDecoder(BaseDecoder):
 
                 frame = reshape_frame(raw_frame, self.width, self.height, self.output_format)
 
-                try:
-                    self.output_queue.put_nowait(frame)
-                    self.frames_decoded += 1
-                except queue.Full:
-                    self.frames_dropped += 1
+                self._enqueue_decoded_frame(frame)
 
             except Exception as e:
                 if self._running:  # 只有在还在运行时才报告错误
@@ -118,7 +114,8 @@ class AsyncFFmpegDecoder(BaseDecoder):
     def get_frame(self, timeout=1.0) -> Optional[np.ndarray]:
         """从输出队列获取解码后的帧。"""
         try:
-            return self.output_queue.get(timeout=timeout)
+            item = self.output_queue.get(timeout=timeout)
+            return self._unwrap_decoded_frame(item).image
         except queue.Empty:
             return None
 
@@ -146,7 +143,7 @@ class AsyncFFmpegDecoder(BaseDecoder):
 # --- 创建具体的软件解码器 ---
 class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
     def __init__(self, decoder_id: int, width: int, height: int, **kwargs):
-        self.keyframes_only = bool(kwargs.get('keyframes_only', True))
+        self.keyframes_only = bool(kwargs.get('keyframes_only', False))
         super().__init__(decoder_id, width, height, **kwargs)
 
     def _build_ffmpeg_command(self) -> list:

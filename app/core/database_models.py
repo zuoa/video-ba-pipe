@@ -108,6 +108,8 @@ class VideoSource(BaseModel):
     source_decode_height = pw.IntegerField(default=540)
     source_fps = pw.IntegerField(default=10)
     source_codec = pw.CharField(max_length=16, default='unknown')
+    # NULL 表示继承系统 DECODE_KEYFRAMES_ONLY；否则按源覆盖。
+    decode_keyframes_only = pw.BooleanField(null=True, default=None)
     status = pw.CharField(default='STOPPED')
     decoder_pid = pw.IntegerField(null=True)
     created_by = pw.CharField(default='admin')

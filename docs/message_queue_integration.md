@@ -64,12 +64,12 @@ HTTP 配置区会根据当前 URL、鉴权、请求头和媒体交付方式生�
 
 ## 消息体与去重
 
-三个通道使用相同 JSON 消息体。集群消费端应使用 `external_alert_id` 关联告警，并使用 `node_id` 识别来源。MQTT QoS 1 和持久化 HTTP 重试都可能产生重复投递，因此消费端必须使用 `event_id` 保证幂等。
+三个通道使用相同 JSON 消息体。集群消费端应使用 `external_alert_id` 关联告警，并使用 `node_id` 识别来源。MQTT QoS 1 和持久化 HTTP 重试都可能产生重复投递，因此消费端必须使用 `event_id` 保证幂等。接收端应以 `media_delivery_mode`、`media.status` 和 `media.image.kind` 作为媒体处理的权威字段；`alert_image`、`alert_image_ori` 等顶层本地路径仅为兼容元数据，不能用于拼接回源地址。
 
 告警媒体在“系统设置 → 告警媒体”中选择交付方式，默认保持盒子 URL：
 
-- `url`：沿用 `alert_image_url`、`alert_image_ori_url`、`alert_video_url`。
-- `inline`：标注图经过压缩后放在 `media.image.data`，编码为 Base64；`media.image.content_type` 为 `image/jpeg`。
-- `object_storage`：先发送 `event_type=alert.created`、`media.status=pending` 的文字告警；上传 S3 兼容对象存储成功后，再发送 `event_type=alert.media.ready` 和私有对象的预签名 URL。
+- `url`：`media_delivery_mode=url`，并在 `media.image` 中发送 `{kind: "url", url: "..."}`；接收端按 URL 获取图片，不能把 URL 当作 Base64。
+- `inline`：`media_delivery_mode=inline`，标注图经过压缩后随当前 JSON 请求放在 `media.image.data`，`kind=inline`、`encoding=base64`、`content_type=image/jpeg`；只有此模式使用 Base64，接收端不应再反向请求发送端取图。
+- `object_storage`：`media_delivery_mode=object_storage`。先发送 `event_type=alert.created`、`media.status=pending` 的文字告警；上传 S3 兼容对象存储成功后，再发送 `event_type=alert.media.ready`，其中 `media.image.kind=url` 并携带私有对象的预签名 URL。接收端用 `external_alert_id` 关联两个事件。
 
 所有模式均通过数据库 outbox 异步投递，属于至少一次语义。消费者应优先使用 `event_id` 做事件级去重；`external_alert_id` 用于把 `alert.created` 和后续的 `alert.media.ready` 关联为同一条告警。

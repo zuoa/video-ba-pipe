@@ -14,13 +14,16 @@ class FFmpegNVDECDecoder(AsyncFFmpegDecoder):
         input_format = self.config.get('input_format', 'h264')
         decoder_name = f'{ffmpeg_codec_name(input_format)}_cuvid'
         demuxer = elementary_stream_muxer(input_format)
+        self.keyframes_only = bool(self.config.get('keyframes_only', False))
         logger.info(
             f"构建 FFmpeg NVDEC 硬件解码命令: "
-            f"demuxer={demuxer}, decoder={decoder_name}, device={self.device_id}"
+            f"demuxer={demuxer}, decoder={decoder_name}, device={self.device_id}, "
+            f"keyframes_only={self.keyframes_only}"
         )
 
         return [
             'ffmpeg',
+            *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
             '-fflags', '+genpts+discardcorrupt',
             '-f', demuxer,
             '-hwaccel', 'cuda',

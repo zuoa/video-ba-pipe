@@ -104,6 +104,7 @@ def _serialize_source(source: VideoSource):
         'source_decode_height': source.source_decode_height,
         'source_fps': source.source_fps,
         'source_codec': getattr(source, 'source_codec', 'unknown'),
+        'decode_keyframes_only': getattr(source, 'decode_keyframes_only', None),
         'status': source.status,
     }
 
@@ -294,6 +295,12 @@ def register_public_api(app):
             return _error('invalid_field', str(exc), 400)
         if 'enabled' in data and not isinstance(data['enabled'], bool):
             return _error('invalid_field', 'enabled 必须是布尔值', 400)
+        if (
+            'decode_keyframes_only' in data
+            and data['decode_keyframes_only'] is not None
+            and not isinstance(data['decode_keyframes_only'], bool)
+        ):
+            return _error('invalid_field', 'decode_keyframes_only 必须是布尔值或 null', 400)
 
         try:
             with quota_capacity('video_sources'):
@@ -312,6 +319,7 @@ def register_public_api(app):
                     source_codec=normalize_video_codec(
                         data.get('source_codec'), allow_unknown=True
                     ),
+                    decode_keyframes_only=data.get('decode_keyframes_only'),
                     status='STOPPED',
                     decoder_pid=None,
                     created_by=API_INTEGRATION_OWNER,
@@ -351,6 +359,7 @@ def register_public_api(app):
             'source_decode_height',
             'source_fps',
             'source_codec',
+            'decode_keyframes_only',
         }
         unknown = sorted(set(data) - allowed_fields)
         if unknown:
@@ -385,6 +394,11 @@ def register_public_api(app):
                 source.source_codec = normalize_video_codec(
                     data.get('source_codec'), allow_unknown=True
                 )
+            if 'decode_keyframes_only' in data:
+                value = data['decode_keyframes_only']
+                if value is not None and not isinstance(value, bool):
+                    raise ValueError('decode_keyframes_only 必须是布尔值或 null')
+                source.decode_keyframes_only = value
             source.save()
         except ValueError as exc:
             return _error('invalid_field', str(exc), 400)

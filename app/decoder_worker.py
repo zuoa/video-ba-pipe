@@ -14,7 +14,7 @@ from app.config import (
     SNAPSHOT_INTERVAL,
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
-    IS_EXTREME_DECODE_MODE,
+    DECODE_KEYFRAMES_ONLY,
     VIDEO_DECODER_TYPE,
     VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_SW_DECODER_THREADS,
@@ -39,7 +39,7 @@ from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
-from app.core.hw_decode_budget import NVDEC_DECODER_TYPES
+from app.core.hw_decode_budget import NVDEC_DECODER_TYPES, RKMPP_DECODER_TYPES
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
 from app.core.utils import save_frame
@@ -224,7 +224,7 @@ class DecoderWorker:
                     self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)
                 ),
                 'keyframes_only': bool(
-                    self.decoder_config.get('keyframes_only', True)
+                    self.decoder_config.get('keyframes_only', DECODE_KEYFRAMES_ONLY)
                 ),
                 'output_queue_size': int(
                     self.decoder_config.get(
@@ -239,7 +239,23 @@ class DecoderWorker:
                 decoder_kwargs['device_id'] = int(
                     self.decoder_config.get('device_id', HW_DECODE_NV_GPU_INDEX)
                 )
+            if decoder_type.lower() in RKMPP_DECODER_TYPES:
+                source_fps = int(source.source_fps) if source is not None else 0
+                output_fps = (
+                    self._required_decode_output_fps(source_fps)
+                    if source_fps > 0
+                    else 0
+                )
+                decoder_kwargs['output_fps'] = output_fps
+                logger.info(
+                    f"RKMPP 硬解输出采样: input={source_fps or 'unknown'} fps, "
+                    f"required={output_fps or 'unlimited'} fps"
+                )
             if decoder_type.lower() in {'jetson_gst', 'jetson', 'nvv4l2'}:
+                if decoder_kwargs['keyframes_only']:
+                    logger.warning(
+                        "Jetson GStreamer 解码器不支持仅关键帧模式，将继续完整解码"
+                    )
                 source_fps = int(source.source_fps) if source is not None else 0
                 output_fps = (
                     self._required_decode_output_fps(source_fps)
@@ -416,6 +432,7 @@ class DecoderWorker:
             start_time = time.time()
             last_fps_check_time = start_time
             last_fps_check_frame_count = 0
+            latest_frame_age_ms = 0.0
             profile_next_log_at = time.monotonic() + RESOURCE_PROFILE_LOG_INTERVAL_SECONDS
             profile_counts = {
                 'get_frame': 0,
@@ -430,23 +447,24 @@ class DecoderWorker:
 
             while self.running:
                 try:
-                    # 获取解码后的帧
+                    # 一次取出当前批次：分析只使用最后一帧，录像可使用完整批次。
                     get_frame_started_at = time.perf_counter()
-                    if IS_EXTREME_DECODE_MODE:
-                        frame = self.decoder.get_latest_frame()
-                    else:
-                        frame = self.decoder.get_frame(timeout=0.5)
+                    pending_frames = self.decoder.get_pending_frames(timeout=0.5)
                     if RESOURCE_PROFILING_ENABLED:
                         profile_counts['get_frame'] += 1
                         profile_totals_ms['get_frame'] += (time.perf_counter() - get_frame_started_at) * 1000
 
-                    if frame is not None:
-                        frame_count += 1
+                    if pending_frames:
+                        latest_decoded_frame = pending_frames[-1]
+                        frame = latest_decoded_frame.image
+                        frame_count += len(pending_frames)
                         current_time = time.time()
-                        frame_timestamp = current_time
+                        frame_timestamp = latest_decoded_frame.decoded_at
+                        latest_frame_age_ms = max(0.0, (current_time - frame_timestamp) * 1000)
 
                         # 更新最后出帧时间
                         self.last_frame_time = current_time
+                        error_count = 0
 
                         wrote_analysis = False
                         if self._should_write_analysis_frame(current_time):
@@ -459,7 +477,6 @@ class DecoderWorker:
                                 ) * 1000
                             analysis_written_count += 1
                             wrote_analysis = True
-                            error_count = 0  # 重置错误计数
 
                             # 定期更新监控时间戳（避免每次写帧都更新）
                             if HEALTH_MONITOR_ENABLED and \
@@ -470,10 +487,19 @@ class DecoderWorker:
                         else:
                             analysis_skipped_count += 1
 
-                        if self._should_write_recording_frame(current_time):
+                        # 同一批次除最新帧外都不得进入算法链路。
+                        analysis_skipped_count += max(0, len(pending_frames) - 1)
+
+                        # 录像按解码顺序消费批次；未启用录像时旧帧在此直接释放。
+                        for decoded_frame in pending_frames:
+                            if not self._should_write_recording_frame(decoded_frame.decoded_at):
+                                continue
                             try:
                                 recording_started_at = time.perf_counter()
-                                self.recording_buffer.write(frame, timestamp=frame_timestamp)
+                                self.recording_buffer.write(
+                                    decoded_frame.image,
+                                    timestamp=decoded_frame.decoded_at,
+                                )
                                 if RESOURCE_PROFILING_ENABLED:
                                     profile_counts['recording_write'] += 1
                                     profile_totals_ms['recording_write'] += (
@@ -490,7 +516,8 @@ class DecoderWorker:
                                 f"已解码 {frame_count} 帧, "
                                 f"分析写入 {analysis_written_count} 帧, "
                                 f"分析跳过 {analysis_skipped_count} 帧, "
-                                f"录制写入 {recording_written_count} 帧"
+                                f"录制写入 {recording_written_count} 帧, "
+                                f"最新帧龄 {latest_frame_age_ms:.1f} ms"
                             )
                             self.snapshot(frame)
 
@@ -522,6 +549,8 @@ class DecoderWorker:
                                 f"解码状态: 已解码 {frame_count} 帧, "
                                 f"分析写入 {analysis_written_count} 帧, "
                                 f"录制写入 {recording_written_count} 帧, "
+                                f"队列淘汰 {self.decoder.frames_dropped} 帧, "
+                                f"最新帧龄 {latest_frame_age_ms:.1f} ms, "
                                 f"最近10秒 {recent_fps:.2f} fps, "
                                 f"整体平均 {overall_fps:.2f} fps"
                             )
@@ -583,11 +612,10 @@ class DecoderWorker:
                                     )
                                     self.last_warning_time = time.time()
 
-                        if not IS_EXTREME_DECODE_MODE:
-                            error_count += 1
-                            if error_count >= max_consecutive_errors:
-                                logger.error(f"连续 {error_count} 次获取帧失败，停止工作")
-                                break
+                        error_count += 1
+                        if error_count >= max_consecutive_errors:
+                            logger.error(f"连续 {error_count} 次获取帧失败，停止工作")
+                            break
 
                 except KeyboardInterrupt:
                     logger.info("收到中断信号")
@@ -723,6 +751,11 @@ def main(args):
         'loop': args.loop,  # 文件流循环播放
     }
 
+    if args.software_decode_keyframes_only is not None:
+        logger.warning(
+            "--software-decode-keyframes-only 已弃用，请改用 --decode-keyframes-only"
+        )
+
     # 解码器配置
     decoder_config = {
         'type': args.decoder_type,
@@ -732,7 +765,11 @@ def main(args):
         'input_format': args.input_format,
         'output_format': args.output_format,
         'threads': args.decoder_threads,
-        'keyframes_only': args.software_decode_keyframes_only,
+        'keyframes_only': (
+            args.software_decode_keyframes_only
+            if args.software_decode_keyframes_only is not None
+            else args.decode_keyframes_only
+        ),
         'output_queue_size': args.decoder_output_queue_size,
     }
 
@@ -825,10 +862,16 @@ if __name__ == '__main__':
     decoder_group.add_argument('--decoder-output-queue-size', type=int, default=DECODER_OUTPUT_QUEUE_SIZE,
                                help='解码输出队列大小，越大越占内存 (默认读取 DECODER_OUTPUT_QUEUE_SIZE)')
     decoder_group.add_argument(
+        '--decode-keyframes-only',
+        type=lambda value: str(value).lower() in {'true', '1', 'yes', 'on'},
+        default=DECODE_KEYFRAMES_ONLY,
+        help='是否只解码关键帧（默认读取 DECODE_KEYFRAMES_ONLY，默认关闭）',
+    )
+    decoder_group.add_argument(
         '--software-decode-keyframes-only',
         type=lambda value: str(value).lower() in {'true', '1', 'yes', 'on'},
-        default=True,
-        help='软解是否只解关键帧（默认开启，orchestrator 可按源自动降级）',
+        default=None,
+        help=argparse.SUPPRESS,
     )
 
     # 帧采样参数

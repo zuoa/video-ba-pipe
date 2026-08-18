@@ -14,6 +14,7 @@ from app.config import (
     APP_DIR,
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
+    DECODE_KEYFRAMES_ONLY,
     VIDEO_DECODER_TYPE,
     VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_SW_DECODER_THREADS,
@@ -88,6 +89,10 @@ from app.core.license_service import runtime_entitlements
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.recording_storage_config import (
     get_recording_storage_config,
+)
+from app.core.video_decode_config import (
+    VIDEO_DECODE_CONFIG_REFRESH_SECONDS,
+    get_video_decode_config,
 )
 from app.core.workflow_runtime import (
     build_workflow_signature,
@@ -223,6 +228,9 @@ class Orchestrator:
         self.desired_source_ids = set()
         self.recording_config = get_recording_storage_config()
         self.last_recording_config_refresh_at = 0.0
+        self.video_decode_config = get_video_decode_config()
+        self.decode_keyframes_only = self.video_decode_config.decode_keyframes_only
+        self.last_video_decode_config_refresh_at = 0.0
         # MediaMTX 路径周期同步节流时间戳
         self._last_mediamtx_sync_at = 0.0
 
@@ -232,7 +240,8 @@ class Orchestrator:
         self.source_stderr_tail = {}
         # 每个源实际使用的解码模式: 'hw' / 'sw' / 'native'
         self.source_decoder_mode = {}
-        # 关键帧软解无输出的源: source_id -> source_url。URL 变更时重新试探关键帧模式。
+        # 关键帧软解无输出的源: source_id -> 触发降级时的策略快照。
+        # 源策略或解码器类型变化后必须重新试探，不能让旧降级状态覆盖新配置。
         self.software_full_frame_sources = {}
         # 被僵尸回收器代为 waitpid 的进程退出码: pid -> exit_code
         self.externally_reaped = {}
@@ -702,7 +711,11 @@ class Orchestrator:
         uptime_seconds: float,
     ) -> None:
         """记住单源全帧软解降级，清除退避并释放旧进程等待立即重启。"""
-        self.software_full_frame_sources[source.id] = source.source_url
+        process_info = self.running_processes.get(source.id, {})
+        decoder_type = process_info.get('decoder_type', SW_FALLBACK_DECODER_TYPE)
+        self.software_full_frame_sources[source.id] = (
+            self._software_full_frame_fallback_marker(source, decoder_type)
+        )
         self.source_backoff.pop(source.id, None)
         logger.warning(
             f"视频源 {source.id} 关键帧软解无输出，"
@@ -1500,12 +1513,13 @@ class Orchestrator:
                 return False
         self.source_decoder_mode[source.id] = decoder_mode
 
-        fallback_url = self.software_full_frame_sources.get(source.id)
-        if fallback_url is not None and fallback_url != source.source_url:
-            self.software_full_frame_sources.pop(source.id, None)
-            fallback_url = None
-        software_decode_keyframes_only = fallback_url is None
-        if decoder_mode == 'sw' and not software_decode_keyframes_only:
+        decode_keyframes_only = self._configured_decode_keyframes_only(source)
+        full_frame_fallback = self._use_software_full_frame_fallback(
+            source,
+            decoder_type,
+        )
+        if full_frame_fallback:
+            decode_keyframes_only = False
             logger.warning(f"视频源 {source.id} 使用单源全帧软解降级模式")
 
         analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
@@ -1558,7 +1572,7 @@ class Orchestrator:
             analysis_fps=analysis_fps,
             input_format=input_format,
             decoder_type=decoder_type,
-            software_decode_keyframes_only=software_decode_keyframes_only,
+            decode_keyframes_only=decode_keyframes_only,
             recording_enabled=self.recording_config.recording_enabled,
             recording_fps=self.recording_config.recording_fps,
         )
@@ -1595,9 +1609,10 @@ class Orchestrator:
         self.running_processes[source.id] = {
             'process': decoder_p,
             'decoder': decoder_p,
+            'decoder_type': decoder_type,
             'stdout_reader': stdout_reader,
             'stderr_reader': stderr_reader,
-            'source_config_signature': self._source_config_signature(source),
+            'source_config_signature': self._runtime_source_config_signature(source),
         }
 
         # 记录启动时间（用于健康检查宽限期）
@@ -1626,6 +1641,50 @@ class Orchestrator:
         logger.info(f"视频源 {source.id} 编码格式: {detected_codec}")
         return detected_codec
 
+    def _configured_decode_keyframes_only(self, source: VideoSource) -> bool:
+        source_override = getattr(source, 'decode_keyframes_only', None)
+        return (
+            bool(getattr(self, 'decode_keyframes_only', DECODE_KEYFRAMES_ONLY))
+            if source_override is None
+            else bool(source_override)
+        )
+
+    def _software_full_frame_fallback_marker(
+        self,
+        source: VideoSource,
+        decoder_type: str,
+    ) -> dict:
+        """Return the exact policy/mode snapshot that justified a fallback."""
+        return {
+            'source_url': source.source_url,
+            'source_override': getattr(source, 'decode_keyframes_only', None),
+            'effective_keyframes_only': self._configured_decode_keyframes_only(source),
+            'decoder_type': decoder_type,
+        }
+
+    def _use_software_full_frame_fallback(
+        self,
+        source: VideoSource,
+        decoder_type: str,
+    ) -> bool:
+        """Use a fallback only while its source policy and software mode are unchanged."""
+        marker = self.software_full_frame_sources.get(source.id)
+        if marker is None:
+            return False
+
+        expected_marker = self._software_full_frame_fallback_marker(
+            source,
+            decoder_type,
+        )
+        fallback_active = (
+            decoder_type in {'ffmpeg_sw', 'ffmpeg'}
+            and expected_marker['effective_keyframes_only']
+            and marker == expected_marker
+        )
+        if not fallback_active:
+            self.software_full_frame_sources.pop(source.id, None)
+        return fallback_active
+
     @staticmethod
     def _source_config_signature(source: VideoSource):
         """Return the decoder-affecting source configuration snapshot."""
@@ -1639,6 +1698,7 @@ class Orchestrator:
                 getattr(source, 'source_codec', 'unknown'),
                 allow_unknown=True,
             ),
+            getattr(source, 'decode_keyframes_only', None),
         )
 
     def _source_config_requires_reload(self, source: VideoSource) -> bool:
@@ -1647,7 +1707,13 @@ class Orchestrator:
             return True
         return process_info.get(
             'source_config_signature'
-        ) != self._source_config_signature(source)
+        ) != self._runtime_source_config_signature(source)
+
+    def _runtime_source_config_signature(self, source: VideoSource):
+        return (
+            *self._source_config_signature(source),
+            self._configured_decode_keyframes_only(source),
+        )
 
     @staticmethod
     def _build_decoder_args(
@@ -1656,10 +1722,16 @@ class Orchestrator:
         analysis_fps: int,
         input_format: str,
         decoder_type: str = None,
-        software_decode_keyframes_only: bool = True,
+        decode_keyframes_only: Optional[bool] = None,
+        software_decode_keyframes_only: Optional[bool] = None,
         recording_enabled: bool = False,
         recording_fps: int = RECORDING_FPS,
     ):
+        # Keep one-release compatibility for callers using the old software-only name.
+        if software_decode_keyframes_only is not None:
+            decode_keyframes_only = software_decode_keyframes_only
+        if decode_keyframes_only is None:
+            decode_keyframes_only = DECODE_KEYFRAMES_ONLY
         decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
         return [
             sys.executable, '-u', decoder_entry,
@@ -1669,9 +1741,7 @@ class Orchestrator:
             '--input-format', input_format,
             '--decoder-threads', str(FFMPEG_SW_DECODER_THREADS),
             '--decoder-output-queue-size', str(DECODER_OUTPUT_QUEUE_SIZE),
-            '--software-decode-keyframes-only', (
-                'true' if software_decode_keyframes_only else 'false'
-            ),
+            '--decode-keyframes-only', 'true' if decode_keyframes_only else 'false',
             '--sample-mode', 'fps',
             '--analysis-fps', str(analysis_fps),
             '--recording-enabled', 'true' if recording_enabled else 'false',
@@ -1757,6 +1827,7 @@ class Orchestrator:
         self._poll_draining_sources()
         now = time.monotonic()
         self._refresh_recording_config(now)
+        self._refresh_video_decode_config(now)
         self._maybe_sync_mediamtx_paths(now)
         self.desired_source_ids = self._update_rotation_schedule(now)
         self.license_entitlements = runtime_entitlements()
@@ -1960,6 +2031,25 @@ class Orchestrator:
         ))
         for source in sources:
             self._stop_source(source)
+
+    def _refresh_video_decode_config(self, now: float) -> None:
+        if (
+            now - self.last_video_decode_config_refresh_at
+            < VIDEO_DECODE_CONFIG_REFRESH_SECONDS
+        ):
+            return
+        self.last_video_decode_config_refresh_at = now
+        updated = get_video_decode_config()
+        if updated == self.video_decode_config:
+            return
+
+        self.video_decode_config = updated
+        self.decode_keyframes_only = updated.decode_keyframes_only
+        logger.info(
+            "视频解码配置已更新: decode_keyframes_only=%s；"
+            "继承系统配置的视频源将自动重启",
+            self.decode_keyframes_only,
+        )
     
     def _start_source_host(
         self,

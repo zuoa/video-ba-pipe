@@ -2,7 +2,9 @@ import logging
 import queue
 import subprocess
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
+import time
 from typing import Optional, Dict, Any
 
 import numpy as np
@@ -19,6 +21,15 @@ class DecoderStatus(Enum):
     DECODING = 2
     ERROR = 3
     CLOSED = 4
+
+
+@dataclass(frozen=True)
+class DecodedFrame:
+    """A decoded image together with its decoder-side freshness metadata."""
+
+    image: np.ndarray
+    decoded_at: float
+    sequence: int
 
 
 class BaseDecoder(ABC):
@@ -46,6 +57,8 @@ class BaseDecoder(ABC):
 
         output_queue_size = max(1, int(kwargs.get('output_queue_size', DECODER_OUTPUT_QUEUE_SIZE)))
         self.output_queue = queue.Queue(maxsize=output_queue_size)
+
+        self._decoded_sequence = 0
 
         self.frames_decoded = 0
         self.frames_dropped = 0
@@ -113,21 +126,58 @@ class BaseDecoder(ABC):
         except Exception as e:
             self.logger.error(f"关闭解码器 {self.decoder_id} 时出错: {e}")
 
-    def get_latest_frame(self, timeout=0.01) -> Optional[np.ndarray]:
-        """
-        从队列中获取最新的帧，丢弃所有旧的积压帧。
-        """
-        frame = None
-        # 循环地从队列取帧，直到队列为空
+    def _enqueue_decoded_frame(
+        self,
+        frame: np.ndarray,
+        decoded_at: Optional[float] = None,
+    ) -> DecodedFrame:
+        """Keep the most recent N frames, evicting the oldest on overflow."""
+        self._decoded_sequence += 1
+        item = DecodedFrame(
+            image=frame,
+            decoded_at=time.time() if decoded_at is None else float(decoded_at),
+            sequence=self._decoded_sequence,
+        )
+        self.frames_decoded += 1
+
         while True:
             try:
-                # 使用非阻塞的 get_nowait，或者极短的超时
-                new_frame = self.output_queue.get(block=True, timeout=timeout)
-                frame = new_frame  # 持续更新为最新的帧
+                self.output_queue.put_nowait(item)
+                return item
+            except queue.Full:
+                try:
+                    self.output_queue.get_nowait()
+                    self.frames_dropped += 1
+                except queue.Empty:
+                    # The consumer made space between put/get; retry the put.
+                    continue
+
+    @staticmethod
+    def _unwrap_decoded_frame(item) -> DecodedFrame:
+        if isinstance(item, DecodedFrame):
+            return item
+        # Compatibility for third-party decoder implementations which still
+        # enqueue raw ndarray objects directly.
+        return DecodedFrame(image=item, decoded_at=time.time(), sequence=0)
+
+    def get_pending_frames(self, timeout=0.01) -> list[DecodedFrame]:
+        """Return the current queue batch in decode order, oldest to newest."""
+        try:
+            first = self.output_queue.get(timeout=timeout)
+        except queue.Empty:
+            return []
+
+        frames = [self._unwrap_decoded_frame(first)]
+        while True:
+            try:
+                frames.append(self._unwrap_decoded_frame(self.output_queue.get_nowait()))
             except queue.Empty:
-                # 当队列为空时，上次获取到的 frame 就是最新的
-                break
-        return frame
+                return frames
+
+    def get_latest_frame(self, timeout=0.01) -> Optional[np.ndarray]:
+        """Return only the newest frame from the current pending batch."""
+        frames = self.get_pending_frames(timeout=timeout)
+        return frames[-1].image if frames else None
 
     def get_statistics(self) -> Dict[str, Any]:
         """获取统计信息"""
@@ -137,6 +187,8 @@ class BaseDecoder(ABC):
             'frames_dropped': self.frames_dropped,
             'errors': self.errors,
             'bytes_processed': self.bytes_processed,
+            'queue_depth': self.output_queue.qsize(),
+            'queue_capacity': self.output_queue.maxsize,
             'status': self.status.name
         }
 

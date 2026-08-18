@@ -448,11 +448,7 @@ class JetsonGStreamerDecoder(BaseDecoder):
         return caps_layout
 
     def _enqueue_frame(self, frame: np.ndarray):
-        try:
-            self.output_queue.put_nowait(frame)
-            self.frames_decoded += 1
-        except queue.Full:
-            self.frames_dropped += 1
+        self._enqueue_decoded_frame(frame)
 
     def _on_new_sample(self, sink):
         sample = sink.emit("pull-sample")
@@ -632,12 +628,16 @@ class JetsonGStreamerDecoder(BaseDecoder):
     def get_frame(self, timeout=1.0) -> Optional[np.ndarray]:
         self._raise_pipeline_error()
         try:
-            return self.output_queue.get(timeout=timeout)
+            item = self.output_queue.get(timeout=timeout)
+            return self._unwrap_decoded_frame(item).image
         except queue.Empty:
             return None
 
-    def get_latest_frame(self, timeout=0.01) -> Optional[np.ndarray]:
+    def get_pending_frames(self, timeout=0.01):
         self._raise_pipeline_error()
+        return super().get_pending_frames(timeout=timeout)
+
+    def get_latest_frame(self, timeout=0.01) -> Optional[np.ndarray]:
         return super().get_latest_frame(timeout=timeout)
 
     def _cleanup(self):

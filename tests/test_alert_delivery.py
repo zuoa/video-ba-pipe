@@ -67,8 +67,12 @@ def test_inline_delivery_embeds_bounded_jpeg(tmp_path, monkeypatch):
 
         task = AlertDeliveryTask.get_by_id(task.id)
         assert task.status == "succeeded"
+        assert published[0]["media_delivery_mode"] == "inline"
+        assert published[0]["media"]["status"] == "ready"
         image = published[0]["media"]["image"]
+        assert image["kind"] == "inline"
         assert image["encoding"] == "base64"
+        assert "url" not in image
         assert len(image["data"].encode("ascii")) <= 80_000
         assert image["size_bytes"] == len(base64.b64decode(image["data"]))
         assert published[0]["alert_image_url"] is None
@@ -122,8 +126,44 @@ def test_object_storage_sends_created_then_media_ready(tmp_path, monkeypatch):
             "alert.media.ready",
         ]
         assert published[0]["media"]["status"] == "pending"
+        assert published[0]["media_delivery_mode"] == "object_storage"
+        assert published[0]["media"]["image"] is None
+        assert published[1]["media_delivery_mode"] == "object_storage"
+        assert published[1]["media"]["image"]["kind"] == "url"
+        assert "data" not in published[1]["media"]["image"]
         assert published[1]["media"]["image"]["url"] == "https://signed.example/alert.jpg"
         assert AlertDeliveryTask.select().where(AlertDeliveryTask.status == "succeeded").count() == 2
+
+
+def test_url_delivery_uses_url_fields_without_base64(tmp_path, monkeypatch):
+    test_db = SqliteDatabase(":memory:")
+    models = [VideoSource, Workflow, Alert, AlertDeliveryTask]
+    with test_db.bind_ctx(models):
+        test_db.create_tables(models)
+        alert = _create_alert(tmp_path)
+        AlertDeliveryTask.create(
+            alert=alert,
+            event_type="alert.created",
+            delivery_mode="url",
+            status="pending",
+            attempts=0,
+            next_attempt_at=datetime.now(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        config = PublicMediaConfig(delivery_mode="url")
+        published = []
+        monkeypatch.setattr(alert_delivery, "get_public_media_config", lambda: config)
+        monkeypatch.setattr(alert_delivery, "format_alert_message", _message)
+        monkeypatch.setattr(alert_delivery, "publish_alert_to_mq", lambda event: published.append(event) or True)
+
+        assert alert_delivery.AlertDeliveryWorker().run_once() is True
+
+        event = published[0]
+        assert event["media_delivery_mode"] == "url"
+        assert event["media"]["status"] == "ready"
+        assert event["media"]["image"] == {"kind": "url", "url": "/local/image"}
+        assert "data" not in event["media"]["image"]
 
 
 def test_failed_publish_is_scheduled_for_retry(tmp_path, monkeypatch):

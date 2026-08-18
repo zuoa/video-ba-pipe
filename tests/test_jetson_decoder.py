@@ -123,7 +123,7 @@ def test_jetson_decoder_tracks_queue_backpressure():
     decoder._enqueue_frame(frame)
     decoder._enqueue_frame(frame)
 
-    assert decoder.frames_decoded == 1
+    assert decoder.frames_decoded == 2
     assert decoder.frames_dropped == 1
     assert decoder.output_queue.qsize() == 1
 

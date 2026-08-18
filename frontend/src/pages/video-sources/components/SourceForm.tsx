@@ -73,6 +73,12 @@ const SourceForm: React.FC<SourceFormProps> = ({
         source_decode_width: editingSource.source_decode_width,
         source_decode_height: editingSource.source_decode_height,
         source_fps: editingSource.source_fps,
+        decode_keyframes_only:
+          editingSource.decode_keyframes_only == null
+            ? 'inherit'
+            : editingSource.decode_keyframes_only
+              ? 'enabled'
+              : 'disabled',
         enabled: editingSource.enabled !== undefined ? editingSource.enabled : true,
         source_type: type,
       });
@@ -149,7 +155,12 @@ const SourceForm: React.FC<SourceFormProps> = ({
     setSaving(true);
     try {
       const values = await form.validateFields();
-      await onSubmit(values);
+      const keyframeMode = values.decode_keyframes_only;
+      await onSubmit({
+        ...values,
+        decode_keyframes_only:
+          keyframeMode === 'inherit' ? null : keyframeMode === 'enabled',
+      });
       form.resetFields();
       setStreamInfo(null);
     } catch (error) {
@@ -258,6 +269,7 @@ const SourceForm: React.FC<SourceFormProps> = ({
           source_decode_width: 960,
           source_decode_height: 540,
           source_fps: 10,
+          decode_keyframes_only: 'inherit',
         }}
       >
         {/* 基本信息 */}
@@ -473,6 +485,18 @@ const SourceForm: React.FC<SourceFormProps> = ({
                 <InputNumber min={1} max={60} style={{ width: '100%' }} />
               </Form.Item>
             </div>
+
+            <Form.Item
+              label="仅解码关键帧"
+              name="decode_keyframes_only"
+              extra="默认继承系统设置（系统默认关闭）。RKMPP 开启后可能产生多 GOP 延迟。"
+            >
+              <Select>
+                <Option value="inherit">继承系统设置</Option>
+                <Option value="disabled">关闭（完整解码）</Option>
+                <Option value="enabled">开启（仅关键帧）</Option>
+              </Select>
+            </Form.Item>
 
             <div className="form-tips">
               <InfoCircleOutlined className="tips-icon" />

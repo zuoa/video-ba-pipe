@@ -107,6 +107,7 @@ POST /openapi/v1/video-sources
 | `source_decode_height` | integer | 否 | `540` | 解码高度 |
 | `source_fps` | integer | 否 | `10` | 目标帧率 |
 | `source_codec` | string | 否 | `unknown` | 编码格式:`unknown` / `h264` / `h265` |
+| `decode_keyframes_only` | boolean / null | 否 | `null` | `null` 继承系统设置；系统默认关闭 |
 
 **示例**
 
@@ -139,6 +140,7 @@ curl -X POST http://<服务器地址>:5002/openapi/v1/video-sources \
     "source_decode_height": 540,
     "source_fps": 10,
     "source_codec": "unknown",
+    "decode_keyframes_only": null,
     "status": "STOPPED"
   }
 }
@@ -152,7 +154,7 @@ curl -X POST http://<服务器地址>:5002/openapi/v1/video-sources \
 PATCH /openapi/v1/video-sources/{source_code}
 ```
 
-仅允许修改 `name`、`enabled`、`source_decode_width`、`source_decode_height`、`source_fps`、`source_codec`;`source_code` 与 `source_url` 不可通过本接口修改。
+仅允许修改 `name`、`enabled`、`source_decode_width`、`source_decode_height`、`source_fps`、`source_codec`、`decode_keyframes_only`;`source_code` 与 `source_url` 不可通过本接口修改。
 
 **示例**
 
