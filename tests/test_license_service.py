@@ -251,6 +251,7 @@ def test_free_runtime_uses_earliest_eligible_source_and_algorithms(license_db):
 
     entitlements = license_service.runtime_entitlements()
 
+    assert entitlements['configured_source_ids'] == {source_one.id}
     assert entitlements['source_ids'] == {source_one.id}
     assert entitlements['algorithm_ids'] == {algorithm.id for algorithm in algorithms[:3]}
 
@@ -303,6 +304,7 @@ def test_paid_runtime_enforces_lower_license_limits(license_db, signing_keys, mo
     entitlements = license_service.runtime_entitlements()
 
     assert entitlements['evaluation'].paid is True
+    assert entitlements['configured_source_ids'] == {source.id for source in sources[:2]}
     assert entitlements['source_ids'] == {source.id for source in sources[:2]}
     assert entitlements['algorithm_ids'] == {algorithm.id for algorithm in algorithms[:3]}
 
@@ -321,7 +323,12 @@ def test_inactive_workflow_uses_configuration_entitlement(license_db):
         updated_at=datetime.now(),
     )
 
-    assert license_service.runtime_entitlements()['source_ids'] == set()
+    entitlements = license_service.runtime_entitlements()
+    assert entitlements['source_ids'] == set()
+    assert entitlements['configured_source_ids'] == {source.id}
+    status = license_service.serialize_status()
+    assert status['entitled_source_ids'] == [source.id]
+    assert status['runtime_source_ids'] == []
     license_service.ensure_workflow_entitled(workflow)
 
 

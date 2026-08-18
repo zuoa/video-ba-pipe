@@ -1102,7 +1102,9 @@ def preview_cascade_algorithm():
 @require_auth
 def get_video_sources():
     entitlements = runtime_entitlements()
-    allowed_ids = entitlements['source_ids']
+    # The list badge describes license allocation, not current scheduling.
+    # Sources without an active workflow are still within the configured quota.
+    allowed_ids = entitlements['configured_source_ids']
     sources = apply_owner_scope(
         VideoSource.select().order_by(VideoSource.id.desc()),
         VideoSource,

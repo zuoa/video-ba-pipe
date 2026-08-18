@@ -325,10 +325,16 @@ def _runtime_source_entitlement_ids(limit: int) -> set[int]:
 
 
 def runtime_entitlements() -> dict:
-    """Return deterministic resource IDs allowed to execute for the active tier."""
+    """Return deterministic configured and currently runnable resource IDs."""
     evaluation = evaluate_license(update_clock=True)
     return {
         'evaluation': evaluation,
+        # Configuration/listing eligibility must not depend on whether a source
+        # already has an active workflow. Otherwise every inactive source is
+        # incorrectly presented as outside the license allocation.
+        'configured_source_ids': _configured_source_entitlement_ids(
+            evaluation.limits['video_sources']
+        ),
         'source_ids': _runtime_source_entitlement_ids(
             evaluation.limits['video_sources']
         ),
@@ -405,8 +411,9 @@ def serialize_status(*, include_details: bool = True) -> dict:
             'node_id': get_node_id(),
             'licensed_node_id': claims.get('node_id'),
             'entitled_source_ids': (
-                sorted(entitlements['source_ids'])
+                sorted(entitlements['configured_source_ids'])
             ),
+            'runtime_source_ids': sorted(entitlements['source_ids']),
             'entitled_algorithm_ids': (
                 sorted(entitlements['algorithm_ids'])
             ),
