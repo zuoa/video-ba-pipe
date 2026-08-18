@@ -17,6 +17,7 @@ from app.config import (
     DECODE_KEYFRAMES_ONLY,
     VIDEO_DECODER_TYPE,
     VIDEO_FRAME_PIXEL_FORMAT,
+    FFMPEG_DIRECT_RTSP_ENABLED,
     FFMPEG_SW_DECODER_THREADS,
     FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS,
     FFMPEG_SW_KEYFRAME_FALLBACK_MIN_BYTES,
@@ -39,6 +40,7 @@ from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.database_models import VideoSource
 from app.core.decoder import DecoderFactory
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
+from app.core.decoder.base import DecoderStatus
 from app.core.hw_decode_budget import NVDEC_DECODER_TYPES, RKMPP_DECODER_TYPES
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.streamer import StreamerFactory  # 使用工厂模式
@@ -86,6 +88,15 @@ class DecoderWorker:
         self.streamer = None
         self.decoder = None
         self.running = False
+        self.direct_rtsp_enabled = bool(
+            self.decoder_config.get(
+                'direct_rtsp_enabled',
+                FFMPEG_DIRECT_RTSP_ENABLED,
+            )
+        )
+        self.direct_rtsp_active = False
+        self.direct_rtsp_fallback_used = False
+        self._source = None
         self.software_full_frame_fallback_requested = False
         self._software_no_output_started_at = None
 
@@ -142,6 +153,7 @@ class DecoderWorker:
     def setup(self, source=None):
         """初始化所有组件"""
         try:
+            self._source = source
             # 如果提供了source参数，使用source的参数，否则使用默认配置
             if source:
                 width = int(source.source_decode_width)
@@ -197,108 +209,19 @@ class DecoderWorker:
                 shm_name = self.recording_buffer_name if os.name == 'nt' else f"/{self.recording_buffer_name}"
                 resource_tracker.unregister(shm_name, 'shared_memory')
 
-            # 使用工厂创建合适的 Streamer
-            stream_type = self.stream_config.get('type')
-            stream_kwargs = self._build_stream_kwargs()
-
-            self.streamer = StreamerFactory.create_streamer(
-                source=self.stream_url,
-                stream_type=stream_type,
-                **stream_kwargs
-            )
-
-            logger.info(f"已初始化流处理器: {self.streamer.__class__.__name__} ({self.stream_url})")
-
-            # 初始化解码器
-            decoder_type = self.decoder_config.get('type', VIDEO_DECODER_TYPE)
-            decoder_id = self.decoder_config.get('id', 401)
-            
-            # 如果提供了source参数，使用source的宽高参数，否则使用配置参数
-            if source:
-                width = source.source_decode_width
-                height = source.source_decode_height
-                logger.info(f"使用视频源解码参数: width={width}, height={height}")
-            else:
-                width = self.decoder_config.get('width', 1920)
-                height = self.decoder_config.get('height', 1080)
-                logger.info(f"使用配置解码参数: width={width}, height={height}")
-            
-            input_format = self.decoder_config.get('input_format', 'h264')
-            output_format = self.decoder_config.get('output_format', VIDEO_FRAME_PIXEL_FORMAT)
-
-            decoder_kwargs = {
-                'decoder_id': decoder_id,
-                'width': width,
-                'height': height,
-                'input_format': input_format,
-                'output_format': output_format,
-                'threads': int(
-                    self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)
-                ),
-                'keyframes_only': bool(
-                    self.decoder_config.get('keyframes_only', DECODE_KEYFRAMES_ONLY)
-                ),
-                'output_queue_size': int(
-                    self.decoder_config.get(
-                        'output_queue_size',
-                        DECODER_OUTPUT_QUEUE_SIZE,
-                    )
-                ),
-            }
-
-            decoder_type_normalized = decoder_type.lower()
-            configured_output_fps = self._configured_decode_output_fps(source)
-            ffmpeg_output_rate_decoders = {
-                'ffmpeg_sw',
-                'ffmpeg',
-                *NVDEC_DECODER_TYPES,
-                *RKMPP_DECODER_TYPES,
-            }
-            if decoder_type_normalized in ffmpeg_output_rate_decoders:
-                decoder_kwargs['output_fps'] = configured_output_fps
-                logger.info(
-                    "FFmpeg 解码输出帧率使用视频源配置: "
-                    f"{configured_output_fps or 'unlimited'} fps"
+            prefer_direct = self._direct_rtsp_eligible()
+            try:
+                self._create_decode_path(source, direct_rtsp=prefer_direct)
+            except Exception as direct_error:
+                if not prefer_direct:
+                    raise
+                logger.warning(
+                    f"单阶段 RTSP 解码初始化失败，回退两阶段链路: {direct_error}",
+                    exc_info=True,
                 )
-            if decoder_type_normalized in NVDEC_DECODER_TYPES:
-                # NVDEC 解码 GPU 与硬解预算探针监控的 GPU 保持一致
-                # （HW_DECODE_NV_GPU_INDEX ↔ ffmpeg -hwaccel_device）
-                decoder_kwargs['device_id'] = int(
-                    self.decoder_config.get('device_id', HW_DECODE_NV_GPU_INDEX)
-                )
-            if decoder_type_normalized in RKMPP_DECODER_TYPES:
-                logger.info(
-                    "RKMPP 硬解输出采样使用视频源解码帧率: "
-                    f"{configured_output_fps or 'unlimited'} fps"
-                )
-            if decoder_type_normalized in {'jetson_gst', 'jetson', 'nvv4l2'}:
-                if decoder_kwargs['keyframes_only']:
-                    logger.warning(
-                        "Jetson GStreamer 解码器不支持仅关键帧模式，将继续完整解码"
-                    )
-                source_fps = int(source.source_fps) if source is not None else 0
-                output_fps = (
-                    self._required_decode_output_fps(source_fps)
-                    if source_fps > 0
-                    else 0
-                )
-                decoder_kwargs.update(
-                    input_fps=source_fps,
-                    output_fps=output_fps,
-                )
-                logger.info(
-                    f"Jetson 硬解输出采样: input={source_fps or 'unknown'} fps, "
-                    f"required={output_fps or 'unlimited'} fps"
-                )
-
-            self.decoder = DecoderFactory.create_decoder(
-                decoder_type,
-                **decoder_kwargs,
-            )
-            logger.info(f"已创建解码器: {decoder_type} ({width}x{height})")
-
-            # 连接流处理管道
-            self.streamer.add_packet_handler(self.decoder.send_packet)
+                self._cleanup_decode_path()
+                self.direct_rtsp_fallback_used = True
+                self._create_decode_path(source, direct_rtsp=False)
 
             if self.analysis_sample_mode == 'all':
                 logger.info("分析采样模式: 写入所有帧")
@@ -314,6 +237,184 @@ class DecoderWorker:
             logger.error(f"初始化失败: {e}", exc_info=True)
             self.cleanup()
             raise
+
+    def _resolved_stream_type(self) -> str:
+        stream_type = str(self.stream_config.get('type') or '').strip().lower()
+        if stream_type:
+            return stream_type
+        url_lower = self.stream_url.lower()
+        if url_lower.startswith(('rtsp://', 'rtsps://')):
+            return 'rtsp'
+        if url_lower.endswith('.flv') or 'flv' in url_lower:
+            return 'http-flv'
+        if url_lower.endswith(('.m3u8', '.m3u')):
+            return 'hls'
+        if url_lower.startswith(('http://', 'https://')):
+            return 'http-flv'
+        return 'file'
+
+    def _direct_rtsp_eligible(self) -> bool:
+        decoder_type = str(
+            self.decoder_config.get('type', VIDEO_DECODER_TYPE)
+        ).lower()
+        ffmpeg_direct_types = {
+            'ffmpeg_sw',
+            'ffmpeg',
+            *NVDEC_DECODER_TYPES,
+            *RKMPP_DECODER_TYPES,
+        }
+        return (
+            self.direct_rtsp_enabled
+            and self._resolved_stream_type() == 'rtsp'
+            and decoder_type in ffmpeg_direct_types
+            and not bool(
+                self.decoder_config.get('keyframes_only', DECODE_KEYFRAMES_ONLY)
+            )
+        )
+
+    def _decoder_kwargs(self, source, *, direct_rtsp: bool) -> dict:
+        decoder_type = str(
+            self.decoder_config.get('type', VIDEO_DECODER_TYPE)
+        ).lower()
+        if source is not None:
+            width = int(source.source_decode_width)
+            height = int(source.source_decode_height)
+        else:
+            width = int(self.decoder_config.get('width', 1920))
+            height = int(self.decoder_config.get('height', 1080))
+
+        kwargs = {
+            'decoder_id': self.decoder_config.get('id', 401),
+            'width': width,
+            'height': height,
+            'input_format': self.decoder_config.get('input_format', 'h264'),
+            'output_format': self.decoder_config.get(
+                'output_format', VIDEO_FRAME_PIXEL_FORMAT
+            ),
+            'threads': int(
+                self.decoder_config.get('threads', FFMPEG_SW_DECODER_THREADS)
+            ),
+            'keyframes_only': bool(
+                self.decoder_config.get('keyframes_only', DECODE_KEYFRAMES_ONLY)
+            ),
+            'output_queue_size': int(
+                self.decoder_config.get(
+                    'output_queue_size', DECODER_OUTPUT_QUEUE_SIZE
+                )
+            ),
+        }
+        ffmpeg_types = {
+            'ffmpeg_sw',
+            'ffmpeg',
+            *NVDEC_DECODER_TYPES,
+            *RKMPP_DECODER_TYPES,
+        }
+        if decoder_type in ffmpeg_types:
+            output_fps = self._configured_decode_output_fps(source)
+            kwargs['output_fps'] = output_fps
+            logger.info(
+                "FFmpeg 解码输出帧率使用视频源配置: "
+                f"{output_fps or 'unlimited'} fps"
+            )
+        if decoder_type in NVDEC_DECODER_TYPES:
+            kwargs['device_id'] = int(
+                self.decoder_config.get('device_id', HW_DECODE_NV_GPU_INDEX)
+            )
+        if decoder_type in {'jetson_gst', 'jetson', 'nvv4l2'}:
+            if kwargs['keyframes_only']:
+                logger.warning(
+                    "Jetson GStreamer 解码器不支持仅关键帧模式，将继续完整解码"
+                )
+            source_fps = int(source.source_fps) if source is not None else 0
+            kwargs.update(
+                input_fps=source_fps,
+                output_fps=(
+                    self._required_decode_output_fps(source_fps)
+                    if source_fps > 0
+                    else 0
+                ),
+            )
+        if direct_rtsp:
+            kwargs.update(
+                input_url=self.stream_url,
+                rtsp_transport=self.stream_config.get('transport', 'tcp'),
+            )
+        return kwargs
+
+    def _create_decode_path(self, source, *, direct_rtsp: bool):
+        decoder_type = str(
+            self.decoder_config.get('type', VIDEO_DECODER_TYPE)
+        ).lower()
+        kwargs = self._decoder_kwargs(source, direct_rtsp=direct_rtsp)
+        width = kwargs['width']
+        height = kwargs['height']
+
+        if not direct_rtsp:
+            self.streamer = StreamerFactory.create_streamer(
+                source=self.stream_url,
+                stream_type=self.stream_config.get('type'),
+                **self._build_stream_kwargs(),
+            )
+            logger.info(
+                f"已初始化流处理器: {self.streamer.__class__.__name__} "
+                f"({self.stream_url})"
+            )
+
+        self.decoder = DecoderFactory.create_decoder(decoder_type, **kwargs)
+        if self.decoder.status != DecoderStatus.READY:
+            raise RuntimeError(f"解码器初始化失败: {decoder_type}")
+
+        self.direct_rtsp_active = direct_rtsp
+        if self.streamer is not None:
+            self.streamer.add_packet_handler(self.decoder.send_packet)
+        mode = '单阶段 RTSP' if direct_rtsp else '两阶段'
+        logger.info(
+            f"已创建解码路径: {decoder_type} ({width}x{height}, {mode})"
+        )
+
+    def _cleanup_decode_path(self):
+        streamer, decoder = self.streamer, self.decoder
+        self.streamer = None
+        self.decoder = None
+        self.direct_rtsp_active = False
+        if streamer is not None:
+            try:
+                streamer.stop()
+            except Exception as exc:
+                logger.error(f"停止流处理器失败: {exc}")
+        if decoder is not None:
+            try:
+                decoder.close()
+            except Exception as exc:
+                logger.error(f"关闭解码器失败: {exc}")
+
+    def _activate_legacy_fallback(self, reason: str) -> bool:
+        if not self.direct_rtsp_active or self.direct_rtsp_fallback_used:
+            return False
+        returncode = getattr(self.decoder, 'returncode', None)
+        logger.warning(
+            f"单阶段 RTSP 解码异常，切换两阶段链路: "
+            f"reason={reason}, returncode={returncode}"
+        )
+        self.direct_rtsp_fallback_used = True
+        self._cleanup_decode_path()
+        try:
+            self._create_decode_path(self._source, direct_rtsp=False)
+            self.streamer.start()
+            if not self.streamer.is_running():
+                raise RuntimeError("回退流处理器未能启动")
+            self.last_frame_time = None
+            return True
+        except Exception as exc:
+            logger.error(f"两阶段回退启动失败: {exc}", exc_info=True)
+            self._cleanup_decode_path()
+            return False
+
+    def _decode_path_is_running(self) -> bool:
+        if self.streamer is not None:
+            return self.streamer.is_running()
+        is_running = getattr(self.decoder, 'is_running', None)
+        return bool(is_running and is_running())
 
     def _build_stream_kwargs(self):
         """根据流类型构建相应的参数"""
@@ -430,10 +531,15 @@ class DecoderWorker:
     def start(self):
         """启动解码工作流程"""
         try:
-            self.streamer.start()
+            if self.streamer is not None:
+                self.streamer.start()
             self.running = True
 
-            stream_type = self.streamer.__class__.__name__
+            stream_type = (
+                '单阶段FFmpegRTSP'
+                if self.direct_rtsp_active
+                else self.streamer.__class__.__name__
+            )
             logger.info(
                 f"[PID:{os.getpid()}] 开始解码 {stream_type}: {self.stream_url} "
                 f"-> analysis={self.analysis_buffer_name}, recording={self.recording_buffer_name or 'disabled'}"
@@ -450,6 +556,7 @@ class DecoderWorker:
 
             # 帧率监控变量
             start_time = time.time()
+            path_started_at = start_time
             last_fps_check_time = start_time
             last_fps_check_frame_count = 0
             latest_frame_age_ms = 0.0
@@ -596,8 +703,12 @@ class DecoderWorker:
 
                     else:
                         # 检查流是否仍在运行
-                        if not self.streamer.is_running():
-                            logger.warning("视频流已停止")
+                        if not self._decode_path_is_running():
+                            if self._activate_legacy_fallback('解码进程或视频流已停止'):
+                                path_started_at = time.time()
+                                error_count = 0
+                                continue
+                            logger.warning("视频解码路径已停止")
                             break
 
                         if self._should_request_software_full_frame_fallback(
@@ -613,9 +724,15 @@ class DecoderWorker:
 
                         # 检查是否长时间无帧
                         if HEALTH_MONITOR_ENABLED:
-                            last_frame_reference = self.last_frame_time or start_time
+                            last_frame_reference = self.last_frame_time or path_started_at
                             time_no_frame = time.time() - last_frame_reference
                             if time_no_frame >= NO_FRAME_CRITICAL_THRESHOLD:
+                                if self._activate_legacy_fallback(
+                                    f'持续 {time_no_frame:.1f} 秒无帧输出'
+                                ):
+                                    path_started_at = time.time()
+                                    error_count = 0
+                                    continue
                                 logger.critical(
                                     f"已 {time_no_frame:.1f} 秒无有效帧输出，"
                                     f"可能解码器卡死或流断开，主动退出"
@@ -634,6 +751,12 @@ class DecoderWorker:
 
                         error_count += 1
                         if error_count >= max_consecutive_errors:
+                            if self._activate_legacy_fallback(
+                                f'连续 {error_count} 次未获取到帧'
+                            ):
+                                path_started_at = time.time()
+                                error_count = 0
+                                continue
                             logger.error(f"连续 {error_count} 次获取帧失败，停止工作")
                             break
 
@@ -641,6 +764,10 @@ class DecoderWorker:
                     logger.info("收到中断信号")
                     break
                 except Exception as e:
+                    if self._activate_legacy_fallback(f'处理帧异常: {e}'):
+                        path_started_at = time.time()
+                        error_count = 0
+                        continue
                     # 解码器不可恢复错误（如 Jetson pipeline 重建连续失败），
                     # 立即退出交给 orchestrator 重启进程，不要空转重试
                     fatal_error = getattr(self.decoder, 'fatal_error', None)
@@ -691,20 +818,7 @@ class DecoderWorker:
         """清理资源"""
         logger.info("开始清理资源...")
         self.running = False
-
-        if self.streamer:
-            try:
-                self.streamer.stop()
-                logger.info("已停止流处理器")
-            except Exception as e:
-                logger.error(f"停止流处理器失败: {e}")
-
-        if self.decoder:
-            try:
-                self.decoder.close()
-                logger.info("已关闭解码器")
-            except Exception as e:
-                logger.error(f"关闭解码器失败: {e}")
+        self._cleanup_decode_path()
 
         if self.analysis_buffer:
             try:

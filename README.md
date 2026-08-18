@@ -164,6 +164,7 @@ cp env.example .env
 - `ALERT_IMAGE_MAX_STORAGE_GB`：本地告警图片容量上限，默认 10 GB
 - `ALERT_IMAGE_MIN_FREE_GB`：磁盘最低剩余空间，默认 10 GB
 - `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 推荐 `rk_mpp`，Jetson 推荐 `jetson_gst`
+- `FFMPEG_DIRECT_RTSP_ENABLED`：FFmpeg 软解、NVDEC 和 RKMPP 是否直接拉取 RTSP 并解码；默认 `true`，异常时会自动回退两阶段链路
 - `ANALYSIS_TARGET_FPS` / `ANALYSIS_BUFFER_SECONDS`：分析链路缓冲参数
 - `PRE_ALERT_DURATION` / `POST_ALERT_DURATION` / `RECORDING_BUFFER_DURATION`：录制链路缓冲参数
 

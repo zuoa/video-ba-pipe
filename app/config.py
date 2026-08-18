@@ -139,6 +139,13 @@ VIDEO_FRAME_PIXEL_FORMAT = (os.getenv('VIDEO_FRAME_PIXEL_FORMAT') or 'nv12').str
 # ffmpeg 软解默认限制为单线程，避免多路并发时每路自动拉满 CPU。
 FFMPEG_SW_DECODER_THREADS = max(1, int(os.getenv('FFMPEG_SW_DECODER_THREADS', '1')))
 
+# RTSP + FFmpeg 系列解码器默认由同一个 FFmpeg 进程完成拉流和解码，
+# 避免“转封装 FFmpeg -> Python pipe -> 解码 FFmpeg”的额外缓冲。
+# 设为 false 可全局回退到两阶段链路。
+FFMPEG_DIRECT_RTSP_ENABLED = os.getenv(
+    'FFMPEG_DIRECT_RTSP_ENABLED', 'true'
+).lower() in ('true', '1', 'yes', 'on')
+
 # 如果主动开启关键帧软解后持续收到足量码流但仍无帧输出，decoder worker
 # 会以专用退出码通知 orchestrator，仅将该视频源切换为全帧软解。
 FFMPEG_SW_KEYFRAME_FALLBACK_SECONDS = max(

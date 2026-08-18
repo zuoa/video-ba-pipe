@@ -33,6 +33,9 @@ class AsyncFFmpegDecoder(BaseDecoder):
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
         self._ffmpeg_process = None
+        self.input_url = str(kwargs.get('input_url') or '').strip()
+        self.rtsp_transport = str(kwargs.get('rtsp_transport') or 'tcp').strip().lower()
+        self.direct_input = bool(self.input_url)
         self.output_format = normalize_pixel_format(kwargs.get('output_format', 'nv12'))
         self.frame_size = get_frame_size_bytes(width, height, self.output_format)
         self.storage_shape = get_storage_shape(width, height, self.output_format)
@@ -50,7 +53,11 @@ class AsyncFFmpegDecoder(BaseDecoder):
         logger.info(f"启动FFmpeg解码器进程，命令: {' '.join(command)}")
         try:
             self._ffmpeg_process = subprocess.Popen(
-                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10 ** 8
+                command,
+                stdin=subprocess.DEVNULL if self.direct_input else subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=10 ** 8,
             )
             self._running = True
 
@@ -75,7 +82,8 @@ class AsyncFFmpegDecoder(BaseDecoder):
                 raw_frame = self._ffmpeg_process.stdout.read(self.frame_size)
 
                 if len(raw_frame) != self.frame_size:
-                    logger.warning("从FFmpeg读取到的数据不完整，可能已结束。")
+                    if self._running:
+                        logger.warning("从FFmpeg读取到的数据不完整，可能已结束。")
                     break
 
                 frame = reshape_frame(raw_frame, self.width, self.height, self.output_format)
@@ -86,6 +94,7 @@ class AsyncFFmpegDecoder(BaseDecoder):
                 if self._running:  # 只有在还在运行时才报告错误
                     logger.error(f"FFmpeg帧读取线程异常: {e}")
                 break
+        self._running = False
         logger.info("FFmpeg帧读取线程已退出。")
 
     def _log_stderr(self):
@@ -108,8 +117,48 @@ class AsyncFFmpegDecoder(BaseDecoder):
         fps_value = int(output_fps) if output_fps.is_integer() else output_fps
         return ['-vf', f'fps={fps_value}']
 
+    def _input_args(self, demuxer: str, *decoder_args: str) -> list:
+        """Build either direct RTSP input or the legacy elementary-stream pipe."""
+        if self.direct_input:
+            return [
+                '-rtsp_transport', self.rtsp_transport,
+                '-fflags', 'nobuffer+discardcorrupt',
+                '-analyzeduration', '0',
+                '-probesize', '32768',
+                '-max_delay', '0',
+                *decoder_args,
+                '-i', self.input_url,
+            ]
+        return [
+            *decoder_args,
+            '-fflags', '+genpts+discardcorrupt',
+            '-f', demuxer,
+            '-i', 'pipe:0',
+        ]
+
+    def _direct_output_selection_args(self) -> list:
+        if not self.direct_input:
+            return []
+        return ['-map', '0:v:0', '-an', '-dn']
+
+    def is_running(self) -> bool:
+        process = self._ffmpeg_process
+        if not self._running or process is None:
+            return False
+        if process.poll() is not None:
+            self._running = False
+            return False
+        return True
+
+    @property
+    def returncode(self):
+        process = self._ffmpeg_process
+        return None if process is None else process.poll()
+
     def send_packet(self, data: bytes):
         """向解码器进程写入数据包。"""
+        if self.direct_input:
+            raise RuntimeError("直连 RTSP 解码器不接受外部编码数据包")
         if self._running and self._ffmpeg_process and self._ffmpeg_process.stdin:
             try:
                 self._ffmpeg_process.stdin.write(data)
@@ -165,15 +214,14 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
         ]
         if self.keyframes_only:
             input_args.extend(['-skip_frame', 'nokey'])
-        input_args.extend([
-            '-fflags', '+genpts+discardcorrupt',
-            '-f', elementary_stream_muxer(
-                self.config.get('input_format', 'h264')
-            ),
-        ])
+        input_args = self._input_args(
+            elementary_stream_muxer(self.config.get('input_format', 'h264')),
+            *input_args,
+        )
 
         # 将输出参数放在 -i pipe:0 之后
         output_args = [
+            *self._direct_output_selection_args(),
             *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.config.get('output_format', 'nv12'),
@@ -183,7 +231,6 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
         return [
             'ffmpeg',
             *input_args,
-            '-i', 'pipe:0',
             *output_args,
             'pipe:1'
         ]

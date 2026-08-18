@@ -44,11 +44,12 @@ class FFmpegRKMPPDecoder(AsyncFFmpegDecoder):
 
         return [
             'ffmpeg',
-            *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
-            '-fflags', '+genpts+discardcorrupt',
-            '-f', demuxer,
-            '-c:v', decoder,
-            '-i', 'pipe:0',
+            *self._input_args(
+                demuxer,
+                *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
+                '-c:v', decoder,
+            ),
+            *self._direct_output_selection_args(),
             *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.config.get('output_format', 'nv12'),

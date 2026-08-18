@@ -7,7 +7,7 @@ import numpy as np
 import app.decoder_worker as decoder_worker_module
 import app.core.orchestrator as orchestrator_module
 from app.core.decoder.async_dec import AsyncSoftwareDecoder
-from app.core.decoder.base import BaseDecoder, DecodedFrame
+from app.core.decoder.base import BaseDecoder, DecodedFrame, DecoderStatus
 from app.core.decoder.rk import FFmpegRKMPPDecoder
 from app.decoder_worker import DecoderWorker
 from app.core.orchestrator import Orchestrator
@@ -171,6 +171,46 @@ def test_async_software_decoder_uses_configured_decode_output_fps():
     assert command.index('-vf') < command.index('-s')
 
 
+def test_async_software_decoder_can_decode_rtsp_directly():
+    decoder = AsyncSoftwareDecoder(
+        decoder_id=13,
+        width=640,
+        height=480,
+        input_format='h264',
+        output_format='nv12',
+        output_fps=5,
+        input_url='rtsp://camera/stream',
+        rtsp_transport='tcp',
+    )
+
+    command = decoder._build_ffmpeg_command()
+
+    assert command[command.index('-rtsp_transport') + 1] == 'tcp'
+    assert command[command.index('-fflags') + 1] == 'nobuffer+discardcorrupt'
+    assert command[command.index('-probesize') + 1] == '32768'
+    assert command[command.index('-max_delay') + 1] == '0'
+    assert command[command.index('-i') + 1] == 'rtsp://camera/stream'
+    assert command[command.index('-map') + 1] == '0:v:0'
+    assert command[command.index('-vf') + 1] == 'fps=5'
+    assert 'pipe:0' not in command
+
+
+def test_direct_rtsp_decoder_rejects_external_packets():
+    decoder = AsyncSoftwareDecoder(
+        decoder_id=14,
+        width=640,
+        height=480,
+        input_url='rtsp://camera/stream',
+    )
+
+    try:
+        decoder.send_packet(b'encoded')
+    except RuntimeError as exc:
+        assert '不接受外部编码数据包' in str(exc)
+    else:
+        raise AssertionError('direct RTSP decoder must reject external packets')
+
+
 def test_async_software_decoder_can_leave_output_rate_unlimited():
     decoder = AsyncSoftwareDecoder(
         decoder_id=12,
@@ -230,6 +270,25 @@ def test_rkmpp_decoder_decodes_full_stream_then_samples_output_fps():
     assert '-skip_frame' not in command
     assert command[command.index('-c:v') + 1] == 'hevc_rkmpp'
     assert command[command.index('-vf') + 1] == 'fps=2'
+
+
+def test_rkmpp_decoder_can_decode_rtsp_directly():
+    decoder = FFmpegRKMPPDecoder(
+        decoder_id=15,
+        width=640,
+        height=480,
+        input_format='h264',
+        output_format='nv12',
+        output_fps=5,
+        input_url='rtsp://camera/stream',
+    )
+
+    command = decoder._build_ffmpeg_command()
+
+    assert command[command.index('-c:v') + 1] == 'h264_rkmpp'
+    assert command[command.index('-i') + 1] == 'rtsp://camera/stream'
+    assert command[command.index('-map') + 1] == '0:v:0'
+    assert 'pipe:0' not in command
 
 
 def test_rkmpp_decoder_can_leave_output_rate_unlimited():
@@ -321,6 +380,112 @@ def test_worker_uses_video_source_decode_fps_as_ffmpeg_output_rate():
     source = SimpleNamespace(source_fps=10)
 
     assert DecoderWorker._configured_decode_output_fps(source) == 10
+
+
+def test_worker_enables_direct_rtsp_only_for_supported_full_frame_decoders():
+    direct = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        decoder_config={
+            'type': 'ffmpeg_sw',
+            'direct_rtsp_enabled': True,
+            'keyframes_only': False,
+        },
+    )
+    keyframes = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        decoder_config={
+            'type': 'rk_mpp',
+            'direct_rtsp_enabled': True,
+            'keyframes_only': True,
+        },
+    )
+    jetson = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        decoder_config={
+            'type': 'jetson_gst',
+            'direct_rtsp_enabled': True,
+        },
+    )
+    file_source = DecoderWorker(
+        stream_url='/data/video.mp4',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        decoder_config={
+            'type': 'ffmpeg_sw',
+            'direct_rtsp_enabled': True,
+        },
+    )
+
+    assert direct._direct_rtsp_eligible() is True
+    assert keyframes._direct_rtsp_eligible() is False
+    assert jetson._direct_rtsp_eligible() is False
+    assert file_source._direct_rtsp_eligible() is False
+
+
+def test_worker_direct_rtsp_falls_back_to_legacy_only_once(monkeypatch):
+    class DirectDecoder:
+        returncode = 1
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class LegacyDecoder:
+        status = DecoderStatus.READY
+
+        def close(self):
+            return None
+
+    class LegacyStreamer:
+        def __init__(self):
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+        def is_running(self):
+            return self.started
+
+        def stop(self):
+            self.started = False
+
+    worker = DecoderWorker(
+        stream_url='rtsp://camera/stream',
+        analysis_buffer_name='analysis',
+        recording_buffer_name=None,
+        source_info={},
+        decoder_config={'type': 'ffmpeg_sw', 'direct_rtsp_enabled': True},
+    )
+    direct_decoder = DirectDecoder()
+    legacy_streamer = LegacyStreamer()
+    worker.decoder = direct_decoder
+    worker.direct_rtsp_active = True
+
+    def create_legacy(_source, *, direct_rtsp):
+        assert direct_rtsp is False
+        worker.streamer = legacy_streamer
+        worker.decoder = LegacyDecoder()
+        worker.direct_rtsp_active = False
+
+    monkeypatch.setattr(worker, '_create_decode_path', create_legacy)
+
+    assert worker._activate_legacy_fallback('direct process exited') is True
+    assert direct_decoder.closed is True
+    assert legacy_streamer.started is True
+    assert worker.direct_rtsp_fallback_used is True
+    assert worker._activate_legacy_fallback('again') is False
 
 
 def test_worker_disables_jetson_frame_drop_for_all_frame_analysis():

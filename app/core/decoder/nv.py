@@ -23,13 +23,14 @@ class FFmpegNVDECDecoder(AsyncFFmpegDecoder):
 
         return [
             'ffmpeg',
-            *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
-            '-fflags', '+genpts+discardcorrupt',
-            '-f', demuxer,
-            '-hwaccel', 'cuda',
-            '-hwaccel_device', str(self.device_id),
-            '-c:v', decoder_name,
-            '-i', 'pipe:0',
+            *self._input_args(
+                demuxer,
+                *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
+                '-hwaccel', 'cuda',
+                '-hwaccel_device', str(self.device_id),
+                '-c:v', decoder_name,
+            ),
+            *self._direct_output_selection_args(),
             *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.output_format,

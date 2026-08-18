@@ -161,6 +161,29 @@ def test_decoder_worker_passes_decoder_codec_to_streamer():
     }
 
 
+def test_nvdec_decoder_can_decode_rtsp_directly():
+    decoder = FFmpegNVDECDecoder(
+        decoder_id=8,
+        width=640,
+        height=480,
+        input_format="h264",
+        output_format="nv12",
+        output_fps=5,
+        input_url="rtsp://camera/stream",
+        rtsp_transport="udp",
+        device_id=1,
+    )
+
+    command = decoder._build_ffmpeg_command()
+
+    assert command[command.index("-rtsp_transport") + 1] == "udp"
+    assert command[command.index("-hwaccel_device") + 1] == "1"
+    assert command[command.index("-c:v") + 1] == "h264_cuvid"
+    assert command[command.index("-i") + 1] == "rtsp://camera/stream"
+    assert command[command.index("-vf") + 1] == "fps=5"
+    assert "pipe:0" not in command
+
+
 def test_orchestrator_probes_and_stores_source_codec(monkeypatch):
     source = SimpleNamespace(
         id=7,
