@@ -3,6 +3,7 @@ import { Form, Input, InputNumber, Select, Space, Switch, Table, Tag, message } 
 import Button from '@/components/common/AppButton';
 import { ApiOutlined, PlusOutlined } from '@ant-design/icons';
 import { AppModal, PageHeader, useAppConfirm } from '@/components/common';
+import DetectionResponseContract from '@/components/external-api/DetectionResponseContract';
 import {
   getExternalApis,
   createExternalApi,
@@ -312,10 +313,12 @@ export default function ExternalApisPage() {
             <TextArea rows={5} />
           </Form.Item>
 
+          <DetectionResponseContract />
+
           <Form.Item
             name="output_mapping"
             label="输出映射 JSON"
-            extra="用于把接口返回映射为工作流标准字段"
+            extra="用于把接口返回映射为工作流标准字段；嵌套返回时请确保 detections_path 指向目标数组"
           >
             <TextArea rows={5} />
           </Form.Item>

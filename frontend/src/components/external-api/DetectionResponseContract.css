@@ -1,0 +1,120 @@
+.detection-response-contract {
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid #bfdce6;
+  border-radius: 12px;
+  background: #f5fbfd;
+  color: #29434d;
+}
+
+.detection-response-contract__heading {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px 12px;
+}
+
+.detection-response-contract__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #d8eef4;
+  color: #236b80;
+  font-size: 16px;
+}
+
+.detection-response-contract__title {
+  color: #163f4c;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.detection-response-contract__intro {
+  margin-top: 2px;
+  color: #52717b;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.detection-response-contract__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+  gap: 14px;
+  padding: 0 16px 14px;
+}
+
+.detection-response-contract__requirements {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.detection-response-contract__requirements li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.detection-response-contract__requirements .anticon {
+  margin-top: 5px;
+  color: #2f8499;
+  font-size: 11px;
+}
+
+.detection-response-contract code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(35, 107, 128, 0.09);
+  color: #18566a;
+  font-size: 12px;
+}
+
+.detection-response-contract__example {
+  overflow: hidden;
+  border: 1px solid #d4e6eb;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.detection-response-contract__example-label {
+  padding: 7px 10px;
+  border-bottom: 1px solid #e2edf0;
+  color: #627d86;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.detection-response-contract__example pre {
+  margin: 0;
+  padding: 10px;
+  overflow-x: auto;
+  color: #24434d;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.detection-response-contract__aliases {
+  padding: 10px 16px;
+  border-top: 1px solid #d8e9ed;
+  background: rgba(219, 239, 244, 0.38);
+  color: #5a747d;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .detection-response-contract__body {
+    grid-template-columns: 1fr;
+  }
+}

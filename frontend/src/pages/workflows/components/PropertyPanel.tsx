@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Form, Input, Select, Tabs, Space, Tag, Switch, InputNumber, Typography, List } from 'antd';
 import Button from '@/components/common/AppButton';
 import AppEmptyState from '@/components/common/AppEmptyState';
+import DetectionResponseContract from '@/components/external-api/DetectionResponseContract';
 import {
   SettingOutlined,
   DeleteOutlined,
@@ -947,14 +948,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               <div className="config-section-header">
                 <span className="config-section-title">输出参数</span>
               </div>
-              <div className="info-box" style={{ marginBottom: 12 }}>
-                <InfoCircleOutlined />
-                <span>请用点路径声明返回值位置，例如 `data.items`。默认兼容 `has_detection`、`detections`、`metadata`。</span>
-              </div>
+              <DetectionResponseContract />
               <Form.Item
                 label="输出映射"
                 name="outputMapping"
-                extra="JSON 对象，支持 has_detection_path / detections_path / metadata_path / label_color_path"
+                extra="请用点路径声明返回值位置。支持 has_detection_path / detections_path / metadata_path / label_color_path"
               >
                 <TextArea rows={6} placeholder='{"detections_path":"data.detections"}' />
               </Form.Item>
