@@ -493,7 +493,11 @@ export default function AlgorithmWizard() {
 
   const handleSubmit = async () => {
     try {
-      const values = await form.validateFields();
+      // validateFields() only returns fields mounted by the current wizard step.
+      // Read the complete store afterwards so preserved values from earlier steps
+      // (for example, OCR model IDs) are included in the request payload.
+      await form.validateFields();
+      const values = form.getFieldsValue(true);
 
       if (algorithmType === 'vl') {
         const data = {
@@ -649,8 +653,9 @@ export default function AlgorithmWizard() {
         message.success('算法创建成功！');
       }
       navigate('/algorithms');
-    } catch (error) {
-      message.error(editingAlgorithm ? '更新失败' : '创建失败');
+    } catch (error: any) {
+      const detail = error?.data?.error || error?.response?.data?.error || error?.message;
+      message.error(detail || (editingAlgorithm ? '更新失败' : '创建失败'));
     }
   };
 
