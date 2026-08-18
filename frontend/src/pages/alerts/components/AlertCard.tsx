@@ -75,7 +75,6 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
   const colorScheme = ALERT_COLORS[alertType] || DEFAULT_COLOR;
   const alertTypeLabel = ALERT_TYPE_CONFIG[alertType]?.label || alert.alert_type.replace(/_/g, ' ');
   const workflowName = alert.workflow_name || (alert.workflow_id ? `编排 #${alert.workflow_id}` : '未关联编排');
-  const alertMessage = alert.alert_message?.trim() || '未提供告警描述';
   const cardStyle = {
     '--alert-color': colorScheme.primary,
     '--alert-soft': colorScheme.bg,
@@ -143,13 +142,6 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
             </Tooltip>
           </div>
         </div>
-
-        <Tooltip title={<div className="alert-card-message-tooltip">{alertMessage}</div>} mouseEnterDelay={0.5}>
-          <div className="alert-card-message">
-            <span className="alert-card-label">告警内容</span>
-            <p>{alertMessage}</p>
-          </div>
-        </Tooltip>
 
         <div className="alert-card-meta">
           <div className="alert-card-meta-row">

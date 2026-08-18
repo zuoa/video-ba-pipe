@@ -174,34 +174,6 @@
   white-space: nowrap;
 }
 
-.alert-card-message {
-  min-height: 66px;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--alert-color) 14%, var(--app-line-soft));
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--alert-soft) 58%, #fff);
-}
-
-.alert-card-message p {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 0;
-  color: var(--app-text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-  text-overflow: ellipsis;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.alert-card-message-tooltip {
-  max-width: 360px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .alert-card-meta {
   display: flex;
   flex-direction: column;
