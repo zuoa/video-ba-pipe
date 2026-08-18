@@ -228,6 +228,13 @@ OOM_RESTART_BACKOFF_MAX_SECONDS = max(
 SHARED_INFERENCE_ENABLED = os.getenv(
     'SHARED_INFERENCE_ENABLED', 'false'
 ).lower() in ('true', '1', 'yes', 'on')
+# RKNN Runtime/driver calls are not reliably safe when several per-model
+# processes initialize or infer concurrently. Keep the experimental shared
+# RKNN path opt-in; shared Ultralytics inference remains controlled by the
+# general switch above.
+SHARED_RKNN_ENABLED = os.getenv(
+    'SHARED_RKNN_ENABLED', 'false'
+).lower() in ('true', '1', 'yes', 'on')
 SHARED_INFERENCE_SOCKET_PATH = os.getenv(
     'SHARED_INFERENCE_SOCKET_PATH', '/tmp/video-ba-pipe-inference.sock'
 ).strip() or '/tmp/video-ba-pipe-inference.sock'

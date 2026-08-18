@@ -55,6 +55,7 @@ docker compose -p video-analysis -f docker-compose.yml.rknn ps
 - `docker-compose.yml.rknn` 里只保留了偏离默认值或 RK 专属的关键变量。
 - `docker-compose.yml.rknn` 已内置 PostgreSQL，仅在 compose 网络内提供服务；如需执行迁移或排障，优先使用 `docker compose exec` / `docker compose run` 进入容器。
 - `api` 不加载模型；已保存算法测试和组合检测预览会通过容器内网转发到 worker。
+- RKNN 默认不进入“每模型共享子进程”（`SHARED_RKNN_ENABLED=false`），并在 worker 内跨进程串行原生 Runtime 调用，避免多模型同时初始化/推理触发 `SIGSEGV(-11)`；该实验开关不要在生产环境启用。
 - `worker` 默认透传 `/dev/dri`、`/dev/mpp_service`、`/dev/rga`、`/dev/video0`、`/dev/video-dec0`、`/dev/video-enc0`，用于正式任务、页面测试中的 RKNN 推理及 `ffmpeg+rkmpp` 硬解。
 - `VIDEO_DECODER_TYPE=rk_mpp` 目前仅在 `worker` 中启用；`api` 保持默认软解，避免在未使用测试解码能力时额外占用 RK 设备。
 - RK compose 默认使用资源受限档：`ANALYSIS_TARGET_FPS=2`、`ANALYSIS_BUFFER_SECONDS=3`、`RECORDING_FPS=3`、`PRE_ALERT_DURATION=15`、`POST_ALERT_DURATION=15`、`RECORDING_BUFFER_DURATION=32`，避免多路场景下录制共享内存和 JPEG 编码持续放大。

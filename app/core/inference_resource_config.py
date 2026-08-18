@@ -39,6 +39,7 @@ from app.config import (
     SHARED_INFERENCE_IDLE_SECONDS,
     SHARED_INFERENCE_QUEUE_SIZE,
     SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS,
+    SHARED_RKNN_ENABLED,
 )
 from app.core.database_models import SystemSetting
 
@@ -439,7 +440,12 @@ def detect_inference_capabilities() -> Dict[str, Any]:
         "oom_detection": cgroup_oom,
         "unix_socket": unix_socket,
         "posix_shared_memory": posix_shared_memory,
-        "rknn_shared": is_rk3588 and unix_socket and posix_shared_memory,
+        "rknn_shared": (
+            SHARED_RKNN_ENABLED
+            and is_rk3588
+            and unix_socket
+            and posix_shared_memory
+        ),
         "onnx_shared": False,
     }
 

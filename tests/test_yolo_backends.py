@@ -231,9 +231,11 @@ class BackendConfigTests(unittest.TestCase):
 
     def test_shared_client_routes_rknn_without_loading_local_runtime(self):
         original_mode = YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE
+        original_rknn_mode = YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE
         original_proxy = YOLO_BACKENDS.SharedRKNNBackend
         sentinel = object()
         YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = True
+        YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE = True
         YOLO_BACKENDS.SharedRKNNBackend = lambda *_args, **_kwargs: sentinel
         try:
             backend = YOLO_BACKENDS.create_backend(
@@ -244,7 +246,28 @@ class BackendConfigTests(unittest.TestCase):
             self.assertIs(backend, sentinel)
         finally:
             YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = original_mode
+            YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE = original_rknn_mode
             YOLO_BACKENDS.SharedRKNNBackend = original_proxy
+
+    def test_shared_rknn_is_opt_in_even_when_general_shared_mode_is_enabled(self):
+        original_mode = YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE
+        original_rknn_mode = YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE
+        original_local = YOLO_BACKENDS.RKNNBackend
+        sentinel = object()
+        YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = True
+        YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE = False
+        YOLO_BACKENDS.RKNNBackend = lambda *_args, **_kwargs: sentinel
+        try:
+            backend = YOLO_BACKENDS.create_backend(
+                "model.rknn",
+                {"framework": "rknn"},
+                {"backend": "auto"},
+            )
+            self.assertIs(backend, sentinel)
+        finally:
+            YOLO_BACKENDS._SHARED_INFERENCE_CLIENT_MODE = original_mode
+            YOLO_BACKENDS._SHARED_RKNN_CLIENT_MODE = original_rknn_mode
+            YOLO_BACKENDS.RKNNBackend = original_local
 
 
 class YoloOutputAdapterTests(unittest.TestCase):

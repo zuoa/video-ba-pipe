@@ -110,12 +110,26 @@ def test_capabilities_detect_rk3588_from_device_tree_compatible(monkeypatch):
         "_device_tree_compatible",
         lambda: "friendlyarm,nanopc-t6,rockchip,rk3588",
     )
+    monkeypatch.setattr(resource_config, "SHARED_RKNN_ENABLED", True)
 
     capabilities = resource_config.detect_inference_capabilities()
 
     assert capabilities["platform"] == "rk3588"
     assert capabilities["rknn_shared"] is True
     assert capabilities["device_compatible"].endswith("rockchip,rk3588")
+
+
+def test_rknn_shared_capability_is_disabled_without_explicit_opt_in(monkeypatch):
+    monkeypatch.setattr(resource_config.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(resource_config.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(resource_config, "_device_model", lambda: "RK3588")
+    monkeypatch.setattr(resource_config, "_device_tree_compatible", lambda: "rockchip,rk3588")
+    monkeypatch.setattr(resource_config, "SHARED_RKNN_ENABLED", False)
+
+    capabilities = resource_config.detect_inference_capabilities()
+
+    assert capabilities["platform"] == "rk3588"
+    assert capabilities["rknn_shared"] is False
 
 
 def test_load_uses_environment_when_database_is_unavailable(monkeypatch):

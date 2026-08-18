@@ -12,6 +12,7 @@ import json
 import os
 import threading
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -19,15 +20,17 @@ import numpy as np
 from app import logger
 
 try:
-    from app.config import SHARED_INFERENCE_ENABLED
+    from app.config import SHARED_INFERENCE_ENABLED, SHARED_RKNN_ENABLED
 except ImportError:  # pragma: no cover - standalone adapter tests/templates
     SHARED_INFERENCE_ENABLED = False
+    SHARED_RKNN_ENABLED = False
 
 _SHARED_INFERENCE_CLIENT_MODE = (
     SHARED_INFERENCE_ENABLED
     and os.getenv("SHARED_INFERENCE_WORKER", "false").lower()
     not in ("true", "1", "yes", "on")
 )
+_SHARED_RKNN_CLIENT_MODE = _SHARED_INFERENCE_CLIENT_MODE and SHARED_RKNN_ENABLED
 
 # Both runtimes are loaded only when their local backend is actually created.
 # In particular, importing this adapter in an RKNN-only source host must not
@@ -1393,6 +1396,38 @@ class _RKNNRuntimeEntry:
 _RKNN_RUNTIME_POOL: Dict[Tuple[Any, ...], _RKNNRuntimeEntry] = {}
 _RKNN_RUNTIME_POOL_LOCK = threading.RLock()
 _RKNN_RUNTIME_POOL_PID = os.getpid()
+_RKNN_NATIVE_THREAD_LOCK = threading.RLock()
+_RKNN_NATIVE_LOCK_PATH = os.getenv(
+    "RKNN_NATIVE_LOCK_PATH", "/tmp/video-ba-pipe-rknn-native.lock"
+)
+
+
+@contextmanager
+def _rknn_native_call_lock():
+    """Serialize RKNN native calls across model and algorithm processes.
+
+    librknnrt/driver failures are native crashes rather than catchable Python
+    exceptions.  A process-local backend lock is insufficient when shared
+    model workers or source hosts use different RKNN contexts concurrently.
+    """
+    with _RKNN_NATIVE_THREAD_LOCK:
+        lock_file = None
+        try:
+            try:
+                import fcntl
+            except ImportError:  # pragma: no cover - RKNN deployments are Linux
+                yield
+                return
+
+            lock_file = open(_RKNN_NATIVE_LOCK_PATH, "a+b")
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
 
 
 def _rknn_runtime_key(model_path: str, config: Dict[str, Any]) -> Tuple[Any, ...]:
@@ -1438,26 +1473,27 @@ def _acquire_rknn_runtime(model_path: str, config: Dict[str, Any]):
             return key, entry
 
         runtime = runtime_class()
-        try:
-            ret = runtime.load_rknn(model_path)
-            if ret != 0:
-                raise RuntimeError(f"RKNNLite.load_rknn 失败，返回码: {ret}")
-            core_mask = _resolve_rknn_core_mask(config)
-            ret = (
-                runtime.init_runtime(core_mask=core_mask)
-                if core_mask is not None
-                else runtime.init_runtime()
-            )
-            if ret != 0:
-                raise RuntimeError(
-                    f"RKNNLite.init_runtime 失败，返回码: {ret}。"
-                    "请确认当前容器可访问 /dev/dri、/proc/device-tree/compatible，"
-                    "并已挂载 /usr/lib/librknnrt.so"
+        with _rknn_native_call_lock():
+            try:
+                ret = runtime.load_rknn(model_path)
+                if ret != 0:
+                    raise RuntimeError(f"RKNNLite.load_rknn 失败，返回码: {ret}")
+                core_mask = _resolve_rknn_core_mask(config)
+                ret = (
+                    runtime.init_runtime(core_mask=core_mask)
+                    if core_mask is not None
+                    else runtime.init_runtime()
                 )
-        except Exception:
-            if hasattr(runtime, "release"):
-                runtime.release()
-            raise
+                if ret != 0:
+                    raise RuntimeError(
+                        f"RKNNLite.init_runtime 失败，返回码: {ret}。"
+                        "请确认当前容器可访问 /dev/dri、/proc/device-tree/compatible，"
+                        "并已挂载 /usr/lib/librknnrt.so"
+                    )
+            except Exception:
+                if hasattr(runtime, "release"):
+                    runtime.release()
+                raise
         entry = _RKNNRuntimeEntry(runtime)
         _RKNN_RUNTIME_POOL[key] = entry
         return key, entry
@@ -1474,8 +1510,9 @@ def _release_rknn_runtime(key, entry) -> None:
             return
         _RKNN_RUNTIME_POOL.pop(key, None)
         with entry.inference_lock:
-            if hasattr(entry.runtime, "release"):
-                entry.runtime.release()
+            with _rknn_native_call_lock():
+                if hasattr(entry.runtime, "release"):
+                    entry.runtime.release()
 
 
 def _reset_rknn_runtime_pool_for_tests() -> None:
@@ -1485,8 +1522,9 @@ def _reset_rknn_runtime_pool_for_tests() -> None:
         entries = list(_RKNN_RUNTIME_POOL.values())
         _RKNN_RUNTIME_POOL.clear()
         for entry in entries:
-            if hasattr(entry.runtime, "release"):
-                entry.runtime.release()
+            with _rknn_native_call_lock():
+                if hasattr(entry.runtime, "release"):
+                    entry.runtime.release()
 
 
 class RKNNBackend(BaseYoloBackend):
@@ -1512,7 +1550,8 @@ class RKNNBackend(BaseYoloBackend):
         if entry is None:
             raise RuntimeError("RKNN backend 已关闭")
         with entry.inference_lock:
-            outputs = self.model.inference(inputs=[image])
+            with _rknn_native_call_lock():
+                outputs = self.model.inference(inputs=[image])
         detections, details, adapter_metadata = self.output_adapter.parse(
             outputs=outputs,
             frame_shape=frame.shape,
@@ -1665,7 +1704,7 @@ def create_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str
     normalized_config = normalize_backend_config(config)
     backend_name = select_backend(model_path, model_info, normalized_config)
     if backend_name == "rknn":
-        if _SHARED_INFERENCE_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
+        if _SHARED_RKNN_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
             return SharedRKNNBackend(model_path, model_info, normalized_config)
         return RKNNBackend(model_path, model_info, normalized_config)
     if backend_name == "onnxruntime":
