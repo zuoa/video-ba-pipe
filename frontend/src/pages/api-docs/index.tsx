@@ -74,9 +74,9 @@ const ENDPOINTS: EndpointDoc[] = [
       { name: 'name', type: 'string', required: true, description: '视频源名称' },
       { name: 'source_url', type: 'string', required: true, description: '流地址(RTSP / HTTP-FLV / HLS / 本地文件)' },
       { name: 'enabled', type: 'boolean', defaultValue: 'true', description: '是否启用' },
-      { name: 'source_decode_width', type: 'integer', defaultValue: '960', description: '解码宽度' },
-      { name: 'source_decode_height', type: 'integer', defaultValue: '540', description: '解码高度' },
-      { name: 'source_fps', type: 'integer', defaultValue: '10', description: '目标帧率' },
+      { name: 'source_decode_width', type: 'integer', defaultValue: '640', description: '解码宽度' },
+      { name: 'source_decode_height', type: 'integer', defaultValue: '480', description: '解码高度' },
+      { name: 'source_fps', type: 'integer', defaultValue: '5', description: '解码帧率' },
       { name: 'source_codec', type: 'string', defaultValue: 'unknown', description: '编码格式:unknown / h264 / h265' },
       { name: 'decode_keyframes_only', type: 'boolean | null', defaultValue: 'null', description: '仅解码关键帧；null 继承系统设置（默认关闭）' },
     ],
@@ -87,9 +87,9 @@ const ENDPOINTS: EndpointDoc[] = [
     "source_code": "cam-gate-01",
     "name": "东门相机",
     "source_url": "rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101",
-    "source_decode_width": 960,
-    "source_decode_height": 540,
-    "source_fps": 10
+    "source_decode_width": 640,
+    "source_decode_height": 480,
+    "source_fps": 5
   }'`,
     responseNote: '201 创建成功;source_code 已存在时返回 409',
     response: `{
@@ -100,9 +100,9 @@ const ENDPOINTS: EndpointDoc[] = [
     "enabled": true,
     "source_code": "cam-gate-01",
     "source_url": "rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101",
-    "source_decode_width": 960,
-    "source_decode_height": 540,
-    "source_fps": 10,
+    "source_decode_width": 640,
+    "source_decode_height": 480,
+    "source_fps": 5,
     "source_codec": "unknown",
     "decode_keyframes_only": null,
     "status": "STOPPED"

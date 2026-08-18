@@ -127,6 +127,18 @@ class DecoderWorker:
             required_fps = max(required_fps, self.recording_target_fps)
         return min(source_fps, required_fps)
 
+    @staticmethod
+    def _configured_decode_output_fps(source) -> int:
+        """Return the decoder FPS configured on the video source.
+
+        ``source_fps`` is exposed as “解码帧率” in video source management.  It
+        is therefore an explicit decoder output cap, not merely an estimate of
+        the camera's native FPS and not the analysis-buffer sampling rate.
+        """
+        if source is None:
+            return 0
+        return max(1, int(source.source_fps))
+
     def setup(self, source=None):
         """初始化所有组件"""
         try:
@@ -233,25 +245,33 @@ class DecoderWorker:
                     )
                 ),
             }
-            if decoder_type.lower() in NVDEC_DECODER_TYPES:
+
+            decoder_type_normalized = decoder_type.lower()
+            configured_output_fps = self._configured_decode_output_fps(source)
+            ffmpeg_output_rate_decoders = {
+                'ffmpeg_sw',
+                'ffmpeg',
+                *NVDEC_DECODER_TYPES,
+                *RKMPP_DECODER_TYPES,
+            }
+            if decoder_type_normalized in ffmpeg_output_rate_decoders:
+                decoder_kwargs['output_fps'] = configured_output_fps
+                logger.info(
+                    "FFmpeg 解码输出帧率使用视频源配置: "
+                    f"{configured_output_fps or 'unlimited'} fps"
+                )
+            if decoder_type_normalized in NVDEC_DECODER_TYPES:
                 # NVDEC 解码 GPU 与硬解预算探针监控的 GPU 保持一致
                 # （HW_DECODE_NV_GPU_INDEX ↔ ffmpeg -hwaccel_device）
                 decoder_kwargs['device_id'] = int(
                     self.decoder_config.get('device_id', HW_DECODE_NV_GPU_INDEX)
                 )
-            if decoder_type.lower() in RKMPP_DECODER_TYPES:
-                source_fps = int(source.source_fps) if source is not None else 0
-                output_fps = (
-                    self._required_decode_output_fps(source_fps)
-                    if source_fps > 0
-                    else 0
-                )
-                decoder_kwargs['output_fps'] = output_fps
+            if decoder_type_normalized in RKMPP_DECODER_TYPES:
                 logger.info(
-                    f"RKMPP 硬解输出采样: input={source_fps or 'unknown'} fps, "
-                    f"required={output_fps or 'unlimited'} fps"
+                    "RKMPP 硬解输出采样使用视频源解码帧率: "
+                    f"{configured_output_fps or 'unlimited'} fps"
                 )
-            if decoder_type.lower() in {'jetson_gst', 'jetson', 'nvv4l2'}:
+            if decoder_type_normalized in {'jetson_gst', 'jetson', 'nvv4l2'}:
                 if decoder_kwargs['keyframes_only']:
                     logger.warning(
                         "Jetson GStreamer 解码器不支持仅关键帧模式，将继续完整解码"

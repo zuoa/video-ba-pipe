@@ -42,11 +42,6 @@ class FFmpegRKMPPDecoder(AsyncFFmpegDecoder):
                 "RKMPP 已开启仅关键帧解码；该模式可能在部分 RK3588 码流上产生多 GOP 固定延迟"
             )
 
-        output_filters = []
-        if output_fps > 0:
-            fps_value = int(output_fps) if output_fps.is_integer() else output_fps
-            output_filters = ['-vf', f'fps={fps_value}']
-
         return [
             'ffmpeg',
             *(['-skip_frame', 'nokey'] if self.keyframes_only else []),
@@ -54,7 +49,7 @@ class FFmpegRKMPPDecoder(AsyncFFmpegDecoder):
             '-f', demuxer,
             '-c:v', decoder,
             '-i', 'pipe:0',
-            *output_filters,
+            *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.config.get('output_format', 'nv12'),
             '-s', f'{self.width}x{self.height}',

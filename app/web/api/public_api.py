@@ -310,12 +310,12 @@ def register_public_api(app):
                     source_code=source_code,
                     source_url=source_url,
                     source_decode_width=_validate_positive_integer(
-                        data, 'source_decode_width', 960
+                        data, 'source_decode_width', 640
                     ),
                     source_decode_height=_validate_positive_integer(
-                        data, 'source_decode_height', 540
+                        data, 'source_decode_height', 480
                     ),
-                    source_fps=_validate_positive_integer(data, 'source_fps', 10),
+                    source_fps=_validate_positive_integer(data, 'source_fps', 5),
                     source_codec=normalize_video_codec(
                         data.get('source_codec'), allow_unknown=True
                     ),

@@ -233,9 +233,9 @@ components:
         name: { type: string }
         source_url: { type: string }
         enabled: { type: boolean, default: true }
-        source_decode_width: { type: integer, minimum: 1, default: 960 }
-        source_decode_height: { type: integer, minimum: 1, default: 540 }
-        source_fps: { type: integer, minimum: 1, default: 10 }
+        source_decode_width: { type: integer, minimum: 1, default: 640 }
+        source_decode_height: { type: integer, minimum: 1, default: 480 }
+        source_fps: { type: integer, minimum: 1, default: 5 }
         source_codec:
           type: string
           enum: [unknown, h264, h265]

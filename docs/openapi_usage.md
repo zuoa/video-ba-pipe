@@ -103,9 +103,9 @@ POST /openapi/v1/video-sources
 | `name` | string | 是 | - | 视频源名称 |
 | `source_url` | string | 是 | - | 流地址(RTSP/HTTP-FLV/HLS/本地文件) |
 | `enabled` | boolean | 否 | `true` | 是否启用 |
-| `source_decode_width` | integer | 否 | `960` | 解码宽度 |
-| `source_decode_height` | integer | 否 | `540` | 解码高度 |
-| `source_fps` | integer | 否 | `10` | 目标帧率 |
+| `source_decode_width` | integer | 否 | `640` | 解码宽度 |
+| `source_decode_height` | integer | 否 | `480` | 解码高度 |
+| `source_fps` | integer | 否 | `5` | 解码帧率 |
 | `source_codec` | string | 否 | `unknown` | 编码格式:`unknown` / `h264` / `h265` |
 | `decode_keyframes_only` | boolean / null | 否 | `null` | `null` 继承系统设置；系统默认关闭 |
 
@@ -119,9 +119,9 @@ curl -X POST http://<服务器地址>:5002/openapi/v1/video-sources \
     "source_code": "cam-gate-01",
     "name": "东门相机",
     "source_url": "rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101",
-    "source_decode_width": 960,
-    "source_decode_height": 540,
-    "source_fps": 10
+    "source_decode_width": 640,
+    "source_decode_height": 480,
+    "source_fps": 5
   }'
 ```
 
@@ -136,9 +136,9 @@ curl -X POST http://<服务器地址>:5002/openapi/v1/video-sources \
     "enabled": true,
     "source_code": "cam-gate-01",
     "source_url": "rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101",
-    "source_decode_width": 960,
-    "source_decode_height": 540,
-    "source_fps": 10,
+    "source_decode_width": 640,
+    "source_decode_height": 480,
+    "source_fps": 5,
     "source_codec": "unknown",
     "decode_keyframes_only": null,
     "status": "STOPPED"

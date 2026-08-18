@@ -100,6 +100,14 @@ class AsyncFFmpegDecoder(BaseDecoder):
             except Exception:
                 break
 
+    def _output_fps_filter_args(self) -> list:
+        """Build an FFmpeg output-rate filter from video-source configuration."""
+        output_fps = max(0.0, float(self.config.get('output_fps') or 0.0))
+        if output_fps <= 0:
+            return []
+        fps_value = int(output_fps) if output_fps.is_integer() else output_fps
+        return ['-vf', f'fps={fps_value}']
+
     def send_packet(self, data: bytes):
         """向解码器进程写入数据包。"""
         if self._running and self._ffmpeg_process and self._ffmpeg_process.stdin:
@@ -166,6 +174,7 @@ class AsyncSoftwareDecoder(AsyncFFmpegDecoder):
 
         # 将输出参数放在 -i pipe:0 之后
         output_args = [
+            *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.config.get('output_format', 'nv12'),
             '-s', f'{self.width}x{self.height}',

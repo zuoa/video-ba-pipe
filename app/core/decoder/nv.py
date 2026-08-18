@@ -30,6 +30,7 @@ class FFmpegNVDECDecoder(AsyncFFmpegDecoder):
             '-hwaccel_device', str(self.device_id),
             '-c:v', decoder_name,
             '-i', 'pipe:0',
+            *self._output_fps_filter_args(),
             '-f', 'rawvideo',
             '-pix_fmt', self.output_format,
             '-s', f'{self.width}x{self.height}',

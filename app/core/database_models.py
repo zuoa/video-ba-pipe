@@ -104,9 +104,9 @@ class VideoSource(BaseModel):
     enabled = pw.BooleanField(default=True)
     source_code = pw.CharField(max_length=255, unique=True)
     source_url = pw.TextField()
-    source_decode_width = pw.IntegerField(default=960)
-    source_decode_height = pw.IntegerField(default=540)
-    source_fps = pw.IntegerField(default=10)
+    source_decode_width = pw.IntegerField(default=640)
+    source_decode_height = pw.IntegerField(default=480)
+    source_fps = pw.IntegerField(default=5)
     source_codec = pw.CharField(max_length=16, default='unknown')
     # NULL 表示继承系统 DECODE_KEYFRAMES_ONLY；否则按源覆盖。
     decode_keyframes_only = pw.BooleanField(null=True, default=None)

@@ -180,6 +180,29 @@ def test_video_source_create_edit_and_url_update(public_api_client):
     assert unchanged.get_json()['data']['changed'] is False
 
 
+def test_video_source_create_uses_low_resource_decode_defaults(public_api_client):
+    client, admin_headers = public_api_client
+    created_key = _create_managed_key(client, admin_headers, name='默认参数集成')
+
+    response = client.post(
+        '/openapi/v1/video-sources',
+        json={
+            'source_code': 'camera-defaults',
+            'name': '默认参数摄像头',
+            'source_url': 'rtsp://camera/defaults',
+        },
+        headers={'X-API-Key': created_key['key']},
+    )
+
+    assert response.status_code == 201
+    source = VideoSource.get(VideoSource.source_code == 'camera-defaults')
+    assert (
+        source.source_decode_width,
+        source.source_decode_height,
+        source.source_fps,
+    ) == (640, 480, 5)
+
+
 @pytest.mark.parametrize('source_code', ['building/camera', 'camera 001', '摄像头-001'])
 def test_video_source_rejects_source_codes_unsafe_for_route_paths(
     public_api_client,

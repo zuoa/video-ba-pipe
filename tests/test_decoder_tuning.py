@@ -155,6 +155,35 @@ def test_async_software_decoder_builds_ffmpeg_command_with_thread_limit():
     assert 'rawvideo' in command
 
 
+def test_async_software_decoder_uses_configured_decode_output_fps():
+    decoder = AsyncSoftwareDecoder(
+        decoder_id=11,
+        width=960,
+        height=540,
+        input_format='h264',
+        output_format='nv12',
+        output_fps=10,
+    )
+
+    command = decoder._build_ffmpeg_command()
+
+    assert command[command.index('-vf') + 1] == 'fps=10'
+    assert command.index('-vf') < command.index('-s')
+
+
+def test_async_software_decoder_can_leave_output_rate_unlimited():
+    decoder = AsyncSoftwareDecoder(
+        decoder_id=12,
+        width=960,
+        height=540,
+        input_format='h264',
+        output_format='nv12',
+        output_fps=0,
+    )
+
+    assert '-vf' not in decoder._build_ffmpeg_command()
+
+
 def test_async_software_decoder_uses_hevc_demuxer_for_h265():
     decoder = AsyncSoftwareDecoder(
         decoder_id=2,
@@ -286,6 +315,12 @@ def test_worker_jetson_decode_rate_covers_analysis_and_recording_consumers():
 
     assert analysis_only._required_decode_output_fps(25) == 2
     assert with_recording._required_decode_output_fps(25) == 3
+
+
+def test_worker_uses_video_source_decode_fps_as_ffmpeg_output_rate():
+    source = SimpleNamespace(source_fps=10)
+
+    assert DecoderWorker._configured_decode_output_fps(source) == 10
 
 
 def test_worker_disables_jetson_frame_drop_for_all_frame_analysis():

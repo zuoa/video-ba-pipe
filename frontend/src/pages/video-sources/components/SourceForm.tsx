@@ -266,9 +266,9 @@ const SourceForm: React.FC<SourceFormProps> = ({
         layout="vertical"
         initialValues={{
           enabled: true,
-          source_decode_width: 960,
-          source_decode_height: 540,
-          source_fps: 10,
+          source_decode_width: 640,
+          source_decode_height: 480,
+          source_fps: 5,
           decode_keyframes_only: 'inherit',
         }}
       >
@@ -505,7 +505,7 @@ const SourceForm: React.FC<SourceFormProps> = ({
                 <div className="tips-list">
                   <div>• 点击"检测"按钮可自动获取流信息</div>
                   <div>• 较低的分辨率和帧率能提高处理效率</div>
-                  <div>• 常用预设: 960x540@10fps (推荐) | 1920x1080@8fps | 640x360@15fps</div>
+                  <div>• 默认配置: 640x480@5fps | 可按算力和检测精度需求调高</div>
                 </div>
               </div>
             </div>

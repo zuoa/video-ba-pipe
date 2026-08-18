@@ -204,6 +204,7 @@ def test_nvdec_is_concrete_and_uses_ffmpeg_hevc_decoder_name_for_h265():
         height=480,
         input_format="h265",
         output_format="nv12",
+        output_fps=10,
     )
 
     command = decoder._build_ffmpeg_command()
@@ -211,3 +212,4 @@ def test_nvdec_is_concrete_and_uses_ffmpeg_hevc_decoder_name_for_h265():
     assert inspect.isabstract(FFmpegNVDECDecoder) is False
     assert command[command.index("-c:v") + 1] == "hevc_cuvid"
     assert command[command.index("-f") + 1] == "hevc"
+    assert command[command.index("-vf") + 1] == "fps=10"

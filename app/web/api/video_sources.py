@@ -78,9 +78,9 @@ def register_video_sources_api(app):
                     enabled=data.get('enabled', True),
                     source_code=data['source_code'],
                     source_url=data['source_url'],
-                    source_decode_width=data.get('source_decode_width', 960),
-                    source_decode_height=data.get('source_decode_height', 540),
-                    source_fps=data.get('source_fps', 10),
+                    source_decode_width=data.get('source_decode_width', 640),
+                    source_decode_height=data.get('source_decode_height', 480),
+                    source_fps=data.get('source_fps', 5),
                     source_codec=normalize_video_codec(
                         data.get('source_codec'),
                         allow_unknown=True,
