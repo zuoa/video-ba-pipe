@@ -148,7 +148,8 @@ def decode_and_validate_token(
             raise LicenseError('license_claims_invalid', f'许可证字段 {name} 不能为空')
 
     expected_node_id = node_id or get_node_id()
-    if claims['node_id'] != expected_node_id:
+    licensed_node_id = claims['node_id']
+    if licensed_node_id != '*' and licensed_node_id != expected_node_id:
         raise LicenseError(
             'license_node_mismatch',
             '许可证与当前节点不匹配',

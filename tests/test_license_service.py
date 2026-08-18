@@ -88,6 +88,120 @@ def test_signed_license_is_bound_to_node_and_enforces_time(license_db, signing_k
     assert expiry.value.code == 'license_expired'
 
 
+def test_wildcard_node_license_is_valid_on_any_node(license_db, signing_keys):
+    private_key, public_pem = signing_keys
+    token = make_token(private_key, customer='*', node_id='*')
+
+    claims = license_service.decode_and_validate_token(
+        token,
+        public_key=public_pem,
+        node_id='any-deployment-node',
+    )
+
+    assert claims['customer'] == '*'
+    assert claims['node_id'] == '*'
+
+
+def test_regular_license_requires_exact_node_match(license_db, signing_keys):
+    private_key, public_pem = signing_keys
+    token = make_token(private_key, node_id='Node-Case-Sensitive')
+
+    claims = license_service.decode_and_validate_token(
+        token,
+        public_key=public_pem,
+        node_id='Node-Case-Sensitive',
+    )
+    assert claims['node_id'] == 'Node-Case-Sensitive'
+
+    with pytest.raises(license_service.LicenseError) as mismatch:
+        license_service.decode_and_validate_token(
+            token,
+            public_key=public_pem,
+            node_id='node-case-sensitive',
+        )
+    assert mismatch.value.code == 'license_node_mismatch'
+
+
+def test_customer_wildcard_does_not_override_regular_node_binding(license_db, signing_keys):
+    private_key, public_pem = signing_keys
+    token = make_token(private_key, customer='*', node_id='licensed-node')
+
+    with pytest.raises(license_service.LicenseError) as mismatch:
+        license_service.decode_and_validate_token(
+            token,
+            public_key=public_pem,
+            node_id='another-node',
+        )
+    assert mismatch.value.code == 'license_node_mismatch'
+
+
+def test_tampered_or_invalidly_signed_wildcard_license_is_rejected(license_db, signing_keys):
+    private_key, public_pem = signing_keys
+    different_private_key = Ed25519PrivateKey.generate()
+    valid_token = make_token(private_key, customer='*', node_id='*')
+    header, payload, signature = valid_token.split('.')
+    replacement = 'A' if payload[0] != 'A' else 'B'
+    tampered_token = '.'.join((header, replacement + payload[1:], signature))
+    invalidly_signed_token = make_token(different_private_key, customer='*', node_id='*')
+
+    for token in (tampered_token, invalidly_signed_token):
+        with pytest.raises(license_service.LicenseError) as error:
+            license_service.decode_and_validate_token(
+                token,
+                public_key=public_pem,
+                node_id='any-deployment-node',
+            )
+        assert error.value.code == 'license_signature_invalid'
+
+
+@pytest.mark.parametrize('invalid_node_id', ['', '   ', ' * '])
+def test_non_exact_wildcard_node_id_cannot_bypass_validation(
+    license_db,
+    signing_keys,
+    invalid_node_id,
+):
+    private_key, public_pem = signing_keys
+    token = make_token(private_key, customer='*', node_id=invalid_node_id)
+
+    with pytest.raises(license_service.LicenseError) as error:
+        license_service.decode_and_validate_token(
+            token,
+            public_key=public_pem,
+            node_id='any-deployment-node',
+        )
+    expected_code = (
+        'license_claims_invalid' if not invalid_node_id.strip() else 'license_node_mismatch'
+    )
+    assert error.value.code == expected_code
+
+
+def test_missing_node_id_cannot_bypass_validation(license_db, signing_keys):
+    private_key, public_pem = signing_keys
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            'schema_version': 1,
+            'license_id': 'license-test',
+            'customer': '*',
+            'iat': now - 10,
+            'nbf': now - 10,
+            'exp': now + 3600,
+            'limits': {'video_sources': 8, 'algorithms': 12},
+        },
+        private_key,
+        algorithm='EdDSA',
+        headers={'kid': 'vendor-v1'},
+    )
+
+    with pytest.raises(license_service.LicenseError) as error:
+        license_service.decode_and_validate_token(
+            token,
+            public_key=public_pem,
+            node_id='any-deployment-node',
+        )
+    assert error.value.code == 'license_signature_invalid'
+
+
 def test_tampered_license_is_rejected(license_db, signing_keys):
     private_key, public_pem = signing_keys
     token = make_token(private_key)
