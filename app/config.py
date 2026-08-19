@@ -48,6 +48,9 @@ os.makedirs(FRAME_SAVE_PATH, exist_ok=True)
 VIDEO_SAVE_PATH = _resolve_data_path('VIDEO_SAVE_PATH', 'videos')
 os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 
+EXPORT_SAVE_PATH = _resolve_data_path('EXPORT_SAVE_PATH', 'exports')
+os.makedirs(EXPORT_SAVE_PATH, exist_ok=True)
+
 # Video source files storage path (uploaded video files for analysis)
 VIDEO_SOURCE_PATH = _resolve_data_path('VIDEO_SOURCE_PATH', 'video_sources')
 os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)

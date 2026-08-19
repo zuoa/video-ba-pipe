@@ -69,6 +69,11 @@ export default defineConfig({
       icon: 'VideoCameraOutlined',
     },
     {
+      name: '告警导出',
+      path: '/alerts/exports',
+      component: './alerts/exports',
+    },
+    {
       name: '告警',
       path: '/alerts',
       component: './alerts',

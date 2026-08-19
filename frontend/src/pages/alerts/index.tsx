@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { message } from 'antd';
-import { BellOutlined } from '@ant-design/icons';
-import { getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
-import { PageHeader } from '@/components/common';
+import { BellOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { history } from '@umijs/max';
+import { createAlertExport, getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
+import { PageHeader, useAppConfirm } from '@/components/common';
+import Button from '@/components/common/AppButton';
 import { Alert, Task, Workflow, AlertFilter } from './types';
+import { buildAlertQueryParams } from './query';
 import AlertCard from './components/AlertCard';
 import AlertDetailModal from './components/AlertDetailModal';
 import PaginationBar from './components/PaginationBar';
@@ -35,6 +38,8 @@ const AlertsPage: React.FC = () => {
   // 详情模态框状态
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedAlertIndex, setSelectedAlertIndex] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const confirmAction = useAppConfirm();
 
   // 加载任务列表
   const loadTasks = useCallback(async () => {
@@ -73,52 +78,8 @@ const AlertsPage: React.FC = () => {
       const params: AlertFilter = {
         page: pagination.page,
         per_page: pagination.per_page,
-        ...filter,
+        ...buildAlertQueryParams(filter, customTimeRange),
       };
-
-      // 处理时间范围筛选，转换为 start_time 和 end_time
-      if (params.time_range && params.time_range !== 'custom') {
-        const now = new Date();
-        let startTime: Date;
-
-        switch (params.time_range) {
-          case '1h':
-            startTime = new Date(now.getTime() - 60 * 60 * 1000);
-            break;
-          case '24h':
-            startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-            break;
-          case '7d':
-            startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case '30d':
-            startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            break;
-          default:
-            startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        }
-
-        params.start_time = startTime.toISOString();
-        params.end_time = now.toISOString();
-
-        // 删除 time_range 参数，后端使用 start_time/end_time
-        delete params.time_range;
-      } else if (params.time_range === 'custom' && customTimeRange) {
-        // 使用自定义时间范围
-        params.start_time = customTimeRange.start;
-        params.end_time = customTimeRange.end;
-        delete params.time_range;
-      } else {
-        // 清除 time_range 参数
-        delete params.time_range;
-      }
-
-      // 清理空值
-      Object.keys(params).forEach(key => {
-        if (params[key as keyof AlertFilter] === '' || params[key as keyof AlertFilter] === undefined) {
-          delete params[key as keyof AlertFilter];
-        }
-      });
 
       const response = await getAlerts(params);
       setAlerts(response.data || []);
@@ -236,6 +197,49 @@ const AlertsPage: React.FC = () => {
     || filter.time_range,
   );
 
+  const goToExports = () => history.push('/alerts/exports');
+
+  const handleExport = () => {
+    if (!pagination.total) {
+      message.warning('当前筛选条件下没有可导出的告警记录');
+      return;
+    }
+
+    confirmAction({
+      tone: 'info',
+      title: '导出告警记录',
+      objectName: `${pagination.total} 条告警`,
+      description: '将按当前筛选导出 CSV 以及标注图、原图，打包为 ZIP，任务在后台执行。',
+      confirmText: '开始导出',
+      onConfirm: async () => {
+        setExporting(true);
+        try {
+          await createAlertExport(buildAlertQueryParams(filter, customTimeRange));
+          message.success({
+            content: (
+              <span>
+                导出进行中，可到
+                <Button type="link" onClick={goToExports} style={{ padding: '0 4px' }}>
+                  导出管理
+                </Button>
+                查看进度
+              </span>
+            ),
+            duration: 5,
+          });
+        } catch (error: any) {
+          const apiMessage = error?.data?.error || error?.response?.data?.error || error?.message || '创建导出任务失败';
+          message.error(apiMessage);
+          if (error?.response?.status === 409 || String(apiMessage).includes('正在进行')) {
+            goToExports();
+          }
+        } finally {
+          setExporting(false);
+        }
+      },
+    });
+  };
+
   return (
     <div className="alerts-page">
       <PageHeader
@@ -245,6 +249,11 @@ const AlertsPage: React.FC = () => {
         subtitle="筛选、回溯并处置视频分析事件"
         count={pagination.total}
         countLabel="条告警"
+        extra={(
+          <Button icon={<FolderOpenOutlined />} onClick={goToExports}>
+            导出管理
+          </Button>
+        )}
       />
 
       {/* 筛选栏 */}
@@ -265,7 +274,10 @@ const AlertsPage: React.FC = () => {
         onAlertTypeChange={handleAlertTypeChange}
         onTimeRangeChange={handleTimeRangeChange}
         onRefresh={loadAlerts}
+        onExport={handleExport}
         loading={loading}
+        exporting={exporting}
+        exportDisabled={pagination.total === 0}
       />
 
       {/* 顶部分页 */}

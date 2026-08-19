@@ -318,6 +318,35 @@ class AlertDeliveryTask(BaseModel):
         )
 
 
+class AlertExportTask(BaseModel):
+    """Asynchronous alert record export job."""
+
+    id = pw.AutoField()
+    created_by = pw.CharField(default='admin')
+    status = pw.CharField(default='pending')
+    filters_json = pw.TextField(default='{}')
+    filter_summary = pw.TextField(null=True)
+    total_count = pw.IntegerField(default=0)
+    processed_count = pw.IntegerField(default=0)
+    missing_image_count = pw.IntegerField(default=0)
+    file_name = pw.TextField(null=True)
+    file_path = pw.TextField(null=True)
+    file_size = pw.IntegerField(null=True)
+    error_message = pw.TextField(null=True)
+    locked_at = pw.DateTimeField(null=True)
+    created_at = pw.DateTimeField()
+    started_at = pw.DateTimeField(null=True)
+    finished_at = pw.DateTimeField(null=True)
+    expires_at = pw.DateTimeField(null=True)
+
+    class Meta:
+        table_name = 'alert_export_tasks'
+        indexes = (
+            (('status', 'created_at'), False),
+            (('created_by', 'status'), False),
+        )
+
+
 class WorkflowTestResult(BaseModel):
     """工作流测试结果（独立于 Alert，不参与告警统计）"""
     id = pw.AutoField()

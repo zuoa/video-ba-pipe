@@ -9,6 +9,7 @@ import {
   ApartmentOutlined,
   VideoCameraOutlined,
   BugOutlined,
+  ExportOutlined,
 } from '@ant-design/icons';
 import type { RangePickerProps } from 'antd/es/date-picker';
 import { Task, Workflow } from '../types';
@@ -32,7 +33,10 @@ interface FilterBarProps {
   onAlertTypeChange: (value: string) => void;
   onTimeRangeChange: (value: string, customRange?: { start: string; end: string }) => void;
   onRefresh: () => void;
+  onExport?: () => void;
   loading?: boolean;
+  exporting?: boolean;
+  exportDisabled?: boolean;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -51,7 +55,10 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onAlertTypeChange,
   onTimeRangeChange,
   onRefresh,
+  onExport,
   loading = false,
+  exporting = false,
+  exportDisabled = false,
 }) => {
   // 自定义时间范围的状态
   const [customDateRange, setCustomDateRange] = useState<RangePickerProps['value']>(null);
@@ -110,14 +117,26 @@ const FilterBar: React.FC<FilterBarProps> = ({
     <AppToolbar
       className="alerts-filter-toolbar"
       actions={(
-        <Button
-          type="primary"
-          icon={<SyncOutlined spin={loading} />}
-          onClick={onRefresh}
-          loading={loading}
-        >
-          刷新
-        </Button>
+        <Space size="small">
+          {onExport ? (
+            <Button
+              icon={<ExportOutlined />}
+              onClick={onExport}
+              loading={exporting}
+              disabled={exportDisabled || exporting}
+            >
+              导出
+            </Button>
+          ) : null}
+          <Button
+            type="primary"
+            icon={<SyncOutlined spin={loading} />}
+            onClick={onRefresh}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </Space>
       )}
     >
       <Space size="middle" wrap>

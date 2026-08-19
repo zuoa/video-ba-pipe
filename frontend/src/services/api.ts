@@ -867,6 +867,91 @@ export async function getChannelAlertStats(period: 'day' | 'week' | 'month' | 'y
   return request(`/api/alerts/channel-stats?period=${period}`);
 }
 
+export interface AlertExportTask {
+  id: number;
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
+  created_by: string;
+  filters: Record<string, string>;
+  filter_summary: string;
+  total_count: number;
+  processed_count: number;
+  missing_image_count: number;
+  progress_percent: number;
+  file_name?: string | null;
+  file_size?: number | null;
+  error_message?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  expires_at?: string | null;
+  downloadable: boolean;
+  message?: string;
+}
+
+export interface AlertExportListResponse {
+  data: AlertExportTask[];
+  pagination: {
+    page: number;
+    per_page: number;
+    total: number;
+    total_pages: number;
+  };
+}
+
+export async function createAlertExport(data?: Record<string, unknown>) {
+  return request<AlertExportTask>('/api/alert-exports', {
+    method: 'POST',
+    data: data || {},
+  });
+}
+
+export async function getAlertExports(params?: { page?: number; per_page?: number }) {
+  return request<AlertExportListResponse>('/api/alert-exports', {
+    params,
+  });
+}
+
+export async function getAlertExport(id: number) {
+  return request<AlertExportTask>(`/api/alert-exports/${id}`);
+}
+
+export async function cancelAlertExport(id: number) {
+  return request<AlertExportTask>(`/api/alert-exports/${id}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteAlertExport(id: number) {
+  return request<{ success: boolean }>(`/api/alert-exports/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function downloadAlertExport(id: number) {
+  const response = await fetch(`/api/alert-exports/${id}/download`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '下载失败');
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const matched = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)"?/i);
+  const filename = matched?.[1] || `alerts-export-${id}.zip`;
+
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = decodeURIComponent(filename);
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // 模型
 export async function getModels(params?: any) {
   return request('/api/models/', { params });

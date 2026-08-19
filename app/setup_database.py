@@ -6,7 +6,7 @@ import time
 import peewee as pw
 
 from app.core.database_models import (
-    db, Algorithm, VideoSource, Alert, AlertDeliveryTask,
+    db, Algorithm, VideoSource, Alert, AlertDeliveryTask, AlertExportTask,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, ApiKey, SourceHealthLog,
     SystemSetting, ExternalApi
@@ -27,6 +27,7 @@ _DATABASE_MODELS = (
     ExternalApi,
     Alert,
     AlertDeliveryTask,
+    AlertExportTask,
     ScriptVersion,
     Hook,
     AlgorithmHook,

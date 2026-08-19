@@ -34,6 +34,7 @@ x-app-environment: &app-environment
   WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-oapi.dingtalk.com,api.day.app}
   FRAME_SAVE_PATH: /data/frames
   VIDEO_SAVE_PATH: /data/videos
+  EXPORT_SAVE_PATH: /data/exports
   VIDEO_SOURCE_PATH: /data/video_sources
   MODEL_SAVE_PATH: /data/models
   USER_SCRIPTS_ROOT: /data/user_scripts

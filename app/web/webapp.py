@@ -1,4 +1,5 @@
 import os
+import sys
 import base64
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from flask import Flask, jsonify, request, render_template, send_file, abort, Re
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
+from app.core.alert_query import apply_alert_filters, parse_alert_filters
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, Workflow
 from app.core.database_models import db
 from app.config import (
@@ -1575,42 +1577,13 @@ def delete_video_file(filename):
 @app.route('/api/alerts', methods=['GET'])
 @require_auth
 def get_alerts():
-    source_id = request.args.get('source_id') or request.args.get('task_id')  # 兼容旧参数
-    workflow_id = request.args.get('workflow_id')  # 流程编排筛选
-    source_template_id = request.args.get('source_template_id')  # 编排模板筛选
-    alert_type = request.args.get('alert_type')
-    start_time = request.args.get('start_time')  # 开始时间筛选
-    end_time = request.args.get('end_time')  # 结束时间筛选
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 30))
 
-    # 构建查询
-    query = apply_owner_scope(Alert.select(), Alert)
-    if source_id:
-        query = query.where(Alert.video_source == source_id)
-    if workflow_id:
-        query = query.where(Alert.workflow == workflow_id)
-    if source_template_id:
-        derived_workflow_ids = Workflow.select(Workflow.id).where(
-            Workflow.source_template == source_template_id
-        )
-        query = query.where(Alert.workflow.in_(derived_workflow_ids))
-    if alert_type:
-        query = query.where(Alert.alert_type == alert_type)
-    if start_time:
-        try:
-            from datetime import datetime
-            start_dt = datetime.fromisoformat(start_time)
-            query = query.where(Alert.alert_time >= start_dt)
-        except ValueError:
-            app.logger.warning(f"无效的 start_time 格式: {start_time}")
-    if end_time:
-        try:
-            from datetime import datetime
-            end_dt = datetime.fromisoformat(end_time)
-            query = query.where(Alert.alert_time <= end_dt)
-        except ValueError:
-            app.logger.warning(f"无效的 end_time 格式: {end_time}")
+    query = apply_alert_filters(
+        apply_owner_scope(Alert.select(), Alert),
+        parse_alert_filters(request.args),
+    )
     
     # 获取总数
     total = query.count()
@@ -2428,6 +2401,22 @@ try:
     app.logger.info("实时预览API已注册")
 except ImportError as e:
     app.logger.warning(f"实时预览API注册失败: {e}")
+
+# ========== 注册告警导出 API ==========
+try:
+    from app.web.api.alert_exports import register_alert_exports_api
+    register_alert_exports_api(app)
+    app.logger.info("告警导出API已注册")
+except ImportError as e:
+    app.logger.warning(f"告警导出API注册失败: {e}")
+
+if 'pytest' not in sys.modules and os.environ.get('ALERT_EXPORT_WORKER_DISABLED') != '1':
+    try:
+        from app.core.alert_export import start_alert_export_worker
+        start_alert_export_worker()
+        app.logger.info("告警导出后台任务已启动")
+    except Exception as e:
+        app.logger.warning(f"告警导出后台任务启动失败: {e}")
 
 # ========== 注册离线许可证 API ==========
 from app.web.api.license import register_license_api

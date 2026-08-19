@@ -1,0 +1,35 @@
+.alert-exports-page {
+  min-width: 0;
+}
+
+.alert-exports__table {
+  margin-top: 4px;
+}
+
+.alert-exports__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alert-exports__progress {
+  min-width: 0;
+}
+
+.alert-exports__progress .ant-progress {
+  margin-bottom: 0;
+}
+
+.alert-exports__progressMeta {
+  display: block;
+  margin-top: 2px;
+  color: #687985;
+  font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .alert-exports__table {
+    overflow-x: auto;
+  }
+}
