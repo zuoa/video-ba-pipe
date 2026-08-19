@@ -4,6 +4,7 @@ import Button from '@/components/common/AppButton';
 import {
   PlusOutlined,
   CloudDownloadOutlined,
+  ScanOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import {
@@ -18,6 +19,7 @@ import {
 import { PageHeader, useAppConfirm } from '@/components/common';
 import SourceForm from './components/SourceForm';
 import ImportSourcesModal from './components/ImportSourcesModal';
+import OnvifScanModal from './components/OnvifScanModal';
 import SourceTable from './components/SourceTable';
 import SourceHealthModal from './components/SourceHealthModal';
 import DetectionFrameModal from './components/DetectionFrameModal';
@@ -29,6 +31,7 @@ export default function VideoSources() {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [importVisible, setImportVisible] = useState(false);
+  const [onvifVisible, setOnvifVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [livePreviewVisible, setLivePreviewVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<any>(null);
@@ -169,6 +172,14 @@ export default function VideoSources() {
         extra={
           <Space size={12} wrap>
             <Button
+              icon={<ScanOutlined />}
+              onClick={() => setOnvifVisible(true)}
+              size="large"
+              className="app-secondary-button import-btn"
+            >
+              ONVIF 扫描
+            </Button>
+            <Button
               icon={<CloudDownloadOutlined />}
               onClick={handleOpenImport}
               size="large"
@@ -211,6 +222,12 @@ export default function VideoSources() {
       <ImportSourcesModal
         visible={importVisible}
         onCancel={() => setImportVisible(false)}
+        onImported={loadSources}
+      />
+
+      <OnvifScanModal
+        visible={onvifVisible}
+        onCancel={() => setOnvifVisible(false)}
         onImported={loadSources}
       />
 

@@ -2394,6 +2394,14 @@ try:
 except ImportError as e:
     app.logger.warning(f"视频源导入API注册失败: {e}")
 
+# ========== 注册 ONVIF 扫描 API ==========
+try:
+    from app.web.api.onvif_scan import register_onvif_scan_api
+    register_onvif_scan_api(app)
+    app.logger.info("ONVIF 扫描 API 已注册")
+except ImportError as e:
+    app.logger.warning(f"ONVIF 扫描 API 注册失败: {e}")
+
 # ========== 注册实时预览API（WebRTC / 最新检测帧）==========
 try:
     from app.web.api.preview import register_preview_api

@@ -809,6 +809,29 @@ export async function commitImportChannels(data: any) {
   });
 }
 
+export async function scanOnvifDevices(data: any) {
+  return request('/api/onvif/scan', {
+    method: 'POST',
+    data,
+    timeout: 20000,
+  });
+}
+
+export async function fetchOnvifProfiles(data: any) {
+  return request('/api/onvif/profiles', {
+    method: 'POST',
+    data,
+    timeout: 20000,
+  });
+}
+
+export async function importOnvifSources(data: any) {
+  return request('/api/onvif/import', {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function detectStreamInfo(url: string) {
   return request('/api/stream/detect', {
     method: 'POST',

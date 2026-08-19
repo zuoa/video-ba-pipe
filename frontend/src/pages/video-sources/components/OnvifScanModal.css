@@ -1,0 +1,7 @@
+.onvif-steps {
+  margin: 0 4px 4px;
+}
+
+.onvif-scan-modal .ant-steps-item-title {
+  font-size: 13px;
+}
