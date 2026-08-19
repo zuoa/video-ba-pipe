@@ -88,6 +88,20 @@ def test_effective_config_auto_downgrades_unsupported_features():
     assert effective.oom_circuit_breaker_enabled is False
 
 
+def test_effective_config_allows_shared_service_for_ocr_only_host():
+    requested = InferenceResourceConfig(shared_inference_enabled=True)
+
+    effective = effective_inference_resource_config(requested, {
+        "shared_ultralytics": False,
+        "rknn_shared": False,
+        "shared_ocr": True,
+        "memory_admission": True,
+        "oom_detection": False,
+    })
+
+    assert effective.shared_inference_enabled is True
+
+
 def test_effective_config_allows_shared_service_for_rknn_only_host():
     requested = InferenceResourceConfig(shared_inference_enabled=True)
 

@@ -1,9 +1,10 @@
-"""Cross-process shared Ultralytics and RKNN inference service.
+"""Cross-process shared Ultralytics, RKNN, and PaddleOCR inference service.
 
 Source workflow hosts exchange frame descriptors over a Unix socket.  Pixels live
 in short-lived POSIX shared-memory segments, while exactly one model process is
-kept for each stable model key.  Queues are deliberately bounded: overload drops
-analysis work instead of consuming unbounded Jetson unified memory.
+kept for each stable model key.  OCR uses one process per det+rec pair.
+Queues are deliberately bounded: overload drops analysis work instead of
+consuming unbounded Jetson unified memory.
 """
 
 from __future__ import annotations
@@ -70,11 +71,16 @@ def _selected_backend_name(
         "rknn": "rknn",
         "rknnlite": "rknn",
         "ultralytics": "ultralytics",
+        "paddleocr": "paddleocr",
+        "ocr": "paddleocr",
     }
     requested = str(config.get("backend") or "auto").strip().lower()
     if requested in aliases:
         return aliases[requested]
     framework = str(model_info.get("framework") or "").lower()
+    model_type = str(model_info.get("model_type") or "").lower()
+    if framework in {"paddleocr", "paddle"} or model_type == "ocr":
+        return "paddleocr"
     extension = os.path.splitext(model_path)[1].lower()
     if extension == ".rknn" or "rknn" in framework:
         return "rknn"
@@ -168,16 +174,29 @@ def _inference_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _worker_device(backend) -> Optional[str]:
+    device = getattr(backend, "device", None)
+    if device is not None:
+        return str(device)
+    predictor = getattr(getattr(backend, "model", None), "predictor", None)
+    device = getattr(predictor, "device", None)
+    return str(device) if device is not None else None
+
+
 def _create_model_worker_backend(
     spec: Dict[str, Any],
     model_info: Dict[str, Any],
     base_config: Dict[str, Any],
 ):
-    from app.user_scripts.common.yolo_backends import RKNNBackend, UltralyticsBackend
-
     backend_name = spec.get("backend") or _selected_backend_name(
         spec["model_path"], model_info, base_config
     )
+    if backend_name == "paddleocr":
+        from app.core.ocr_backend import PaddleOCRBackend
+
+        return PaddleOCRBackend.from_worker_spec(spec, base_config)
+    from app.user_scripts.common.yolo_backends import RKNNBackend, UltralyticsBackend
+
     if backend_name == "rknn":
         return RKNNBackend(spec["model_path"], model_info, base_config)
     if backend_name == "ultralytics":
@@ -230,14 +249,12 @@ def _model_worker_main(
         warmup_width = max(1, int(spec.get("input_width") or 640))
         warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)
         backend.infer(warmup_frame)
-        predictor = getattr(backend.model, "predictor", None)
-        device = getattr(predictor, "device", None)
         result_queue.put({
             "kind": "worker_ready",
             "key": model_key(spec),
             "pid": os.getpid(),
             "startup_time_ms": (time.monotonic() - startup_started_at) * 1000.0,
-            "device": str(device) if device is not None else None,
+            "device": _worker_device(backend),
             "backend": backend.name,
         })
     except Exception as exc:
@@ -724,7 +741,9 @@ class _ModelRegistry:
                 models.append({
                     "model_key": slot.key,
                     "model_id": slot.spec.get("model_id"),
+                    "recognition_model_id": slot.spec.get("recognition_model_id"),
                     "model_path": slot.spec.get("model_path"),
+                    "recognition_model_path": slot.spec.get("recognition_model_path"),
                     "pid": slot.process.pid,
                     "alive": slot.process.is_alive(),
                     "exitcode": slot.process.exitcode,
@@ -853,13 +872,20 @@ class SharedInferenceServer:
             pass
 
 
+def _client_request_config(spec: Dict[str, Any], config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if spec.get("backend") == "paddleocr":
+        return {}
+    return _inference_config(config or {})
+
+
 class SharedInferenceClient:
     def __init__(
         self,
-        model_path: str,
-        model_info: Dict[str, Any],
-        config: Dict[str, Any],
+        model_path: str = "",
+        model_info: Optional[Dict[str, Any]] = None,
+        config: Optional[Dict[str, Any]] = None,
         *,
+        spec: Optional[Dict[str, Any]] = None,
         socket_path: str = SHARED_INFERENCE_SOCKET_PATH,
         timeout: float = SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS,
         startup_timeout: float = SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS,
@@ -867,8 +893,11 @@ class SharedInferenceClient:
         self.socket_path = socket_path
         self.timeout = float(timeout)
         self.startup_timeout = float(startup_timeout)
-        self.spec = build_model_spec(model_path, model_info, config)
-        self.config = _inference_config(config)
+        resolved_config = config or {}
+        self.spec = spec if spec is not None else build_model_spec(
+            model_path, model_info or {}, resolved_config
+        )
+        self.config = _client_request_config(self.spec, resolved_config)
         self.connection = None
         self.model_key = None
         self.lock = threading.Lock()
@@ -899,7 +928,7 @@ class SharedInferenceClient:
                 "shm_name": segment.name,
                 "shape": tuple(contiguous.shape),
                 "dtype": contiguous.dtype.str,
-                "config": _inference_config(config),
+                "config": _client_request_config(self.spec, config),
             }
             with self.lock:
                 if self.closed:

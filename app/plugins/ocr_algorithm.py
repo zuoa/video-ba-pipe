@@ -1,97 +1,26 @@
-"""PaddleOCR-backed local OCR algorithm."""
+"""PaddleOCR-backed OCR algorithm. Uses shared inference when enabled."""
 
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
 from app import logger
 from app.config import VIDEO_FRAME_PIXEL_FORMAT
 from app.core.algorithm import BaseAlgorithm
-from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_frame_dimensions
 from app.core.model_resolver import get_model_resolver
+from app.core.ocr_backend import (
+    PaddleOCRBackend,
+    SharedOCRBackend,
+    build_ocr_model_spec,
+    filter_ocr_detections,
+    normalize_ocr_output,
+    shared_ocr_client_enabled,
+)
 from app.user_scripts.common.roi import filter_items_by_regions, split_regions
-
-
-def _jsonable_result(result: Any) -> Dict[str, Any]:
-    if isinstance(result, dict):
-        return result
-    payload = getattr(result, "json", None)
-    if callable(payload):
-        payload = payload()
-    if isinstance(payload, dict):
-        return payload.get("res", payload)
-    return {}
-
-
-def _as_list(value: Any) -> list:
-    if value is None:
-        return []
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    return list(value) if isinstance(value, (list, tuple)) else []
-
-
-def _first_present(payload: Dict[str, Any], *keys: str) -> Any:
-    for key in keys:
-        if key in payload and payload[key] is not None:
-            return payload[key]
-    return None
-
-
-def normalize_ocr_output(results: Iterable[Any], score_threshold: float = 0.5) -> Dict[str, Any]:
-    detections: List[Dict[str, Any]] = []
-    for raw_result in results or []:
-        payload = _jsonable_result(raw_result)
-        texts = _as_list(_first_present(payload, "rec_texts", "texts"))
-        scores = _as_list(_first_present(payload, "rec_scores", "scores"))
-        polygons = _as_list(_first_present(payload, "rec_polys", "dt_polys", "polygons"))
-        boxes = _as_list(_first_present(payload, "rec_boxes", "boxes"))
-
-        for index, raw_text in enumerate(texts):
-            text = str(raw_text or "").strip()
-            if not text:
-                continue
-            try:
-                confidence = float(scores[index]) if index < len(scores) else 1.0
-            except (TypeError, ValueError):
-                confidence = 0.0
-            if confidence < score_threshold:
-                continue
-
-            polygon = _as_list(polygons[index]) if index < len(polygons) else []
-            box = _as_list(boxes[index]) if index < len(boxes) else []
-            if polygon:
-                polygon = [[float(point[0]), float(point[1])] for point in polygon if len(point) >= 2]
-            if len(box) >= 4:
-                box = [float(value) for value in box[:4]]
-            elif polygon:
-                xs = [point[0] for point in polygon]
-                ys = [point[1] for point in polygon]
-                box = [min(xs), min(ys), max(xs), max(ys)]
-            else:
-                box = []
-
-            detection = {
-                "text": text,
-                "label_name": text,
-                "class_name": "text",
-                "confidence": confidence,
-            }
-            if box:
-                detection["box"] = box
-                detection["bbox"] = box
-            if polygon:
-                detection["polygon"] = polygon
-            detections.append(detection)
-
-    return {
-        "detections": detections,
-        "full_text": "\n".join(item["text"] for item in detections),
-    }
 
 
 class OCRAlgorithm(BaseAlgorithm):
@@ -105,37 +34,36 @@ class OCRAlgorithm(BaseAlgorithm):
         if not detection_model or not recognition_model:
             raise RuntimeError("OCR 检测或识别模型不存在")
 
-        try:
-            from paddleocr import PaddleOCR
-        except ImportError as exc:
-            raise RuntimeError("当前运行平台未安装 PaddleOCR，OCR 仅支持 CPU/CUDA 镜像") from exc
-
-        options: Dict[str, Any] = {
-            "text_detection_model_dir": detection_model["path"],
-            "text_recognition_model_dir": recognition_model["path"],
-            "use_doc_orientation_classify": False,
-            "use_doc_unwarping": False,
-            "use_textline_orientation": False,
-            "text_recognition_batch_size": int(self.ocr_config.get("recognition_batch_size") or 1),
-        }
-        device = self.ocr_config.get("device", "auto")
-        if device != "auto":
-            options["device"] = device
-        optional_parameters = {
-            "detection_threshold": "text_det_thresh",
-            "box_threshold": "text_det_box_thresh",
-            "unclip_ratio": "text_det_unclip_ratio",
-            "limit_side_len": "text_det_limit_side_len",
-        }
-        for config_key, paddle_key in optional_parameters.items():
-            if self.ocr_config.get(config_key) is not None:
-                options[paddle_key] = self.ocr_config[config_key]
-
-        self.pipeline = PaddleOCR(**options)
         self.detection_model_id = self.ocr_config["detection_model_id"]
         self.recognition_model_id = self.ocr_config["recognition_model_id"]
+        self.pipeline = None
+        device = self.ocr_config.get("device", "auto")
+        spec = build_ocr_model_spec(
+            detection_model_id=self.detection_model_id,
+            detection_path=detection_model["path"],
+            recognition_model_id=self.recognition_model_id,
+            recognition_path=recognition_model["path"],
+            ocr_config=self.ocr_config,
+        )
+        if shared_ocr_client_enabled():
+            self.backend = SharedOCRBackend(spec, self.ocr_config)
+            logger.info(
+                "[OCR] 使用共享推理: detection=%s recognition=%s device=%s key=%s",
+                self.detection_model_id,
+                self.recognition_model_id,
+                device,
+                self.backend.client.model_key,
+            )
+            return
+
+        self.backend = PaddleOCRBackend(
+            detection_model["path"],
+            recognition_model["path"],
+            self.ocr_config,
+        )
+        self.pipeline = self.backend.pipeline
         logger.info(
-            "[OCR] 模型加载完成: detection=%s recognition=%s device=%s",
+            "[OCR] 本地加载模型: detection=%s recognition=%s device=%s",
             self.detection_model_id,
             self.recognition_model_id,
             device,
@@ -175,15 +103,15 @@ class OCRAlgorithm(BaseAlgorithm):
                 _, crop_infer_regions, post_filter_regions = split_regions(roi_regions)
                 roi_filter_regions = crop_infer_regions + post_filter_regions
 
-            require_cv2()
-            input_bgr = cv2.cvtColor(input_rgb, cv2.COLOR_RGB2BGR)
-            raw_results = self.pipeline.predict(input=input_bgr)
-            normalized = normalize_ocr_output(
-                raw_results,
-                score_threshold=float(self.ocr_config.get("recognition_score_threshold") or 0),
-            )
+            detections, _details, infer_metadata = self.backend.infer(input_rgb)
+            if infer_metadata.get("overloaded"):
+                latency_ms = (time.perf_counter() - started_at) * 1000
+                return self._empty_result("shared_inference_overloaded", latency_ms)
 
-            detections = normalized["detections"]
+            detections = filter_ocr_detections(
+                detections,
+                float(self.ocr_config.get("recognition_score_threshold") or 0),
+            )
             before_roi = len(detections)
             if roi_filter_regions:
                 detections = filter_items_by_regions(
@@ -194,22 +122,35 @@ class OCRAlgorithm(BaseAlgorithm):
                 )
 
             latency_ms = (time.perf_counter() - started_at) * 1000
-            full_text = "\n".join(item["text"] for item in detections)
+            full_text = "\n".join(item.get("text") or "" for item in detections)
+            metadata = {
+                "ocr_checked": True,
+                "full_text": full_text,
+                "text_count": len(detections),
+                "inference_time_ms": round(latency_ms, 2),
+                "detection_model_id": self.detection_model_id,
+                "recognition_model_id": self.recognition_model_id,
+                "roi_applied": roi_mask is not None,
+                "roi_filtered_count": before_roi - len(detections),
+                "shared_inference": bool(infer_metadata.get("shared_inference")),
+            }
+            if infer_metadata.get("model_key"):
+                metadata["model_key"] = infer_metadata["model_key"]
+            if infer_metadata.get("device"):
+                metadata["device"] = infer_metadata["device"]
             return {
                 "detections": detections,
                 "roi_mask": roi_mask,
-                "metadata": {
-                    "ocr_checked": True,
-                    "full_text": full_text,
-                    "text_count": len(detections),
-                    "inference_time_ms": round(latency_ms, 2),
-                    "detection_model_id": self.detection_model_id,
-                    "recognition_model_id": self.recognition_model_id,
-                    "roi_applied": roi_mask is not None,
-                    "roi_filtered_count": before_roi - len(detections),
-                },
+                "metadata": metadata,
             }
         except Exception as exc:
             latency_ms = (time.perf_counter() - started_at) * 1000
             logger.error("[OCR] 推理失败: %s", exc, exc_info=True)
             return self._empty_result(str(exc), latency_ms)
+
+    def cleanup(self):
+        backend = getattr(self, "backend", None)
+        if backend is not None and hasattr(backend, "cleanup"):
+            backend.cleanup()
+        self.backend = None
+        self.pipeline = None

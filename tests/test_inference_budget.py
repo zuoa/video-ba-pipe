@@ -64,6 +64,25 @@ def test_admission_counts_only_new_shared_models():
     assert decision.estimated_increment_mb == 1280
 
 
+def test_admission_does_not_charge_confirmed_ocr_recognition_id():
+    controller = InferenceAdmissionController(
+        enabled=True,
+        reserve_mb=1000,
+        reserve_percent=0,
+        default_new_model_mb=1000,
+        margin_percent=0,
+        memory_reader=lambda: MemorySnapshot(16000, 2500, 0),
+    )
+    controller.commit(1, {11, 12})
+    controller.mark_source_ready(1)
+
+    decision = controller.evaluate(2, {11}, service_model_ids={11, 12})
+
+    assert decision.allowed is True
+    assert decision.new_model_ids == ()
+    assert decision.estimated_increment_mb == 0
+
+
 def test_admission_retains_pending_shared_reservation():
     controller = InferenceAdmissionController(
         enabled=True,

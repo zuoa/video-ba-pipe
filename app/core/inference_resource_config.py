@@ -436,6 +436,7 @@ def detect_inference_capabilities() -> Dict[str, Any]:
         "device_compatible": device_compatible,
         "in_docker": os.path.exists("/.dockerenv"),
         "shared_ultralytics": unix_socket and posix_shared_memory,
+        "shared_ocr": unix_socket and posix_shared_memory,
         "memory_admission": True,
         "oom_detection": cgroup_oom,
         "unix_socket": unix_socket,
@@ -461,6 +462,7 @@ def effective_inference_resource_config(
         and (
             capabilities.get("shared_ultralytics")
             or capabilities.get("rknn_shared")
+            or capabilities.get("shared_ocr")
         )
     )
     values["inference_admission_enabled"] = bool(

@@ -82,6 +82,9 @@ x-app-environment: &app-environment
   MEDIAMTX_WEBRTC_PUBLIC_HOST: ${MEDIAMTX_WEBRTC_PUBLIC_HOST:-}
   MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS: ${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
   TZ: Asia/Shanghai
+  # API 不加载模型；仅 worker 覆盖为 true。
+  SHARED_INFERENCE_ENABLED: "false"
+  SHARED_INFERENCE_SOCKET_PATH: ${SHARED_INFERENCE_SOCKET_PATH:-/tmp/video-ba-pipe-inference.sock}
 
 services:
   postgres:
@@ -204,6 +207,7 @@ services:
     gpus: all
     environment:
       <<: *app-environment
+      SHARED_INFERENCE_ENABLED: ${SHARED_INFERENCE_ENABLED:-true}
       # CUDA/PyTorch 冷启动与稳态单帧推理使用独立超时。
       SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS: ${SHARED_INFERENCE_STARTUP_TIMEOUT_SECONDS:-180}
     volumes:

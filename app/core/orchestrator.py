@@ -764,6 +764,10 @@ class Orchestrator:
                 return
 
         add(config.get('model_id'))
+        ocr_config = config.get('ocr_config')
+        if isinstance(ocr_config, dict):
+            add(ocr_config.get('detection_model_id'))
+            add(ocr_config.get('recognition_model_id'))
         cascade_config = config.get('cascade_config')
         if isinstance(cascade_config, dict):
             candidates = cascade_config.get('nodes') or cascade_config.get('stages') or []
@@ -836,6 +840,12 @@ class Orchestrator:
             return False
         ext_config = getattr(algorithm, 'ext_config', {}) or {}
         algorithm_type = ext_config.get('algorithm_type') or 'script'
+        capabilities = getattr(self, 'inference_capabilities', {}) or {}
+        if algorithm_type == 'ocr':
+            return bool(capabilities.get(
+                'shared_ocr',
+                capabilities.get('shared_ultralytics', True),
+            ))
         normalized_script = str(algorithm.script_path or '').replace('\\', '/').lstrip('./')
         # Only scripts known to call create_backend are share-compatible. Direct
         # ultralytics.YOLO user scripts remain local and are budgeted per host.
@@ -866,7 +876,6 @@ class Orchestrator:
                 backend = 'onnxruntime'
             else:
                 backend = 'ultralytics'
-        capabilities = getattr(self, 'inference_capabilities', {}) or {}
         if backend == 'rknn':
             return bool(capabilities.get('rknn_shared'))
         if backend == 'ultralytics':
@@ -898,17 +907,50 @@ class Orchestrator:
                 if isinstance(node_config, dict):
                     effective_config.update(node_config)
                 model_occurrences = self._model_occurrences_from_algorithm_config(effective_config)
+                ocr_recognition_id = self._ocr_recognition_model_id(effective_config)
                 for model_id, inference_config in model_occurrences:
-                    if self._model_uses_shared_inference(
+                    uses_shared = self._model_uses_shared_inference(
                         algorithm,
                         effective_config,
                         model_id,
                         inference_config=inference_config,
-                    ):
+                    )
+                    # det+rec share one Paddle worker; only the detection id is billed.
+                    if uses_shared and ocr_recognition_id == model_id:
+                        continue
+                    if uses_shared:
                         shared_model_ids.add(model_id)
                     else:
                         local_model_ids.append(model_id)
         return shared_model_ids, tuple(local_model_ids)
+
+    @staticmethod
+    def _ocr_recognition_model_id(config) -> Optional[int]:
+        if not isinstance(config, dict):
+            return None
+        ocr_config = config.get('ocr_config')
+        if not isinstance(ocr_config, dict):
+            return None
+        try:
+            return int(ocr_config.get('recognition_model_id'))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _confirmed_shared_model_ids(stats) -> set:
+        confirmed = set()
+        for item in (stats or {}).get('models') or []:
+            if not item.get('ready'):
+                continue
+            for key in ('model_id', 'recognition_model_id'):
+                value = item.get(key)
+                if value is None:
+                    continue
+                try:
+                    confirmed.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+        return confirmed
 
     def _collect_inference_service_stats(self, *, log_snapshot: bool = False):
         if self.shared_inference_service is None:
@@ -1001,11 +1043,7 @@ class Orchestrator:
 
         shared_model_ids, local_model_ids = self._workflow_model_requirements(workflows)
         stats = self._collect_inference_service_stats()
-        service_model_ids = {
-            item.get('model_id')
-            for item in stats.get('models', [])
-            if item.get('model_id') is not None and item.get('ready')
-        }
+        service_model_ids = self._confirmed_shared_model_ids(stats)
         decision = self.inference_admission.evaluate(
             source_id,
             shared_model_ids,

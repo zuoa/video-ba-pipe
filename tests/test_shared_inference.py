@@ -2,6 +2,7 @@ import os
 import time
 
 import app.core.shared_inference as shared_inference_module
+from app.core.ocr_backend import build_ocr_model_spec
 from app.core.shared_inference import _ModelRegistry, build_model_spec, model_key
 
 
@@ -85,6 +86,82 @@ def test_model_key_normalizes_auto_and_explicit_rknn_backend(tmp_path):
     assert "backend" not in automatic["backend_config"]
     assert "backend" not in explicit["backend_config"]
     assert model_key(automatic) == model_key(explicit)
+
+
+def _ocr_spec(tmp_path, *, device="auto", recognition_name="rec.bin", extra_config=None):
+    detection = tmp_path / "det.bin"
+    recognition = tmp_path / recognition_name
+    if not detection.exists():
+        detection.write_bytes(b"det-weights")
+    if not recognition.exists():
+        recognition.write_bytes(b"rec-weights")
+    config = {"device": device, "recognition_score_threshold": 0.9}
+    if extra_config:
+        config.update(extra_config)
+    return build_ocr_model_spec(
+        detection_model_id=11,
+        detection_path=str(detection),
+        recognition_model_id=12,
+        recognition_path=str(recognition),
+        ocr_config=config,
+    )
+
+
+def test_ocr_spec_reuses_one_worker_for_same_det_rec_pair(tmp_path):
+    spec = _ocr_spec(tmp_path)
+    other_threshold = _ocr_spec(
+        tmp_path, extra_config={"recognition_score_threshold": 0.1}
+    )
+    registry = _ModelRegistry(queue_size=2, idle_seconds=60, worker_target=_fake_worker)
+    try:
+        first = registry.acquire(spec, {})
+        second = registry.acquire(other_threshold, {})
+
+        assert first["model_key"] == second["model_key"]
+        assert model_key(spec) == model_key(other_threshold)
+        stats = registry.stats()
+        assert stats["model_count"] == 1
+        assert stats["models"][0]["references"] == 2
+        assert stats["models"][0]["recognition_model_id"] == 12
+    finally:
+        registry.close()
+
+
+def test_create_model_worker_backend_selects_paddleocr(monkeypatch, tmp_path):
+    spec = _ocr_spec(tmp_path)
+    created = {}
+
+    class FakeBackend:
+        name = "paddleocr"
+
+        @classmethod
+        def from_worker_spec(cls, worker_spec, base_config):
+            created["spec"] = worker_spec
+            created["config"] = base_config
+            return cls()
+
+    monkeypatch.setattr(
+        "app.core.ocr_backend.PaddleOCRBackend",
+        FakeBackend,
+    )
+
+    backend = shared_inference_module._create_model_worker_backend(
+        spec, {"model_type": "OCR"}, {}
+    )
+
+    assert isinstance(backend, FakeBackend)
+    assert created["spec"]["recognition_model_id"] == 12
+
+
+def test_ocr_spec_changes_when_device_or_recognition_file_changes(tmp_path):
+    auto = _ocr_spec(tmp_path, device="auto")
+    cpu = _ocr_spec(tmp_path, device="cpu")
+    other_rec = _ocr_spec(tmp_path, recognition_name="rec-v2.bin")
+
+    assert auto["backend"] == "paddleocr"
+    assert "recognition_score_threshold" not in auto["backend_config"]
+    assert model_key(auto) != model_key(cpu)
+    assert model_key(auto) != model_key(other_rec)
 
 
 def test_registry_reuses_one_worker_for_same_model(tmp_path):

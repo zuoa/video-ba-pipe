@@ -143,6 +143,78 @@ def test_adaptive_rknn_model_is_budgeted_as_globally_shared(monkeypatch):
     assert local == ()
 
 
+def test_ocr_models_are_budgeted_as_globally_shared(monkeypatch):
+    algorithms = {
+        3: FakeAlgorithm(
+            "",
+            {},
+            ext_config={
+                "algorithm_type": "ocr",
+                "ocr_config": {
+                    "detection_model_id": 11,
+                    "recognition_model_id": 12,
+                    "device": "auto",
+                },
+            },
+        ),
+    }
+    monkeypatch.setattr(
+        orchestrator_module.Algorithm,
+        "get_by_id",
+        lambda algorithm_id: algorithms[algorithm_id],
+    )
+    workflow = FakeWorkflow([
+        {"id": "algorithm-1", "type": "algorithm", "dataId": 3}
+    ])
+
+    shared, local = _orchestrator()._workflow_model_requirements([workflow])
+
+    assert shared == {11}
+    assert local == ()
+
+
+def test_confirmed_shared_model_ids_include_ocr_recognition():
+    confirmed = Orchestrator._confirmed_shared_model_ids({
+        "models": [
+            {"model_id": 11, "recognition_model_id": 12, "ready": True},
+            {"model_id": 7, "ready": False},
+            {"model_id": "bad", "ready": True},
+        ]
+    })
+    assert confirmed == {11, 12}
+
+
+def test_ocr_models_are_local_when_shared_service_unavailable(monkeypatch):
+    algorithms = {
+        3: FakeAlgorithm(
+            "",
+            {},
+            ext_config={
+                "algorithm_type": "ocr",
+                "ocr_config": {
+                    "detection_model_id": 11,
+                    "recognition_model_id": 12,
+                },
+            },
+        ),
+    }
+    monkeypatch.setattr(
+        orchestrator_module.Algorithm,
+        "get_by_id",
+        lambda algorithm_id: algorithms[algorithm_id],
+    )
+    orchestrator = _orchestrator()
+    orchestrator.shared_inference_service = None
+    workflow = FakeWorkflow([
+        {"id": "algorithm-1", "type": "algorithm", "dataId": 3}
+    ])
+
+    shared, local = orchestrator._workflow_model_requirements([workflow])
+
+    assert shared == set()
+    assert local == (11, 12)
+
+
 def test_cascade_repeated_model_is_budgeted_per_stage_backend(monkeypatch):
     cascade_config = {
         "stages": [
@@ -176,6 +248,20 @@ def test_cascade_repeated_model_is_budgeted_per_stage_backend(monkeypatch):
 
     assert shared == {9}
     assert local == (9,)
+
+
+def test_cuda_compose_enables_shared_inference_only_in_worker():
+    for compose_name in (
+        "docker-compose.yml.x86+cuda",
+        "docker-compose.no-mqtt.yml.x86+cuda",
+    ):
+        compose_path = Path(__file__).resolve().parents[1] / compose_name
+        with compose_path.open(encoding="utf-8") as handle:
+            compose = yaml.safe_load(handle)
+        assert compose["services"]["app"]["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
+        assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
+            ":-true}"
+        )
 
 
 def test_jetson_api_keeps_worker_local_shared_socket_disabled():
