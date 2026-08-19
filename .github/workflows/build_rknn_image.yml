@@ -13,11 +13,6 @@ on:
         required: false
         default: ""
         type: string
-      rknn_toolkit_lite2_whl:
-        description: "Optional rknn-toolkit-lite2 wheel URL or path"
-        required: false
-        default: ""
-        type: string
       ffmpeg_rk_image:
         description: "Optional FFmpeg RK base image"
         required: false
@@ -96,7 +91,6 @@ jobs:
           build-args: |
             TORCH_WHL=${{ inputs.torch_whl }}
             ONNXRUNTIME_WHL=${{ inputs.onnxruntime_whl }}
-            RKNN_TOOLKIT_LITE2_WHL=${{ inputs.rknn_toolkit_lite2_whl }}
             FFMPEG_RK_IMAGE=${{ env.DEFAULT_FFMPEG_RK_IMAGE }}
             APP_VERSION=${{ steps.build_info.outputs.app_version }}
             BUILD_TIME=${{ steps.build_info.outputs.build_time }}

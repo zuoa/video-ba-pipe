@@ -1456,9 +1456,8 @@ def _acquire_rknn_runtime(model_path: str, config: Dict[str, Any]):
     if runtime_class is None:
         message = (
             "当前环境未安装 rknnlite.api，无法加载 .rknn 模型。"
-            "请使用 RK3588 镜像，并在构建镜像时安装 rknn-toolkit-lite2 wheel "
-            "（可通过 Dockerfile.rk 的 RKNN_TOOLKIT_LITE2_WHL build-arg 传入），"
-            "同时在运行时挂载 /opt/rknn。"
+            "请使用 RK3588 镜像；该镜像应内置版本匹配的 "
+            "rknn-toolkit-lite2 与 /usr/lib/librknnrt.so。"
         )
         if RKNNLITE_IMPORT_ERROR is not None:
             raise ImportError(f"{message} 原始错误: {RKNNLITE_IMPORT_ERROR}") from RKNNLITE_IMPORT_ERROR
@@ -1488,7 +1487,7 @@ def _acquire_rknn_runtime(model_path: str, config: Dict[str, Any]):
                     raise RuntimeError(
                         f"RKNNLite.init_runtime 失败，返回码: {ret}。"
                         "请确认当前容器可访问 /dev/dri、/proc/device-tree/compatible，"
-                        "并已挂载 /usr/lib/librknnrt.so"
+                        "且镜像内存在 /usr/lib/librknnrt.so"
                     )
             except Exception:
                 if hasattr(runtime, "release"):

@@ -6,7 +6,7 @@
 
 1. 系统：Debian（RK3588）
 2. 已安装 Docker / Docker Compose
-3. 已准备 NPU Runtime（默认挂载 `/opt/rknn`）
+3. RK 镜像已内置 `rknn-toolkit-lite2 2.3.2` 和匹配的 `librknnrt.so 2.3.2`，宿主机只需提供 NPU 设备与兼容的驱动
 4. 项目目录：`/home/cat/video-analysis`（按你的实际路径替换）
 
 ## 2. Docker 配置建议

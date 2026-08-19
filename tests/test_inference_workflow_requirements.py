@@ -221,9 +221,29 @@ def test_rknn_algorithm_preview_runtime_is_worker_only():
     assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in api.get("volumes", [])
     assert worker["privileged"] is True
     assert "/dev/dri:/dev/dri" in worker["devices"]
-    assert "/opt/rknn:/opt/rknn:ro" in worker["volumes"]
-    assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" in worker["volumes"]
+    assert "/opt/rknn:/opt/rknn:ro" not in worker["volumes"]
+    assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in worker["volumes"]
     assert api["environment"]["ALGORITHM_TEST_WORKER_URL"].endswith("worker:5010}")
+
+
+def test_rknn_image_pins_matching_toolkit_and_runtime_versions():
+    dockerfile_path = Path(__file__).resolve().parents[1] / "Dockerfile.rk"
+    dockerfile = dockerfile_path.read_text(encoding="utf-8")
+
+    assert "rknn_toolkit_lite2-2.3.2-cp311-cp311" in dockerfile
+    assert "/v2.3.2/rknpu2/runtime/Linux/librknn_api/aarch64/librknnrt.so" in dockerfile
+    assert "/usr/lib/librknnrt.so" in dockerfile
+    assert "RKNN_TOOLKIT_LITE2_WHL" not in dockerfile
+    assert "/opt/rknn/lib" not in dockerfile
+
+    for compose_name in ("docker-compose.yml.rknn", "docker-compose.no-mqtt.yml.rknn"):
+        compose_path = Path(__file__).resolve().parents[1] / compose_name
+        with compose_path.open(encoding="utf-8") as handle:
+            compose = yaml.safe_load(handle)
+        worker = compose["services"]["worker"]
+        assert "/opt/rknn/lib" not in worker["environment"]["LD_LIBRARY_PATH"]
+        assert "/opt/rknn:/opt/rknn:ro" not in worker["volumes"]
+        assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in worker["volumes"]
 
 
 def test_runtime_policy_values_are_hot_updated():
