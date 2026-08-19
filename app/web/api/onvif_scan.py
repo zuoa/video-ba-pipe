@@ -90,6 +90,7 @@ def _fetch_profiles(data: Dict[str, Any]) -> Dict[str, Any]:
         port=data.get('port'),
         username=username,
         password=data.get('password') or '',
+        timeout_seconds=_timeout_seconds(data),
     )
     return _annotate_profiles(result)
 

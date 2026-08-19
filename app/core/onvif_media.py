@@ -168,20 +168,39 @@ def _profile_dict(
     }
 
 
+def _try_profile(
+    media: Any,
+    profile: Any,
+    username: str,
+    password: str,
+    request: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    try:
+        stream = media.GetStreamUri(request)
+        return _profile_dict(profile, _extract_uri(stream), username, password)
+    except Exception:
+        return None
+
+
 def _profiles_from_media(camera: Any, username: str, password: str) -> List[Dict[str, Any]]:
     media = camera.create_media_service()
     raw_profiles = media.GetProfiles() or []
     collected: List[Dict[str, Any]] = []
     for profile in raw_profiles:
         token = _attr(profile, 'token') or _attr(profile, 'Token')
-        stream = media.GetStreamUri({
-            'StreamSetup': {
-                'Stream': 'RTP-Unicast',
-                'Transport': {'Protocol': 'RTSP'},
+        item = _try_profile(
+            media,
+            profile,
+            username,
+            password,
+            {
+                'StreamSetup': {
+                    'Stream': 'RTP-Unicast',
+                    'Transport': {'Protocol': 'RTSP'},
+                },
+                'ProfileToken': token,
             },
-            'ProfileToken': token,
-        })
-        item = _profile_dict(profile, _extract_uri(stream), username, password)
+        )
         if item:
             collected.append(item)
     return collected
@@ -193,22 +212,49 @@ def _profiles_from_media2(camera: Any, username: str, password: str) -> List[Dic
     collected: List[Dict[str, Any]] = []
     for profile in raw_profiles:
         token = _attr(profile, 'token') or _attr(profile, 'Token')
-        stream = media.GetStreamUri({
-            'Protocol': 'RTSP',
-            'ProfileToken': token,
-        })
-        item = _profile_dict(profile, _extract_uri(stream), username, password)
+        item = _try_profile(
+            media,
+            profile,
+            username,
+            password,
+            {
+                'Protocol': 'RTSP',
+                'ProfileToken': token,
+            },
+        )
         if item:
             collected.append(item)
     return collected
 
 
-def _default_camera_factory(host: str, port: int, username: str, password: str) -> Any:
+def _onvif_transport(timeout_seconds: float):
+    try:
+        from zeep.transports import Transport
+    except ImportError as exc:
+        raise OnvifScanError('服务器未安装 onvif-zeep，无法拉取码流') from exc
+
+    timeout = max(1.0, float(timeout_seconds))
+    return Transport(timeout=timeout, operation_timeout=timeout)
+
+
+def _default_camera_factory(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    timeout_seconds: float = 5,
+) -> Any:
     try:
         from onvif import ONVIFCamera
     except ImportError as exc:
         raise OnvifScanError('服务器未安装 onvif-zeep，无法拉取码流') from exc
-    return ONVIFCamera(host, port, username, password)
+    return ONVIFCamera(
+        host,
+        port,
+        username,
+        password,
+        transport=_onvif_transport(timeout_seconds),
+    )
 
 
 def fetch_device_profiles(
@@ -218,10 +264,16 @@ def fetch_device_profiles(
     port: Optional[int] = None,
     username: str = '',
     password: str = '',
+    timeout_seconds: float = 5,
     camera_factory: Optional[CameraFactory] = None,
 ) -> Dict[str, Any]:
     resolved_host, resolved_port, resolved_xaddr = resolve_endpoint(xaddr, host, port)
-    factory = camera_factory or _default_camera_factory
+    timeout = max(1.0, float(timeout_seconds))
+    factory = camera_factory or (
+        lambda host_, port_, user, passwd: _default_camera_factory(
+            host_, port_, user, passwd, timeout
+        )
+    )
     camera = factory(resolved_host, resolved_port, username, password)
 
     device = {
@@ -247,10 +299,11 @@ def fetch_device_profiles(
         profiles = _profiles_from_media(camera, username, password)
     except Exception as exc:
         last_error = exc
+    if not profiles:
         try:
             profiles = _profiles_from_media2(camera, username, password)
         except Exception as exc:
-            last_error = exc
+            last_error = last_error or exc
 
     if not profiles:
         message = '设备未返回可用码流'

@@ -9,6 +9,7 @@ from peewee import SqliteDatabase
 from app.core import license_service
 from app.core.database_models import SystemSetting, User, VideoSource
 from app.core.license_service import LicenseEvaluation
+from app.core import onvif_media as onvif_media_module
 from app.core.onvif_media import (
     default_source_code,
     fetch_device_profiles,
@@ -213,6 +214,53 @@ def test_fetch_profiles_falls_back_to_media2():
     assert result['profiles'][0]['default_source_code'].endswith('profile-1')
 
 
+def test_fetch_keeps_valid_profile_when_one_stream_fails():
+    class MixedMedia(FakeMedia):
+        def GetStreamUri(self, payload):
+            token = payload.get('ProfileToken')
+            if token == 'Profile_2':
+                raise RuntimeError('SOAP fault')
+            if token == 'Profile_3':
+                return SimpleNamespace(Uri='http://192.168.1.64/onvif/snapshot')
+            return super().GetStreamUri(payload)
+
+    media = MixedMedia([
+        _profile('Profile_1', 'MainStream', 'H264', 1920, 1080),
+        _profile('Profile_2', 'Broken', 'H264', 1280, 720),
+        _profile('Profile_3', 'Snapshot', 'JPEG', 640, 360),
+    ])
+    result = fetch_device_profiles(
+        host='192.168.1.64',
+        port=80,
+        username='admin',
+        password='secret',
+        camera_factory=lambda host, port, username, password: FakeCamera(media=media),
+    )
+
+    assert [item['token'] for item in result['profiles']] == ['Profile_1']
+    assert result['profiles'][0]['stream_hint'] == 'main'
+
+
+def test_fetch_profiles_passes_timeout_to_default_factory(monkeypatch):
+    captured = {}
+
+    def fake_factory(host, port, username, password, timeout_seconds=5):
+        captured['timeout'] = timeout_seconds
+        return FakeCamera(
+            media=FakeMedia([_profile('Profile_1', 'MainStream', 'H264', 1920, 1080)]),
+        )
+
+    monkeypatch.setattr(onvif_media_module, '_default_camera_factory', fake_factory)
+    fetch_device_profiles(
+        host='192.168.1.64',
+        port=80,
+        username='admin',
+        password='secret',
+        timeout_seconds=8,
+    )
+    assert captured['timeout'] == 8.0
+
+
 @pytest.fixture
 def onvif_api(monkeypatch):
     test_db = SqliteDatabase(':memory:', pragmas={'foreign_keys': 1})
@@ -258,8 +306,10 @@ def onvif_api(monkeypatch):
 
 def test_profiles_marks_existing_rtsp_identity(onvif_api, monkeypatch):
     client, headers = onvif_api
+    captured = {}
 
     def fake_fetch(**kwargs):
+        captured.update(kwargs)
         return {
             'host': '192.168.1.20',
             'port': 80,
@@ -282,9 +332,15 @@ def test_profiles_marks_existing_rtsp_identity(onvif_api, monkeypatch):
     monkeypatch.setattr(onvif_scan, 'fetch_device_profiles', fake_fetch)
     response = client.post(
         '/api/onvif/profiles',
-        json={'xaddr': 'http://192.168.1.20/onvif/device_service', 'username': 'admin', 'password': 'secret'},
+        json={
+            'xaddr': 'http://192.168.1.20/onvif/device_service',
+            'username': 'admin',
+            'password': 'secret',
+            'timeout_seconds': 7,
+        },
         headers=headers,
     )
+    assert captured['timeout_seconds'] == 7
     assert response.status_code == 200
     profiles = response.get_json()['profiles']
     assert profiles[0]['already_imported'] is True

@@ -196,12 +196,14 @@ export default function OnvifScanModal({
     try {
       const values = await form.validateFields(['username', 'password']);
       setFetching(true);
+      const timeoutSeconds = Number(form.getFieldValue('timeout_seconds') || 5);
       const results = await Promise.allSettled(
         selectedDevices.map((device) =>
           fetchOnvifProfiles({
             xaddr: device.xaddr,
             username: device.username || values.username,
             password: device.password || values.password || '',
+            timeout_seconds: timeoutSeconds,
           }).then((result) => ({ device, result })),
         ),
       );
@@ -336,7 +338,6 @@ export default function OnvifScanModal({
               <Input
                 value={record.username}
                 placeholder="用默认账号"
-                disabled={record.already_imported}
                 onChange={(event) => updateDevice(record.key, { username: event.target.value })}
               />
             ),
@@ -349,7 +350,6 @@ export default function OnvifScanModal({
               <Input.Password
                 value={record.password}
                 placeholder="用默认密码"
-                disabled={record.already_imported}
                 onChange={(event) => updateDevice(record.key, { password: event.target.value })}
               />
             ),
@@ -582,9 +582,6 @@ export default function OnvifScanModal({
                   rowSelection={{
                     selectedRowKeys: selectedDeviceKeys,
                     onChange: setSelectedDeviceKeys,
-                    getCheckboxProps: (record: ScannedDevice) => ({
-                      disabled: record.already_imported,
-                    }),
                   }}
                   scroll={{ y: 280 }}
                 />
@@ -612,7 +609,7 @@ export default function OnvifScanModal({
             <Alert
               type="info"
               showIcon
-              message="表格里留空的账号密码会使用上面的默认值。已添加的设备不能重复勾选。"
+              message="表格里留空的账号密码会使用上面的默认值。已添加过的设备仍可勾选，用来补子码流；已导入的码流会在下一步禁用。"
               className="import-results-alert"
             />
             <Table
