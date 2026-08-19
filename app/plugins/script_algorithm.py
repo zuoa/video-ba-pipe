@@ -191,7 +191,7 @@ class ScriptAlgorithm(BaseAlgorithm):
         # 算法ID（从config获取，用于Hook）
         self.algorithm_id = self.config.get('id')
 
-    def process(self, frame: np.ndarray, roi_regions: list = None, upstream_results: dict = None) -> dict:
+    def process(self, frame: np.ndarray, roi_regions: list = None, upstream_results: dict = None, frame_timestamp=None) -> dict:
         """
         处理帧（执行脚本）
 
@@ -259,6 +259,7 @@ class ScriptAlgorithm(BaseAlgorithm):
                 'frame_width': frame_width,
                 'frame_height': frame_height,
                 'pixel_format': input_pixel_format,
+                'frame_timestamp': frame_timestamp,
             }
             if 'frame_rgb' in sig.parameters:
                 all_args['frame_rgb'] = frame_rgb

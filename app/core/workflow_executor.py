@@ -3,6 +3,7 @@
 可以被实时执行模式和测试模式复用
 """
 import base64
+import inspect
 import json
 import logging
 import os
@@ -1236,7 +1237,14 @@ class WorkflowExecutor:
 
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 调用 algo.process，upstream_results: {list(upstream_results.keys())} (共{len(upstream_results)}个上游)")
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 传递给算法的ROI配置: {effective_roi_regions}")
-            result = algo.process(frame_nv12, effective_roi_regions, upstream_results=upstream_results)
+            process_kwargs = {'upstream_results': upstream_results}
+            try:
+                process_params = inspect.signature(algo.process).parameters
+            except (TypeError, ValueError):
+                process_params = {}
+            if 'frame_timestamp' in process_params:
+                process_kwargs['frame_timestamp'] = frame_timestamp
+            result = algo.process(frame_nv12, effective_roi_regions, **process_kwargs)
             result = self._apply_algorithm_confidence_filter(node_id, result)
             if isinstance(result, dict):
                 result = dict(result)

@@ -74,6 +74,11 @@ const DETECTOR_PRESETS: readonly DetectorPreset[] = [
     path: 'templates/yolo_detector.py',
     description: '多个模型对同一画面并行推理，通过 IOU 匹配共同确认目标',
   },
+  {
+    name: '目标追踪',
+    path: 'templates/object_tracker.py',
+    description: '为上游检测框分配跨帧 ID，可选贪心 IoU 或 ByteTrack。向导间隔最低 0.1 秒，工作流节点可设为 0 以每帧执行',
+  },
 ];
 
 const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
@@ -115,10 +120,24 @@ interface ConfigSchema {
       model_type?: string[];
       framework?: string[];
     };
+    visible_when?: Record<string, string>;
   };
 }
 
 type ConfigField = ConfigSchema[string];
+
+const isConfigFieldVisible = (
+  field: ConfigField,
+  schema: ConfigSchema,
+  values: Record<string, any> | undefined,
+) => {
+  if (!field.visible_when) return true;
+  return Object.entries(field.visible_when).every(([dep, expected]) => {
+    const current = values?.[`config_${dep}`];
+    const fallback = schema[dep]?.default;
+    return (current ?? fallback) === expected;
+  });
+};
 
 interface SelectedDetector {
   type: 'template' | 'script';
@@ -146,6 +165,7 @@ export default function AlgorithmWizard() {
   const [ocrRuntimeAvailable, setOcrRuntimeAvailable] = useState(false);
   const [ocrRuntimeError, setOcrRuntimeError] = useState('');
   const [form] = Form.useForm();
+  const configFormValues = Form.useWatch((values) => values, form) as Record<string, any> | undefined;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -346,6 +366,9 @@ export default function AlgorithmWizard() {
         const data = await getScriptConfigSchema(detector.scriptPath);
         if (data.success) {
           setConfigSchema(data.config_schema || {});
+        }
+        if (detector.scriptPath === 'templates/object_tracker.py') {
+          form.setFieldsValue({ intervalSeconds: 0.1 });
         }
       } catch (error) {
         console.error('加载配置模式失败:', error);
@@ -1148,7 +1171,9 @@ export default function AlgorithmWizard() {
             />
           ) : (
             <Form form={form} layout="vertical">
-              {Object.entries(configSchema).map(([key, field]) => (
+              {Object.entries(configSchema)
+                .filter(([, field]) => isConfigFieldVisible(field, configSchema, configFormValues))
+                .map(([key, field]) => (
                 <Form.Item
                   key={key}
                   name={field.type === 'model_list' ? undefined : `config_${key}`}
@@ -1362,7 +1387,12 @@ export default function AlgorithmWizard() {
                 <Form.Item
                   label="检测间隔（秒）"
                   name="intervalSeconds"
-                  initialValue={1}
+                  initialValue={selectedDetector?.scriptPath === 'templates/object_tracker.py' ? 0.1 : 1}
+                  extra={
+                    selectedDetector?.scriptPath === 'templates/object_tracker.py'
+                      ? '追踪建议使用最小值 0.1；工作流节点可改为 0 以每帧执行'
+                      : undefined
+                  }
                   rules={[{ required: true, message: '请输入检测间隔' }]}
                 >
                   <InputNumber min={0.1} max={60} step={0.1} style={{ width: '100%' }} />
