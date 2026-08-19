@@ -27,37 +27,39 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3-pip \
-    python3-dev \
-    # OpenCV依赖
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgl1-mesa-glx \
-    fonts-wqy-zenhei \
-    # FFmpeg和视频编解码
-    ffmpeg \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    # 其他工具
-    wget \
-    curl \
-    # BtbN FFmpeg 发布包是 .tar.xz；精简 Ubuntu/CUDA 基础镜像不内置 xz
-    xz-utils \
-    git \
-    postgresql-client \
-    # 精简 runtime 镜像不含 /usr/share/zoneinfo：没有它时 ENV TZ=Asia/Shanghai
-    # 找不到对应 zoneinfo 而失效，glibc 退回到 compose 挂载进来的宿主机
-    # /etc/localtime（多为 UTC），导致告警时间比北京时间少 8h。tzdata 提供该文件。
-    tzdata \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# 安装系统依赖。Acquire::Retries 应对 archive.ubuntu.com 偶发 Connection reset。
+RUN set -eux; \
+    echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries; \
+    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/80-retries; \
+    i=0; \
+    until apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+        python3.10 \
+        python3-pip \
+        python3-dev \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+        libgomp1 \
+        libgl1-mesa-glx \
+        fonts-wqy-zenhei \
+        ffmpeg \
+        libavcodec-dev \
+        libavformat-dev \
+        libswscale-dev \
+        wget \
+        curl \
+        xz-utils \
+        git \
+        postgresql-client \
+        tzdata; do \
+      i=$((i + 1)); \
+      [ "$i" -lt 5 ]; \
+      echo "apt-get failed, retry ${i}/5 in 5s"; \
+      sleep 5; \
+    done; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 # ============================================
 # 安装带 cuvid/NVDEC 的 ffmpeg (BtbN 静态构建)
@@ -153,7 +155,7 @@ ENV TZ=Asia/Shanghai
 # 装了 tzdata 后 TZ=Asia/Shanghai 即生效；再软链 /etc/localtime 作双保险
 # （运行时会被 compose 只读挂载的宿主机 /etc/localtime 覆盖，但不影响 TZ 解析）。
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-ENV PYTHONPATH="/app:$PYTHONPATH"
+ENV PYTHONPATH=/app
 
 # 设置入口点
 ENTRYPOINT ["./entrypoint.sh"]
