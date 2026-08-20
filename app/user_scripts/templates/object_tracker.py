@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from app.user_scripts.common.result import build_result
+from app.user_scripts.common.result import build_result, collect_upstream_detections
 from app.user_scripts.common.tracker import create_tracker
 
 SCRIPT_METADATA = {
@@ -162,19 +162,6 @@ def _optional_number(config: dict, key: str, cast):
         return None
 
 
-def _collect_upstream_detections(upstream_results: Optional[dict]) -> List[dict]:
-    detections: List[dict] = []
-    if not upstream_results:
-        return detections
-    for result in upstream_results.values():
-        if not isinstance(result, dict):
-            continue
-        items = result.get("detections") or []
-        if isinstance(items, list):
-            detections.extend(item for item in items if isinstance(item, dict))
-    return detections
-
-
 def _tracker_kwargs(config: dict) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {
         "label_filter": _parse_label_filter(config.get("label_filter")),
@@ -235,7 +222,7 @@ def process(
         state["tracker"].reset()
     state["identity_key"] = identity_key
 
-    detections = _collect_upstream_detections(upstream_results)
+    detections = collect_upstream_detections(upstream_results)
     tracks = state["tracker"].update(detections, timestamp=frame_timestamp)
     backend = state.get("backend") or getattr(state["tracker"], "backend", "iou")
     return build_result(

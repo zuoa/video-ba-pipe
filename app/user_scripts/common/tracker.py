@@ -54,8 +54,12 @@ class Track:
     misses: int = 0
     age: int = 1
     last_seen_ts: float = 0.0
+    first_seen_ts: float = 0.0
     history: Deque[Tuple[float, float, float]] = field(default_factory=deque)
     payload: Dict[str, Any] = field(default_factory=dict)
+
+    def dwell_seconds(self) -> float:
+        return max(0.0, float(self.last_seen_ts) - float(self.first_seen_ts))
 
     def to_detection(self, backend: str) -> Dict[str, Any]:
         detection = dict(self.payload)
@@ -65,6 +69,9 @@ class Track:
             "misses": self.misses,
             "age": self.age,
             "backend": backend,
+            "first_seen_ts": float(self.first_seen_ts),
+            "last_seen_ts": float(self.last_seen_ts),
+            "dwell_seconds": self.dwell_seconds(),
         })
         attributes["history"] = [
             {"ts": float(ts), "cx": float(cx), "cy": float(cy)}
@@ -300,6 +307,7 @@ def new_track(
         misses=0,
         age=1,
         last_seen_ts=float(timestamp),
+        first_seen_ts=float(timestamp),
         history=deque(maxlen=int(history_size)),
         payload=dict(det.payload),
     )

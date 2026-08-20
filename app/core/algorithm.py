@@ -244,6 +244,97 @@ class BaseAlgorithm(ABC):
         return conf if conf is not None else default
 
     @staticmethod
+    def _get_detection_track_id(det):
+        if not isinstance(det, dict):
+            return None
+        raw = det.get('track_id')
+        if raw is None and isinstance(det.get('attributes'), dict):
+            raw = det['attributes'].get('track_id')
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _get_detection_dwell_seconds(det):
+        if not isinstance(det, dict):
+            return None
+        attrs = det.get('attributes') if isinstance(det.get('attributes'), dict) else {}
+        raw = det.get('dwell_seconds')
+        if raw is None:
+            raw = attrs.get('dwell_seconds')
+        if raw is not None:
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                value = None
+            else:
+                return value if value >= 0 else None
+
+        first = attrs.get('first_seen_ts')
+        last = attrs.get('last_seen_ts')
+        if first is not None and last is not None:
+            try:
+                return max(0.0, float(last) - float(first))
+            except (TypeError, ValueError):
+                return None
+
+        history = attrs.get('history') or []
+        if isinstance(history, list) and len(history) >= 2:
+            first_item = history[0] if isinstance(history[0], dict) else None
+            last_item = history[-1] if isinstance(history[-1], dict) else None
+            if first_item is not None and last_item is not None:
+                try:
+                    return max(0.0, float(last_item.get('ts')) - float(first_item.get('ts')))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    @staticmethod
+    def _format_detection_caption(det, default='Object'):
+        """框上文字：person#3 停留 8s: 0.77"""
+        label = BaseAlgorithm._get_detection_label(det, default)
+        track_id = BaseAlgorithm._get_detection_track_id(det)
+        dwell = BaseAlgorithm._get_detection_dwell_seconds(det)
+        conf = BaseAlgorithm._get_detection_confidence(det, 1.0)
+        identity = f"{label}#{track_id}" if track_id is not None else str(label)
+        if dwell is not None and dwell >= 1:
+            identity = f"{identity} 停留 {int(round(dwell))}s"
+        try:
+            conf_value = float(conf)
+        except (TypeError, ValueError):
+            conf_value = 1.0
+        return f"{identity}: {conf_value:.2f}"
+
+    @staticmethod
+    def _get_track_history_points(det, width: int, height: int):
+        if not isinstance(det, dict) or width <= 0 or height <= 0:
+            return []
+        attrs = det.get('attributes') if isinstance(det.get('attributes'), dict) else {}
+        history = attrs.get('history') or det.get('history') or []
+        if not isinstance(history, list):
+            return []
+
+        points = []
+        for item in history:
+            cx = cy = None
+            if isinstance(item, dict):
+                cx, cy = item.get('cx'), item.get('cy')
+            elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                cx, cy = item[1], item[2]
+            if cx is None or cy is None:
+                continue
+            try:
+                x = int(round(float(cx)))
+                y = int(round(float(cy)))
+            except (TypeError, ValueError):
+                continue
+            points.append((min(max(0, x), width - 1), min(max(0, y), height - 1)))
+        return points
+
+    @staticmethod
     def _normalize_box_for_canvas(box, width: int, height: int):
         """
         将检测框统一转换为画布坐标。
@@ -341,6 +432,27 @@ class BaseAlgorithm(ABC):
         img[max(y2 - thickness + 1, y1):y2 + 1, x1:x2 + 1] = color
         img[y1:y2 + 1, x1:min(x1 + thickness, x2 + 1)] = color
         img[y1:y2 + 1, max(x2 - thickness + 1, x1):x2 + 1] = color
+
+    @staticmethod
+    def _draw_polyline_numpy(img: np.ndarray, points, color, thickness: int = 2):
+        if img is None or len(points) < 2:
+            return
+        height, width = img.shape[:2]
+        thickness = max(1, int(thickness))
+        before = (thickness - 1) // 2
+        after = thickness // 2
+        for index in range(len(points) - 1):
+            start = np.asarray(points[index], dtype=np.float32)
+            end = np.asarray(points[index + 1], dtype=np.float32)
+            delta = end - start
+            steps = max(1, int(np.ceil(np.max(np.abs(delta)))))
+            samples = np.linspace(start, end, steps + 1)
+            for sample_x, sample_y in np.rint(samples).astype(int):
+                x1 = max(0, sample_x - before)
+                x2 = min(width, sample_x + after + 1)
+                y1 = max(0, sample_y - before)
+                y2 = min(height, sample_y + after + 1)
+                img[y1:y2, x1:x2] = color
 
     @staticmethod
     def _iter_dashed_polygon_segments(pts: np.ndarray, dash_length: int = 10, gap_length: int = 6):
@@ -523,6 +635,8 @@ class BaseAlgorithm(ABC):
             if canvas_box is None:
                 continue
 
+            history_points = BaseAlgorithm._get_track_history_points(result, width, height)
+            BaseAlgorithm._draw_polyline_numpy(img_vis, history_points, main_color, 2)
             BaseAlgorithm._draw_rectangle_numpy(img_vis, canvas_box, main_color, 3)
 
             for stage in result.get('stages', []) or []:
@@ -628,13 +742,23 @@ class BaseAlgorithm(ABC):
             x1, y1, x2, y2 = canvas_box
             logger.debug(f"Main detection box: {x1, y1, x2, y2}")
 
-            label_prefix = BaseAlgorithm._get_detection_label(result, 'Object')
-            conf = BaseAlgorithm._get_detection_confidence(result, 1.0)
             stages = result.get('stages', [])
+            history_points = BaseAlgorithm._get_track_history_points(
+                result, img_vis.shape[1], img_vis.shape[0]
+            )
+            if len(history_points) >= 2:
+                cv2.polylines(
+                    img_vis,
+                    [np.array(history_points, dtype=np.int32)],
+                    False,
+                    main_color,
+                    2,
+                    cv2.LINE_AA,
+                )
 
             # 主检测框始终绘制，避免多阶段结果只显示子框、主框缺失。
             cv2.rectangle(img_vis, (x1, y1), (x2, y2), main_color, 3)
-            label = f"{label_prefix}: {conf:.2f}"
+            label = BaseAlgorithm._format_detection_caption(result)
             label_y = y1 - 10 if y1 > 24 else y1 + 22
             BaseAlgorithm._draw_text(img_vis, label, (x1, label_y), main_color, 0.6, 2)
 

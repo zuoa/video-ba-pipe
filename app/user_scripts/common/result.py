@@ -59,6 +59,20 @@ def validate_detections(detections: Iterable[Dict[str, Any]]) -> List[Dict[str, 
     return cleaned
 
 
+def collect_upstream_detections(upstream_results: Optional[dict]) -> List[dict]:
+    """Flatten detections from workflow upstream_results."""
+    detections: List[dict] = []
+    if not upstream_results:
+        return detections
+    for result in upstream_results.values():
+        if not isinstance(result, dict):
+            continue
+        items = result.get('detections') or []
+        if isinstance(items, list):
+            detections.extend(item for item in items if isinstance(item, dict))
+    return detections
+
+
 def build_result(
     detections: Optional[Iterable[Dict[str, Any]]],
     frame: Any = None,

@@ -25,6 +25,29 @@ def test_direct_detection_branch_is_not_discarded_and_contains_target_details():
     assert message != "无执行日志"
 
 
+def test_detection_summary_includes_track_id_and_dwell():
+    collector = ExecutionLogCollector()
+    collector.add_detection_result(
+        "algorithm-loiter",
+        [
+            {
+                "label_name": "person",
+                "confidence": 0.77,
+                "track_id": 3,
+                "attributes": {"dwell_seconds": 8.2},
+            }
+        ],
+        node_name="徘徊",
+    )
+
+    message = collector.build_alert_message(format_type="detailed")
+
+    assert "徘徊：命中 1 个目标" in message
+    assert "目标：person#3 停留 8s" in message
+    assert "类别：" not in message
+    assert "77.0%" in message
+
+
 def test_hit_without_detection_boxes_is_rendered_as_hit():
     collector = ExecutionLogCollector()
     collector.add_detection_result(

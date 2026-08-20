@@ -158,3 +158,16 @@ def test_to_detection_preserves_label_name_and_emits_history():
     assert detection["attributes"]["backend"] == "iou"
     assert detection["attributes"]["history"]
     assert detection["attributes"]["history"][0]["cx"] == 5.0
+    assert detection["attributes"]["first_seen_ts"] == 1
+    assert detection["attributes"]["dwell_seconds"] == 0.0
+
+
+def test_to_detection_emits_dwell_seconds():
+    tracker = IoUTracker(min_hits=1)
+    first = tracker.update([_det([0, 0, 10, 10], label="car")], timestamp=10)[0]
+    second = tracker.update([_det([1, 0, 11, 10], label="car")], timestamp=18)[0]
+    assert first.track_id == second.track_id
+    detection = second.to_detection("iou")
+    assert detection["attributes"]["first_seen_ts"] == 10
+    assert detection["attributes"]["last_seen_ts"] == 18
+    assert detection["attributes"]["dwell_seconds"] == 8.0

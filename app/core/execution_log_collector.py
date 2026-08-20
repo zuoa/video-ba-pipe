@@ -69,6 +69,48 @@ class ExecutionLogCollector:
         """添加 error 级别日志（便捷方法）"""
         self.add_log(node_id, 'error', content, metadata)
 
+    @staticmethod
+    def _detection_track_id(detection: Dict[str, Any]) -> Optional[int]:
+        raw = detection.get('track_id')
+        if raw is None and isinstance(detection.get('attributes'), dict):
+            raw = detection['attributes'].get('track_id')
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _detection_dwell_seconds(detection: Dict[str, Any]) -> Optional[float]:
+        attrs = detection.get('attributes') if isinstance(detection.get('attributes'), dict) else {}
+        raw = detection.get('dwell_seconds')
+        if raw is None:
+            raw = attrs.get('dwell_seconds')
+        if raw is None:
+            first = attrs.get('first_seen_ts')
+            last = attrs.get('last_seen_ts')
+            if first is not None and last is not None:
+                try:
+                    return max(0.0, float(last) - float(first))
+                except (TypeError, ValueError):
+                    return None
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if value >= 0 else None
+
+    @classmethod
+    def _format_detection_target(cls, detection: Dict[str, Any], label: str) -> str:
+        track_id = cls._detection_track_id(detection)
+        text = f"{label}#{track_id}" if track_id is not None else label
+        dwell = cls._detection_dwell_seconds(detection)
+        if dwell is not None and dwell >= 1:
+            text = f"{text} 停留 {int(round(dwell))}s"
+        return text
+
     def add_detection_result(
         self,
         node_id: str,
@@ -81,6 +123,8 @@ class ExecutionLogCollector:
         detections = [item for item in (detections or []) if isinstance(item, dict)]
         label_counts = Counter()
         confidences = []
+        target_texts = []
+        has_track_id = False
 
         for detection in detections:
             label = (
@@ -92,6 +136,9 @@ class ExecutionLogCollector:
             )
             label = str(label).replace('\n', ' ').strip() or '未知类别'
             label_counts[label[:40]] += 1
+            target_texts.append(self._format_detection_target(detection, label))
+            if self._detection_track_id(detection) is not None:
+                has_track_id = True
 
             confidence = detection.get('confidence')
             if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
@@ -104,7 +151,13 @@ class ExecutionLogCollector:
                 content_parts = [f"{display_name}：命中 {len(detections)} 个目标"]
             else:
                 content_parts = [f"{display_name}：未命中，返回 {len(detections)} 个候选目标"]
-            if label_counts:
+            if has_track_id:
+                shown = target_texts[:8]
+                target_text = '、'.join(shown)
+                if len(target_texts) > 8:
+                    target_text += f" 等 {len(target_texts)} 个"
+                content_parts.append(f"目标：{target_text}")
+            elif label_counts:
                 labels = list(label_counts.items())
                 label_text = '、'.join(f"{label} × {count}" for label, count in labels[:5])
                 if len(labels) > 5:

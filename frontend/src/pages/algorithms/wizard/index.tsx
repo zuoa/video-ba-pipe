@@ -79,7 +79,19 @@ const DETECTOR_PRESETS: readonly DetectorPreset[] = [
     path: 'templates/object_tracker.py',
     description: '为上游检测框分配跨帧 ID，可选贪心 IoU 或 ByteTrack。向导间隔最低 0.1 秒，工作流节点可设为 0 以每帧执行',
   },
+  {
+    name: '目标徘徊',
+    path: 'templates/loiter_analyzer.py',
+    description: '接在目标追踪之后，同一 ID 停留达到阈值才输出。向导间隔最低 0.1 秒，工作流节点可设为 0 以每帧执行',
+  },
 ];
+
+const FREQUENT_FRAME_SCRIPTS = new Set([
+  'templates/object_tracker.py',
+  'templates/loiter_analyzer.py',
+]);
+
+const isFrequentFrameScript = (path?: string) => Boolean(path && FREQUENT_FRAME_SCRIPTS.has(path));
 
 const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
   const availablePaths = new Set(scripts.map(script => script.path));
@@ -367,7 +379,7 @@ export default function AlgorithmWizard() {
         if (data.success) {
           setConfigSchema(data.config_schema || {});
         }
-        if (detector.scriptPath === 'templates/object_tracker.py') {
+        if (isFrequentFrameScript(detector.scriptPath)) {
           form.setFieldsValue({ intervalSeconds: 0.1 });
         }
       } catch (error) {
@@ -1387,11 +1399,13 @@ export default function AlgorithmWizard() {
                 <Form.Item
                   label="检测间隔（秒）"
                   name="intervalSeconds"
-                  initialValue={selectedDetector?.scriptPath === 'templates/object_tracker.py' ? 0.1 : 1}
+                  initialValue={isFrequentFrameScript(selectedDetector?.scriptPath) ? 0.1 : 1}
                   extra={
-                    selectedDetector?.scriptPath === 'templates/object_tracker.py'
-                      ? '追踪建议使用最小值 0.1；工作流节点可改为 0 以每帧执行'
-                      : undefined
+                    selectedDetector?.scriptPath === 'templates/loiter_analyzer.py'
+                      ? '必须接在目标追踪之后；建议间隔 0.1 秒，工作流节点可改为 0 以每帧执行'
+                      : selectedDetector?.scriptPath === 'templates/object_tracker.py'
+                        ? '追踪建议使用最小值 0.1；工作流节点可改为 0 以每帧执行'
+                        : undefined
                   }
                   rules={[{ required: true, message: '请输入检测间隔' }]}
                 >

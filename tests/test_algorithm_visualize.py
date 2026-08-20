@@ -143,3 +143,63 @@ def test_visualize_routes_chinese_label_to_unicode_renderer(monkeypatch):
 
     assert rendered_labels == ["安全帽: 0.92"]
     assert tuple(rendered[0, 0]) == (0, 255, 0)
+
+
+def test_format_detection_caption_includes_track_id_and_dwell():
+    caption = BaseAlgorithm._format_detection_caption({
+        "label_name": "person",
+        "confidence": 0.77,
+        "track_id": 3,
+        "attributes": {"dwell_seconds": 8.2},
+    })
+    assert caption == "person#3 停留 8s: 0.77"
+
+
+def test_visualize_draws_track_id_caption(monkeypatch):
+    frame_rgb = np.full((80, 120, 3), 255, dtype=np.uint8)
+    rendered_labels = []
+
+    def fake_draw_unicode_text(img, text, origin, color, font_scale, thickness):
+        rendered_labels.append(text)
+        img[0, 0] = color
+        return True
+
+    monkeypatch.setattr(BaseAlgorithm, '_draw_unicode_text', fake_draw_unicode_text)
+
+    BaseAlgorithm.visualize(
+        frame_rgb,
+        [{
+            "box": [10, 30, 70, 70],
+            "confidence": 0.77,
+            "label_name": "person",
+            "track_id": 3,
+            "attributes": {"dwell_seconds": 8},
+        }],
+        label_color="#00FF00",
+    )
+
+    assert rendered_labels == ["person#3 停留 8s: 0.77"]
+
+
+def test_visualize_draws_track_history_polyline():
+    frame_rgb = np.full((80, 80, 3), 255, dtype=np.uint8)
+    rendered = BaseAlgorithm.visualize(
+        frame_rgb,
+        [{
+            "box": [10, 10, 20, 50],
+            "confidence": 0.9,
+            "label_name": "person",
+            "track_id": 1,
+            "attributes": {
+                "history": [
+                    {"ts": 1, "cx": 15, "cy": 30},
+                    {"ts": 2, "cx": 40, "cy": 30},
+                    {"ts": 3, "cx": 60, "cy": 30},
+                ],
+            },
+        }],
+        label_color="#FF0000",
+    )
+
+    assert rendered is not None
+    assert tuple(rendered[30, 40]) == (0, 0, 255)
