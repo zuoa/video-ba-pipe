@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Image } from 'antd';
 import { getAlerts, getTodayAlertsCount, getVideoSources, getWorkflows, getAlertTrend } from '@/services/api';
 import { Alert, Task } from '../alerts/types';
 import AlertTypeBadge from '../alerts/components/AlertTypeBadge';
 import RelativeTime from '../alerts/components/RelativeTime';
-import { buildAlertVideoUrl } from '@/utils/media';
+import { buildAlertVideoUrls } from '@/utils/media';
 import {
   SafetyOutlined,
   ExclamationCircleOutlined,
@@ -17,7 +18,6 @@ import {
   UserOutlined,
   MobileOutlined,
   SyncOutlined,
-  DesktopOutlined,
   FireOutlined,
   BranchesOutlined,
   LineChartOutlined,
@@ -25,79 +25,214 @@ import {
   FileImageOutlined,
   TagOutlined,
   ApartmentOutlined,
+  LeftOutlined,
+  RightOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import AppButton from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
 import './index.css';
 
-// 告警详情弹窗组件
+/* ---------- 数据解析 helpers ---------- */
+
+interface DetectionImageItem {
+  image_path: string;
+  image_url?: string;
+  detection_time?: string;
+}
+
+const safeParseJson = <T,>(value: unknown, fallback: T): T => {
+  if (typeof value === 'string') {
+    if (!value.trim()) return fallback;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return (value as T) ?? fallback;
+};
+
+const parseDetectionImages = (raw: Alert['detection_images']): DetectionImageItem[] => {
+  const parsed = safeParseJson<unknown>(raw, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item: any) => {
+    if (typeof item === 'string') return [{ image_path: item }];
+    if (item?.image_path) {
+      return [{
+        image_path: item.image_path,
+        image_url: item.image_url,
+        detection_time: item.detection_time,
+      }];
+    }
+    return [];
+  });
+};
+
+/* ---------- 媒体项 ---------- */
+
+type WallMediaItem =
+  | { key: string; label: string; type: 'image'; src: string }
+  | { key: string; label: string; type: 'video'; candidates: string[]; rawPath: string };
+
+const buildMediaItems = (alert: Alert): WallMediaItem[] => {
+  const items: WallMediaItem[] = [];
+  if (alert.alert_image_url || alert.alert_image) {
+    items.push({
+      key: 'alert-image',
+      label: '告警截图',
+      type: 'image',
+      src: alert.alert_image_url || `/api/image/frames/${alert.alert_image}`,
+    });
+  }
+  if (alert.alert_video_url || alert.alert_video) {
+    items.push({
+      key: 'alert-video',
+      label: '告警视频',
+      type: 'video',
+      candidates: alert.alert_video_url ? [alert.alert_video_url] : buildAlertVideoUrls(alert.alert_video),
+      rawPath: alert.alert_video || '',
+    });
+  }
+  if (alert.alert_image_ori_url || alert.alert_image_ori) {
+    items.push({
+      key: 'origin-image',
+      label: '原始画面',
+      type: 'image',
+      src: alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`,
+    });
+  }
+  return items;
+};
+
+/* ---------- 内嵌视频(多地址回退) ---------- */
+
+const WallVideoPreview: React.FC<{ candidates: string[]; rawPath: string }> = ({ candidates, rawPath }) => {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const candidateKey = candidates.join('|');
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setFailed(false);
+  }, [rawPath, candidateKey]);
+
+  const currentSrc = candidates[activeIndex] || '';
+
+  if (!currentSrc || failed) {
+    return (
+      <div className="aw-video-fallback">
+        <VideoCameraOutlined />
+        <strong>{failed ? '视频无法播放' : '视频暂不可用'}</strong>
+        <span>{failed ? '浏览器无法解码该编码,告警录像需要 H.264' : '未生成可播放的视频地址'}</span>
+        {failed && (
+          <div className="aw-video-fallback-actions">
+            <button
+              type="button"
+              className="aw-nav-button"
+              onClick={() => { setActiveIndex(0); setFailed(false); }}
+            >
+              <ReloadOutlined /> 重试
+            </button>
+            {candidates[0] && (
+              <a className="aw-nav-button" href={candidates[0]} target="_blank" rel="noopener noreferrer">
+                新窗口打开
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <video
+      className="aw-video"
+      controls
+      preload="metadata"
+      src={currentSrc}
+      onError={() => {
+        if (activeIndex < candidates.length - 1) {
+          setActiveIndex(prev => prev + 1);
+        } else {
+          setFailed(true);
+        }
+      }}
+    />
+  );
+};
+
+/* ---------- 告警详情弹窗 ---------- */
+
 interface AlertDetailModalProps {
   alert: Alert;
   task?: Task;
   visible: boolean;
+  currentIndex: number;
+  total: number;
+  onNavigate: (direction: 'prev' | 'next') => void;
   onClose: () => void;
 }
 
-const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visible, onClose }) => {
+const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
+  alert,
+  task,
+  visible,
+  currentIndex,
+  total,
+  onNavigate,
+  onClose,
+}) => {
+  const [activeMediaKey, setActiveMediaKey] = useState('');
+
+  // 切换告警时回到默认媒体
+  useEffect(() => {
+    setActiveMediaKey('');
+  }, [alert.id]);
+
   if (!visible) return null;
 
-  // 解析检测图片
-  const detectionImages: Array<{ image_path: string; image_url?: string; detection_time?: string }> = [];
-  if (alert.detection_images) {
-    if (typeof alert.detection_images === 'string') {
-      try {
-        const parsed = JSON.parse(alert.detection_images);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((item: any) => {
-            if (typeof item === 'string') {
-              detectionImages.push({ image_path: item });
-            } else if (item?.image_path) {
-              detectionImages.push({
-                image_path: item.image_path,
-                image_url: item.image_url,
-                detection_time: item.detection_time
-              });
-            }
-          });
-        }
-      } catch {
-        // 解析失败，忽略
-      }
-    } else if (Array.isArray(alert.detection_images)) {
-      alert.detection_images.forEach((item: any) => {
-        if (typeof item === 'string') {
-          detectionImages.push({ image_path: item });
-        } else if (item?.image_path) {
-          detectionImages.push({
-            image_path: item.image_path,
-            image_url: item.image_url,
-            detection_time: item.detection_time
-          });
-        }
-      });
-    }
-  }
+  const detectionImages = parseDetectionImages(alert.detection_images);
+  const windowStats = safeParseJson<Record<string, any> | null>(alert.window_stats, null);
+  const mediaItems = buildMediaItems(alert);
+  const activeMedia = mediaItems.find(m => m.key === activeMediaKey) || mediaItems[0];
 
-  // 解析窗口统计
-  let windowStats: { [key: string]: any } | null = null;
-  if (alert.window_stats) {
-    try {
-      if (typeof alert.window_stats === 'string') {
-        windowStats = JSON.parse(alert.window_stats);
-      } else {
-        windowStats = alert.window_stats;
-      }
-    } catch {
-      // 解析失败，忽略
-    }
-  }
+  const computedRatio = typeof windowStats?.detection_ratio === 'number'
+    ? windowStats.detection_ratio * 100
+    : ((windowStats?.detection_count || 0) / Math.max(windowStats?.total_count || 1, 1)) * 100;
+  const ratioPercent = Number.isFinite(computedRatio) ? Math.min(100, Math.max(0, computedRatio)) : 0;
+
+  const modalTitle = (
+    <div className="aw-modal-toolbar">
+      <span className="aw-modal-title">告警详情</span>
+      <div className="aw-modal-nav">
+        <span className="aw-modal-position">{currentIndex + 1} / {total}</span>
+        <button
+          type="button"
+          className="aw-nav-button"
+          disabled={currentIndex <= 0}
+          onClick={() => onNavigate('prev')}
+        >
+          <LeftOutlined /> 上一条
+        </button>
+        <button
+          type="button"
+          className="aw-nav-button"
+          disabled={currentIndex >= total - 1}
+          onClick={() => onNavigate('next')}
+        >
+          下一条 <RightOutlined />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <AppModal
       open={visible}
       onCancel={onClose}
       footer={null}
-      title="告警详情"
+      title={modalTitle}
       description={task?.name || `任务 #${alert.task_id}`}
       kind="detail"
       size="xl"
@@ -131,6 +266,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
+                    hour12: false,
                   })}
                 </span>
               </div>
@@ -153,54 +289,67 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
             </div>
           </div>
 
-          {/* 告警图片 */}
-          {(alert.alert_image_url || alert.alert_image) && (
+          {/* 现场画面:主舞台 + 缩略图栏 */}
+          {mediaItems.length > 0 && activeMedia && (
             <div className="detail-section">
               <h3 className="section-title">
-                <FileImageOutlined />
-                告警图片
+                <PlayCircleOutlined />
+                现场画面
               </h3>
-              <div className="detail-image-container">
-                <img
-                  src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
-                  alt="告警图片"
-                  className="detail-image"
-                />
+              <div className="aw-media-layout">
+                <div className="aw-media-stage">
+                  <span className="aw-media-stage-label">{activeMedia.label}</span>
+                  {activeMedia.type === 'image' ? (
+                    <Image
+                      src={activeMedia.src}
+                      alt={activeMedia.label}
+                      preview={{ title: activeMedia.label }}
+                    />
+                  ) : (
+                    <WallVideoPreview candidates={activeMedia.candidates} rawPath={activeMedia.rawPath} />
+                  )}
+                </div>
+                {mediaItems.length > 1 && (
+                  <div className="aw-media-rail">
+                    {mediaItems.map(item => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={`aw-media-thumb ${item.key === activeMedia.key ? 'active' : ''}`}
+                        onClick={() => setActiveMediaKey(item.key)}
+                        title={item.label}
+                      >
+                        {item.type === 'image' ? (
+                          <img src={item.src} alt={item.label} loading="lazy" />
+                        ) : (
+                          <span className="aw-media-thumb-video">
+                            <PlayCircleOutlined />
+                          </span>
+                        )}
+                        <span className="aw-media-thumb-label">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* 原始图片 */}
-          {(alert.alert_image_ori_url || alert.alert_image_ori) && (
-            <div className="detail-section">
-              <h3 className="section-title">
-                <FileImageOutlined />
-                原始图片
-              </h3>
-              <div className="detail-image-container">
-                <img
-                  src={alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`}
-                  alt="原始图片"
-                  className="detail-image"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* 检测图片 */}
+          {/* 检测序列 */}
           {detectionImages.length > 0 && (
             <div className="detail-section">
               <h3 className="section-title">
                 <FileImageOutlined />
-                检测图片 ({detectionImages.length})
+                检测序列 ({detectionImages.length})
               </h3>
               <div className="detection-images-grid">
                 {detectionImages.map((img, idx) => (
-                  <div key={idx} className="detection-image-item">
-                    <img
+                  <div key={`${img.image_path}-${idx}`} className="detection-image-item">
+                    <Image
                       src={img.image_url || `/api/image/frames/${img.image_path}`}
                       alt={`检测图片 ${idx + 1}`}
                       className="detection-image"
+                      preview={{ title: `第 ${idx + 1} 次检测` }}
                     />
                     {img.detection_time && (
                       <div className="detection-image-time">
@@ -231,11 +380,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
                 </div>
                 <div className="stat-box">
                   <div className="stat-box-label">检测比例</div>
-                  <div className="stat-box-value">
-                    {windowStats.detection_ratio
-                      ? `${(windowStats.detection_ratio * 100).toFixed(1)}%`
-                      : '0%'}
-                  </div>
+                  <div className="stat-box-value">{ratioPercent.toFixed(1)}%</div>
                 </div>
                 <div className="stat-box">
                   <div className="stat-box-label">最大连续</div>
@@ -244,42 +389,48 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({ alert, task, visibl
               </div>
             </div>
           )}
-
-          {/* 视频链接 */}
-          {alert.alert_video && (
-            <div className="detail-section">
-              <h3 className="section-title">
-                <PlayCircleOutlined />
-                告警视频
-              </h3>
-              <div className="video-link">
-                <a
-                  href={alert.alert_video_url || buildAlertVideoUrl(alert.alert_video)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="video-link-button"
-                >
-                  <PlayCircleOutlined />
-                  <span>播放视频</span>
-                </a>
-              </div>
-            </div>
-          )}
         </div>
     </AppModal>
   );
 };
 
+/* ---------- 独立时钟(避免整页每秒重渲染) ---------- */
+
+const WallClock: React.FC = () => {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="time-display">
+      <div className="time-value digital-font">
+        {now.toLocaleTimeString('zh-CN', { hour12: false })}
+      </div>
+      <div className="date-value">
+        {now.toLocaleDateString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          weekday: 'short',
+        })}
+      </div>
+    </div>
+  );
+};
+
+/* ---------- 大屏页面 ---------- */
+
 const AlertWallPage: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [workflows, setWorkflows] = useState<any[]>([]);
   const [mainAlert, setMainAlert] = useState<Alert | null>(null);
   const [todayCount, setTodayCount] = useState(0);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [videoSourceCount, setVideoSourceCount] = useState(0);
   const [activeWorkflowCount, setActiveWorkflowCount] = useState(0);
   const [alertTrend, setAlertTrend] = useState<Array<{ date: string; count: number }>>([]);
@@ -289,43 +440,39 @@ const AlertWallPage: React.FC = () => {
   const mainDisplayRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLDivElement>(null);
   const lastKnownLatestIdRef = useRef<string | undefined>(undefined);
+  const mainAlertRef = useRef<Alert | null>(null);
+  const alertIdsRef = useRef('');
 
-  // 加载数据
-  const loadData = useCallback(async () => {
+  useEffect(() => {
+    mainAlertRef.current = mainAlert;
+  }, [mainAlert]);
+
+  // 快循环:告警列表 + 今日数量
+  const loadFast = useCallback(async () => {
     try {
-      const [alertsResponse, todayCountResponse, tasksResponse, workflowsResponse, trendResponse] = await Promise.all([
+      const [alertsResponse, todayCountResponse] = await Promise.all([
         getAlerts({ page: 1, per_page: 50 }),
         getTodayAlertsCount(),
-        getVideoSources(),
-        getWorkflows(),
-        getAlertTrend(7),
       ]);
 
-      const newAlerts = alertsResponse.data || [];
-      const previousAlertId = mainAlert?.id;
-      const currentLatestId = newAlerts.length > 0 ? newAlerts[0].id : undefined;
+      const newAlerts: Alert[] = alertsResponse.data || [];
 
-      setAlerts(newAlerts);
-      setTotalCount(alertsResponse.pagination?.total || 0);
-
-      // 检查今日告警数量是否变化
-      const newTodayCount = todayCountResponse.count || 0;
-      if (newTodayCount !== todayCount) {
-        setTodayCount(newTodayCount);
+      // id 序列未变化时跳过 setState,避免每 5 秒重渲染整个列表
+      const idsSignature = newAlerts.map(a => a.id).join(',');
+      if (idsSignature !== alertIdsRef.current) {
+        alertIdsRef.current = idsSignature;
+        setAlerts(newAlerts);
+        setTotalCount(alertsResponse.pagination?.total || 0);
       }
 
-      setTasks(tasksResponse || []);
-      setVideoSourceCount(tasksResponse?.length || 0);
+      const newTodayCount = todayCountResponse.count || 0;
+      setTodayCount(prev => (prev === newTodayCount ? prev : newTodayCount));
 
-      // 设置workflows和激活的编排数
-      setWorkflows(workflowsResponse || []);
-      setActiveWorkflowCount(workflowsResponse?.filter((w: any) => w.is_active).length || 0);
-
-      // 设置告警趋势
-      setAlertTrend(trendResponse?.trend || []);
-
-      // 检查是否有真正的新告警（而不是用户手动切换历史）
-      const hasNewAlert = currentLatestId && lastKnownLatestIdRef.current && currentLatestId !== lastKnownLatestIdRef.current;
+      // 检查是否有真正的新告警(而不是用户手动切换历史)
+      const currentLatestId = newAlerts.length > 0 ? newAlerts[0].id : undefined;
+      const hasNewAlert = Boolean(
+        currentLatestId && lastKnownLatestIdRef.current && currentLatestId !== lastKnownLatestIdRef.current
+      );
 
       // 更新已知的最新告警ID
       if (currentLatestId && currentLatestId !== lastKnownLatestIdRef.current) {
@@ -354,8 +501,8 @@ const AlertWallPage: React.FC = () => {
 
         // 1秒后重置新告警标志
         setTimeout(() => setIsNewAlert(false), 1000);
-      } else if (!mainAlert && newAlerts.length > 0) {
-        // 首次加载，设置最新告警
+      } else if (!mainAlertRef.current && newAlerts.length > 0) {
+        // 首次加载,设置最新告警
         setMainAlert(newAlerts[0]);
         lastKnownLatestIdRef.current = currentLatestId;
       }
@@ -363,29 +510,41 @@ const AlertWallPage: React.FC = () => {
       // 重置图片错误状态
       setImageError(false);
     } catch (error) {
-      console.error('加载数据失败:', error);
+      console.error('加载告警数据失败:', error);
     }
-  }, [mainAlert, todayCount, isManualSelect]);
+  }, []);
 
-  // 更新时间
-  const updateTime = useCallback(() => {
-    setCurrentTime(new Date());
+  // 慢循环:任务/编排/趋势等低频数据
+  const loadSlow = useCallback(async () => {
+    try {
+      const [tasksResponse, workflowsResponse, trendResponse] = await Promise.all([
+        getVideoSources(),
+        getWorkflows(),
+        getAlertTrend(7),
+      ]);
+
+      setTasks(tasksResponse || []);
+      setVideoSourceCount(tasksResponse?.length || 0);
+      setActiveWorkflowCount(workflowsResponse?.filter((w: any) => w.is_active).length || 0);
+      setAlertTrend(trendResponse?.trend || []);
+    } catch (error) {
+      console.error('加载基础数据失败:', error);
+    }
   }, []);
 
   // 初始化
   useEffect(() => {
-    loadData();
-    updateTime();
+    loadFast();
+    loadSlow();
 
-    // 定时更新
-    const timeInterval = setInterval(updateTime, 1000);
-    const dataInterval = setInterval(loadData, 5000);
+    const fastInterval = setInterval(loadFast, 5000);
+    const slowInterval = setInterval(loadSlow, 60000);
 
     return () => {
-      clearInterval(timeInterval);
-      clearInterval(dataInterval);
+      clearInterval(fastInterval);
+      clearInterval(slowInterval);
     };
-  }, [loadData, updateTime]);
+  }, [loadFast, loadSlow]);
 
   // 选择告警
   const selectAlert = (index: number) => {
@@ -416,12 +575,24 @@ const AlertWallPage: React.FC = () => {
     setTimeout(() => setSelectedAlert(null), 300); // 等待动画完成
   };
 
+  // 详情弹窗内上一条/下一条
+  const navigateDetail = useCallback((direction: 'prev' | 'next') => {
+    setSelectedAlert(prev => {
+      if (!prev) return prev;
+      const idx = alerts.findIndex(a => a.id === prev.id);
+      if (idx === -1) return prev;
+      const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
+      return nextIdx >= 0 && nextIdx < alerts.length ? alerts[nextIdx] : prev;
+    });
+  }, [alerts]);
+
   // 处理图片加载错误
   const handleImageError = () => {
     setImageError(true);
   };
 
   const mainTask = mainAlert ? tasks.find(t => t.id === mainAlert.task_id) : null;
+  const selectedIndex = selectedAlert ? alerts.findIndex(a => a.id === selectedAlert.id) : -1;
 
   // 获取告警类型图标
   const getAlertTypeIcon = (type: string): React.ReactNode => {
@@ -509,19 +680,7 @@ const AlertWallPage: React.FC = () => {
               <div className="status-dot" />
               <span>LIVE</span>
             </div>
-            <div className="time-display">
-              <div className="time-value digital-font">
-                {currentTime.toLocaleTimeString('zh-CN', { hour12: false })}
-              </div>
-              <div className="date-value">
-                {currentTime.toLocaleDateString('zh-CN', {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  weekday: 'short',
-                })}
-              </div>
-            </div>
+            <WallClock />
           </div>
         </header>
 
@@ -560,6 +719,7 @@ const AlertWallPage: React.FC = () => {
                       hour: '2-digit',
                       minute: '2-digit',
                       second: '2-digit',
+                      hour12: false,
                     }) : '--'}
                   </span>
                 </div>
@@ -594,7 +754,20 @@ const AlertWallPage: React.FC = () => {
               )}
             </div>
 
-
+            {/* 底部信息栏 */}
+            {mainAlert && (
+              <div className="main-display-footer">
+                <div className="footer-left">
+                  <AlertTypeBadge type={mainAlert.alert_type} showIcon />
+                  <span className="detection-count">检测 {mainAlert.detection_count} 帧</span>
+                </div>
+                {mainAlert.alert_message && (
+                  <div className="footer-message" title={mainAlert.alert_message}>
+                    {mainAlert.alert_message}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 右侧滚动列表 */}
@@ -622,7 +795,7 @@ const AlertWallPage: React.FC = () => {
                   return (
                     <div
                       key={alert.id}
-                      className={`alert-list-item ${index === 0 ? 'latest' : ''}`}
+                      className={`alert-list-item ${index === 0 ? 'latest' : ''} ${alert.id === mainAlert?.id ? 'active' : ''}`}
                       onClick={() => selectAlert(index)}
                     >
                       <div className="alert-item-content">
@@ -631,6 +804,7 @@ const AlertWallPage: React.FC = () => {
                             src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
                             alt=""
                             className="alert-thumbnail"
+                            loading="lazy"
                             onError={(e) => {
                               const target = e.currentTarget;
                               target.onerror = null;
@@ -706,6 +880,9 @@ const AlertWallPage: React.FC = () => {
           alert={selectedAlert}
           task={tasks.find(t => t.id === selectedAlert.task_id)}
           visible={showDetailModal}
+          currentIndex={selectedIndex === -1 ? 0 : selectedIndex}
+          total={alerts.length}
+          onNavigate={navigateDetail}
           onClose={closeDetailModal}
         />
       )}
