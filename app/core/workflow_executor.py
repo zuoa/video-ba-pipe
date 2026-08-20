@@ -331,6 +331,9 @@ class WorkflowExecutor:
         self.executed_nodes = []
         # skipped_nodes: 本帧门控/插件 skip 的节点，不进窗口样本，禁止二次 interval 清 cache
         self.skipped_nodes = set()
+        # 同帧并行分支抢同一节点时，loser 等 winner 的 cache，避免双 process
+        self._in_progress_nodes = set()
+        self._node_completion_events = {}
         # last_frame_timestamp: 记录最后处理的帧时间戳（用于多 workflow 共享 buffer 时避免重复处理）
         self.last_frame_timestamp = None
         # _latest_algorithm_results: 各算法节点最近一次检测结果及其原始帧时间戳。
@@ -408,9 +411,19 @@ class WorkflowExecutor:
             skipped_nodes = getattr(self, 'skipped_nodes', None)
             if skipped_nodes is not None:
                 skipped_nodes.clear()
+            in_progress = getattr(self, '_in_progress_nodes', None)
+            if in_progress is not None:
+                in_progress.clear()
+            completion_events = getattr(self, '_node_completion_events', None)
+            pending_events = []
+            if completion_events is not None:
+                pending_events = list(completion_events.values())
+                completion_events.clear()
             diagnostics_cache = getattr(self, 'condition_diagnostics_cache', None)
             if diagnostics_cache is not None:
                 diagnostics_cache.clear()
+        for event in pending_events:
+            event.set()
         numeric_window_detector = getattr(self, 'numeric_window_detector', None)
         if numeric_window_detector is not None:
             numeric_window_detector.clear()
@@ -2574,18 +2587,22 @@ class WorkflowExecutor:
         algo = (getattr(self, 'algorithms', None) or {}).get(node_id)
         return type(algo).__name__ == 'OCRAlgorithm'
 
-    @staticmethod
-    def _is_skip_result(result) -> bool:
+    def _is_skip_result(self, node_id, result) -> bool:
+        """Plugin-skip only for algorithm/function/external_api wrappers, never live context."""
         if not isinstance(result, dict):
+            return False
+        node = self.nodes.get(node_id)
+        if not isinstance(node, (AlgorithmNodeData, FunctionNodeData, ExternalApiNodeData)):
             return False
         if result.get('skipped') is True:
             return True
+        if result.get('node_id') != node_id:
+            return False
         inner = result.get('result')
-        if isinstance(inner, dict):
-            metadata = inner.get('metadata') or {}
-            if isinstance(metadata, dict) and metadata.get('execution_state') == 'skipped':
-                return True
-        return False
+        if not isinstance(inner, dict):
+            return False
+        metadata = inner.get('metadata') or {}
+        return isinstance(metadata, dict) and metadata.get('execution_state') == 'skipped'
 
     def _cache_detections(self, cached) -> list:
         if not isinstance(cached, dict):
@@ -2597,8 +2614,18 @@ class WorkflowExecutor:
                 return detections
         return []
 
+    def _upstream_empty_or_skipped(self, cached) -> bool:
+        if not isinstance(cached, dict):
+            return False
+        if cached.get('skipped') is True:
+            return True
+        metadata = (cached.get('result') or {}).get('metadata') or {}
+        if isinstance(metadata, dict) and metadata.get('execution_state') == 'skipped':
+            return True
+        return not self._cache_detections(cached)
+
     def _resolve_gate_reason_code(self, node_id):
-        upstream_id, _condition = self._first_gated_incoming(node_id)
+        upstream_id, condition = self._first_gated_incoming(node_id)
         if not upstream_id:
             return 'gate_failed', None
 
@@ -2609,10 +2636,16 @@ class WorkflowExecutor:
                 if upstream_id in self.node_results_cache
                 else None
             )
+            upstream_node = self.nodes.get(upstream_id)
 
         if not executed:
             return 'upstream_not_executed', upstream_id
-        if cached is not None and not self._cache_detections(cached):
+        # 条件诊断 cache 固定 detections=[]，不能当成上游无目标
+        if isinstance(upstream_node, ConditionNodeData):
+            return 'gate_failed', upstream_id
+        if condition == 'detected' and self._upstream_empty_or_skipped(cached):
+            return 'upstream_empty', upstream_id
+        if condition in ('true', 'false', 'yes', 'no') and self._upstream_empty_or_skipped(cached):
             return 'upstream_empty', upstream_id
         return 'gate_failed', upstream_id
 
@@ -2663,6 +2696,58 @@ class WorkflowExecutor:
         if isinstance(cached, dict):
             return dict(cached)
         return context
+
+    def _await_or_claim_node_execution(self, node_id, context):
+        """Claim this node for the current frame, or wait for the in-flight winner.
+
+        Returns (claimed, completion_event, cached_result).
+        If claimed is False, cached_result is the winner's shallow copy (or context).
+        """
+        in_progress = getattr(self, '_in_progress_nodes', None)
+        events = getattr(self, '_node_completion_events', None)
+        if in_progress is None or events is None:
+            with self._state_lock:
+                already = node_id in self.executed_nodes or node_id in self.skipped_nodes
+                cached = (
+                    dict(self.node_results_cache[node_id])
+                    if already and node_id in self.node_results_cache
+                    else None
+                )
+            if already:
+                return False, None, cached if cached is not None else context
+            return True, None, None
+
+        while True:
+            wait_event = None
+            with self._state_lock:
+                already = node_id in self.executed_nodes or node_id in self.skipped_nodes
+                if already:
+                    cached = (
+                        dict(self.node_results_cache[node_id])
+                        if node_id in self.node_results_cache
+                        else None
+                    )
+                    return False, None, cached if cached is not None else context
+                if node_id in in_progress:
+                    wait_event = events.get(node_id)
+                else:
+                    in_progress.add(node_id)
+                    completion_event = threading.Event()
+                    events[node_id] = completion_event
+                    return True, completion_event, None
+            if wait_event is not None:
+                wait_event.wait()
+
+    def _release_node_execution(self, node_id, completion_event):
+        in_progress = getattr(self, '_in_progress_nodes', None)
+        events = getattr(self, '_node_completion_events', None)
+        with self._state_lock:
+            if in_progress is not None:
+                in_progress.discard(node_id)
+            if events is not None:
+                events.pop(node_id, None)
+        if completion_event is not None:
+            completion_event.set()
     
     def _execute_node(self, node_id, context):
         """
@@ -2681,123 +2766,121 @@ class WorkflowExecutor:
             )
             return None
 
-        with self._state_lock:
-            already = node_id in self.executed_nodes or node_id in self.skipped_nodes
-            cached = (
-                dict(self.node_results_cache[node_id])
-                if already and node_id in self.node_results_cache
-                else None
-            )
-        if already:
+        claimed, completion_event, cached = self._await_or_claim_node_execution(node_id, context)
+        if not claimed:
             logger.debug(
                 f"[Workflow-{self.workflow_id}] 节点 {node_id} 本帧已执行或已 skip，跳过重复调度"
             )
-            return cached if cached is not None else context
-
-        had_last_exec = node_id in self.node_last_exec_time
-        prev_last_exec = self.node_last_exec_time.get(node_id)
-
-        if not self._should_execute_node(node_id):
-            # 禁止对本帧 skip 哨兵 del cache（skipped_nodes 已在入口返回，此处再守一层）
-            if node_id in self.skipped_nodes:
-                return self._copy_cached_node_result(node_id, context)
-            # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
-            if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData))
-                and node_id in self.node_results_cache):
-                logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
-                with self._state_lock:
-                    if node_id in self.node_results_cache:
-                        del self.node_results_cache[node_id]
-            return None
-
-        # ========== 追踪执行状态 ==========
-        start_time = time.time()
-        execution_success = True
-        execution_error = None
-
-        node_type = node.node_type
-        handler = self.node_handlers.get(node_type)
-
-        if not handler:
-            # 从 context 中获取 log_collector 并记录警告
-            log_collector = context.get('log_collector')
-            if log_collector:
-                log_collector.add_warning(node_id, f"未知节点类型: {node_type}")
-            logger.warning(f"[Workflow-{self.workflow_id}] 未知节点类型: {node_type} (节点 {node_id})")
-
-            # 记录失败状态
-            execution_success = False
-            execution_error = f"未知节点类型: {node_type}"
-
-            # 更新追踪状态
-            with self._state_lock:
-                self.execution_results[node_id] = {
-                    'success': False,
-                    'error': execution_error,
-                    'execution_time': int((time.time() - start_time) * 1000)
-                }
-            return context
-
-        if WORKFLOW_FRAME_LOGS_ENABLED:
-            logger.info(
-                f"[Workflow-{self.workflow_id}] 执行节点 {node_id} "
-                f"(类型: {node_type})"
-            )
+            return cached
 
         try:
-            result = handler(node_id, context)
+            had_last_exec = node_id in self.node_last_exec_time
+            prev_last_exec = self.node_last_exec_time.get(node_id)
 
-            if self._is_skip_result(result):
+            if not self._should_execute_node(node_id):
+                # 禁止对本帧 skip 哨兵 del cache（skipped_nodes 已在入口返回，此处再守一层）
+                if node_id in self.skipped_nodes:
+                    return self._copy_cached_node_result(node_id, context)
+                # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
+                if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData))
+                    and node_id in self.node_results_cache):
+                    logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
+                    with self._state_lock:
+                        if node_id in self.node_results_cache:
+                            del self.node_results_cache[node_id]
+                return None
+
+            # ========== 追踪执行状态 ==========
+            start_time = time.time()
+            execution_success = True
+            execution_error = None
+
+            node_type = node.node_type
+            handler = self.node_handlers.get(node_type)
+
+            if not handler:
+                # 从 context 中获取 log_collector 并记录警告
+                log_collector = context.get('log_collector')
+                if log_collector:
+                    log_collector.add_warning(node_id, f"未知节点类型: {node_type}")
+                logger.warning(f"[Workflow-{self.workflow_id}] 未知节点类型: {node_type} (节点 {node_id})")
+
+                # 记录失败状态
+                execution_success = False
+                execution_error = f"未知节点类型: {node_type}"
+
+                # 更新追踪状态
                 with self._state_lock:
-                    if had_last_exec:
-                        self.node_last_exec_time[node_id] = prev_last_exec
-                    else:
-                        self.node_last_exec_time.pop(node_id, None)
-                    self.skipped_nodes.add(node_id)
-                    if isinstance(result, dict):
-                        self.node_results_cache[node_id] = result
+                    self.execution_results[node_id] = {
+                        'success': False,
+                        'error': execution_error,
+                        'execution_time': int((time.time() - start_time) * 1000)
+                    }
+                return context
+
+            if WORKFLOW_FRAME_LOGS_ENABLED:
+                logger.info(
+                    f"[Workflow-{self.workflow_id}] 执行节点 {node_id} "
+                    f"(类型: {node_type})"
+                )
+
+            try:
+                result = handler(node_id, context)
+
+                if self._is_skip_result(node_id, result):
+                    with self._state_lock:
+                        if had_last_exec:
+                            self.node_last_exec_time[node_id] = prev_last_exec
+                        else:
+                            self.node_last_exec_time.pop(node_id, None)
+                        self.skipped_nodes.add(node_id)
+                        if isinstance(result, dict):
+                            self.node_results_cache[node_id] = result
+                        self.execution_results[node_id] = {
+                            'success': True,
+                            'skipped': True,
+                            'execution_time': 0,
+                        }
+                    return result
+
+                # 记录成功执行
+                if node_id not in self.executed_nodes:
+                    with self._state_lock:
+                        if node_id not in self.executed_nodes:
+                            self.executed_nodes.append(node_id)
+
+                with self._state_lock:
                     self.execution_results[node_id] = {
                         'success': True,
-                        'skipped': True,
-                        'execution_time': 0,
+                        'execution_time': int((time.time() - start_time) * 1000)
                     }
+
                 return result
 
-            # 记录成功执行
-            if node_id not in self.executed_nodes:
+            except Exception as e:
+                execution_success = False
+                execution_error = str(e)
+                logger.error(f"[Workflow-{self.workflow_id}] 节点 {node_id} 执行异常: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # 记录失败状态
                 with self._state_lock:
-                    if node_id not in self.executed_nodes:
-                        self.executed_nodes.append(node_id)
+                    self.execution_results[node_id] = {
+                        'success': False,
+                        'error': execution_error,
+                        'execution_time': int((time.time() - start_time) * 1000)
+                    }
 
-            with self._state_lock:
-                self.execution_results[node_id] = {
-                    'success': True,
-                    'execution_time': int((time.time() - start_time) * 1000)
-                }
+                # 从 context 获取 log_collector 并记录错误
+                log_collector = context.get('log_collector')
+                if log_collector:
+                    log_collector.add_error(node_id, f"执行异常: {execution_error}")
 
-            return result
-
-        except Exception as e:
-            execution_success = False
-            execution_error = str(e)
-            logger.error(f"[Workflow-{self.workflow_id}] 节点 {node_id} 执行异常: {e}")
-            import traceback
-            traceback.print_exc()
-
-            # 记录失败状态
-            with self._state_lock:
-                self.execution_results[node_id] = {
-                    'success': False,
-                    'error': execution_error,
-                    'execution_time': int((time.time() - start_time) * 1000)
-                }
-
-            # 从 context 获取 log_collector 并记录错误
-            log_collector = context.get('log_collector')
-            if log_collector:
-                log_collector.add_error(node_id, f"执行异常: {execution_error}")
-
-            return None
+                return None
+        finally:
+            if claimed:
+                self._release_node_execution(node_id, completion_event)
 
     def _execute_single_node(self, node_id, context):
         """执行单个节点（不处理后续节点）"""
@@ -3811,6 +3894,8 @@ class WorkflowExecutor:
             self.execution_results.clear()
             self.executed_nodes.clear()
             self.skipped_nodes.clear()
+            self._in_progress_nodes.clear()
+            self._node_completion_events.clear()
             self.node_results_cache.clear()
             self.condition_diagnostics_cache.clear()
             # 测试模式每次都应完整执行，避免 interval 导致后续帧被跳过
@@ -3857,6 +3942,8 @@ class WorkflowExecutor:
             self.execution_results.clear()
             self.executed_nodes.clear()
             self.skipped_nodes.clear()
+            self._in_progress_nodes.clear()
+            self._node_completion_events.clear()
 
         self._execute_by_topology_levels(executor=executor, context=context)
         self._record_to_window_detector_for_all_alerts(context)

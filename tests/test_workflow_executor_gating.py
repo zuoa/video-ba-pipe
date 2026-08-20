@@ -70,6 +70,8 @@ def _stub_executor(nodes, connections, algorithms=None):
     executor.execution_results = {}
     executor.executed_nodes = []
     executor.skipped_nodes = set()
+    executor._in_progress_nodes = set()
+    executor._node_completion_events = {}
     executor.node_last_exec_time = {node_id: 0 for node_id in nodes}
     executor.algorithms = {}
     executor.algorithm_configs = {}
@@ -151,6 +153,8 @@ def _run(executor, extra_context=None):
         executor.executed_nodes.clear()
         executor.skipped_nodes.clear()
         executor.execution_results.clear()
+        executor._in_progress_nodes.clear()
+        executor._node_completion_events.clear()
     executor._execute_by_topology_levels(executor=None, context=context)
     return context
 
@@ -254,7 +258,9 @@ def test_condition_true_edge_skips_ocr_without_boxes():
     _run(executor)
 
     assert ocr.call_count == 0
-    assert _skip_cache(executor, 'ocr').get('skipped') is True
+    sentinel = _skip_cache(executor, 'ocr')
+    assert sentinel.get('skipped') is True
+    assert (sentinel.get('result') or {}).get('metadata', {}).get('reason_code') == 'gate_failed'
 
 
 def test_mixed_incoming_or_null_edge_runs_ocr():
@@ -481,7 +487,7 @@ def test_plugin_skip_rolls_back_last_exec_and_second_call_keeps_cache():
     assert 'ocr' not in executor.node_last_exec_time
     assert 'ocr' in executor.skipped_nodes
     assert 'ocr' not in executor.executed_nodes
-    assert WorkflowExecutor._is_skip_result(first)
+    assert executor._is_skip_result('ocr', first)
     cached = executor.node_results_cache['ocr']
     assert cached is not None
 
@@ -518,3 +524,141 @@ def test_has_gated_incoming_is_opt_in():
 
     empty, _, _ = _banner_graph(None)
     assert empty._has_gated_incoming('ocr') is False
+
+
+def test_plugin_skip_ocr_empty_edge_does_not_skip_condition():
+    ocr = _CountingAlgo(skip=True)
+    nodes = {
+        'source': SourceNodeData(node_id='source'),
+        'ocr': _algo_node('ocr'),
+        'cond': create_node_data({
+            'id': 'cond',
+            'type': 'condition',
+            'data': {
+                'conditionKind': 'ocr_text',
+                'sourceNodeId': 'ocr',
+                'textOperator': 'contains',
+                'patternType': 'keywords',
+                'keywords': ['安全'],
+                'keywordLogic': 'any',
+            },
+        }),
+        'alert': AlertNodeData(node_id='alert'),
+    }
+    connections = [
+        _conn('source', 'ocr'),
+        _conn('ocr', 'cond'),
+        _conn('cond', 'alert', 'true'),
+    ]
+    executor = _stub_executor(nodes, connections, {'ocr': ocr})
+    context = _run(executor)
+
+    assert ocr.call_count == 1
+    assert 'ocr' in executor.skipped_nodes
+    assert 'cond' in executor.executed_nodes
+    assert 'cond' not in executor.skipped_nodes
+    cached = _skip_cache(executor, 'cond')
+    assert 'frame_nv12' not in cached
+    assert 'log_collector' not in cached
+    assert cached.get('node_id') == 'cond'
+    assert cached.get('result', {}).get('detections') == []
+    assert executor._is_skip_result('cond', context) is False
+    assert executor.alert_calls == []
+
+
+def test_plugin_skip_ocr_empty_edge_count_condition_stays_executed():
+    ocr = _CountingAlgo(skip=True)
+    nodes = {
+        'source': SourceNodeData(node_id='source'),
+        'ocr': _algo_node('ocr'),
+        'cond': create_node_data({
+            'id': 'cond',
+            'type': 'condition',
+            'data': {'targetCount': 0, 'comparisonType': '=='},
+        }),
+        'alert': AlertNodeData(node_id='alert'),
+    }
+    connections = [
+        _conn('source', 'ocr'),
+        _conn('ocr', 'cond'),
+        _conn('cond', 'alert', 'true'),
+    ]
+    executor = _stub_executor(nodes, connections, {'ocr': ocr})
+    _run(executor)
+
+    assert 'ocr' in executor.skipped_nodes
+    assert 'cond' in executor.executed_nodes
+    assert 'cond' not in executor.skipped_nodes
+    cached = _skip_cache(executor, 'cond')
+    assert 'frame_nv12' not in cached
+    assert cached.get('result', {}).get('detections') == []
+
+
+def test_is_skip_result_ignores_live_context_payload():
+    executor, _, _ = _banner_graph('detected')
+    live_context = _frame_context()
+    live_context['result'] = {
+        'detections': [],
+        'metadata': {'execution_state': 'skipped', 'ocr_checked': False},
+    }
+    live_context['has_detection'] = False
+    assert executor._is_skip_result('ocr', live_context) is False
+
+    wrapper = {
+        'node_id': 'ocr',
+        'skipped': False,
+        'has_detection': False,
+        'result': {
+            'detections': [],
+            'metadata': {'execution_state': 'skipped', 'ocr_checked': False},
+        },
+    }
+    assert executor._is_skip_result('ocr', wrapper) is True
+    wrapper['skipped'] = True
+    wrapper.pop('node_id', None)
+    assert executor._is_skip_result('ocr', wrapper) is True
+
+
+def test_parallel_dual_path_process_runs_once():
+    started = threading.Event()
+    release = threading.Event()
+    call_lock = threading.Lock()
+
+    class _BlockingAlgo(_CountingAlgo):
+        def process(self, frame, roi_regions, upstream_results=None):
+            with call_lock:
+                self.call_count += 1
+            started.set()
+            assert release.wait(timeout=2)
+            return {
+                'detections': [dict(BOX)],
+                'metadata': {},
+            }
+
+    algo = _BlockingAlgo(detections=[BOX])
+    nodes = {'ocr': _algo_node('ocr', interval_seconds=0)}
+    executor = _stub_executor(nodes, [], {'ocr': algo})
+    results = [None, None]
+    barrier = threading.Barrier(2)
+
+    def _run_node(index):
+        barrier.wait()
+        results[index] = executor._execute_node('ocr', _frame_context())
+
+    threads = [
+        threading.Thread(target=_run_node, args=(0,)),
+        threading.Thread(target=_run_node, args=(1,)),
+    ]
+    for thread in threads:
+        thread.start()
+    assert started.wait(timeout=2)
+    release.set()
+    for thread in threads:
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+
+    assert algo.call_count == 1
+    assert 'ocr' in executor.executed_nodes
+    assert results[0] is not None and results[1] is not None
+    assert results[0].get('has_detection') is True
+    assert results[1].get('has_detection') is True
