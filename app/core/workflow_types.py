@@ -177,6 +177,12 @@ class FunctionNodeData(NodeContext):
 
 
 @dataclass
+class DetectionFilterNodeData(NodeContext):
+    node_type: str = "detection_filter"
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ExternalApiNodeData(NodeContext):
     node_type: str = "external_api"
     data_id: Optional[int] = None
@@ -205,6 +211,8 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'roi': RoiDrawNodeData,
         'alert': AlertNodeData,
         'function': FunctionNodeData,
+        'detection_filter': DetectionFilterNodeData,
+        'detectionFilter': DetectionFilterNodeData,
         'external_api': ExternalApiNodeData,
         'webhook': WebhookNodeData,
     }
@@ -234,6 +242,12 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             interval_seconds=config.get('interval_seconds'),
             config=config,
             input_nodes=data.get('input_nodes', [])
+        )
+    elif node_type in ('detection_filter', 'detectionFilter'):
+        return node_class(
+            node_type='detection_filter',
+            node_id=node_id,
+            config=node_dict.get('config', {}) or {},
         )
     elif node_type == 'external_api':
         config = node_dict.get('config', {})

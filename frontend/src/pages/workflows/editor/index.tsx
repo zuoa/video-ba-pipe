@@ -128,6 +128,7 @@ export default function WorkflowEditorPage() {
                             originalType === 'algorithm' ? 'algorithm' :
                             originalType === 'external_api' ? 'externalApi' :
                             originalType === 'function' ? 'function' :
+                            originalType === 'detection_filter' ? 'detectionFilter' :
                             originalType === 'condition' ? 'condition' :
                             originalType === 'time_schedule' ? 'timeSchedule' :
                             originalType === 'roi' ? 'roi' :
@@ -494,6 +495,20 @@ export default function WorkflowEditorPage() {
       message.warning('Webhook 只能连接一个告警输出节点');
       return;
     }
+    if (targetType === 'detectionFilter' || targetType === 'detection_filter') {
+      const allowedSourceTypes = new Set([
+        'algorithm', 'externalApi', 'external_api', 'function',
+        'detectionFilter', 'detection_filter',
+      ]);
+      if (!allowedSourceTypes.has(sourceType)) {
+        message.warning('目标尺寸筛选只能连接检测结果节点');
+        return;
+      }
+      if (edges.some((edge) => edge.target === params.target)) {
+        message.warning('目标尺寸筛选只能连接一个上游结果节点');
+        return;
+      }
+    }
     const targetConditionKind = targetNode?.data?.conditionKind || targetNode?.data?.condition_kind;
     if (
       targetType === 'condition'
@@ -593,6 +608,8 @@ export default function WorkflowEditorPage() {
           ? 'source'
           : nodeType === 'externalApi'
             ? 'external_api'
+            : nodeType === 'detectionFilter'
+              ? 'detection_filter'
             : nodeType === 'timeSchedule'
               ? 'time_schedule'
             : nodeType;
@@ -1021,6 +1038,7 @@ export default function WorkflowEditorPage() {
                   case 'algorithm': return '#52c41a';
                   case 'externalApi': return '#1677ff';
                   case 'function': return '#722ed1';
+                  case 'detectionFilter': return '#531dab';
                   case 'condition': return '#faad14';
                   case 'timeSchedule': return '#2f54eb';
                   case 'roi': return '#fa8c16';

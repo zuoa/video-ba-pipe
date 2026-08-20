@@ -345,7 +345,20 @@ Performs math on detection results from one or two upstream algorithm nodes.
 
 > When wiring two algorithm nodes into a function node, the first connection is input A and the second is input B.
 
-### 10.8 Alert Output Node (alert)
+### 10.8 Detection Size Filter Node (detection_filter)
+
+Post-filters bounding boxes from one upstream result node and passes only matching detections downstream. Chain filter nodes to combine multiple rules.
+
+| Parameter | Description |
+|---|---|
+| `config.dimension` | `height` or `width` |
+| `config.unit` | `pixel` for absolute pixels or `ratio` for a 0-1 share of the original frame |
+| `config.comparison` | `gte` for an inclusive minimum or `lte` for an inclusive maximum |
+| `config.threshold` | Non-negative threshold; ratio values must be between 0 and 1 |
+
+Semantic results without a valid bounding box are removed. The node must have exactly one upstream detection-result node.
+
+### 10.9 Alert Output Node (alert)
 
 | Parameter | Description |
 |---|---|
@@ -381,7 +394,7 @@ Performs math on detection results from one or two upstream algorithm nodes.
 
 After an alert fires, the same type cools down for 60 seconds to avoid alert flooding.
 
-### 10.9 Webhook Node (webhook)
+### 10.10 Webhook Node (webhook)
 
 Can only be attached after an alert node; pushes alerts to third parties:
 

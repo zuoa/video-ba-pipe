@@ -200,6 +200,28 @@
   color: #722ed1;
 }
 
+.detection-filter-node {
+  border-color: #531dab;
+  background:
+    linear-gradient(90deg, rgba(83, 29, 171, 0.06) 0 4px, transparent 4px),
+    #fff;
+}
+
+.detection-filter-node .node-icon {
+  color: #531dab;
+}
+
+.detection-filter-handle {
+  background: #531dab;
+}
+
+.detection-filter-rule {
+  margin-bottom: 0;
+  color: #531dab;
+  background: #f9f0ff;
+  border: 1px solid #d3adf7;
+}
+
 .webhook-node {
   border-color: #13c2c2;
   background: linear-gradient(135deg, #f0fffe 0%, #ffffff 72%);

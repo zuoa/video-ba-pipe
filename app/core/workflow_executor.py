@@ -66,7 +66,8 @@ from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.core.numeric_window_detector import NumericWindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, DetectionFilterNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
+from app.core.detection_filter import filter_detections_by_size
 from app.core.time_schedule import evaluate_weekly_schedule
 from app.core.execution_log_collector import ExecutionLogCollector
 from app.core.webhook_notifier import (
@@ -349,6 +350,7 @@ class WorkflowExecutor:
             'roi': self._handle_roi_draw_node,  # 支持前后端两种类型名称
             'alert': self._handle_output_node,
             'function': self._handle_function_node,
+            'detection_filter': self._handle_detection_filter_node,
             'external_api': self._handle_external_api_node,
             'webhook': self._handle_webhook_node,
         }
@@ -1030,6 +1032,7 @@ class WorkflowExecutor:
             'algorithm': 2,
             'external_api': 2,
             'function': 3,
+            'detection_filter': 3,
             'condition': 4,
             'time_schedule': 4,
             'output': 5,
@@ -1045,8 +1048,8 @@ class WorkflowExecutor:
         """
         for node_id in level_nodes:
             node = self.nodes.get(node_id)
-            if isinstance(node, FunctionNodeData):
-                # 函数节点需要等待上游，不能与其他函数节点并行
+            if isinstance(node, (FunctionNodeData, DetectionFilterNodeData)):
+                # 结果转换节点需要等待上游，不能与同层节点并行
                 return False
         return True
 
@@ -1078,6 +1081,20 @@ class WorkflowExecutor:
                 return False
 
         return True
+
+    def _check_detection_filter_node_ready(self, node_id):
+        """尺寸筛选节点只有在唯一上游结果已进入缓存后才执行。"""
+        node = self.nodes.get(node_id)
+        if not isinstance(node, DetectionFilterNodeData):
+            return True
+        upstream_ids = [
+            conn['from'] for conn in self.connections
+            if conn.get('to') == node_id and conn.get('from')
+        ]
+        if len(upstream_ids) != 1:
+            return False
+        with self._state_lock:
+            return upstream_ids[0] in self.node_results_cache
     
     def _get_node_interval(self, node_id):
         node = self.nodes.get(node_id)
@@ -2468,6 +2485,102 @@ class WorkflowExecutor:
             traceback.print_exc()
             return None
 
+    def _handle_detection_filter_node(self, node_id, context):
+        """Filter one upstream detection list by an absolute or frame-relative size rule."""
+        node = self.nodes.get(node_id)
+        log_collector = context.get('log_collector')
+        if not isinstance(node, DetectionFilterNodeData):
+            if log_collector:
+                log_collector.add_warning(node_id, "节点类型不是目标尺寸筛选")
+            return None
+
+        upstream_results = self._get_upstream_results(node_id)
+        if len(upstream_results) != 1:
+            if log_collector:
+                log_collector.add_warning(node_id, "必须且只能有一个上游结果节点")
+            logger.warning(
+                f"[Workflow-{self.workflow_id}] 目标尺寸筛选节点 {node_id} "
+                f"上游结果数量无效: {len(upstream_results)}"
+            )
+            return None
+
+        upstream_node_id, upstream_payload = next(iter(upstream_results.items()))
+        frame = context.get('frame')
+        frame_height = frame_width = None
+        if frame is not None and getattr(frame, 'ndim', 0) >= 2:
+            frame_height, frame_width = frame.shape[:2]
+
+        try:
+            filtered, stats = filter_detections_by_size(
+                upstream_payload.get('detections') or [],
+                node.config,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+        except Exception as exc:
+            if log_collector:
+                log_collector.add_error(node_id, f"配置或数据处理异常: {exc}")
+            logger.error(
+                f"[Workflow-{self.workflow_id}] 目标尺寸筛选节点 {node_id} 处理异常: {exc}"
+            )
+            return None
+
+        metadata = dict(upstream_payload.get('metadata') or {})
+        existing_history = metadata.get('detection_filters')
+        filter_history = list(existing_history) if isinstance(existing_history, list) else []
+        filter_entry = {'node_id': node_id, **stats}
+        filter_history.append(filter_entry)
+        metadata['detection_filters'] = filter_history
+
+        result_payload = dict(upstream_payload)
+        result_payload['detections'] = filtered
+        result_payload['metadata'] = metadata
+
+        with self._state_lock:
+            upstream_cache = dict(self.node_results_cache.get(upstream_node_id) or {})
+        result = {
+            'node_id': node_id,
+            'has_detection': bool(filtered),
+            'result': result_payload,
+            'roi_mask': upstream_cache.get('roi_mask'),
+            'label_color': upstream_cache.get('label_color', context.get('label_color', '#722ed1')),
+            'upstream_node_id': upstream_cache.get('upstream_node_id', upstream_node_id),
+        }
+
+        if self.test_mode:
+            result_image = self._save_test_result_image(
+                node_id=node_id,
+                frame_rgb=frame,
+                detections=filtered,
+                label_color=result['label_color'],
+                roi_mask=result.get('roi_mask'),
+                upstream_node_id=result.get('upstream_node_id'),
+            )
+            if result_image:
+                result['result_image'] = result_image
+
+        if log_collector:
+            summary = (
+                f"目标尺寸筛选完成：{stats['input_count']} → {stats['output_count']}，"
+                f"过滤 {stats['filtered_count']} 个"
+            )
+            log_collector.add_info(
+                node_id,
+                summary,
+                metadata={'event_type': 'detection_filter', **filter_entry},
+            )
+            log_collector.add_detection_result(
+                node_id,
+                filtered,
+                node_name="目标尺寸筛选输出",
+                has_detection=bool(filtered),
+                metadata=filter_entry,
+            )
+
+        with self._state_lock:
+            self.node_results_cache[node_id] = result
+        return result
+
     def _get_upstream_results(self, node_id):
         """
         获取上游节点的执行结果
@@ -2592,7 +2705,7 @@ class WorkflowExecutor:
         if not isinstance(result, dict):
             return False
         node = self.nodes.get(node_id)
-        if not isinstance(node, (AlgorithmNodeData, FunctionNodeData, ExternalApiNodeData)):
+        if not isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData)):
             return False
         if result.get('skipped') is True:
             return True
@@ -2782,7 +2895,7 @@ class WorkflowExecutor:
                 if node_id in self.skipped_nodes:
                     return self._copy_cached_node_result(node_id, context)
                 # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
-                if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData))
+                if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData, DetectionFilterNodeData))
                     and node_id in self.node_results_cache):
                     logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
                     with self._state_lock:
@@ -2985,22 +3098,27 @@ class WorkflowExecutor:
             if already_skipped:
                 return
             if not already_executed:
-                if isinstance(node, (AlgorithmNodeData, FunctionNodeData, ExternalApiNodeData)):
+                if isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData)):
                     self._write_gate_skip_sentinel(node_id, context)
                     return
                 if isinstance(node, ConditionNodeData):
                     return
 
-        # 对于函数节点，特殊处理
-        if isinstance(node, FunctionNodeData):
-            if not self._check_function_node_ready(node_id):
+        # 对于结果转换节点，等待上游完成后执行并继续下游分支
+        if isinstance(node, (FunctionNodeData, DetectionFilterNodeData)):
+            ready = (
+                self._check_function_node_ready(node_id)
+                if isinstance(node, FunctionNodeData)
+                else self._check_detection_filter_node_ready(node_id)
+            )
+            if not ready:
                 # 上游节点未完成（可能因为执行间隔跳过），静默跳过
                 return
 
             # 执行函数节点
             result = self._execute_single_node(node_id, context)
             if result is None:
-                logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} 返回None")
+                logger.debug(f"[Workflow-{self.workflow_id}] 结果转换节点 {node_id} 返回None")
                 return
 
             # 函数节点执行完后，继续执行下游节点（通常是 alert）
@@ -3025,7 +3143,7 @@ class WorkflowExecutor:
                 next_id = next_info['target']
                 condition = next_info.get('condition')
                 if self._evaluate_condition(condition, context):
-                    logger.debug(f"[Workflow-{self.workflow_id}] 函数节点 {node_id} -> {next_id} 条件满足，继续执行")
+                    logger.debug(f"[Workflow-{self.workflow_id}] 结果转换节点 {node_id} -> {next_id} 条件满足，继续执行")
                     # 传递原始 context 而不是 result，确保 log_collector 能被传递到 Alert 节点
                     branch_context = context.copy()
                     branch_context['_routing_from_node_id'] = node_id
@@ -4449,6 +4567,27 @@ class WorkflowExecutor:
                 }
             else:
                 return {'message': '函数未产生结果'}
+
+        elif node_type == 'detection_filter':
+            with self._state_lock:
+                cached = self.node_results_cache.get(node_id)
+            if not cached:
+                return {'message': '目标尺寸筛选未产生结果'}
+            detections = cached.get('result', {}).get('detections', [])
+            metadata = cached.get('result', {}).get('metadata', {})
+            history = metadata.get('detection_filters') or []
+            stats = history[-1] if history and isinstance(history[-1], dict) else {}
+            return {
+                'message': (
+                    f"尺寸筛选完成：{stats.get('input_count', 0)} → "
+                    f"{stats.get('output_count', len(detections))}"
+                ),
+                'detections': detections,
+                'detection_count': len(detections),
+                'filter_stats': stats,
+                'debug_info': stats,
+                'result_image': cached.get('result_image'),
+            }
 
         # 条件节点
         elif node_type == 'condition':

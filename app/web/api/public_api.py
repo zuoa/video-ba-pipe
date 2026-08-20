@@ -18,6 +18,7 @@ from app.core.database_models import ApiKey, VideoSource, Workflow, db
 from app.core.mediamtx_client import mediamtx_client
 from app.core.license_service import LicenseError, quota_capacity
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
+from app.core.detection_filter import validate_workflow_detection_filter_nodes
 from app.core.video_probe import normalize_video_codec
 from app.core.webhook_workflow_config import mask_workflow_webhook_secrets
 from app.core.workflow_runtime import (
@@ -481,6 +482,9 @@ def register_public_api(app):
 
         template_data = template.data_dict
         valid, message = validate_template_source_node(template_data)
+        if not valid:
+            return _error('invalid_workflow_template', message, 400)
+        valid, message = validate_workflow_detection_filter_nodes(template_data)
         if not valid:
             return _error('invalid_workflow_template', message, 400)
         valid, message = validate_workflow_time_schedule_nodes(template_data)

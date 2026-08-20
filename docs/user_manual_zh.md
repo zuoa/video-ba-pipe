@@ -345,7 +345,20 @@ def process(frame, roi_regions, state, upstream_results=None):
 
 > 连接两个算法节点到函数节点时，先连的为输入 A，后连的为输入 B。
 
-### 10.8 告警输出节点（alert）
+### 10.8 目标尺寸筛选节点（detection_filter）
+
+对一个上游节点的检测框进行后过滤，只向下游传递符合尺寸条件的目标。多个规则可通过串联节点组合。
+
+| 参数 | 说明 |
+|---|---|
+| `config.dimension` | `height` 高度 / `width` 宽度 |
+| `config.unit` | `pixel` 绝对像素 / `ratio` 占原始画面比例（0-1） |
+| `config.comparison` | `gte` 大于等于（最小值）/ `lte` 小于等于（最大值） |
+| `config.threshold` | 非负阈值；比例模式必须在 0-1 之间 |
+
+没有有效检测框的语义结果会被过滤。节点必须且只能连接一个上游检测结果节点。
+
+### 10.9 告警输出节点（alert）
 
 | 参数 | 说明 |
 |---|---|
@@ -381,7 +394,7 @@ def process(frame, roi_regions, state, upstream_results=None):
 
 同类告警触发后冷却 60 秒，避免刷屏。
 
-### 10.9 Webhook 推送节点（webhook）
+### 10.10 Webhook 推送节点（webhook）
 
 只能挂在告警节点之后，将告警推送到第三方：
 

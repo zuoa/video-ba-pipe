@@ -24,6 +24,7 @@ from app.core.webhook_workflow_config import (
     validate_workflow_webhook_nodes,
 )
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
+from app.core.detection_filter import validate_workflow_detection_filter_nodes
 from app.core.workflow_batch_config import (
     BatchConfigValidationError,
     apply_batch_node_changes,
@@ -118,7 +119,10 @@ def _validate_count_change_conditions(workflow_data):
         )
         for connection in connections
     }
-    valid_source_types = {'algorithm', 'function', 'external_api', 'externalApi'}
+    valid_source_types = {
+        'algorithm', 'function', 'external_api', 'externalApi',
+        'detection_filter', 'detectionFilter',
+    }
 
     for node in nodes.values():
         if node.get('type') != 'condition':
@@ -173,7 +177,10 @@ def _validate_count_change_conditions(workflow_data):
     return True, None
 
 
-_CROP_SOURCE_TYPES = {'algorithm', 'function', 'external_api', 'externalApi'}
+_CROP_SOURCE_TYPES = {
+    'algorithm', 'function', 'external_api', 'externalApi',
+    'detection_filter', 'detectionFilter',
+}
 _GATE_EDGE_CONDITIONS = {'detected', 'not_detected', 'true', 'false', 'yes', 'no'}
 _PERSISTED_ALGO_EDGE_CONDITIONS = {'detected', 'not_detected'}
 
@@ -466,6 +473,9 @@ def register_workflows_api(app):
             is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
+            is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
             is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
@@ -563,6 +573,9 @@ def register_workflows_api(app):
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+                is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
@@ -666,6 +679,9 @@ def register_workflows_api(app):
                 return jsonify({'error': '编排模板不可激活'}), 400
             workflow_data = workflow.data_dict
 
+            is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
             is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
@@ -1039,6 +1055,9 @@ def register_workflows_api(app):
                         raise PermissionError('Forbidden')
                     if workflow.is_template:
                         raise ValueError('编排模板不可激活')
+                    is_valid, error_message = validate_workflow_detection_filter_nodes(workflow.data_dict)
+                    if not is_valid:
+                        raise ValueError(error_message)
                     is_valid, error_message = validate_workflow_time_schedule_nodes(workflow.data_dict)
                     if not is_valid:
                         raise ValueError(error_message)
@@ -1189,6 +1208,10 @@ def register_workflows_api(app):
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
                 if not is_valid:
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue

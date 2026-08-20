@@ -14,6 +14,7 @@ import {
   FileSearchOutlined,
   SendOutlined,
   ClockCircleOutlined,
+  ColumnHeightOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import {
@@ -229,7 +230,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <BranchesOutlined />
-          <span className="category-title">条件分支</span>
+          <span className="category-title">条件与筛选</span>
         </div>
       ),
       children: (
@@ -284,6 +285,35 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               <div className="component-content">
                 <div className="component-label">时间启用区间</div>
                 <div className="component-description">按星期与时段控制流程</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'detectionFilter',
+              nodeType: 'detectionFilter',
+              label: '目标尺寸筛选',
+              description: '按检测框尺寸保留目标',
+              icon: <ColumnHeightOutlined />,
+              color: '#531dab',
+              config: {
+                dimension: 'height',
+                unit: 'pixel',
+                comparison: 'gte',
+                threshold: 40,
+              },
+            })}
+            style={{ borderColor: '#531dab' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#531dab' }}>
+                <ColumnHeightOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">目标尺寸筛选</div>
+                <div className="component-description">按高度或宽度过滤检测框</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>

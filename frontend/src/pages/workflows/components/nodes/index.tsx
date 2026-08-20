@@ -7,6 +7,7 @@ import FunctionNode from './FunctionNode';
 import ExternalApiNode from './ExternalApiNode';
 import WebhookNode from './WebhookNode';
 import TimeScheduleNode from './TimeScheduleNode';
+import DetectionFilterNode from './DetectionFilterNode';
 
 export const nodeTypes = {
   videoSource: VideoSourceNode,
@@ -16,6 +17,7 @@ export const nodeTypes = {
   roi: ROINode,
   alert: AlertNode,
   function: FunctionNode,
+  detectionFilter: DetectionFilterNode,
   webhook: WebhookNode,
   timeSchedule: TimeScheduleNode,
 };
@@ -32,4 +34,5 @@ export {
   ExternalApiNode,
   WebhookNode,
   TimeScheduleNode,
+  DetectionFilterNode,
 };

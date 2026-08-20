@@ -326,6 +326,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         if (config.input_b?.class_filter) {
           formValues.classFilterB = config.input_b.class_filter.join(',');
         }
+      } else if (nodeType === 'detectionFilter' || nodeType === 'detection_filter') {
+        formValues.filterDimension = nodeConfig.dimension || 'height';
+        formValues.filterUnit = nodeConfig.unit || 'pixel';
+        formValues.filterComparison = nodeConfig.comparison || 'gte';
+        formValues.filterThreshold = nodeConfig.unit === 'ratio'
+          ? Number(nodeConfig.threshold ?? 0.05) * 100
+          : Number(nodeConfig.threshold ?? 40);
       } else if (nodeType === 'condition') {
         formValues.conditionKind = node.data.conditionKind || node.data.condition_kind || 'count';
         formValues.targetCount = node.data.targetCount || node.data.target_count || 1;
@@ -626,7 +633,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             n.data?.type === 'algorithm' ||
             n.type === 'algorithm' ||
             n.data?.type === 'externalApi' ||
-            n.type === 'externalApi'
+            n.type === 'externalApi' ||
+            n.data?.type === 'function' ||
+            n.type === 'function' ||
+            n.data?.type === 'detectionFilter' ||
+            n.data?.type === 'detection_filter' ||
+            n.type === 'detectionFilter'
           ));
 
         const config = { ...(node.data?.config || {}) };
@@ -675,6 +687,21 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.inputNodeB;
         delete updatedData.classFilterA;
         delete updatedData.classFilterB;
+      } else if (nodeType === 'detectionFilter' || nodeType === 'detection_filter') {
+        const unit = values.filterUnit || 'pixel';
+        updatedData.config = {
+          ...(node.data?.config || {}),
+          dimension: values.filterDimension || 'height',
+          unit,
+          comparison: values.filterComparison || 'gte',
+          threshold: unit === 'ratio'
+            ? Number(values.filterThreshold || 0) / 100
+            : Number(values.filterThreshold || 0),
+        };
+        delete updatedData.filterDimension;
+        delete updatedData.filterUnit;
+        delete updatedData.filterComparison;
+        delete updatedData.filterThreshold;
       } else if (nodeType === 'condition') {
         // Condition 节点：保存条件配置
         updatedData.conditionKind = values.conditionKind || 'count';
@@ -1421,7 +1448,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           .map(edge => nodes.find(item => item.id === edge.source))
           .filter(sourceNode => {
             const sourceType = sourceNode?.data?.type || sourceNode?.type;
-            return ['algorithm', 'function', 'externalApi', 'external_api'].includes(sourceType);
+            return [
+              'algorithm', 'function', 'externalApi', 'external_api',
+              'detectionFilter', 'detection_filter',
+            ].includes(sourceType);
           });
         const upstreamOcrNodes = upstreamResultNodes
           .filter(sourceNode => {
@@ -1655,6 +1685,94 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
 
+      case 'detectionFilter':
+      case 'detection_filter': {
+        const filterUpstreamEdges = edges.filter(edge => edge.target === node.id);
+        return (
+          <>
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">输入状态</span>
+              </div>
+              <div className="info-box" style={{
+                background: filterUpstreamEdges.length === 1 ? '#f6ffed' : '#fff7e6',
+                borderColor: filterUpstreamEdges.length === 1 ? '#b7eb8f' : '#ffd591',
+                color: filterUpstreamEdges.length === 1 ? '#389e0d' : '#d46b08',
+              }}>
+                <InfoCircleOutlined />
+                <span>
+                  {filterUpstreamEdges.length === 1
+                    ? '已连接一个上游检测结果节点'
+                    : '请连接一个算法、外部 API、函数或尺寸筛选节点'}
+                </span>
+              </div>
+            </div>
+
+            <div className="form-divider" />
+
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">尺寸保留规则</span>
+              </div>
+
+              <Form.Item label="检测维度" name="filterDimension" rules={[{ required: true }]}>
+                <Select>
+                  <Option value="height">高度</Option>
+                  <Option value="width">宽度</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item label="尺寸单位" name="filterUnit" rules={[{ required: true }]}>
+                <Select>
+                  <Option value="pixel">像素</Option>
+                  <Option value="ratio">占画面比例</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item label="保留条件" name="filterComparison" rules={[{ required: true }]}>
+                <Select>
+                  <Option value="gte">大于等于（最小值）</Option>
+                  <Option value="lte">小于等于（最大值）</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(previous, current) => previous.filterUnit !== current.filterUnit}>
+                {({ getFieldValue }) => {
+                  const unit = getFieldValue('filterUnit') || 'pixel';
+                  return (
+                    <Form.Item
+                      label={unit === 'ratio' ? '阈值（%）' : '阈值（px）'}
+                      name="filterThreshold"
+                      extra={unit === 'ratio'
+                        ? '以目标高度/画面高度或目标宽度/画面宽度计算'
+                        : '按检测框在原始画面中的像素尺寸计算'}
+                      rules={[
+                        { required: true, message: '请输入尺寸阈值' },
+                        {
+                          type: 'number',
+                          min: 0,
+                          max: unit === 'ratio' ? 100 : 10000000,
+                          message: unit === 'ratio' ? '请输入 0–100 之间的比例' : '请输入非负像素值',
+                        },
+                      ]}
+                    >
+                      <InputNumber
+                        min={0}
+                        max={unit === 'ratio' ? 100 : 10000000}
+                        step={unit === 'ratio' ? 0.1 : 1}
+                        precision={unit === 'ratio' ? 2 : 0}
+                        addonAfter={unit === 'ratio' ? '%' : 'px'}
+                        style={{ width: '100%' }}
+                      />
+                    </Form.Item>
+                  );
+                }}
+              </Form.Item>
+            </div>
+          </>
+        );
+      }
+
       case 'function':
         // 自动识别上游算法节点
         const getUpstreamAlgorithmNodes = () => {
@@ -1668,7 +1786,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               n.data?.type === 'algorithm' ||
               n.type === 'algorithm' ||
               n.data?.type === 'externalApi' ||
-              n.type === 'externalApi'
+              n.type === 'externalApi' ||
+              n.data?.type === 'function' ||
+              n.type === 'function' ||
+              n.data?.type === 'detectionFilter' ||
+              n.data?.type === 'detection_filter' ||
+              n.type === 'detectionFilter'
             ));
 
           return upstreamNodes;
