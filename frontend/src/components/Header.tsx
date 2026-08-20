@@ -4,6 +4,7 @@ import { Dropdown, message } from 'antd';
 import Button from '@/components/common/AppButton';
 import { getSystemInfo } from '@/services/api';
 import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
+import { LOGIN_PATH, clearAuthStorage } from '@/utils/auth';
 import './Header.css';
 import {
   VideoCameraOutlined,
@@ -57,10 +58,9 @@ const Header: React.FC = () => {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuthStorage();
     message.success('退出成功');
-    history.push('/login');
+    history.push(LOGIN_PATH);
   };
 
   const userMenuItems = [

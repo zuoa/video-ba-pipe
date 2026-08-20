@@ -2,6 +2,14 @@ import type { ReactNode } from 'react';
 import { history } from '@umijs/max';
 import { App as AntdApp, ConfigProvider, message } from 'antd';
 import { appTheme } from '@/theme';
+import {
+  buildLoginPath,
+  clearAuthStorage,
+  getLocationPath,
+  handleUnauthorizedSession,
+  isLoginRequestUrl,
+  resolvePostLoginPath,
+} from '@/utils/auth';
 
 const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts'];
 
@@ -41,8 +49,7 @@ export async function getInitialState() {
       localStorage.setItem('user', JSON.stringify(data.user));
       return { currentUser: data.user };
     } else {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearAuthStorage();
       return { currentUser: null };
     }
   } catch (error) {
@@ -64,9 +71,9 @@ export function onRouteChange({ location }: any) {
   const isLoginPage = location.pathname === '/login';
   
   if (!token && !isLoginPage) {
-    history.push('/login');
+    history.replace(buildLoginPath(getLocationPath(location)));
   } else if (token && isLoginPage) {
-    history.push('/dashboard');
+    history.replace(resolvePostLoginPath(location.search));
   } else if (token && isAdminOnlyPath(location.pathname) && user?.role !== 'admin') {
     message.error('无权限访问该页面');
     history.push('/dashboard');
@@ -93,14 +100,16 @@ export const request = {
     },
   ],
   responseInterceptors: [
-    async (response: Response) => {
-      if (response.status === 401) {
-        message.error('登录已过期，请重新登录');
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        history.push('/login');
-      }
-      return response;
-    },
+    [
+      (response: any) => response,
+      (error: any) => {
+        if (error?.response?.status === 401 && !isLoginRequestUrl(error?.config?.url)) {
+          if (handleUnauthorizedSession()) {
+            message.error('登录已过期，请重新登录');
+          }
+        }
+        return Promise.reject(error);
+      },
+    ],
   ],
 };

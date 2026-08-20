@@ -3,6 +3,7 @@ import { message } from 'antd';
 import { BellOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import { createAlertExport, getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
+import { isUnauthorizedError } from '@/utils/auth';
 import { PageHeader, useAppConfirm } from '@/components/common';
 import Button from '@/components/common/AppButton';
 import { Alert, Task, Workflow, AlertFilter } from './types';
@@ -47,7 +48,9 @@ const AlertsPage: React.FC = () => {
       const data = await getVideoSources();
       setTasks(data || []);
     } catch (error: any) {
-      message.error('加载任务列表失败: ' + error.message);
+      if (!isUnauthorizedError(error)) {
+        message.error('加载任务列表失败: ' + error.message);
+      }
     }
   }, []);
 
@@ -57,7 +60,9 @@ const AlertsPage: React.FC = () => {
       const data = await getWorkflows();
       setWorkflows(data || []);
     } catch (error: any) {
-      message.error('加载工作流列表失败: ' + error.message);
+      if (!isUnauthorizedError(error)) {
+        message.error('加载工作流列表失败: ' + error.message);
+      }
     }
   }, []);
 
@@ -67,7 +72,9 @@ const AlertsPage: React.FC = () => {
       const types = await getAlertTypes();
       setAlertTypes(types || []);
     } catch (error: any) {
-      message.error('加载告警类型失败: ' + error.message);
+      if (!isUnauthorizedError(error)) {
+        message.error('加载告警类型失败: ' + error.message);
+      }
     }
   }, []);
 
@@ -90,7 +97,9 @@ const AlertsPage: React.FC = () => {
         per_page: response.pagination?.per_page || 20,
       }));
     } catch (error: any) {
-      message.error('加载告警列表失败: ' + error.message);
+      if (!isUnauthorizedError(error)) {
+        message.error('加载告警列表失败: ' + error.message);
+      }
       setAlerts([]);
     } finally {
       setLoading(false);
@@ -228,6 +237,9 @@ const AlertsPage: React.FC = () => {
             duration: 5,
           });
         } catch (error: any) {
+          if (isUnauthorizedError(error)) {
+            return;
+          }
           const apiMessage = error?.data?.error || error?.response?.data?.error || error?.message || '创建导出任务失败';
           message.error(apiMessage);
           if (error?.response?.status === 409 || String(apiMessage).includes('正在进行')) {

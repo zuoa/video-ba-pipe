@@ -12,6 +12,7 @@ import { useState } from 'react';
 import Button from '@/components/common/AppButton';
 import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import { login } from '@/services/api';
+import { resetSessionExpiredGuard, resolvePostLoginPath } from '@/utils/auth';
 import './index.css';
 
 export default function Login() {
@@ -25,8 +26,9 @@ export default function Login() {
       if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        resetSessionExpiredGuard();
         message.success('登录成功');
-        history.push('/dashboard');
+        history.replace(resolvePostLoginPath());
       } else {
         message.error(data.error || '登录失败');
       }
