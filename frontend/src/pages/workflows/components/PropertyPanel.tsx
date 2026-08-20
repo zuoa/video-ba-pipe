@@ -83,6 +83,95 @@ export interface PropertyPanelProps {
   onDelete: (nodeId: string) => void;
 }
 
+export interface EdgePropertyPanelProps {
+  edge: any;
+  nodes?: any[];
+  onUpdate: (edgeId: string, data: { condition: 'detected' | 'not_detected' | null }) => void;
+  onDelete: (edgeId: string) => void;
+}
+
+function persistNonConditionEdgeCondition(raw: unknown): 'detected' | 'not_detected' | null {
+  if (raw === 'detected' || raw === 'not_detected') {
+    return raw;
+  }
+  return null;
+}
+
+export const EdgePropertyPanel: React.FC<EdgePropertyPanelProps> = ({
+  edge,
+  nodes = [],
+  onUpdate,
+  onDelete,
+}) => {
+  const [form] = Form.useForm();
+  const sourceNode = nodes.find((node) => node.id === edge?.source);
+  const isConditionSource = sourceNode?.type === 'condition' || sourceNode?.data?.type === 'condition';
+  const sourceHandle = edge?.sourceHandle;
+  const portLabel = sourceHandle === 'no' || sourceHandle === 'false'
+    ? '否（false）'
+    : '是（true）';
+
+  useEffect(() => {
+    if (!edge) return;
+    const stored = edge.data?.condition;
+    form.setFieldsValue({
+      condition: stored === 'detected' || stored === 'not_detected' ? stored : 'always',
+    });
+  }, [edge?.id, edge?.data?.condition, form]);
+
+  return (
+    <div className="property-panel">
+      <div className="panel-header">
+        <Space size="small">
+          <SettingOutlined />
+          <span className="panel-title">连线属性</span>
+        </Space>
+        <Button
+          type="text"
+          size="small"
+          icon={<DeleteOutlined />}
+          onClick={() => onDelete(edge.id)}
+          className="delete-btn"
+        >
+          删除
+        </Button>
+      </div>
+
+      <div className="property-tabs" style={{ padding: '20px 24px' }}>
+        {isConditionSource ? (
+          <div className="info-box" style={{ background: '#f0f5ff', borderColor: '#adc6ff', color: '#1d39c4' }}>
+            <InfoCircleOutlined />
+            <span>
+              条件节点连线由「是 / 否」端口决定（当前端口：{portLabel}），不能在此覆盖。
+            </span>
+          </div>
+        ) : (
+          <Form
+            form={form}
+            layout="vertical"
+            size="small"
+            onValuesChange={(_, values) => {
+              onUpdate(edge.id, { condition: persistNonConditionEdgeCondition(values.condition) });
+            }}
+          >
+            <Form.Item
+              label="触发条件"
+              name="condition"
+              extra="「总是」只存在于编辑器，保存为 JSON null"
+            >
+              <Select>
+                <Option value="always">总是</Option>
+                <Option value="detected">检测到</Option>
+                <Option value="not_detected">未检测到</Option>
+              </Select>
+            </Form.Item>
+          </Form>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const PropertyPanel: React.FC<PropertyPanelProps> = ({
   node,
   videoSources,
@@ -174,6 +263,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         formValues.memoryLimitMb = nodeConfig.memory_limit_mb || 512;
         formValues.labelName = nodeConfig.label_name || (isVlAlgorithm ? 'VL Result' : isOcrAlgorithm ? 'OCR Text' : 'Object');
         formValues.labelColor = nodeConfig.label_color || (isVlAlgorithm ? '#13c2c2' : isOcrAlgorithm ? '#1677ff' : '#FF0000');
+        if (isOcrAlgorithm) {
+          formValues.inputMode = nodeConfig.input_mode || 'frame';
+          formValues.expandRatio = nodeConfig.expand_ratio ?? 0.1;
+          formValues.maxCandidates = nodeConfig.max_candidates ?? 8;
+          formValues.upstreamClassFilter = nodeConfig.upstream_class_filter || [];
+        }
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         formValues.externalApiId = node.data.dataId ?? node.data.externalApiId;
         formValues.executionMode = nodeConfig.execution_mode || node.data.executionMode || 'sync';
@@ -383,6 +478,12 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         }
         config.label_name = values.labelName;
         config.label_color = values.labelColor;
+        if (isOcrAlgorithm) {
+          config.input_mode = values.inputMode || 'frame';
+          config.expand_ratio = values.expandRatio ?? 0.1;
+          config.max_candidates = values.maxCandidates ?? 8;
+          config.upstream_class_filter = values.upstreamClassFilter || [];
+        }
 
         updatedData.algorithmType = selectedAlgorithmType;
         updatedData.confidence = config.confidence ?? node.data.defaultConfidence;
@@ -393,6 +494,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.memoryLimitMb;
         delete updatedData.labelName;
         delete updatedData.labelColor;
+        delete updatedData.inputMode;
+        delete updatedData.expandRatio;
+        delete updatedData.maxCandidates;
+        delete updatedData.upstreamClassFilter;
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         const selectedApi = externalApis.find(item => String(item.id) === String(values.externalApiId));
         const config = { ...(node.data?.config || {}) };
@@ -795,6 +900,62 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               >
                 <InputNumber min={0.1} max={60} step={0.1} style={{ width: '100%' }} />
               </Form.Item>
+
+              {isOcrAlgorithm ? (
+                <Form.Item noStyle shouldUpdate={(previous, current) => previous.inputMode !== current.inputMode}>
+                  {({ getFieldValue }) => {
+                    const inputMode = getFieldValue('inputMode') || 'frame';
+                    const cropDisabled = inputMode !== 'upstream_crops';
+                    const hasAlgorithmIncoming = edges.some((edge) => {
+                      if (edge.target !== node.id) return false;
+                      const sourceNode = nodes.find((item) => item.id === edge.source);
+                      const sourceType = sourceNode?.data?.type || sourceNode?.type;
+                      return sourceType === 'algorithm';
+                    });
+                    return (
+                      <>
+                        {hasAlgorithmIncoming && inputMode === 'frame' ? (
+                          <div className="info-box" style={{ marginBottom: 16, background: '#e6f4ff', borderColor: '#91caff', color: '#0958d9' }}>
+                            <InfoCircleOutlined />
+                            <span>若要只识别检测框内文字，请把连线设为『检测到』，并把 OCR 输入模式改为『上游裁剪』。</span>
+                          </div>
+                        ) : null}
+                        <Form.Item
+                          label="输入模式"
+                          name="inputMode"
+                          extra="整帧识别或仅对上游检测框裁剪识别"
+                        >
+                          <Select>
+                            <Option value="frame">整帧</Option>
+                            <Option value="upstream_crops">上游裁剪</Option>
+                          </Select>
+                        </Form.Item>
+                        <Form.Item
+                          label="扩边比例"
+                          name="expandRatio"
+                          extra="每边按框尺寸扩边，与组合检测一致"
+                        >
+                          <InputNumber min={0} max={1} step={0.05} disabled={cropDisabled} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item
+                          label="最大候选"
+                          name="maxCandidates"
+                          extra="每帧最多裁剪识别的框数量，硬顶 32"
+                        >
+                          <InputNumber min={1} max={32} step={1} disabled={cropDisabled} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item
+                          label="上游类别过滤"
+                          name="upstreamClassFilter"
+                          extra="留空不过滤；匹配 class_name / label / label_name"
+                        >
+                          <Select mode="tags" tokenSeparators={[',', '，']} disabled={cropDisabled} placeholder="全部类别" />
+                        </Form.Item>
+                      </>
+                    );
+                  }}
+                </Form.Item>
+              ) : null}
 
               {isVlAlgorithm ? (
                 <>

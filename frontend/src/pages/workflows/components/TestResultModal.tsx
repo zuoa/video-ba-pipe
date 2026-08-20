@@ -5,6 +5,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  MinusCircleOutlined,
   LoadingOutlined,
   CloseOutlined,
 } from '@ant-design/icons';
@@ -88,15 +89,19 @@ const edgeTypes: EdgeTypes = {
 };
 
 // 自定义测试结果节点组件
+const isGateSkippedResult = (nodeResult: any) => Boolean(
+  nodeResult?.skipped || nodeResult?.data?.execution_state === 'skipped'
+);
+
 const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) => {
-  const { label, testResult, nodeType, isSkipped } = data;
+  const { label, testResult, nodeType, isAbsent, isGateSkipped } = data;
 
   const getStatusIcon = () => {
-    if (isSkipped) {
-      return <CloseCircleOutlined className="status-icon skipped" />;
+    if (isGateSkipped) {
+      return <MinusCircleOutlined className="status-icon skipped" />;
     }
-    if (!testResult) {
-      return <ClockCircleOutlined className="status-icon pending" />;
+    if (isAbsent || !testResult) {
+      return <CloseCircleOutlined className="status-icon skipped" />;
     }
     if (testResult.success) {
       return <CheckCircleOutlined className="status-icon success" />;
@@ -105,8 +110,8 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
   };
 
   const getStatusBadge = () => {
-    if (isSkipped) return <Tag color="default">未执行</Tag>;
-    if (!testResult) return <Tag color="default">未执行</Tag>;
+    if (isGateSkipped) return <Tag color="default">跳过</Tag>;
+    if (isAbsent || !testResult) return <Tag color="default">未执行</Tag>;
     if (testResult.success) {
       return <Tag color="success">成功</Tag>;
     }
@@ -115,7 +120,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
 
   return (
     <div className={`test-result-node ${
-      isSkipped ? 'skipped' :
+      isGateSkipped || isAbsent ? 'skipped' :
       testResult?.success ? 'success' :
       testResult?.success === false ? 'error' : 'pending'
     } ${selected ? 'selected' : ''}`}>
@@ -123,7 +128,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
       <Handle
         type="target"
         position={Position.Left}
-        className={`custom-handle ${isSkipped ? 'handle-skipped' : ''}`}
+        className={`custom-handle ${isGateSkipped || isAbsent ? 'handle-skipped' : ''}`}
       />
 
       <div className="node-header">
@@ -182,7 +187,12 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
         </div>
       )}
 
-      {isSkipped && (
+      {isGateSkipped && (
+        <div className="node-skipped-badge">
+          <MinusCircleOutlined /> 跳过
+        </div>
+      )}
+      {isAbsent && !isGateSkipped && (
         <div className="node-skipped-badge">
           <CloseCircleOutlined /> 未执行
         </div>
@@ -196,7 +206,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
       <Handle
         type="source"
         position={Position.Right}
-        className={`custom-handle ${isSkipped ? 'handle-skipped' : ''}`}
+        className={`custom-handle ${isGateSkipped || isAbsent ? 'handle-skipped' : ''}`}
       />
     </div>
   );
@@ -219,15 +229,13 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
       testResult?.nodes?.map((n: any) => [n.node_id, n]) || []
     );
 
-    // 获取已执行的节点 ID
-    const executedNodeIds = new Set(testResult?.nodes?.map((n: any) => n.node_id) || []);
-
     console.log('📊 TestResultModal nodes 原始数据:', nodes);
     console.log('📊 测试结果映射:', resultMap);
-    console.log('📊 已执行的节点:', executedNodeIds);
 
     const mappedNodes = nodes.map(node => {
-      const isExecuted = executedNodeIds.has(node.id);
+      const nodeResult = resultMap.get(node.id) as any;
+      const isAbsent = !resultMap.has(node.id);
+      const isGateSkipped = isGateSkippedResult(nodeResult);
 
       return {
         ...node,
@@ -236,8 +244,10 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
           ...node.data,
           label: node.data?.label || node.id,
           nodeType: node.type || node.data?.type || 'unknown',
-          testResult: resultMap.get(node.id) || null,
-          isSkipped: !isExecuted,
+          testResult: nodeResult || null,
+          isAbsent,
+          isGateSkipped,
+          isSkipped: isAbsent,
         },
       };
     });
@@ -357,8 +367,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
             <MiniMap
               nodeColor={(node) => {
                 const testResult = node.data?.testResult;
-                const isSkipped = node.data?.isSkipped;
-                if (isSkipped) return '#d9d9d9';
+                if (node.data?.isGateSkipped || node.data?.isAbsent) return '#d9d9d9';
                 if (!testResult) return '#d9d9d9';
                 if (testResult.success) return '#52c41a';
                 return '#ff4d4f';
@@ -392,7 +401,9 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                 {selectedNode.data?.testResult ? (
                   <>
                     <Descriptions.Item label="执行状态">
-                      {selectedNode.data.testResult.success ? (
+                      {isGateSkippedResult(selectedNode.data.testResult) ? (
+                        <Tag color="default" icon={<MinusCircleOutlined />}>跳过</Tag>
+                      ) : selectedNode.data.testResult.success ? (
                         <Tag color="success" icon={<CheckCircleOutlined />}>成功</Tag>
                       ) : (
                         <Tag color="error" icon={<CloseCircleOutlined />}>失败</Tag>

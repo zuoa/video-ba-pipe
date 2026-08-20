@@ -28,12 +28,29 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { nodeTypes } from '../components/nodes';
 import ComponentSidebar from '../components/ComponentSidebar';
-import PropertyPanel from '../components/PropertyPanel';
+import PropertyPanel, { EdgePropertyPanel } from '../components/PropertyPanel';
 import TestPanel from '../components/TestPanel';
 import { getWorkflow, updateWorkflow, getVideoSources, getVlConfig, getAlgorithms, getExternalApis } from '@/services/api';
 import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
 import { createDefaultWeeklySchedule, normalizeWeeklySchedule } from '../utils/timeSchedule';
 import '../components/WorkflowEditor.css';
+
+function persistNonConditionEdgeCondition(raw: unknown): 'detected' | 'not_detected' | null {
+  if (raw === 'detected' || raw === 'not_detected') {
+    return raw;
+  }
+  return null;
+}
+
+function edgeConditionLabel(condition: string | null | undefined): string {
+  if (condition === 'detected') return '检测到';
+  if (condition === 'not_detected') return '未检测到';
+  return '';
+}
+
+function isConditionNodeType(node: any): boolean {
+  return node?.type === 'condition' || node?.data?.type === 'condition';
+}
 
 export default function WorkflowEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -41,8 +58,12 @@ export default function WorkflowEditorPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const selectedNode = selectedNodeId
     ? nodes.find((node) => node.id === selectedNodeId) || null
+    : null;
+  const selectedEdge = selectedEdgeId
+    ? edges.find((edge) => edge.id === selectedEdgeId) || null
     : null;
   const [rightPanel, setRightPanel] = useState<'properties' | 'test'>('properties');
   const [workflow, setWorkflow] = useState<any>(null);
@@ -353,6 +374,8 @@ export default function WorkflowEditorPage() {
               }
 
               const targetHandle = conn.to_port || conn.toPort || 'input';
+              const persistedCondition = persistNonConditionEdgeCondition(conn.condition);
+              const edgeLabel = edgeConditionLabel(persistedCondition) || conn.label || '';
 
               const edge = {
                 id: conn.id || `${fromNodeId}-${toNodeId}`,
@@ -361,7 +384,10 @@ export default function WorkflowEditorPage() {
                 sourceHandle,
                 targetHandle,
                 type: 'smoothstep',
-                label: conn.label || '',
+                label: edgeLabel,
+                data: {
+                  condition: persistedCondition,
+                },
                 markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
               };
 
@@ -482,20 +508,33 @@ export default function WorkflowEditorPage() {
 
   const onNodeClick = (_: any, node: Node) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+    setRightPanel('properties');
+  };
+
+  const onEdgeClick = (_: any, edge: Edge) => {
+    setSelectedEdgeId(edge.id);
+    setSelectedNodeId(null);
     setRightPanel('properties');
   };
 
   const onPaneClick = () => {
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
   };
 
-  const onSelectionChange = ({ nodes: selectedNodes }: any) => {
+  const onSelectionChange = ({ nodes: selectedNodes, edges: selectedEdges }: any) => {
     if (selectedNodes && selectedNodes.length > 0) {
       setSelectedNodeId(selectedNodes[0].id);
+      setSelectedEdgeId(null);
+      setRightPanel('properties');
+    } else if (selectedEdges && selectedEdges.length > 0) {
+      setSelectedEdgeId(selectedEdges[0].id);
+      setSelectedNodeId(null);
       setRightPanel('properties');
     } else {
-      // 选中连线或点击空白处时，节点属性面板不应继续指向旧节点。
       setSelectedNodeId(null);
+      setSelectedEdgeId(null);
     }
   };
 
@@ -684,7 +723,7 @@ export default function WorkflowEditorPage() {
         let fromPort = edge.sourceHandle || 'output';
         let condition = null;
 
-        if (fromNode?.data?.type === 'condition' || fromNode?.type === 'condition') {
+        if (isConditionNodeType(fromNode)) {
           if (fromPort === 'yes') {
             fromPort = 'true';
             condition = 'true';
@@ -693,6 +732,8 @@ export default function WorkflowEditorPage() {
             fromPort = 'false';
             condition = 'false';
           }
+        } else {
+          condition = persistNonConditionEdgeCondition(edge.data?.condition);
         }
 
         return {
@@ -703,7 +744,7 @@ export default function WorkflowEditorPage() {
           to_node_id: edge.target,
           from_port: fromPort,
           to_port: edge.targetHandle || 'input',
-          condition: condition,
+          condition,
           label: edge.label || '',
         };
       });
@@ -810,7 +851,27 @@ export default function WorkflowEditorPage() {
     setNodes((nds) => nds.filter((n) => n.id !== nodeId));
     setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
     setSelectedNodeId((currentId) => currentId === nodeId ? null : currentId);
+    setSelectedEdgeId(null);
     message.success('节点删除成功');
+  };
+
+  const handleUpdateEdge = (edgeId: string, data: { condition: 'detected' | 'not_detected' | null }) => {
+    const condition = persistNonConditionEdgeCondition(data.condition);
+    setEdges((currentEdges) => currentEdges.map((edge) => (
+      edge.id === edgeId
+        ? {
+            ...edge,
+            label: edgeConditionLabel(condition),
+            data: { ...edge.data, condition },
+          }
+        : edge
+    )));
+  };
+
+  const handleDeleteEdge = (edgeId: string) => {
+    setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId));
+    setSelectedEdgeId((currentId) => currentId === edgeId ? null : currentId);
+    message.success('连线删除成功');
   };
 
   const deleteSelected = () => {
@@ -823,12 +884,14 @@ export default function WorkflowEditorPage() {
         eds.filter((edge) => !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target))
       );
       setSelectedNodeId(null);
+      setSelectedEdgeId(null);
       message.success(`已删除 ${selectedNodeIds.size} 个节点`);
       return;
     }
 
     if (selectedEdgeIds.size > 0) {
       setEdges((eds) => eds.filter((edge) => !selectedEdgeIds.has(edge.id)));
+      setSelectedEdgeId(null);
       message.success(`已删除 ${selectedEdgeIds.size} 条连线`);
       return;
     }
@@ -836,6 +899,10 @@ export default function WorkflowEditorPage() {
     // 属性面板的目标作为键盘选中状态丢失时的保底，且仍使用显式 ID。
     if (selectedNodeId) {
       handleDeleteNode(selectedNodeId);
+      return;
+    }
+    if (selectedEdgeId) {
+      handleDeleteEdge(selectedEdgeId);
     }
   };
 
@@ -880,7 +947,7 @@ export default function WorkflowEditorPage() {
             <Button
               icon={<DeleteOutlined />}
               onClick={deleteSelected}
-              disabled={!selectedNodeId && !nodes.some((node) => node.selected) && !edges.some((edge) => edge.selected)}
+              disabled={!selectedNodeId && !selectedEdgeId && !nodes.some((node) => node.selected) && !edges.some((edge) => edge.selected)}
               danger
             >
               删除
@@ -923,11 +990,17 @@ export default function WorkflowEditorPage() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             onSelectionChange={onSelectionChange}
             onNodesDelete={(deletedNodes) => {
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
               setSelectedNodeId((currentId) => currentId && deletedIds.has(currentId) ? null : currentId);
+              setSelectedEdgeId(null);
+            }}
+            onEdgesDelete={(deletedEdges) => {
+              const deletedIds = new Set(deletedEdges.map((edge) => edge.id));
+              setSelectedEdgeId((currentId) => currentId && deletedIds.has(currentId) ? null : currentId);
             }}
             nodeTypes={nodeTypes}
             fitView
@@ -957,7 +1030,14 @@ export default function WorkflowEditorPage() {
         {/* 右侧属性面板 */}
         <div className="editor-properties">
           {rightPanel === 'properties' ? (
-            selectedNode ? (
+            selectedEdge ? (
+              <EdgePropertyPanel
+                edge={selectedEdge}
+                nodes={nodes}
+                onUpdate={handleUpdateEdge}
+                onDelete={handleDeleteEdge}
+              />
+            ) : selectedNode ? (
               <PropertyPanel
                 node={selectedNode}
                 videoSources={videoSources}
@@ -974,8 +1054,8 @@ export default function WorkflowEditorPage() {
               <div className="property-panel-empty">
                 <AppEmptyState
                   compact
-                  title="点击节点查看属性"
-                  description="点击画布中的节点以编辑其属性"
+                  title="点击节点或连线查看属性"
+                  description="点击画布中的节点或连线以编辑其属性"
                 />
               </div>
             )

@@ -2,6 +2,7 @@
 工作流管理 API
 """
 import json
+import logging
 import re
 from datetime import datetime
 from copy import deepcopy
@@ -28,6 +29,7 @@ from app.core.workflow_batch_config import (
     apply_batch_node_changes,
 )
 from app.config import SNAPSHOT_SAVE_PATH
+from app.core.ocr_algorithm_config import validate_ocr_crop_node_config
 from app.core.ocr_runtime import is_ocr_runtime_available
 from app.web.api.auth import (
     require_auth,
@@ -35,6 +37,8 @@ from app.web.api.auth import (
     require_resource_owner,
     current_username,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def _validate_ocr_text_conditions(workflow_data):
@@ -169,6 +173,147 @@ def _validate_count_change_conditions(workflow_data):
     return True, None
 
 
+_CROP_SOURCE_TYPES = {'algorithm', 'function', 'external_api', 'externalApi'}
+_GATE_EDGE_CONDITIONS = {'detected', 'not_detected', 'true', 'false', 'yes', 'no'}
+_PERSISTED_ALGO_EDGE_CONDITIONS = {'detected', 'not_detected'}
+
+
+def _connection_source(connection):
+    return connection.get('from') or connection.get('from_node_id')
+
+
+def _connection_target(connection):
+    return connection.get('to') or connection.get('to_node_id')
+
+
+def _node_overlay_config(node):
+    config = node.get('config')
+    if isinstance(config, dict):
+        return config
+    data = node.get('data') if isinstance(node.get('data'), dict) else {}
+    nested = data.get('config')
+    return nested if isinstance(nested, dict) else {}
+
+
+def _normalize_algorithm_edge_condition(condition):
+    """UI 'always' and unknown values persist as JSON null, never the string 'always'."""
+    if condition in (None, '', 'always'):
+        return None
+    if condition in _PERSISTED_ALGO_EDGE_CONDITIONS:
+        return condition
+    return None
+
+
+def _sanitize_workflow_edge_conditions(workflow_data):
+    if not isinstance(workflow_data, dict):
+        return workflow_data
+    nodes = {
+        node.get('id'): node
+        for node in workflow_data.get('nodes', [])
+        if isinstance(node, dict) and node.get('id')
+    }
+    for connection in workflow_data.get('connections', []) or []:
+        if not isinstance(connection, dict):
+            continue
+        source_node = nodes.get(_connection_source(connection)) or {}
+        if source_node.get('type') == 'condition':
+            continue
+        connection['condition'] = _normalize_algorithm_edge_condition(connection.get('condition'))
+    return workflow_data
+
+
+def _is_ocr_algorithm_node(node):
+    if not isinstance(node, dict) or node.get('type') != 'algorithm':
+        return False
+    try:
+        algorithm = Algorithm.get_by_id(node.get('dataId') or node.get('algorithmId'))
+    except (Algorithm.DoesNotExist, TypeError, ValueError):
+        return False
+    ext_config = algorithm.ext_config if getattr(algorithm, 'ext_config', None) else {}
+    if not isinstance(ext_config, dict):
+        return False
+    return (ext_config.get('algorithm_type') or 'script') == 'ocr'
+
+
+def _validate_ocr_crop_nodes(workflow_data):
+    """校验 OCR 节点裁剪 overlay 与 upstream_crops 入边合同。
+
+    只调用 validate_ocr_crop_node_config，禁止 normalize_ocr_algorithm_config。
+    返回 (is_valid, error_message, warnings)。
+    """
+    if not isinstance(workflow_data, dict):
+        return True, None, []
+
+    nodes = {
+        node.get('id'): node
+        for node in workflow_data.get('nodes', [])
+        if isinstance(node, dict) and node.get('id')
+    }
+    connections = [
+        connection
+        for connection in (workflow_data.get('connections', []) or [])
+        if isinstance(connection, dict)
+    ]
+    warnings = []
+
+    for node in nodes.values():
+        name = node.get('name') or node.get('id')
+        incoming = [
+            connection for connection in connections
+            if _connection_target(connection) == node.get('id')
+        ]
+        is_ocr = _is_ocr_algorithm_node(node)
+
+        if is_ocr:
+            config = _node_overlay_config(node)
+            try:
+                validate_ocr_crop_node_config(config)
+            except ValueError as exc:
+                return False, str(exc), warnings
+
+            crop_incoming = []
+            for connection in incoming:
+                source_node = nodes.get(_connection_source(connection))
+                if source_node and source_node.get('type') in _CROP_SOURCE_TYPES:
+                    crop_incoming.append(connection)
+
+            input_mode = config.get('input_mode') or 'frame'
+            if input_mode == 'upstream_crops':
+                if len(crop_incoming) != 1:
+                    return False, (
+                        f'OCR 节点 {name} 的上游裁剪模式必须恰好连接一条来自算法、函数或外部 API 的入边'
+                    ), warnings
+                if crop_incoming[0].get('condition') != 'detected':
+                    return False, (
+                        f'OCR 节点 {name} 的上游裁剪入边条件必须为 detected'
+                    ), warnings
+            elif any(connection.get('condition') == 'detected' for connection in crop_incoming):
+                warning = (
+                    f'OCR 节点 {name} 入边已设为「检测到」，但仍使用整帧识别；'
+                    '如只需识别检测框内文字，请将输入模式改为「上游裁剪」。'
+                )
+                warnings.append(warning)
+                _logger.warning(warning)
+        else:
+            has_empty = False
+            has_gated = False
+            for connection in incoming:
+                condition = connection.get('condition')
+                if condition in (None, '', 'always'):
+                    has_empty = True
+                elif condition in _GATE_EDGE_CONDITIONS:
+                    has_gated = True
+            if has_empty and has_gated:
+                warning = (
+                    f'节点 {name} 同时存在空条件和门控入边，执行语义是 OR：'
+                    '任意一条空条件入边触发即会执行。'
+                )
+                warnings.append(warning)
+                _logger.warning(warning)
+
+    return True, None, warnings
+
+
 def register_workflows_api(app):
     """注册工作流管理 API 路由"""
 
@@ -298,10 +443,14 @@ def register_workflows_api(app):
                 if owner_response:
                     return owner_response
                 workflow_data = normalize_source_node_fields(workflow_data, source)
+            _sanitize_workflow_edge_conditions(workflow_data)
             is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
             is_valid, error_message = _validate_count_change_conditions(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
+            is_valid, error_message, crop_warnings = _validate_ocr_crop_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
             is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
@@ -324,10 +473,13 @@ def register_workflows_api(app):
                 created_by=current_username('admin')
             )
             
-            return jsonify({
+            payload = {
                 'id': workflow.id,
                 'message': '工作流创建成功'
-            }), 201
+            }
+            if crop_warnings:
+                payload['warnings'] = crop_warnings
+            return jsonify(payload), 201
         except Exception as e:
             app.logger.error(f"创建工作流失败: {e}")
             return jsonify({'error': str(e)}), 500
@@ -349,6 +501,7 @@ def register_workflows_api(app):
                 return jsonify({'error': '来源模板不可修改'}), 400
 
             need_version_bump = False
+            crop_warnings = []
 
             if 'name' in data:
                 workflow.name = data['name']
@@ -389,10 +542,14 @@ def register_workflows_api(app):
                     if duplicate:
                         return jsonify(duplicate_template_source_response(duplicate)), 409
                     workflow_data = normalize_source_node_fields(workflow_data, source)
+                _sanitize_workflow_edge_conditions(workflow_data)
                 is_valid, error_message = _validate_ocr_text_conditions(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = _validate_count_change_conditions(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+                is_valid, error_message, crop_warnings = _validate_ocr_crop_nodes(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
@@ -439,10 +596,13 @@ def register_workflows_api(app):
                 )
                 return jsonify(duplicate_template_source_response(duplicate)), 409
 
-            return jsonify({
+            payload = {
                 'message': '工作流更新成功',
                 'config_version': workflow.config_version
-            })
+            }
+            if crop_warnings:
+                payload['warnings'] = crop_warnings
+            return jsonify(payload)
         except Workflow.DoesNotExist:
             return jsonify({'error': '工作流不存在'}), 404
         except Exception as e:
@@ -1014,6 +1174,10 @@ def register_workflows_api(app):
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue
                 is_valid, error_message = _validate_count_change_conditions(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message, _crop_warnings = _validate_ocr_crop_nodes(workflow_data)
                 if not is_valid:
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue
