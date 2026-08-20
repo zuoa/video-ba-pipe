@@ -52,6 +52,10 @@ function isConditionNodeType(node: any): boolean {
   return node?.type === 'condition' || node?.data?.type === 'condition';
 }
 
+function getApiErrorMessage(error: any): string | undefined {
+  return error?.data?.error || error?.response?.data?.error || error?.message;
+}
+
 export default function WorkflowEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -775,12 +779,14 @@ export default function WorkflowEditorPage() {
       }
       console.log('✅ [EDITOR] 保存成功');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [EDITOR] 保存失败:', error);
+      const saveError = getApiErrorMessage(error) || '保存失败';
       if (!silent) {
-        message.error('保存失败');
+        message.error(saveError);
+        return false;
       }
-      return false;
+      return saveError;
     } finally {
       if (!silent) {
         setSaving(false);

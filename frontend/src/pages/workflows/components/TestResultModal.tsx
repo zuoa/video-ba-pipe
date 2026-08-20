@@ -139,7 +139,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
 
       {testResult && (
         <div className="node-body">
-          <div className="node-status">{getStatusBadge()}</div>
+          {!isGateSkipped && <div className="node-status">{getStatusBadge()}</div>}
 
           {testResult.execution_time !== undefined && (
             <div className="node-metric">
@@ -187,14 +187,10 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
         </div>
       )}
 
-      {isGateSkipped && (
+      {(isGateSkipped || isAbsent) && (
         <div className="node-skipped-badge">
-          <MinusCircleOutlined /> 跳过
-        </div>
-      )}
-      {isAbsent && !isGateSkipped && (
-        <div className="node-skipped-badge">
-          <CloseCircleOutlined /> 未执行
+          {isGateSkipped ? <MinusCircleOutlined /> : <CloseCircleOutlined />}
+          {isGateSkipped ? ' 跳过' : ' 未执行'}
         </div>
       )}
 

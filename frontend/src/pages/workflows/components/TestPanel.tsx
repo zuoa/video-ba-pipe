@@ -26,7 +26,7 @@ export interface TestPanelProps {
   nodes?: any[];
   edges?: any[];
   videoSources?: any[];
-  onBeforeTest?: () => Promise<boolean | void>;
+  onBeforeTest?: () => Promise<boolean | string | void>;
 }
 
 type InputMode = 'upload-image' | 'upload-video' | 'video-source';
@@ -140,8 +140,12 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
     try {
       if (onBeforeTest) {
         const saveOk = await onBeforeTest();
-        if (saveOk === false) {
-          message.error('保存失败，无法开始测试');
+        if (saveOk === false || typeof saveOk === 'string') {
+          message.error(
+            typeof saveOk === 'string'
+              ? `保存失败，无法开始测试：${saveOk}`
+              : '保存失败，无法开始测试'
+          );
           return;
         }
       }

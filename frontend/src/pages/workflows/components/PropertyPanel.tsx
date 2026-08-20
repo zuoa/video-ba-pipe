@@ -417,8 +417,8 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       <div className="property-panel-empty">
         <AppEmptyState
           compact
-          title="点击节点查看属性"
-          description="点击画布中的节点以编辑其属性"
+          title="点击节点或连线查看属性"
+          description="点击画布中的节点或连线以编辑其属性"
         />
       </div>
     );

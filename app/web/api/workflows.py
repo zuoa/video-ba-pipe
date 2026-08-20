@@ -235,6 +235,23 @@ def _is_ocr_algorithm_node(node):
     return (ext_config.get('algorithm_type') or 'script') == 'ocr'
 
 
+def _mixed_incoming_or_warning(name, incoming):
+    has_empty = False
+    has_gated = False
+    for connection in incoming:
+        condition = connection.get('condition')
+        if condition in (None, '', 'always'):
+            has_empty = True
+        elif condition in _GATE_EDGE_CONDITIONS:
+            has_gated = True
+    if has_empty and has_gated:
+        return (
+            f'节点 {name} 同时存在空条件和门控入边，执行语义是 OR：'
+            '任意一条空条件入边触发即会执行。'
+        )
+    return None
+
+
 def _validate_ocr_crop_nodes(workflow_data):
     """校验 OCR 节点裁剪 overlay 与 upstream_crops 入边合同。
 
@@ -267,49 +284,42 @@ def _validate_ocr_crop_nodes(workflow_data):
         if is_ocr:
             config = _node_overlay_config(node)
             try:
-                validate_ocr_crop_node_config(config)
+                overlay = validate_ocr_crop_node_config(config)
             except ValueError as exc:
                 return False, str(exc), warnings
 
-            crop_incoming = []
-            for connection in incoming:
-                source_node = nodes.get(_connection_source(connection))
-                if source_node and source_node.get('type') in _CROP_SOURCE_TYPES:
-                    crop_incoming.append(connection)
-
-            input_mode = config.get('input_mode') or 'frame'
+            input_mode = overlay.get('input_mode') or config.get('input_mode') or 'frame'
             if input_mode == 'upstream_crops':
-                if len(crop_incoming) != 1:
+                if len(incoming) != 1:
                     return False, (
-                        f'OCR 节点 {name} 的上游裁剪模式必须恰好连接一条来自算法、函数或外部 API 的入边'
+                        f'OCR 节点 {name} 的上游裁剪模式必须恰好连接一条入边'
                     ), warnings
-                if crop_incoming[0].get('condition') != 'detected':
+                source_node = nodes.get(_connection_source(incoming[0]))
+                if not source_node or source_node.get('type') not in _CROP_SOURCE_TYPES:
+                    return False, (
+                        f'OCR 节点 {name} 的上游裁剪入边必须来自算法、函数或外部 API'
+                    ), warnings
+                if incoming[0].get('condition') != 'detected':
                     return False, (
                         f'OCR 节点 {name} 的上游裁剪入边条件必须为 detected'
                     ), warnings
-            elif any(connection.get('condition') == 'detected' for connection in crop_incoming):
-                warning = (
-                    f'OCR 节点 {name} 入边已设为「检测到」，但仍使用整帧识别；'
-                    '如只需识别检测框内文字，请将输入模式改为「上游裁剪」。'
-                )
-                warnings.append(warning)
-                _logger.warning(warning)
+            else:
+                if any(connection.get('condition') == 'detected' for connection in incoming):
+                    warning = (
+                        f'OCR 节点 {name} 入边已设为「检测到」，但仍使用整帧识别；'
+                        '如只需识别检测框内文字，请将输入模式改为「上游裁剪」。'
+                    )
+                    warnings.append(warning)
+                    _logger.warning(warning)
+                mixed_warning = _mixed_incoming_or_warning(name, incoming)
+                if mixed_warning:
+                    warnings.append(mixed_warning)
+                    _logger.warning(mixed_warning)
         else:
-            has_empty = False
-            has_gated = False
-            for connection in incoming:
-                condition = connection.get('condition')
-                if condition in (None, '', 'always'):
-                    has_empty = True
-                elif condition in _GATE_EDGE_CONDITIONS:
-                    has_gated = True
-            if has_empty and has_gated:
-                warning = (
-                    f'节点 {name} 同时存在空条件和门控入边，执行语义是 OR：'
-                    '任意一条空条件入边触发即会执行。'
-                )
-                warnings.append(warning)
-                _logger.warning(warning)
+            mixed_warning = _mixed_incoming_or_warning(name, incoming)
+            if mixed_warning:
+                warnings.append(mixed_warning)
+                _logger.warning(mixed_warning)
 
     return True, None, warnings
 
