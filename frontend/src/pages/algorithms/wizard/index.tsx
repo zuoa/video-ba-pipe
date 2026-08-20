@@ -77,12 +77,7 @@ const DETECTOR_PRESETS: readonly DetectorPreset[] = [
   {
     name: '目标追踪',
     path: 'templates/object_tracker.py',
-    description: '为上游检测框分配跨帧 ID，可选贪心 IoU 或 ByteTrack。向导间隔最低 0.1 秒，工作流节点可设为 0 以每帧执行',
-  },
-  {
-    name: '目标徘徊',
-    path: 'templates/loiter_analyzer.py',
-    description: '接在目标追踪之后，同一 ID 停留达到阈值才输出。向导间隔最低 0.1 秒，工作流节点可设为 0 以每帧执行',
+    description: '为上游检测框分配跨帧 ID，并可在同一节点选择徘徊、停留或按方向穿越热区。向导间隔最低 0.1 秒',
   },
 ];
 
@@ -132,7 +127,7 @@ interface ConfigSchema {
       model_type?: string[];
       framework?: string[];
     };
-    visible_when?: Record<string, string>;
+    visible_when?: Record<string, string | string[]>;
   };
 }
 
@@ -147,7 +142,8 @@ const isConfigFieldVisible = (
   return Object.entries(field.visible_when).every(([dep, expected]) => {
     const current = values?.[`config_${dep}`];
     const fallback = schema[dep]?.default;
-    return (current ?? fallback) === expected;
+    const actual = current ?? fallback;
+    return Array.isArray(expected) ? expected.includes(actual) : actual === expected;
   });
 };
 
@@ -1401,11 +1397,9 @@ export default function AlgorithmWizard() {
                   name="intervalSeconds"
                   initialValue={isFrequentFrameScript(selectedDetector?.scriptPath) ? 0.1 : 1}
                   extra={
-                    selectedDetector?.scriptPath === 'templates/loiter_analyzer.py'
-                      ? '必须接在目标追踪之后；建议间隔 0.1 秒，工作流节点可改为 0 以每帧执行'
-                      : selectedDetector?.scriptPath === 'templates/object_tracker.py'
-                        ? '追踪建议使用最小值 0.1；工作流节点可改为 0 以每帧执行'
-                        : undefined
+                    isFrequentFrameScript(selectedDetector?.scriptPath)
+                      ? '追踪/事件建议间隔 0.1 秒；徘徊、停留、穿越都在本算法的「输出事件」里选，不必再串一个节点'
+                      : undefined
                   }
                   rules={[{ required: true, message: '请输入检测间隔' }]}
                 >

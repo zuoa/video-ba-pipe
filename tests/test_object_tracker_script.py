@@ -114,6 +114,49 @@ def test_script_resets_when_source_changes():
     assert second["detections"][0]["track_id"] == 1
 
 
+def test_script_loiter_event_waits_for_dwell():
+    script = _load_script()
+    config = {"backend": "iou", "min_hits": 1, "event": "loiter", "min_dwell_seconds": 8}
+    state = script.init(config)
+    upstream = {
+        "algo-1": {"detections": [{"box": [0, 0, 10, 10], "confidence": 0.9, "label": "person"}]}
+    }
+    early = script.process(_frame(), config, state=state, upstream_results=upstream, frame_timestamp=10)
+    ready = script.process(_frame(), config, state=state, upstream_results=upstream, frame_timestamp=18)
+    assert early["detections"] == []
+    assert len(ready["detections"]) == 1
+    assert ready["detections"][0]["track_id"] == 1
+    assert ready["detections"][0]["attributes"]["event"] == "loiter"
+    assert ready["detections"][0]["attributes"]["dwell_seconds"] == 8
+    assert ready["metadata"]["event"] == "loiter"
+
+
+def test_script_region_cross_uses_roi():
+    script = _load_script()
+    config = {
+        "backend": "iou",
+        "min_hits": 1,
+        "match_iou": 0.1,
+        "event": "region_cross",
+        "cross_mode": "enter",
+        "cross_direction": "left_to_right",
+    }
+    state = script.init(config)
+    roi = [{"polygon": [[10, 0], [20, 0], [20, 16], [10, 16]], "name": "gate"}]
+    left = {"algo-1": {"detections": [{"box": [4, 2, 12, 10], "confidence": 0.9, "label": "person"}]}}
+    right = {"algo-1": {"detections": [{"box": [10, 2, 18, 10], "confidence": 0.9, "label": "person"}]}}
+    script.process(
+        _frame(), config, roi_regions=roi, state=state, upstream_results=left,
+        frame_width=20, frame_height=16, frame_timestamp=1,
+    )
+    crossed = script.process(
+        _frame(), config, roi_regions=roi, state=state, upstream_results=right,
+        frame_width=20, frame_height=16, frame_timestamp=2,
+    )
+    assert len(crossed["detections"]) == 1
+    assert crossed["detections"][0]["attributes"]["cross_mode"] == "enter"
+
+
 def test_script_algorithm_passes_frame_timestamp():
     captured = {}
 

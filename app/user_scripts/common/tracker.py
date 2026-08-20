@@ -1,7 +1,7 @@
 """Object-tracking contracts and shared helpers.
 
 Backends implement the same update/reset protocol and emit Track objects.
-Downstream analyzers (dwell, loiter) should consume track_id only.
+Event filters (dwell, loiter, crossing) live in track_events and run inside the tracker node.
 """
 
 from __future__ import annotations
