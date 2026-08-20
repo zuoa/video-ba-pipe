@@ -1,6 +1,6 @@
 """Alert export APIs."""
 
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 
 from app.core.alert_export import (
     ExportValidationError,
@@ -10,6 +10,7 @@ from app.core.alert_export import (
     ensure_export_worker_started,
     resolve_export_file,
     serialize_export_task,
+    x_accel_redirect_path,
 )
 from app.core.database_models import AlertExportTask
 from app.web.api.auth import (
@@ -19,6 +20,11 @@ from app.web.api.auth import (
     require_auth,
     require_resource_owner,
 )
+
+
+def _nginx_x_accel_enabled() -> bool:
+    flag = request.headers.get('X-Accel-Redirect-Enabled', '')
+    return flag.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _request_filters():
@@ -42,6 +48,21 @@ def _load_task(task_id: int):
 
 
 def register_alert_exports_api(app):
+    @app.route('/media/exports/<path:file_path>', methods=['GET'])
+    def download_public_export(file_path):
+        resolved = resolve_export_file(file_path)
+        if resolved is None or not resolved.is_file():
+            return jsonify({'error': '导出文件不存在或已被清理'}), 404
+        if resolved.suffix.lower() != '.zip':
+            return jsonify({'error': '不支持的导出文件类型'}), 400
+        return send_file(
+            resolved,
+            as_attachment=True,
+            download_name=resolved.name,
+            mimetype='application/zip',
+            conditional=True,
+        )
+
     @app.route('/api/alert-exports', methods=['POST'])
     @require_auth
     def create_alert_export():
@@ -101,10 +122,18 @@ def register_alert_exports_api(app):
         resolved = resolve_export_file(task.file_path)
         if resolved is None or not resolved.is_file():
             return jsonify({'error': '导出文件不存在或已被清理'}), 404
+        download_name = task.file_name or resolved.name
+        accel_path = x_accel_redirect_path(task.file_path)
+        if accel_path and _nginx_x_accel_enabled():
+            response = Response(status=200)
+            response.headers['X-Accel-Redirect'] = accel_path
+            response.headers['Content-Type'] = 'application/zip'
+            response.headers['Content-Disposition'] = f'attachment; filename="{download_name}"'
+            return response
         return send_file(
             resolved,
             as_attachment=True,
-            download_name=task.file_name or resolved.name,
+            download_name=download_name,
             mimetype='application/zip',
         )
 

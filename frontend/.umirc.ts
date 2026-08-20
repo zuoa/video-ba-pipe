@@ -139,6 +139,10 @@ export default defineConfig({
         }
       },
     },
+    '/media': {
+      target: 'http://10.0.4.147:5002',
+      changeOrigin: true,
+    },
   },
   esbuildMinifyIIFE: true,
 });

@@ -133,6 +133,7 @@ CORS(
     app,
     resources={
         r"/api/*": {"origins": "*"},
+        r"/media/*": {"origins": "*"},
         r"/openapi/*": {"origins": "*"},
     },
 )
@@ -1975,55 +1976,18 @@ def get_video(file_path):
         file_ext = Path(full_path).suffix.lower()
         if file_ext not in allowed_extensions:
             abort(400, description="File type not supported")
-        
-        # 获取文件大小
-        file_size = os.path.getsize(full_path)
-        
-        # 设置 MIME 类型
+
         mime_type = 'video/mp4' if file_ext == '.mp4' else f'video/{file_ext[1:]}'
-        
-        # 处理 Range 请求
-        range_header = request.headers.get('Range', None)
-        
-        if not range_header:
-            # 没有 Range 请求，返回整个文件
-            with open(full_path, 'rb') as f:
-                data = f.read()
-            
-            response = Response(data, 200, mimetype=mime_type)
-            response.headers.add('Content-Length', str(file_size))
-            response.headers.add('Accept-Ranges', 'bytes')
-            return response
-        
-        # 解析 Range 请求头
-        # Range: bytes=start-end
-        byte_range = range_header.replace('bytes=', '').strip()
-        byte_range_parts = byte_range.split('-')
-        
-        start = int(byte_range_parts[0]) if byte_range_parts[0] else 0
-        end = int(byte_range_parts[1]) if byte_range_parts[1] else file_size - 1
-        
-        # 确保 end 不超过文件大小
-        if end >= file_size:
-            end = file_size - 1
-        
-        # 计算内容长度
-        content_length = end - start + 1
-        
-        # 读取指定范围的数据
-        with open(full_path, 'rb') as f:
-            f.seek(start)
-            data = f.read(content_length)
-        
-        # 创建 206 Partial Content 响应
-        response = Response(data, 206, mimetype=mime_type)
-        response.headers.add('Content-Range', f'bytes {start}-{end}/{file_size}')
-        response.headers.add('Accept-Ranges', 'bytes')
-        response.headers.add('Content-Length', str(content_length))
-        response.headers.add('Cache-Control', 'no-cache')
-        
-        return response
-        
+        # Stream the file. Never slurp the whole mp4 into memory — that
+        # used to OOM gunicorn workers and surface as nginx 502.
+        return send_file(
+            full_path,
+            mimetype=mime_type,
+            as_attachment=False,
+            conditional=True,
+            etag=True,
+        )
+
     except HTTPException:
         raise
     except Exception as e:

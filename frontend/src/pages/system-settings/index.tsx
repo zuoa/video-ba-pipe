@@ -814,7 +814,7 @@ const SystemSettingsPage: React.FC = () => {
                     showIcon
                     className="system-settings-alert"
                     message="消息投递使用持久化异步任务"
-                    description="URL 模式保持当前行为；消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。"
+                    description="URL 模式保持当前行为：录像走 Nginx 公开目录 /api/video/，告警导出 ZIP 走 /media/exports/，不再经过 API 进程，避免大文件 502。消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。"
                   />
 
                   <Form form={publicMediaForm} layout="vertical">

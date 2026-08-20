@@ -901,6 +901,8 @@ export interface AlertExportTask {
   missing_image_count: number;
   progress_percent: number;
   file_name?: string | null;
+  file_path?: string | null;
+  file_url?: string | null;
   file_size?: number | null;
   error_message?: string | null;
   created_at?: string | null;
@@ -950,7 +952,17 @@ export async function deleteAlertExport(id: number) {
   });
 }
 
-export async function downloadAlertExport(id: number) {
+export async function downloadAlertExport(id: number, fileUrl?: string | null) {
+  if (fileUrl) {
+    const anchor = document.createElement('a');
+    anchor.href = fileUrl;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return;
+  }
+
   const response = await fetch(`/api/alert-exports/${id}/download`, {
     headers: getAuthHeaders(),
   });

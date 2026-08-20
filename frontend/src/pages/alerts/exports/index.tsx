@@ -105,7 +105,7 @@ const AlertExportsPage: React.FC = () => {
   const handleDownload = async (task: AlertExportTask) => {
     setDownloadingId(task.id);
     try {
-      await downloadAlertExport(task.id);
+      await downloadAlertExport(task.id, task.file_url);
     } catch (error: any) {
       message.error(error?.message || '下载失败');
     } finally {

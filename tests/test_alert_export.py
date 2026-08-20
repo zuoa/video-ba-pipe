@@ -239,6 +239,17 @@ def test_owner_scope_and_admin_visibility(export_env):
     assert operator_task.total_count == 1
 
 
+def test_public_export_url_helpers():
+    assert export_mod.public_export_url('12/alerts_export_12_20260820.zip') == (
+        '/media/exports/12/alerts_export_12_20260820.zip'
+    )
+    assert export_mod.x_accel_redirect_path('12/alerts_export_12_20260820.zip') == (
+        '/internal/media/exports/12/alerts_export_12_20260820.zip'
+    )
+    assert export_mod.public_export_url('') is None
+    assert export_mod.x_accel_redirect_path(None) is None
+
+
 def test_api_create_list_download_and_delete(export_env):
     source = export_env['source']
     frames_dir = export_env['frames_dir']
@@ -263,12 +274,26 @@ def test_api_create_list_download_and_delete(export_env):
     listed = client.get('/api/alert-exports', headers=headers)
     assert listed.status_code == 200
     assert listed.get_json()['pagination']['total'] == 1
-    assert listed.get_json()['data'][0]['downloadable'] is True
+    listed_task = listed.get_json()['data'][0]
+    assert listed_task['downloadable'] is True
+    assert listed_task['file_url'] == f'/media/exports/{finished.file_path}'
 
     download = client.get(f'/api/alert-exports/{task_id}/download', headers=headers)
     assert download.status_code == 200
     assert download.mimetype == 'application/zip'
     assert zipfile.is_zipfile(BytesIO(download.data))
+
+    public = client.get(listed_task['file_url'])
+    assert public.status_code == 200
+    assert zipfile.is_zipfile(BytesIO(public.data))
+
+    accel = client.get(
+        f'/api/alert-exports/{task_id}/download',
+        headers={**headers, 'X-Accel-Redirect-Enabled': 'true'},
+    )
+    assert accel.status_code == 200
+    assert accel.headers['X-Accel-Redirect'] == f'/internal/media/exports/{finished.file_path}'
+    assert accel.data == b''
 
     anonymous = client.get(f'/api/alert-exports/{task_id}/download')
     assert anonymous.status_code == 401
@@ -319,6 +344,9 @@ def test_download_rejects_path_traversal(export_env):
         headers=export_env['admin_headers'],
     )
     assert response.status_code == 404
+
+    public = client.get('/media/exports/../secret.zip')
+    assert public.status_code == 404
 
 
 def test_cleanup_expired_exports(export_env):

@@ -14,6 +14,7 @@ import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 from app.config import EXPORT_SAVE_PATH
 from app.core.alert_media_cleaner import resolve_frame_media_path
@@ -83,6 +84,7 @@ def serialize_export_task(task: AlertExportTask) -> dict[str, Any]:
     elif total > 0:
         percent = min(99, int(processed * 100 / total))
 
+    downloadable = task.status == 'succeeded' and bool(task.file_path)
     return {
         'id': task.id,
         'status': task.status,
@@ -94,14 +96,32 @@ def serialize_export_task(task: AlertExportTask) -> dict[str, Any]:
         'missing_image_count': int(task.missing_image_count or 0),
         'progress_percent': percent,
         'file_name': task.file_name,
+        'file_path': task.file_path,
+        'file_url': public_export_url(task.file_path) if downloadable else None,
         'file_size': task.file_size,
         'error_message': task.error_message,
         'created_at': task.created_at.isoformat() if task.created_at else None,
         'started_at': task.started_at.isoformat() if task.started_at else None,
         'finished_at': task.finished_at.isoformat() if task.finished_at else None,
         'expires_at': task.expires_at.isoformat() if task.expires_at else None,
-        'downloadable': task.status == 'succeeded' and bool(task.file_path),
+        'downloadable': downloadable,
     }
+
+
+def public_export_url(relative_path: Optional[str]) -> Optional[str]:
+    """Public nginx path for a completed export zip."""
+    clean = str(relative_path or '').replace('\\', '/').lstrip('/')
+    if not clean:
+        return None
+    return f'/media/exports/{quote(clean, safe="/")}'
+
+
+def x_accel_redirect_path(relative_path: Optional[str]) -> Optional[str]:
+    """Internal nginx path used after Flask authenticates a download."""
+    public = public_export_url(relative_path)
+    if not public:
+        return None
+    return '/internal' + public
 
 
 def _export_root() -> Path:
