@@ -33,6 +33,45 @@ import AppButton from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
 import './index.css';
 
+/* ---------- 主题 ---------- */
+
+const AW_THEMES = [
+  { key: 'blue', name: '科技蓝', color: '#3b82f6' },
+  { key: 'emerald', name: '翡翠绿', color: '#10b981' },
+  { key: 'violet', name: '暗夜紫', color: '#8b5cf6' },
+  { key: 'amber', name: '琥珀金', color: '#f59e0b' },
+  { key: 'cyan', name: '深青', color: '#22d3ee' },
+] as const;
+
+type AwThemeKey = (typeof AW_THEMES)[number]['key'];
+
+const AW_THEME_STORAGE_KEY = 'aw-theme';
+
+const resolveInitialTheme = (): AwThemeKey => {
+  const keys: string[] = AW_THEMES.map(t => t.key);
+  const fromUrl = new URLSearchParams(window.location.search).get('theme');
+  if (fromUrl && keys.includes(fromUrl)) return fromUrl as AwThemeKey;
+  const stored = localStorage.getItem(AW_THEME_STORAGE_KEY);
+  if (stored && keys.includes(stored)) return stored as AwThemeKey;
+  return 'blue';
+};
+
+const ThemeSwitcher: React.FC<{ theme: AwThemeKey; onChange: (theme: AwThemeKey) => void }> = ({ theme, onChange }) => (
+  <div className="aw-theme-switcher">
+    {AW_THEMES.map(t => (
+      <button
+        key={t.key}
+        type="button"
+        className={`aw-theme-dot ${t.key === theme ? 'active' : ''}`}
+        style={{ background: t.color }}
+        title={t.name}
+        aria-label={`切换到${t.name}主题`}
+        onClick={() => onChange(t.key)}
+      />
+    ))}
+  </div>
+);
+
 /* ---------- 数据解析 helpers ---------- */
 
 interface DetectionImageItem {
@@ -437,11 +476,21 @@ const AlertWallPage: React.FC = () => {
   const [isNewAlert, setIsNewAlert] = useState(false);
   const [isManualSelect, setIsManualSelect] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [theme, setTheme] = useState<AwThemeKey>(resolveInitialTheme);
   const mainDisplayRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLDivElement>(null);
   const lastKnownLatestIdRef = useRef<string | undefined>(undefined);
   const mainAlertRef = useRef<Alert | null>(null);
   const alertIdsRef = useRef('');
+
+  // 主题挂在 <html> 上:portal 到 body 的详情弹窗也能继承 :root 上的主题变量
+  useEffect(() => {
+    document.documentElement.dataset.awTheme = theme;
+    localStorage.setItem(AW_THEME_STORAGE_KEY, theme);
+    return () => {
+      delete document.documentElement.dataset.awTheme;
+    };
+  }, [theme]);
 
   useEffect(() => {
     mainAlertRef.current = mainAlert;
@@ -874,6 +923,9 @@ const AlertWallPage: React.FC = () => {
       {/* 粒子效果 */}
       <ParticlesEffect />
 
+      {/* 主题切换器 */}
+      <ThemeSwitcher theme={theme} onChange={setTheme} />
+
       {/* 告警详情弹窗 */}
       {selectedAlert && (
         <AlertDetailModal
@@ -925,8 +977,8 @@ const TrendChart: React.FC<{ data: Array<{ date: string; count: number }> }> = (
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
         <defs>
           <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(59, 130, 246, 0.3)" />
-            <stop offset="100%" stopColor="rgba(59, 130, 246, 0)" />
+            <stop offset="0%" className="trend-stop-start" />
+            <stop offset="100%" className="trend-stop-end" />
           </linearGradient>
         </defs>
         {/* 填充区域 */}
@@ -936,12 +988,8 @@ const TrendChart: React.FC<{ data: Array<{ date: string; count: number }> }> = (
         />
         {/* 折线 */}
         <polyline
+          className="trend-line"
           points={points}
-          fill="none"
-          stroke="rgba(59, 130, 246, 0.8)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
         />
         {/* 数据点 */}
         {data.map((d, i) => {
@@ -950,12 +998,10 @@ const TrendChart: React.FC<{ data: Array<{ date: string; count: number }> }> = (
           return (
             <circle
               key={i}
+              className="trend-dot"
               cx={x}
               cy={y}
               r="3"
-              fill="rgba(59, 130, 246, 1)"
-              stroke="rgba(59, 130, 246, 0.3)"
-              strokeWidth="2"
             />
           );
         })}
