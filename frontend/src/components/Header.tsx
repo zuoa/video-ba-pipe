@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, history } from '@umijs/max';
 import { Dropdown, message } from 'antd';
-import Button from '@/components/common/AppButton';
 import { getSystemInfo } from '@/services/api';
 import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import { LOGIN_PATH, clearAuthStorage } from '@/utils/auth';
@@ -185,25 +184,27 @@ const Header: React.FC = () => {
         </nav>
 
         <div className="site-tools">
-          <Button
-            type="text"
-            icon={<CalculatorOutlined />}
+          <a
             href="/gpu-calculator"
             target="_blank"
+            rel="noopener noreferrer"
             className="site-tools__button"
             title="算力"
             aria-label="算力"
-          />
+          >
+            <CalculatorOutlined />
+          </a>
 
-          <Button
-            type="text"
-            icon={<DesktopOutlined />}
+          <a
             href="/alert-wall"
             target="_blank"
+            rel="noopener noreferrer"
             className="site-tools__button"
             title="大屏"
             aria-label="大屏"
-          />
+          >
+            <DesktopOutlined />
+          </a>
 
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Link

@@ -183,23 +183,33 @@
   gap: 6px;
 }
 
-.site-tools__button.ant-btn {
+.site-tools__button {
   display: grid;
   width: 34px;
   height: 34px;
   min-height: 34px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  color: rgba(219, 232, 236, 0.62);
-  background: rgba(255, 255, 255, 0.04);
+  color: #e8f2f4;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 15px;
+  text-decoration: none;
+  transition:
+    color var(--app-motion-fast) ease,
+    background-color var(--app-motion-fast) ease,
+    border-color var(--app-motion-fast) ease;
 }
 
-.site-tools__button.ant-btn:hover {
-  border-color: rgba(98, 212, 187, 0.24) !important;
-  color: var(--app-signal-bright) !important;
-  background: rgba(98, 212, 187, 0.08) !important;
+.site-tools__button .anticon {
+  font-size: 15px;
+}
+
+.site-tools__button:hover {
+  border-color: rgba(98, 212, 187, 0.36);
+  color: var(--app-signal-bright);
+  background: rgba(98, 212, 187, 0.12);
 }
 
 .site-user {
