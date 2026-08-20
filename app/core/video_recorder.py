@@ -21,9 +21,188 @@ from app.core.frame_utils import (
 )
 from app.core.ringbuffer import VideoRingBuffer
 
+# HTML5 <video> in Chrome/Safari/Firefox plays H.264 in MP4, not MPEG-4 Part 2
+# (mp4v). Prefer software x264, then common hardware H.264 encoders.
+BROWSER_H264_ENCODERS = (
+    'libx264',
+    'libopenh264',
+    'h264_nvenc',
+    'h264_videotoolbox',
+    'h264_qsv',
+    'h264_rkmpp',
+)
+OPENCV_H264_FOURCCS = ('avc1', 'H264', 'X264')
+
+
+def even_frame_size(width: int, height: int) -> Tuple[int, int]:
+    """H.264 yuv420p requires even width and height."""
+    even_width = int(width) - (int(width) % 2)
+    even_height = int(height) - (int(height) % 2)
+    if even_width < 2 or even_height < 2:
+        raise ValueError(f"帧尺寸过小，无法编码 H.264: {width}x{height}")
+    return even_width, even_height
+
+
+def build_ffmpeg_h264_output_args(encoder: str) -> List[str]:
+    args = ['-an', '-c:v', encoder]
+    if encoder == 'libx264':
+        args.extend(['-preset', 'veryfast', '-profile:v', 'baseline', '-level', '3.1'])
+    elif encoder == 'h264_nvenc':
+        args.extend(['-preset', 'p4', '-profile:v', 'baseline'])
+    elif encoder == 'h264_videotoolbox':
+        args.extend(['-profile:v', 'baseline'])
+    args.extend([
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        '-tag:v', 'avc1',
+        '-f', 'mp4',
+    ])
+    return args
+
+
+def build_ffmpeg_raw_encode_command(
+    ffmpeg_path: str,
+    output_path: str,
+    fps: float,
+    frame_size: Tuple[int, int],
+    encoder: str,
+) -> List[str]:
+    width, height = frame_size
+    return [
+        ffmpeg_path,
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-y',
+        '-f', 'rawvideo',
+        '-pix_fmt', 'bgr24',
+        '-video_size', f'{width}x{height}',
+        '-framerate', str(fps),
+        '-i', 'pipe:0',
+        *build_ffmpeg_h264_output_args(encoder),
+        output_path,
+    ]
+
+
+def probe_mp4_video_codec(path: str, timeout_seconds: float = 10.0) -> Optional[str]:
+    ffprobe_path = shutil.which('ffprobe')
+    if not ffprobe_path:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                ffprobe_path,
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_name',
+                '-of', 'csv=p=0',
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    codec = (result.stdout or '').strip().splitlines()
+    return codec[0].strip().lower() if codec else None
+
+
+def ensure_browser_compatible_mp4(
+    path: str,
+    ffmpeg_path: Optional[str] = None,
+) -> bool:
+    """Rewrite an alert mp4 as baseline H.264 + faststart so browsers can play it."""
+    if not path or not os.path.isfile(path):
+        return False
+
+    ffmpeg_path = ffmpeg_path or shutil.which('ffmpeg')
+    codec = probe_mp4_video_codec(path)
+    if not ffmpeg_path:
+        if codec == 'h264':
+            return True
+        logger.error(f"无法检查录像兼容性，未找到 ffmpeg: {path}")
+        return False
+
+    encoder = VideoRecorder._select_ffmpeg_encoder(ffmpeg_path)
+    temp_path = f'{path}.browser.tmp.mp4'
+    try:
+        if codec == 'h264':
+            command = [
+                ffmpeg_path,
+                '-hide_banner',
+                '-loglevel', 'error',
+                '-y',
+                '-i', path,
+                '-an',
+                '-c:v', 'copy',
+                '-movflags', '+faststart',
+                '-tag:v', 'avc1',
+                '-f', 'mp4',
+                temp_path,
+            ]
+            result = subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=120,
+                check=False,
+            )
+            if result.returncode == 0 and os.path.isfile(temp_path) and os.path.getsize(temp_path) > 0:
+                os.replace(temp_path, path)
+            return True
+
+        if encoder is None:
+            logger.error(f"无法转码为浏览器可播放的 H.264: {path}")
+            return False
+
+        if codec:
+            logger.warning(
+                f"告警录像编码为 {codec}，浏览器无法播放，正在转码为 H.264: {path}"
+            )
+        command = [
+            ffmpeg_path,
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-y',
+            '-i', path,
+            *build_ffmpeg_h264_output_args(encoder),
+            temp_path,
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0 or not os.path.isfile(temp_path) or os.path.getsize(temp_path) <= 0:
+            stderr = (result.stderr or b'').decode('utf-8', errors='replace').strip()
+            logger.error(
+                f"转码浏览器兼容 MP4 失败: {path}; "
+                f"退出码 {result.returncode}; {stderr}"
+            )
+            return False
+
+        os.replace(temp_path, path)
+        return probe_mp4_video_codec(path) == 'h264'
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.error(f"转码浏览器兼容 MP4 失败: {path}; {exc}", exc_info=True)
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
 
 class _FFmpegVideoWriter:
-    """通过独立 FFmpeg 进程写入 BGR 帧，作为 OpenCV VideoWriter 的兜底。"""
+    """通过独立 FFmpeg 进程写入 BGR 帧，输出浏览器可播放的 H.264 MP4。"""
 
     def __init__(
         self,
@@ -33,30 +212,14 @@ class _FFmpegVideoWriter:
         frame_size: Tuple[int, int],
         encoder: str,
     ):
-        width, height = frame_size
-        command = [
-            ffmpeg_path,
-            '-hide_banner',
-            '-loglevel', 'error',
-            '-y',
-            '-f', 'rawvideo',
-            '-pix_fmt', 'bgr24',
-            '-video_size', f'{width}x{height}',
-            '-framerate', str(fps),
-            '-i', 'pipe:0',
-            '-an',
-            '-c:v', encoder,
-        ]
-        if encoder == 'libx264':
-            command.extend(['-preset', 'veryfast'])
-        else:
-            command.extend(['-q:v', '5'])
-        command.extend([
-            '-pix_fmt', 'yuv420p',
-            '-movflags', '+faststart',
-            '-f', 'mp4',
-            output_path,
-        ])
+        width, height = even_frame_size(*frame_size)
+        command = build_ffmpeg_raw_encode_command(
+            ffmpeg_path=ffmpeg_path,
+            output_path=output_path,
+            fps=fps,
+            frame_size=(width, height),
+            encoder=encoder,
+        )
 
         self.output_path = output_path
         self.encoder = encoder
@@ -181,6 +344,7 @@ class VideoRecorder:
         self.max_disk_used_percent = float(max_disk_used_percent)
         self._last_disk_check_at = float('-inf')
         self._last_disk_allowed = True
+        self._output_frame_size: Optional[Tuple[int, int]] = None
         self.recording_tasks = {}  # 记录正在进行的录制任务
         self.lock = threading.Lock()
         
@@ -383,6 +547,9 @@ class VideoRecorder:
             if video_writer is not None and not self._release_video_writer(video_writer):
                 raise RuntimeError("结束视频编码失败")
 
+            if not ensure_browser_compatible_mp4(output_path):
+                raise RuntimeError("告警录像无法转换为浏览器可播放的 H.264")
+
             logger.info(f"[录制 {alert_id}] 视频录制完成: {output_path}, 共写入 {written_frame_count} 帧")
             with self.lock:
                 self.recording_tasks[alert_id]['status'] = 'completed'
@@ -399,22 +566,26 @@ class VideoRecorder:
                 pass
 
     def _open_video_writer(self, first_frame: np.ndarray, output_path: str):
-        """基于首帧创建视频写入器。"""
-        require_cv2()
+        """基于首帧创建视频写入器。优先独立 FFmpeg H.264，避免 OpenCV mp4v。"""
         pixel_format = self._get_frame_pixel_format(first_frame)
-        width, height = infer_frame_dimensions(
-            first_frame,
-            pixel_format=pixel_format,
+        width, height = even_frame_size(
+            *infer_frame_dimensions(
+                first_frame,
+                pixel_format=pixel_format,
+            )
         )
+        self._output_frame_size = (width, height)
 
-        fourcc_options = [
-            'avc1',
-            'H264',
-            'X264',
-            'mp4v',
-        ]
+        ffmpeg_writer = self._open_ffmpeg_video_writer(
+            output_path,
+            width=width,
+            height=height,
+        )
+        if ffmpeg_writer is not None:
+            return ffmpeg_writer
 
-        for fourcc_str in fourcc_options:
+        require_cv2()
+        for fourcc_str in OPENCV_H264_FOURCCS:
             try:
                 fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
                 video_writer = cv2.VideoWriter(
@@ -424,22 +595,17 @@ class VideoRecorder:
                     (width, height)
                 )
                 if video_writer.isOpened():
-                    logger.info(f"使用编码器: {fourcc_str}")
+                    logger.info(f"使用 OpenCV 编码器: {fourcc_str}")
                     return video_writer
                 video_writer.release()
             except Exception as exc:
                 logger.debug(f"编码器 {fourcc_str} 不可用: {exc}")
 
-        logger.warning(
-            f"OpenCV 无法创建视频写入器: {output_path} "
-            f"(尝试了所有编码器; {self._opencv_videoio_summary()})，"
-            "尝试独立 FFmpeg"
+        logger.error(
+            f"无法创建浏览器可播放的视频写入器: {output_path} "
+            f"(FFmpeg H.264 不可用; {self._opencv_videoio_summary()})"
         )
-        return self._open_ffmpeg_video_writer(
-            output_path,
-            width=width,
-            height=height,
-        )
+        return None
 
     def _disk_allows_recording(self) -> bool:
         now = time.monotonic()
@@ -473,7 +639,7 @@ class VideoRecorder:
         if encoder is None:
             logger.error(
                 f"无法创建视频写入器: {output_path}; "
-                "FFmpeg 未提供 libx264 或 mpeg4 编码器"
+                "FFmpeg 未提供浏览器可播放的 H.264 编码器"
             )
             return None
 
@@ -525,7 +691,7 @@ class VideoRecorder:
             if match:
                 encoders.add(match.group(1))
 
-        for encoder in ('libx264', 'mpeg4'):
+        for encoder in BROWSER_H264_ENCODERS:
             if encoder in encoders:
                 return encoder
         return None
@@ -562,6 +728,11 @@ class VideoRecorder:
                 width=getattr(self.buffer, 'width', None) if pixel_format in {'nv12', 'yuv420p'} else None,
                 height=getattr(self.buffer, 'height', None) if pixel_format in {'nv12', 'yuv420p'} else None,
             )
+            output_size = getattr(self, '_output_frame_size', None)
+            if output_size:
+                target_width, target_height = output_size
+                if bgr_frame.shape[1] != target_width or bgr_frame.shape[0] != target_height:
+                    bgr_frame = cv2.resize(bgr_frame, (target_width, target_height))
             video_writer.write(bgr_frame)
             return True
         except Exception as exc:
@@ -600,6 +771,10 @@ class VideoRecorder:
             
             # 释放资源
             if not self._release_video_writer(video_writer):
+                return False
+
+            if not ensure_browser_compatible_mp4(output_path):
+                logger.error(f"告警录像无法转换为浏览器可播放的 H.264: {output_path}")
                 return False
             
             logger.info(f"视频编码完成: {output_path}, 共 {len(frames)} 帧")

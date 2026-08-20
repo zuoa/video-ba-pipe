@@ -125,7 +125,8 @@ const VideoPreview: React.FC<{
     return (
       <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
         <VideoCameraOutlined />
-        <strong>{title}加载失败</strong>
+        <strong>{title}无法播放</strong>
+        <span>文件已返回，但浏览器无法解码该编码。告警录像需要 H.264。</span>
         <span className="alertDetail__videoFallbackPath">{rawPath}</span>
         <div className="alertDetail__videoFallbackActions">
           <Button size="small" icon={<ReloadOutlined />} onClick={handleRetry}>
