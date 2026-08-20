@@ -9,7 +9,8 @@ from app.core.cascade_algorithm_config import (
     normalize_cascade_algorithm_config,
 )
 from app.core.orchestrator import Orchestrator
-from app.plugins.cascade_algorithm import CascadeAlgorithm
+from app.plugins.cascade_algorithm import CascadeAlgorithm, _crop_box
+from app.user_scripts.common.roi import expand_and_clip_box
 
 
 def _raw_config():
@@ -89,6 +90,16 @@ def cascade_models(monkeypatch):
         lambda model_id: models[int(model_id)],
     )
     return models
+
+
+def test_crop_box_matches_expand_and_clip_box():
+    detection = {"box": [10, 20, 30, 50]}
+    frame_shape = (100, 80, 3)
+    expand_ratio = 0.1
+    assert _crop_box(detection, frame_shape, expand_ratio) == expand_and_clip_box(
+        detection["box"], frame_shape, expand_ratio
+    )
+    assert _crop_box({"label": "no-box"}, frame_shape, expand_ratio) is None
 
 
 def test_cascade_config_normalizes_linear_stages(cascade_models):

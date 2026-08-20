@@ -15,7 +15,14 @@ OCR_DEFAULT_CONFIG = {
     "unclip_ratio": None,
     "limit_side_len": None,
     "recognition_batch_size": 1,
+    "input_mode": "frame",
+    "expand_ratio": 0.1,
+    "max_candidates": 8,
+    "min_crop_side": 8,
+    "upstream_class_filter": [],
 }
+
+_CROP_INPUT_MODES = {"frame", "upstream_crops"}
 
 
 def _optional_float(value: Any, field_name: str, minimum: float, maximum: float) -> Optional[float]:
@@ -28,6 +35,56 @@ def _optional_float(value: Any, field_name: str, minimum: float, maximum: float)
     if normalized < minimum or normalized > maximum:
         raise ValueError(f"{field_name} 必须在 {minimum} 到 {maximum} 之间")
     return normalized
+
+
+def _optional_int(value: Any, field_name: str, minimum: int, maximum: int) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} 必须是整数") from exc
+    if normalized < minimum or normalized > maximum:
+        raise ValueError(f"{field_name} 必须在 {minimum} 到 {maximum} 之间")
+    return normalized
+
+
+def validate_ocr_crop_node_config(config: Any) -> Dict[str, Any]:
+    """只校验节点 overlay。不要求模型 ID，不返回完整 ocr_config。"""
+    if config in (None, ""):
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("OCR 节点配置必须是 JSON 对象")
+
+    overlay: Dict[str, Any] = {}
+    if config.get("input_mode") not in (None, ""):
+        mode = str(config.get("input_mode")).strip()
+        if mode not in _CROP_INPUT_MODES:
+            raise ValueError("input_mode 仅支持 frame 或 upstream_crops")
+        overlay["input_mode"] = mode
+
+    if "expand_ratio" in config:
+        expand_ratio = _optional_float(config.get("expand_ratio"), "expand_ratio", 0, 1)
+        if expand_ratio is not None:
+            overlay["expand_ratio"] = expand_ratio
+
+    if "max_candidates" in config:
+        max_candidates = _optional_int(config.get("max_candidates"), "max_candidates", 1, 32)
+        if max_candidates is not None:
+            overlay["max_candidates"] = max_candidates
+
+    if "min_crop_side" in config:
+        min_crop_side = _optional_int(config.get("min_crop_side"), "min_crop_side", 1, 64)
+        if min_crop_side is not None:
+            overlay["min_crop_side"] = min_crop_side
+
+    if "upstream_class_filter" in config and config.get("upstream_class_filter") is not None:
+        raw_filter = config.get("upstream_class_filter")
+        if not isinstance(raw_filter, list) or any(not isinstance(item, str) for item in raw_filter):
+            raise ValueError("upstream_class_filter 必须是字符串列表")
+        overlay["upstream_class_filter"] = list(raw_filter)
+
+    return overlay
 
 
 def _required_model(model_id: Any, role: str) -> MLModel:
@@ -81,6 +138,7 @@ def normalize_ocr_algorithm_config(config: Any, current: Optional[Dict[str, Any]
         if normalized_limit < 32 or normalized_limit > 4096:
             raise ValueError("limit_side_len 必须在 32 到 4096 之间")
 
+    crop = validate_ocr_crop_node_config(config)
     return {
         "detection_model_id": detection_model.id,
         "recognition_model_id": recognition_model.id,
@@ -96,4 +154,11 @@ def normalize_ocr_algorithm_config(config: Any, current: Optional[Dict[str, Any]
         "unclip_ratio": _optional_float(config.get("unclip_ratio"), "unclip_ratio", 0.1, 10),
         "limit_side_len": normalized_limit,
         "recognition_batch_size": batch_size,
+        "input_mode": crop.get("input_mode", OCR_DEFAULT_CONFIG["input_mode"]),
+        "expand_ratio": crop.get("expand_ratio", OCR_DEFAULT_CONFIG["expand_ratio"]),
+        "max_candidates": crop.get("max_candidates", OCR_DEFAULT_CONFIG["max_candidates"]),
+        "min_crop_side": crop.get("min_crop_side", OCR_DEFAULT_CONFIG["min_crop_side"]),
+        "upstream_class_filter": list(
+            crop.get("upstream_class_filter", OCR_DEFAULT_CONFIG["upstream_class_filter"])
+        ),
     }

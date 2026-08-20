@@ -85,6 +85,40 @@ def _clip_crop_box(
     return [x1, y1, x2, y2]
 
 
+def expand_and_clip_box(
+    box: Any,
+    frame_shape: Sequence[int],
+    expand_ratio: float,
+) -> Optional[List[int]]:
+    """Expand each side by box_size * expand_ratio, then clip to the frame."""
+    if not isinstance(box, (list, tuple, np.ndarray)) or len(box) < 4:
+        return None
+    height, width = int(frame_shape[0]), int(frame_shape[1])
+    x1, y1, x2, y2 = [float(value) for value in box[:4]]
+    ratio = float(expand_ratio)
+    box_width = max(0.0, x2 - x1)
+    box_height = max(0.0, y2 - y1)
+    x1 = max(0, int(np.floor(x1 - box_width * ratio)))
+    y1 = max(0, int(np.floor(y1 - box_height * ratio)))
+    x2 = min(width, int(np.ceil(x2 + box_width * ratio)))
+    y2 = min(height, int(np.ceil(y2 + box_height * ratio)))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
+def _polygon_points(polygon: Any) -> List[List[float]]:
+    if not isinstance(polygon, (list, tuple, np.ndarray)):
+        return []
+    points: List[List[float]] = []
+    for point in polygon:
+        if isinstance(point, dict):
+            points.append([float(point.get("x", 0.0)), float(point.get("y", 0.0))])
+        elif isinstance(point, (list, tuple, np.ndarray)) and len(point) >= 2:
+            points.append([float(point[0]), float(point[1])])
+    return points
+
+
 def normalize_region_points(region: Dict[str, Any], frame_shape: Sequence[int]) -> List[List[int]]:
     height, width = int(frame_shape[0]), int(frame_shape[1])
     raw_points = region.get("polygon", region.get("points", [])) or []
@@ -185,20 +219,38 @@ def remap_detections_to_full_frame(
     offset_y = float(crop_box[1])
     remapped = []
     for item in items:
-        box = BaseAlgorithm._get_detection_box(item)
-        if box is None:
+        if not isinstance(item, dict):
             continue
-        mapped_box = [
-            float(box[0]) + offset_x,
-            float(box[1]) + offset_y,
-            float(box[2]) + offset_x,
-            float(box[3]) + offset_y,
-        ]
         mapped_item = dict(item)
-        if "box" in mapped_item:
+        polygon_points = _polygon_points(item.get("polygon"))
+        if polygon_points:
+            mapped_item["polygon"] = [
+                [point[0] + offset_x, point[1] + offset_y]
+                for point in polygon_points
+            ]
+
+        box = BaseAlgorithm._get_detection_box(item)
+        if box is not None:
+            mapped_box = [
+                float(box[0]) + offset_x,
+                float(box[1]) + offset_y,
+                float(box[2]) + offset_x,
+                float(box[3]) + offset_y,
+            ]
+            if "box" in mapped_item:
+                mapped_item["box"] = mapped_box
+            if "bbox" in mapped_item:
+                mapped_item["bbox"] = mapped_box
+            if "xyxy" in mapped_item:
+                mapped_item["xyxy"] = mapped_box
+        elif mapped_item.get("polygon"):
+            xs = [point[0] for point in mapped_item["polygon"]]
+            ys = [point[1] for point in mapped_item["polygon"]]
+            mapped_box = [min(xs), min(ys), max(xs), max(ys)]
             mapped_item["box"] = mapped_box
-        if "bbox" in mapped_item:
             mapped_item["bbox"] = mapped_box
+        else:
+            continue
         remapped.append(mapped_item)
     return remapped
 

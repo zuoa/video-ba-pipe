@@ -17,6 +17,7 @@ from app.core.cascade_algorithm_config import (
 from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_frame_dimensions
 from app.core.model_resolver import get_model_resolver
 from app.user_scripts.common.roi import (
+    expand_and_clip_box,
     filter_items_by_regions,
     remap_detections_to_full_frame,
     split_regions,
@@ -44,17 +45,7 @@ def _crop_box(
     box = _box(detection)
     if box is None:
         return None
-    height, width = int(frame_shape[0]), int(frame_shape[1])
-    x1, y1, x2, y2 = [float(value) for value in box[:4]]
-    box_width = max(0.0, x2 - x1)
-    box_height = max(0.0, y2 - y1)
-    x1 = max(0, int(np.floor(x1 - box_width * expand_ratio)))
-    y1 = max(0, int(np.floor(y1 - box_height * expand_ratio)))
-    x2 = min(width, int(np.ceil(x2 + box_width * expand_ratio)))
-    y2 = min(height, int(np.ceil(y2 + box_height * expand_ratio)))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return [x1, y1, x2, y2]
+    return expand_and_clip_box(box, frame_shape, expand_ratio)
 
 
 def _stage_detail(stage: Dict[str, Any], detection: Dict[str, Any]) -> Dict[str, Any]:

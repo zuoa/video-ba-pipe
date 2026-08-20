@@ -526,3 +526,36 @@ def test_cleanup_is_idempotent_and_removes_backend_reference():
 
     assert backend.cleanup_calls == 1
     assert "backend" not in state
+
+
+def test_expand_and_clip_box_matches_cascade_formula():
+    roi_module = load_roi_module()
+    assert roi_module.expand_and_clip_box([10, 10, 30, 30], (100, 80, 3), 0.1) == [8, 8, 32, 32]
+    assert roi_module.expand_and_clip_box([0, 0, 10, 10], (100, 80, 3), 0.0) == [0, 0, 10, 10]
+
+
+def test_remap_translates_polygon_and_keeps_polygon_only_items():
+    roi_module = load_roi_module()
+    crop_box = [100, 50, 200, 150]
+    remapped = roi_module.remap_detections_to_full_frame(
+        [
+            {
+                "box": [10, 10, 50, 50],
+                "polygon": [[10, 10], [50, 10], [50, 50], [10, 50]],
+                "label": "person",
+            },
+            {
+                "polygon": [[1, 2], [4, 2], [4, 6], [1, 6]],
+                "label": "text",
+            },
+            {"label": "dropped"},
+        ],
+        crop_box,
+    )
+
+    assert remapped[0]["box"] == [110.0, 60.0, 150.0, 100.0]
+    assert remapped[0]["polygon"] == [[110.0, 60.0], [150.0, 60.0], [150.0, 100.0], [110.0, 100.0]]
+    assert remapped[1]["polygon"] == [[101.0, 52.0], [104.0, 52.0], [104.0, 56.0], [101.0, 56.0]]
+    assert remapped[1]["box"] == [101.0, 52.0, 104.0, 56.0]
+    assert remapped[1]["bbox"] == [101.0, 52.0, 104.0, 56.0]
+    assert len(remapped) == 2
