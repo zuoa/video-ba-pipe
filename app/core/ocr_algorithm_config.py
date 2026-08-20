@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.core.database_models import MLModel
+from app.core.ocr_runtime import OCR_BACKEND_RKNN, ocr_backend_family
 
 
 OCR_DEFAULT_CONFIG = {
@@ -20,6 +21,8 @@ OCR_DEFAULT_CONFIG = {
     "max_candidates": 8,
     "min_crop_side": 8,
     "upstream_class_filter": [],
+    "rknn_core_mask": "auto",
+    "rknn_input_format": "rgb",
 }
 
 _CROP_INPUT_MODES = {"frame", "upstream_crops"}
@@ -87,6 +90,27 @@ def validate_ocr_crop_node_config(config: Any) -> Dict[str, Any]:
     return overlay
 
 
+def is_ocr_algorithm_runtime_available(ext_config: Optional[Dict[str, Any]]) -> bool:
+    from app.core.ocr_runtime import is_ocr_runtime_available
+
+    config = ext_config if isinstance(ext_config, dict) else {}
+    if (config.get("algorithm_type") or "script") != "ocr":
+        return True
+    try:
+        family = ocr_models_backend_family(config.get("ocr_config") or {})
+    except (TypeError, ValueError):
+        return is_ocr_runtime_available()
+    return is_ocr_runtime_available(required_backend=family)
+
+
+def ocr_models_backend_family(ocr_config: Dict[str, Any]) -> str:
+    detection_model = _required_model(ocr_config.get("detection_model_id"), "detection")
+    return ocr_backend_family(
+        getattr(detection_model, "file_path", None),
+        getattr(detection_model, "framework", None),
+    )
+
+
 def _required_model(model_id: Any, role: str) -> MLModel:
     try:
         normalized_id = int(model_id)
@@ -116,16 +140,40 @@ def normalize_ocr_algorithm_config(config: Any, current: Optional[Dict[str, Any]
 
     detection_model = _required_model(config.get("detection_model_id"), "detection")
     recognition_model = _required_model(config.get("recognition_model_id"), "recognition")
+    detection_family = ocr_backend_family(
+        getattr(detection_model, "file_path", None),
+        getattr(detection_model, "framework", None),
+    )
+    recognition_family = ocr_backend_family(
+        getattr(recognition_model, "file_path", None),
+        getattr(recognition_model, "framework", None),
+    )
+    if detection_family != recognition_family:
+        raise ValueError("OCR 检测与识别模型必须同属 PaddleOCR 或 RKNN")
     device = str(config.get("device") or OCR_DEFAULT_CONFIG["device"]).strip().lower()
     if device not in ("auto", "cpu", "gpu"):
         raise ValueError("OCR device 仅支持 auto、cpu 或 gpu")
-
+    if detection_family == OCR_BACKEND_RKNN and device != "auto":
+        raise ValueError("RKNN OCR 的 device 必须为 auto（表示 NPU）")
+    rknn_input_format = str(
+        config.get("rknn_input_format") or OCR_DEFAULT_CONFIG["rknn_input_format"]
+    ).strip().lower()
+    if rknn_input_format not in ("rgb", "bgr"):
+        raise ValueError("rknn_input_format 仅支持 rgb 或 bgr")
+    rknn_core_mask = str(
+        config.get("rknn_core_mask") or OCR_DEFAULT_CONFIG["rknn_core_mask"]
+    ).strip().lower() or "auto"
+    if rknn_core_mask not in ("auto", "core_0", "core_1", "core_2"):
+        raise ValueError("rknn_core_mask 仅支持 auto、core_0、core_1 或 core_2")
     try:
-        batch_size = int(config.get("recognition_batch_size") or 1)
+        raw_batch_size = config.get("recognition_batch_size")
+        batch_size = int(1 if raw_batch_size in (None, "") else raw_batch_size)
     except (TypeError, ValueError) as exc:
         raise ValueError("recognition_batch_size 必须是整数") from exc
     if batch_size < 1 or batch_size > 64:
         raise ValueError("recognition_batch_size 必须在 1 到 64 之间")
+    if detection_family == OCR_BACKEND_RKNN and batch_size != 1:
+        raise ValueError("RKNN OCR 暂不支持批量识别，recognition_batch_size 必须为 1")
 
     limit_side_len = config.get("limit_side_len")
     if limit_side_len in (None, ""):
@@ -154,6 +202,8 @@ def normalize_ocr_algorithm_config(config: Any, current: Optional[Dict[str, Any]
         "unclip_ratio": _optional_float(config.get("unclip_ratio"), "unclip_ratio", 0.1, 10),
         "limit_side_len": normalized_limit,
         "recognition_batch_size": batch_size,
+        "rknn_core_mask": rknn_core_mask,
+        "rknn_input_format": rknn_input_format,
         "input_mode": crop.get("input_mode", OCR_DEFAULT_CONFIG["input_mode"]),
         "expand_ratio": crop.get("expand_ratio", OCR_DEFAULT_CONFIG["expand_ratio"]),
         "max_candidates": crop.get("max_candidates", OCR_DEFAULT_CONFIG["max_candidates"]),

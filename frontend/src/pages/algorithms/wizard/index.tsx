@@ -88,6 +88,36 @@ const FREQUENT_FRAME_SCRIPTS = new Set([
 
 const isFrequentFrameScript = (path?: string) => Boolean(path && FREQUENT_FRAME_SCRIPTS.has(path));
 
+const isRknnOcrModel = (model: { framework?: string; filename?: string; file_path?: string }) => {
+  const framework = String(model.framework || '').toLowerCase();
+  const filename = String(model.filename || model.file_path || '').toLowerCase();
+  return framework.includes('rknn') || filename.endsWith('.rknn');
+};
+
+const ocrModelMatchesBackends = (
+  model: { framework?: string; filename?: string; file_path?: string },
+  backends: string[],
+) => {
+  const hasRknn = backends.includes('rknn_ocr');
+  const hasPaddle = backends.includes('paddleocr');
+  const rknnModel = isRknnOcrModel(model);
+  if (hasRknn && !hasPaddle) return rknnModel;
+  if (hasPaddle && !hasRknn) return !rknnModel;
+  return true;
+};
+
+const ocrTypeDescription = (backends: string[]) => {
+  const hasRknn = backends.includes('rknn_ocr');
+  const hasPaddle = backends.includes('paddleocr');
+  if (hasRknn && !hasPaddle) {
+    return '使用 RKNN PPOCR 在 NPU 上检测并识别视频画面中的文字。';
+  }
+  if (hasPaddle && !hasRknn) {
+    return '使用本地 PaddleOCR 检测并识别视频画面中的文字。';
+  }
+  return '使用 PaddleOCR 或 RKNN PPOCR 检测并识别视频画面中的文字。';
+};
+
 const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
   const availablePaths = new Set(scripts.map(script => script.path));
   return DETECTOR_PRESETS.filter(preset => availablePaths.has(preset.path));
@@ -172,8 +202,14 @@ export default function AlgorithmWizard() {
   const [cascadeConfig, setCascadeConfig] = useState<CascadeConfig>(createEmptyCascadeConfig);
   const [ocrRuntimeAvailable, setOcrRuntimeAvailable] = useState(false);
   const [ocrRuntimeError, setOcrRuntimeError] = useState('');
+  const [ocrBackends, setOcrBackends] = useState<string[]>([]);
   const [form] = Form.useForm();
   const configFormValues = Form.useWatch((values) => values, form) as Record<string, any> | undefined;
+  const selectedOcrDetectionModelId = Form.useWatch('ocrDetectionModelId', form);
+  const selectedOcrDetectionModel = models.find(model => model.id === selectedOcrDetectionModelId);
+  const selectedOcrUsesRknn = Boolean(
+    selectedOcrDetectionModel && isRknnOcrModel(selectedOcrDetectionModel),
+  );
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -188,6 +224,9 @@ export default function AlgorithmWizard() {
       setModels(modelsData?.models || []);
       setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
       setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
+      setOcrBackends(Array.isArray(pluginData?.capabilities?.ocr?.backends)
+        ? pluginData.capabilities.ocr.backends
+        : []);
 
       if (editId) {
         const algorithm = algorithmsData.find((a: any) => a.id === parseInt(editId));
@@ -252,7 +291,7 @@ export default function AlgorithmWizard() {
       setSelectedDetector({
         type: 'template',
         id: null,
-        name: 'PaddleOCR',
+        name: 'OCR',
         description: '本地文字检测与识别',
         scriptPath: '',
       });
@@ -267,6 +306,8 @@ export default function AlgorithmWizard() {
         ocrRecognitionModelId: ocrConfig.recognition_model_id,
         ocrDevice: ocrConfig.device || 'auto',
         ocrRecognitionScoreThreshold: ocrConfig.recognition_score_threshold ?? 0.5,
+        ocrRknnInputFormat: ocrConfig.rknn_input_format || 'rgb',
+        ocrRknnCoreMask: ocrConfig.rknn_core_mask || 'auto',
         ocrDetectionThreshold: ocrConfig.detection_threshold,
         ocrBoxThreshold: ocrConfig.box_threshold,
         ocrUnclipRatio: ocrConfig.unclip_ratio,
@@ -417,7 +458,7 @@ export default function AlgorithmWizard() {
     setSelectedDetector({
       type: 'template',
       id: null,
-      name: 'PaddleOCR',
+      name: 'OCR',
       description: '本地文字检测与识别',
       scriptPath: '',
     });
@@ -594,7 +635,11 @@ export default function AlgorithmWizard() {
             box_threshold: values.ocrBoxThreshold ?? null,
             unclip_ratio: values.ocrUnclipRatio ?? null,
             limit_side_len: values.ocrLimitSideLen ?? null,
-            recognition_batch_size: values.ocrRecognitionBatchSize || 1,
+            recognition_batch_size: selectedOcrUsesRknn
+              ? 1
+              : (values.ocrRecognitionBatchSize || 1),
+            rknn_input_format: values.ocrRknnInputFormat || 'rgb',
+            rknn_core_mask: values.ocrRknnCoreMask || 'auto',
           },
         };
         if (editingAlgorithm) {
@@ -825,8 +870,8 @@ export default function AlgorithmWizard() {
               <div>
                 <h4>OCR 算法</h4>
                 <p>{ocrRuntimeAvailable
-                  ? '使用本地 PaddleOCR 检测并识别视频画面中的文字。'
-                  : '当前运行环境缺少 PaddleOCR，无法运行或保存。'}</p>
+                  ? ocrTypeDescription(ocrBackends)
+                  : '当前运行环境缺少 OCR 运行时，无法运行或保存。'}</p>
               </div>
             </Card>
           </Col>
@@ -1035,9 +1080,18 @@ export default function AlgorithmWizard() {
 
     if (algorithmType === 'ocr') {
       const detectionModels = models.filter(model =>
-        model.enabled && model.model_type === 'OCR' && model.model_role === 'detection');
+        model.enabled && model.model_type === 'OCR' && model.model_role === 'detection'
+        && ocrModelMatchesBackends(model, ocrBackends));
+      const selectedDetectionModel = detectionModels.find(
+        model => model.id === selectedOcrDetectionModelId,
+      );
       const recognitionModels = models.filter(model =>
-        model.enabled && model.model_type === 'OCR' && model.model_role === 'recognition');
+        model.enabled && model.model_type === 'OCR' && model.model_role === 'recognition'
+        && ocrModelMatchesBackends(model, ocrBackends)
+        && (!selectedDetectionModel
+          || isRknnOcrModel(model) === isRknnOcrModel(selectedDetectionModel)));
+      const rknnOnly = ocrBackends.includes('rknn_ocr') && !ocrBackends.includes('paddleocr');
+      const rknnSelected = rknnOnly || selectedOcrUsesRknn;
       return (
         <div className="config-form ocr-config-form">
           <Form form={form} layout="vertical">
@@ -1046,7 +1100,7 @@ export default function AlgorithmWizard() {
                 type="error"
                 showIcon
                 message="当前环境不支持 OCR"
-                description={ocrRuntimeError || '请使用包含 PaddleOCR 运行时的 CPU 或 CUDA 镜像。'}
+                description={ocrRuntimeError || '当前镜像未提供 PaddleOCR 或 RKNNLite，无法运行 OCR。'}
                 style={{ marginBottom: 16 }}
               />
             ) : null}
@@ -1058,7 +1112,23 @@ export default function AlgorithmWizard() {
                     name="ocrDetectionModelId"
                     rules={[{ required: true, message: '请选择文字检测模型' }]}
                   >
-                    <Select placeholder="选择 detection 模型">
+                    <Select
+                      placeholder="选择 detection 模型"
+                      onChange={(modelId) => {
+                        const detectionModel = detectionModels.find(model => model.id === modelId);
+                        const recognitionModel = models.find(
+                          model => model.id === form.getFieldValue('ocrRecognitionModelId'),
+                        );
+                        if (recognitionModel && detectionModel
+                          && isRknnOcrModel(recognitionModel) !== isRknnOcrModel(detectionModel)) {
+                          form.setFieldValue('ocrRecognitionModelId', undefined);
+                        }
+                        if (detectionModel && isRknnOcrModel(detectionModel)) {
+                          form.setFieldValue('ocrDevice', 'auto');
+                          form.setFieldValue('ocrRecognitionBatchSize', 1);
+                        }
+                      }}
+                    >
                       {detectionModels.map(model => (
                         <Option key={model.id} value={model.id}>{model.name} · {model.version}</Option>
                       ))}
@@ -1084,7 +1154,9 @@ export default function AlgorithmWizard() {
                   type="warning"
                   showIcon
                   message="OCR 模型不完整"
-                  description="请先在模型管理中分别上传 detection 和 recognition 角色的 OCR 模型。"
+                  description={rknnOnly
+                    ? '请先在模型管理中分别上传 detection 和 recognition 角色的 RKNN OCR 模型（.rknn）。'
+                    : '请先在模型管理中分别上传 detection 和 recognition 角色的 OCR 模型。'}
                 />
               ) : null}
             </Card>
@@ -1092,11 +1164,20 @@ export default function AlgorithmWizard() {
             <Card title={<Space><ThunderboltOutlined />推理参数</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} md={8}>
-                  <Form.Item label="运行设备" name="ocrDevice" initialValue="auto">
+                  <Form.Item
+                    label="运行设备"
+                    name="ocrDevice"
+                    initialValue="auto"
+                    extra={rknnSelected ? 'RKNN OCR 使用 NPU，auto 表示自动选择 NPU Core。' : undefined}
+                  >
                     <Select>
-                      <Option value="auto">自动选择</Option>
-                      <Option value="cpu">CPU</Option>
-                      <Option value="gpu">GPU</Option>
+                      <Option value="auto">{rknnSelected ? '自动（NPU）' : '自动选择'}</Option>
+                      {rknnSelected ? null : (
+                        <>
+                          <Option value="cpu">CPU</Option>
+                          <Option value="gpu">GPU</Option>
+                        </>
+                      )}
                     </Select>
                   </Form.Item>
                 </Col>
@@ -1111,11 +1192,44 @@ export default function AlgorithmWizard() {
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={8}>
-                  <Form.Item label="识别批大小" name="ocrRecognitionBatchSize" initialValue={1}>
-                    <InputNumber min={1} max={64} step={1} style={{ width: '100%' }} />
+                  <Form.Item
+                    label="识别批大小"
+                    name="ocrRecognitionBatchSize"
+                    initialValue={1}
+                    extra={rknnSelected ? 'RKNN OCR 当前逐行调用 NPU，批大小固定为 1。' : undefined}
+                  >
+                    <InputNumber
+                      min={1}
+                      max={rknnSelected ? 1 : 64}
+                      step={1}
+                      disabled={rknnSelected}
+                      style={{ width: '100%' }}
+                    />
                   </Form.Item>
                 </Col>
               </Row>
+              {rknnSelected ? (
+                <Row gutter={16}>
+                  <Col xs={24} md={8}>
+                    <Form.Item label="RKNN 输入颜色" name="ocrRknnInputFormat" initialValue="rgb">
+                      <Select>
+                        <Option value="rgb">RGB</Option>
+                        <Option value="bgr">BGR</Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <Form.Item label="NPU Core" name="ocrRknnCoreMask" initialValue="auto">
+                      <Select>
+                        <Option value="auto">自动</Option>
+                        <Option value="core_0">Core 0</Option>
+                        <Option value="core_1">Core 1</Option>
+                        <Option value="core_2">Core 2</Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                </Row>
+              ) : null}
             </Card>
 
             <Card title={<Space><SettingOutlined />高级检测参数</Space>} className="config-card">

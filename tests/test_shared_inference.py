@@ -153,6 +153,42 @@ def test_create_model_worker_backend_selects_paddleocr(monkeypatch, tmp_path):
     assert created["spec"]["recognition_model_id"] == 12
 
 
+def test_create_model_worker_backend_selects_rknn_ocr(monkeypatch, tmp_path):
+    detection = tmp_path / "det.rknn"
+    recognition = tmp_path / "rec.rknn"
+    detection.write_bytes(b"det")
+    recognition.write_bytes(b"rec")
+    spec = build_ocr_model_spec(
+        detection_model_id=11,
+        detection_path=str(detection),
+        recognition_model_id=12,
+        recognition_path=str(recognition),
+        ocr_config={"device": "auto"},
+        detection_info={"framework": "rknn"},
+        recognition_info={"framework": "rknn"},
+    )
+    created = {}
+
+    class FakeBackend:
+        name = "rknn_ocr"
+
+        @classmethod
+        def from_worker_spec(cls, worker_spec, base_config):
+            created["spec"] = worker_spec
+            created["config"] = base_config
+            return cls()
+
+    monkeypatch.setattr("app.core.ocr_backend.RKNNOcrBackend", FakeBackend)
+
+    backend = shared_inference_module._create_model_worker_backend(
+        spec, {"model_type": "OCR", "framework": "rknn"}, {}
+    )
+
+    assert isinstance(backend, FakeBackend)
+    assert spec["backend"] == "rknn_ocr"
+    assert created["spec"]["recognition_model_id"] == 12
+
+
 def test_ocr_spec_changes_when_device_or_recognition_file_changes(tmp_path):
     auto = _ocr_spec(tmp_path, device="auto")
     cpu = _ocr_spec(tmp_path, device="cpu")

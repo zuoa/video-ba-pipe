@@ -121,6 +121,14 @@ docker buildx build --platform=linux/arm64 \
 - RKNN wheel 固定为 `cp311`，与当前 RK 镜像的 Python 3.11 ABI 一致。
 - 不要再从宿主机挂载 `/opt/rknn` 或 `/usr/lib/librknnrt.so`，否则会覆盖或混入镜像内固定版本。
 - runtime/toolkit 版本一致只能排除运行环境漂移；如果某个模型仍在首次推理时出现 `SIGSEGV(-11)`，而同镜像下其他模型正常，应使用同版本 Toolkit 重新导出该模型。
+- RK 业务镜像不安装 PaddleOCR。OCR 算法在检测到 `rknnlite` 后可用，推理后端是 `rknn_ocr`（PP-OCRv4 det+rec 的 `.rknn`），不是 CPU Paddle。模型转换必须使用与镜像一致的 rknn-toolkit2 2.3.2。
+
+### OCR 模型约束
+
+- det/rec 必须都使用 RKNN，不能混用 PaddleOCR 推理目录；现有 PaddleOCR 3.x 压缩包不能直接在 RK 镜像运行。
+- det 推荐输入 `480x480`，rec 推荐输入 `48x320`。上传识别模型时可把 `ppocr_keys_v1.txt` 与唯一的 `.rknn` 一起打入 ZIP/TAR；未附字典时使用应用内置字典。
+- `rknn_input_format` 必须与模型转换时使用的 RGB/BGR 顺序一致。算法中的 `device=auto` 在此后端表示 NPU。
+- `rknn_ocr` 的 det 与全部 rec 在同一个共享 worker 内完成；每次 native inference 单独获取全局 RKNN 锁。生产工作流优先使用 `YOLO --检测到--> OCR（上游裁剪）` 控制调用量。
 
 ## RKNN 共享推理与内存保护
 

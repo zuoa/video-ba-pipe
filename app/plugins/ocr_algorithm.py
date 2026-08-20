@@ -1,4 +1,4 @@
-"""PaddleOCR-backed OCR algorithm. Uses shared inference when enabled."""
+"""OCR algorithm with PaddleOCR or RKNN PPOCR backends."""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_
 from app.core.model_resolver import get_model_resolver
 from app.core.ocr_backend import (
     PaddleOCRBackend,
+    RKNNOcrBackend,
     SharedOCRBackend,
     build_ocr_model_spec,
     filter_ocr_detections,
-    normalize_ocr_output,
+    normalize_ocr_output,  # noqa: F401 - backward-compatible public import
     shared_ocr_client_enabled,
 )
+from app.core.ocr_runtime import OCR_BACKEND_RKNN
 from app.user_scripts.common.roi import (
     crop_frame,
     expand_and_clip_box,
@@ -99,29 +101,43 @@ class OCRAlgorithm(BaseAlgorithm):
             recognition_model_id=self.recognition_model_id,
             recognition_path=recognition_model["path"],
             ocr_config=self.ocr_config,
+            detection_info=detection_model,
+            recognition_info=recognition_model,
         )
         if shared_ocr_client_enabled():
             self.backend = SharedOCRBackend(spec, self.ocr_config)
             logger.info(
-                "[OCR] 使用共享推理: detection=%s recognition=%s device=%s key=%s",
+                "[OCR] 使用共享推理: detection=%s recognition=%s device=%s backend=%s key=%s",
                 self.detection_model_id,
                 self.recognition_model_id,
                 device,
+                spec.get("backend"),
                 self.backend.client.model_key,
             )
             return
 
-        self.backend = PaddleOCRBackend(
-            detection_model["path"],
-            recognition_model["path"],
-            self.ocr_config,
-        )
-        self.pipeline = self.backend.pipeline
+        if spec.get("backend") == OCR_BACKEND_RKNN:
+            self.backend = RKNNOcrBackend(
+                spec["model_path"],
+                spec["recognition_model_path"],
+                self.ocr_config,
+                character_dict_path=spec.get("character_dict_path"),
+                detection_input_shape=(spec.get("input_width"), spec.get("input_height")),
+                recognition_input_shape=spec.get("recognition_input_shape"),
+            )
+        else:
+            self.backend = PaddleOCRBackend(
+                detection_model["path"],
+                recognition_model["path"],
+                self.ocr_config,
+            )
+            self.pipeline = self.backend.pipeline
         logger.info(
-            "[OCR] 本地加载模型: detection=%s recognition=%s device=%s",
+            "[OCR] 本地加载模型: detection=%s recognition=%s device=%s backend=%s",
             self.detection_model_id,
             self.recognition_model_id,
             device,
+            spec.get("backend"),
         )
 
     def _empty_result(self, error: str, latency_ms: Optional[float] = None) -> Dict[str, Any]:

@@ -110,12 +110,20 @@ from app.core.dingtalk_notifier import (
     validate_dingtalk_webhook_url,
 )
 from app.core.vl_algorithm_config import normalize_vl_algorithm_config
-from app.core.ocr_algorithm_config import normalize_ocr_algorithm_config
+from app.core.ocr_algorithm_config import (
+    is_ocr_algorithm_runtime_available,
+    normalize_ocr_algorithm_config,
+    ocr_models_backend_family,
+)
 from app.core.cascade_algorithm_config import (
     cascade_model_ids,
     normalize_cascade_algorithm_config,
 )
-from app.core.ocr_runtime import get_ocr_runtime_status, is_ocr_runtime_available
+from app.core.ocr_runtime import (
+    get_ocr_runtime_status,
+    is_ocr_runtime_available,
+    ocr_runtime_payload,
+)
 from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     workflow_references_algorithm,
@@ -209,7 +217,7 @@ def serialize_algorithm(algorithm, runtime_allowed=None):
         'updated_at': algorithm.updated_at.isoformat() if algorithm.updated_at else None,
         'created_by': getattr(algorithm, 'created_by', 'admin'),
         'algorithm_type': algorithm_type,
-        'runtime_available': algorithm_type != 'ocr' or is_ocr_runtime_available(),
+        'runtime_available': is_ocr_algorithm_runtime_available(ext_config),
         **ext_config,
     }
     if runtime_allowed is not None:
@@ -275,17 +283,14 @@ def list_plugin_modules():
     返回可用的插件模块列表
     返回当前内置算法插件。
     """
-    ocr_available, ocr_error = get_ocr_runtime_status()
+    ocr_capability = ocr_runtime_payload()
     modules = ['script_algorithm', 'vl_algorithm']
-    if ocr_available:
+    if ocr_capability['available']:
         modules.append('ocr_algorithm')
     return jsonify({
         'modules': modules,
         'capabilities': {
-            'ocr': {
-                'available': ocr_available,
-                'error': ocr_error,
-            }
+            'ocr': ocr_capability,
         },
     })
 
@@ -888,6 +893,10 @@ def create_algorithm():
         elif algorithm_type == 'ocr':
             ext_config['plugin_module'] = 'ocr_algorithm'
             ext_config['ocr_config'] = normalize_ocr_algorithm_config(data.get('ocr_config'))
+            family = ocr_models_backend_family(ext_config['ocr_config'])
+            available, runtime_error = get_ocr_runtime_status(required_backend=family)
+            if not available:
+                return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
         elif algorithm_type == 'cascade':
             ext_config['plugin_module'] = 'cascade_algorithm'
             ext_config['cascade_config'] = normalize_cascade_algorithm_config(
@@ -993,6 +1002,10 @@ def update_algorithm(id):
                 data.get('ocr_config'),
                 current=current_ocr_config,
             )
+            family = ocr_models_backend_family(ext_config['ocr_config'])
+            available, runtime_error = get_ocr_runtime_status(required_backend=family)
+            if not available:
+                return jsonify({'error': runtime_error or '当前环境不支持 OCR'}), 503
             ext_config.pop('vl_config', None)
             ext_config.pop('cascade_config', None)
             ext_config.pop('model_ids', None)

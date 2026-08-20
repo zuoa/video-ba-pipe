@@ -1,6 +1,7 @@
 numpy<2
 python-dotenv
 opencv-python
+pyclipper
 Pillow
 peewee
 psycopg2-binary

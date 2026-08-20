@@ -112,6 +112,112 @@ def test_ocr_config_partial_update_preserves_existing_models(monkeypatch):
     assert updated["recognition_model_id"] == 2
     assert updated["device"] == "cpu"
     assert updated["recognition_score_threshold"] == pytest.approx(0.7)
+    assert updated["rknn_input_format"] == "rgb"
+    assert updated["rknn_core_mask"] == "auto"
+    assert "character_dict_path" not in updated
+
+
+def test_ocr_config_rejects_mixed_paddle_and_rknn(monkeypatch):
+    models = {
+        1: SimpleNamespace(
+            id=1,
+            name="det",
+            enabled=True,
+            model_type="OCR",
+            model_role="detection",
+            file_path="/models/det.rknn",
+            framework="rknn",
+        ),
+        2: SimpleNamespace(
+            id=2,
+            name="rec",
+            enabled=True,
+            model_type="OCR",
+            model_role="recognition",
+            file_path="/models/rec",
+            framework="paddleocr",
+        ),
+    }
+    monkeypatch.setattr(
+        "app.core.ocr_algorithm_config.MLModel.get_by_id",
+        lambda model_id: models[int(model_id)],
+    )
+
+    with pytest.raises(ValueError, match="同属"):
+        normalize_ocr_algorithm_config({"detection_model_id": 1, "recognition_model_id": 2})
+
+
+def test_ocr_config_requires_auto_device_for_rknn(monkeypatch):
+    models = {
+        1: SimpleNamespace(
+            id=1, name="det", enabled=True, model_type="OCR", model_role="detection",
+            file_path="/models/det.rknn", framework="rknn",
+        ),
+        2: SimpleNamespace(
+            id=2, name="rec", enabled=True, model_type="OCR", model_role="recognition",
+            file_path="/models/rec.rknn", framework="rknn",
+        ),
+    }
+    monkeypatch.setattr(
+        "app.core.ocr_algorithm_config.MLModel.get_by_id",
+        lambda model_id: models[int(model_id)],
+    )
+
+    with pytest.raises(ValueError, match="auto"):
+        normalize_ocr_algorithm_config({
+            "detection_model_id": 1,
+            "recognition_model_id": 2,
+            "device": "cpu",
+        })
+
+
+@pytest.mark.parametrize("batch_size", [0, 2])
+def test_ocr_config_rejects_invalid_rknn_recognition_batch_size(monkeypatch, batch_size):
+    models = {
+        1: SimpleNamespace(
+            id=1, name="det", enabled=True, model_type="OCR", model_role="detection",
+            file_path="/models/det.rknn", framework="rknn",
+        ),
+        2: SimpleNamespace(
+            id=2, name="rec", enabled=True, model_type="OCR", model_role="recognition",
+            file_path="/models/rec.rknn", framework="rknn",
+        ),
+    }
+    monkeypatch.setattr(
+        "app.core.ocr_algorithm_config.MLModel.get_by_id",
+        lambda model_id: models[int(model_id)],
+    )
+
+    with pytest.raises(ValueError, match="recognition_batch_size"):
+        normalize_ocr_algorithm_config({
+            "detection_model_id": 1,
+            "recognition_model_id": 2,
+            "recognition_batch_size": batch_size,
+        })
+
+
+def test_build_ocr_model_spec_selects_rknn_ocr(tmp_path):
+    detection = tmp_path / "det.rknn"
+    recognition = tmp_path / "rec.rknn"
+    detection.write_bytes(b"det")
+    recognition.write_bytes(b"rec")
+
+    spec = build_ocr_model_spec(
+        detection_model_id=11,
+        detection_path=str(detection),
+        recognition_model_id=12,
+        recognition_path=str(recognition),
+        ocr_config={"device": "auto", "rknn_core_mask": "core_0"},
+        detection_info={"framework": "rknn", "input_shape": "480x480"},
+        recognition_info={"framework": "rknn", "input_shape": "320x48"},
+    )
+
+    assert spec["backend"] == "rknn_ocr"
+    assert spec["framework"] == "rknn"
+    assert spec["input_width"] == 480
+    assert spec["input_height"] == 480
+    assert spec["recognition_input_shape"] == (320, 48)
+    assert spec["backend_config"]["rknn_core_mask"] == "core_0"
 
 
 class _FakeResolver:
@@ -199,6 +305,57 @@ def test_ocr_algorithm_loads_local_backend_when_shared_disabled(monkeypatch):
     assert result["metadata"]["shared_inference"] is False
     assert result["detections"][0]["text"] == "本地"
     assert algorithm.pipeline is not None
+
+
+class _RknnResolver:
+    def _get_model_info(self, model_id):
+        return {
+            "path": f"/models/{model_id}.rknn",
+            "framework": "rknn",
+            "model_type": "OCR",
+        }
+
+
+def test_ocr_algorithm_loads_rknn_backend_when_shared_disabled(monkeypatch):
+    captured = {}
+
+    class FakeRknn:
+        def __init__(self, detection_path, recognition_path, ocr_config, **kwargs):
+            captured["detection_path"] = detection_path
+            captured["recognition_path"] = recognition_path
+            captured["kwargs"] = kwargs
+            self.pipeline = None
+
+        def infer(self, _frame):
+            return [{"text": "RK文字", "confidence": 0.91}], [], {"device": "auto", "backend": "rknn_ocr"}
+
+        def cleanup(self):
+            captured["cleaned"] = True
+
+    monkeypatch.setattr("app.plugins.ocr_algorithm.shared_ocr_client_enabled", lambda: False)
+    monkeypatch.setattr("app.plugins.ocr_algorithm.get_model_resolver", lambda: _RknnResolver())
+    monkeypatch.setattr("app.plugins.ocr_algorithm.RKNNOcrBackend", FakeRknn)
+
+    def unexpected_paddle(*_args, **_kwargs):
+        raise AssertionError("RKNN OCR must not load Paddle locally")
+
+    monkeypatch.setattr("app.plugins.ocr_algorithm.PaddleOCRBackend", unexpected_paddle)
+
+    algorithm = OCRAlgorithm({
+        "ocr_config": {
+            "detection_model_id": 1,
+            "recognition_model_id": 2,
+            "device": "auto",
+        },
+        "pixel_format": "rgb24",
+    })
+    result = algorithm.process(np.zeros((32, 32, 3), dtype=np.uint8))
+    algorithm.cleanup()
+
+    assert captured["detection_path"].endswith("1.rknn")
+    assert captured["recognition_path"].endswith("2.rknn")
+    assert result["detections"][0]["text"] == "RK文字"
+    assert captured["cleaned"] is True
 
 
 def test_ocr_algorithm_reports_overload_as_unchecked(monkeypatch):

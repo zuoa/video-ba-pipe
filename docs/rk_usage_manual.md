@@ -60,6 +60,21 @@ docker compose -p video-analysis -f docker-compose.yml.rknn ps
 - `VIDEO_DECODER_TYPE=rk_mpp` 目前仅在 `worker` 中启用；`api` 保持默认软解，避免在未使用测试解码能力时额外占用 RK 设备。
 - RK compose 默认使用资源受限档：`ANALYSIS_TARGET_FPS=2`、`ANALYSIS_BUFFER_SECONDS=3`、`RECORDING_FPS=3`、`PRE_ALERT_DURATION=15`、`POST_ALERT_DURATION=15`、`RECORDING_BUFFER_DURATION=32`，避免多路场景下录制共享内存和 JPEG 编码持续放大。
 - 如果需要估算当前配置下的多路内存预算，可在项目目录执行：`python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16`。
+- RK 镜像不包含 PaddleOCR（官方 Paddle 不支持 arm64）。OCR 算法在 RK 上走 NPU：分别上传 detection / recognition 角色的 `.rknn`（PP-OCRv4 det/rec，需用 **rknn-toolkit2 2.3.2** 转换）。CPU/CUDA 上的 PaddleOCR 压缩包不能直接当 RK 模型用。
+- OCR 与 YOLO 共用全局 RKNN native lock，建议工作流使用 `YOLO --detected--> OCR` 且 OCR 输入模式为「上游裁剪」，避免整帧多行识别堵住检测。
+
+### RKNN OCR 模型准备
+
+RK 上的 OCR 由一对 PP-OCRv4 模型组成，不能把 PaddleOCR 3.x 推理目录直接上传到 RK 镜像运行：
+
+| 角色 | 推荐输入 | 上传内容 |
+| --- | --- | --- |
+| `detection` | `480x480` | 单个 det `.rknn`，或只含一个 `.rknn` 的 ZIP/TAR |
+| `recognition` | `48x320` | 单个 rec `.rknn`，或含一个 `.rknn` 和可选 `ppocr_keys_v1.txt` 的 ZIP/TAR |
+
+转换时使用 `rknn-toolkit2 2.3.2`，并确保 det/rec 的输入色彩顺序与算法配置中的 `rknn_input_format` 一致。识别包未附字典时会使用仓库内置的 `ppocr_keys_v1.txt`。算法的运行设备保持「自动」；在 RKNN OCR 上它表示 NPU。
+
+模型上传完成后，在算法管理中创建 OCR 算法并选择同为 RKNN 的 det/rec。工作流推荐连接为 `YOLO --检测到--> OCR`，再把 OCR 节点输入模式设为「上游裁剪」。这会显著减少逐行 rec 推理次数以及对全局 RKNN native lock 的占用。
 
 ## 5. 连通性验证
 

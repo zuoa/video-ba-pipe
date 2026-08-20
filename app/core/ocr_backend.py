@@ -8,6 +8,14 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 
 from app.core.ocr_algorithm_config import OCR_DEFAULT_CONFIG
+from app.core.ocr_postprocess import (
+    DEFAULT_DET_SIZE,
+    DEFAULT_REC_SIZE,
+    find_character_dict_path,
+    parse_input_size,
+    resolve_rknn_model_path,
+)
+from app.core.ocr_runtime import OCR_BACKEND_RKNN, ocr_backend_family
 
 
 _PADDLE_OPTION_KEYS = {
@@ -122,7 +130,7 @@ def _file_stat(path: str) -> Tuple[int, int]:
 
 
 def ocr_constructor_config(ocr_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Return the PaddleOCR constructor options that identify a shared worker."""
+    """Return the constructor options that identify a shared OCR worker."""
     config = ocr_config if isinstance(ocr_config, dict) else {}
     device = str(config.get("device") or OCR_DEFAULT_CONFIG["device"]).strip().lower()
     try:
@@ -133,7 +141,17 @@ def ocr_constructor_config(ocr_config: Optional[Dict[str, Any]]) -> Dict[str, An
         "device": device or "auto",
         "recognition_batch_size": max(1, batch_size),
     }
-    for key in ("detection_threshold", "box_threshold", "unclip_ratio", "limit_side_len"):
+    for key in (
+        "detection_threshold",
+        "box_threshold",
+        "unclip_ratio",
+        "limit_side_len",
+        "rknn_core_mask",
+        "rknn_input_format",
+        "det_input_shape",
+        "rec_input_shape",
+        "det_max_candidates",
+    ):
         value = config.get(key)
         if value not in (None, ""):
             constructor[key] = value
@@ -163,6 +181,25 @@ def build_paddleocr_options(
     return options
 
 
+def select_ocr_backend_name(
+    detection_path: str,
+    recognition_path: str,
+    detection_info: Optional[Dict[str, Any]] = None,
+    recognition_info: Optional[Dict[str, Any]] = None,
+) -> str:
+    detection_family = ocr_backend_family(
+        detection_path,
+        (detection_info or {}).get("framework"),
+    )
+    recognition_family = ocr_backend_family(
+        recognition_path,
+        (recognition_info or {}).get("framework"),
+    )
+    if detection_family != recognition_family:
+        raise ValueError("OCR 检测与识别模型必须同属 PaddleOCR 或 RKNN")
+    return detection_family
+
+
 def build_ocr_model_spec(
     *,
     detection_model_id: Any,
@@ -170,13 +207,49 @@ def build_ocr_model_spec(
     recognition_model_id: Any,
     recognition_path: str,
     ocr_config: Optional[Dict[str, Any]] = None,
+    detection_info: Optional[Dict[str, Any]] = None,
+    recognition_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    detection_size, detection_mtime_ns = _file_stat(detection_path)
-    recognition_size, recognition_mtime_ns = _file_stat(recognition_path)
+    backend = select_ocr_backend_name(
+        detection_path,
+        recognition_path,
+        detection_info,
+        recognition_info,
+    )
+    resolved_detection = (
+        resolve_rknn_model_path(detection_path)
+        if backend == OCR_BACKEND_RKNN
+        else detection_path
+    )
+    resolved_recognition = (
+        resolve_rknn_model_path(recognition_path)
+        if backend == OCR_BACKEND_RKNN
+        else recognition_path
+    )
+    detection_size, detection_mtime_ns = _file_stat(resolved_detection)
+    recognition_size, recognition_mtime_ns = _file_stat(resolved_recognition)
     constructor = ocr_constructor_config(ocr_config)
+    det_width, det_height = 640, 640
+    rec_shape = None
+    character_dict_path = None
+    if backend == OCR_BACKEND_RKNN:
+        det_width, det_height = parse_input_size(
+            constructor.get("det_input_shape")
+            or (detection_info or {}).get("input_shape"),
+            DEFAULT_DET_SIZE,
+        )
+        rec_shape = parse_input_size(
+            constructor.get("rec_input_shape")
+            or (recognition_info or {}).get("input_shape"),
+            DEFAULT_REC_SIZE,
+        )
+        character_dict_path = (
+            character_dict_path
+            or find_character_dict_path(resolved_recognition)
+        )
     return {
         "model_id": int(detection_model_id) if str(detection_model_id).isdigit() else detection_model_id,
-        "model_path": os.path.abspath(detection_path),
+        "model_path": os.path.abspath(resolved_detection),
         "file_size": detection_size,
         "file_mtime_ns": detection_mtime_ns,
         "recognition_model_id": (
@@ -184,17 +257,19 @@ def build_ocr_model_spec(
             if str(recognition_model_id).isdigit()
             else recognition_model_id
         ),
-        "recognition_model_path": os.path.abspath(recognition_path),
+        "recognition_model_path": os.path.abspath(resolved_recognition),
         "recognition_file_size": recognition_size,
         "recognition_file_mtime_ns": recognition_mtime_ns,
-        "framework": "paddleocr",
+        "character_dict_path": character_dict_path,
+        "framework": "rknn" if backend == OCR_BACKEND_RKNN else "paddleocr",
         "model_type": "OCR",
-        "backend": "paddleocr",
+        "backend": backend,
         "classes": {},
         "model_postprocess": {},
         "input_shape": None,
-        "input_width": 640,
-        "input_height": 640,
+        "input_width": det_width,
+        "input_height": det_height,
+        "recognition_input_shape": rec_shape,
         "backend_config": constructor,
     }
 
@@ -232,7 +307,7 @@ class PaddleOCRBackend:
         try:
             from paddleocr import PaddleOCR
         except ImportError as exc:
-            raise RuntimeError("当前运行平台未安装 PaddleOCR，OCR 仅支持 CPU/CUDA 镜像") from exc
+            raise RuntimeError("当前运行平台未安装 PaddleOCR") from exc
 
         self.ocr_config = dict(ocr_config or {})
         self.device = str(self.ocr_config.get("device") or "auto")
@@ -274,6 +349,7 @@ class SharedOCRBackend:
         from app.core.shared_inference import SharedInferenceClient
 
         self.ocr_config = dict(ocr_config or {})
+        self.name = str(spec.get("backend") or self.name)
         self.client = SharedInferenceClient(spec=spec, config={})
         self.model = self.client
         self.device = (spec.get("backend_config") or {}).get("device") or "auto"
@@ -314,3 +390,8 @@ class SharedOCRBackend:
             self.client.close()
             self.client = None
         self.model = None
+
+
+# Public import kept here because OCR callers should select a backend through
+# this module rather than coupling to its implementation file.
+from app.core.ocr_rknn import RKNNOcrBackend  # noqa: E402,F401

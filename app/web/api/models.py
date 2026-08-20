@@ -175,10 +175,14 @@ def _is_ocr_archive(filename):
     return str(filename or '').lower().endswith(OCR_ARCHIVE_EXTENSIONS)
 
 
+def _is_rknn_filename(filename):
+    return str(filename or '').lower().endswith('.rknn')
+
+
 def allowed_file(filename, model_type=None):
     """检查文件扩展名是否允许"""
-    if str(model_type or '').strip().upper() == 'OCR' and _is_ocr_archive(filename):
-        return True
+    if str(model_type or '').strip().upper() == 'OCR':
+        return _is_ocr_archive(filename) or _is_rknn_filename(filename)
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
 
 
@@ -203,7 +207,7 @@ def _safe_archive_target(root, member_name):
 
 
 def _extract_ocr_archive(archive_path):
-    """安全解压 OCR 模型包并返回可直接交给 PaddleOCR 的模型目录。"""
+    """安全解压单个 PaddleOCR 或 RKNN OCR 模型目录。"""
     extract_root = tempfile.mkdtemp(prefix='.ocr-extract-', dir=os.path.dirname(archive_path))
     final_dir = None
     entry_count = 0
@@ -239,6 +243,8 @@ def _extract_ocr_archive(archive_path):
 
         config_markers = {'inference.json', 'inference.yml', 'model.yml', 'inference.pdmodel'}
         model_directories = []
+        rknn_files = []
+        dict_files = []
         for directory, subdirectories, filenames in os.walk(extract_root):
             subdirectories[:] = [
                 name for name in subdirectories
@@ -249,12 +255,15 @@ def _extract_ocr_archive(archive_path):
             has_parameters = any(name.endswith(('.pdiparams', '.pdparams')) for name in direct_files)
             if has_config and has_parameters:
                 model_directories.append(directory)
-
-        if not model_directories:
-            raise ValueError('压缩包不是有效的 PaddleOCR 推理模型目录')
-        if len(model_directories) > 1:
-            raise ValueError('OCR 模型包包含多个推理模型目录，请每个压缩包只放一个模型')
-        source_dir = model_directories[0]
+            for name in filenames:
+                lower = name.lower()
+                full_path = os.path.join(directory, name)
+                if lower.endswith('.rknn'):
+                    rknn_files.append(full_path)
+                elif lower in {'ppocr_keys_v1.txt', 'keys.txt', 'dict.txt', 'character.txt'} or (
+                    lower.endswith('.txt') and 'key' in lower
+                ):
+                    dict_files.append(full_path)
 
         archive_name = os.path.basename(archive_path)
         base_name = re.sub(r'(?i)(\.tar\.gz|\.tgz|\.tar|\.zip)$', '', archive_name)
@@ -263,7 +272,23 @@ def _extract_ocr_archive(archive_path):
         while os.path.exists(final_dir):
             counter += 1
             final_dir = os.path.join(os.path.dirname(archive_path), f'{base_name}_{counter}')
-        shutil.move(source_dir, final_dir)
+
+        if model_directories and rknn_files:
+            raise ValueError('OCR 模型包不能同时包含 PaddleOCR 和 RKNN 模型')
+        if model_directories:
+            if len(model_directories) > 1:
+                raise ValueError('OCR 模型包包含多个推理模型目录，请每个压缩包只放一个模型')
+            shutil.move(model_directories[0], final_dir)
+        elif rknn_files:
+            if len(rknn_files) > 1:
+                raise ValueError('OCR 模型包包含多个 .rknn，请每个压缩包只放一个模型')
+            os.makedirs(final_dir, exist_ok=True)
+            shutil.move(rknn_files[0], os.path.join(final_dir, os.path.basename(rknn_files[0])))
+            if dict_files:
+                shutil.move(dict_files[0], os.path.join(final_dir, os.path.basename(dict_files[0])))
+        else:
+            raise ValueError('压缩包不是有效的 PaddleOCR 推理模型目录，也不包含 .rknn 模型')
+
         if os.path.exists(extract_root):
             shutil.rmtree(extract_root)
         os.remove(archive_path)
@@ -273,6 +298,32 @@ def _extract_ocr_archive(archive_path):
         if final_dir and os.path.exists(final_dir):
             shutil.rmtree(final_dir, ignore_errors=True)
         raise
+
+
+def _ocr_artifact_is_rknn(path):
+    if _is_rknn_filename(path):
+        return True
+    if os.path.isdir(path):
+        for _root, _directories, filenames in os.walk(path):
+            if any(name.lower().endswith('.rknn') for name in filenames):
+                return True
+    return False
+
+
+def _materialize_ocr_upload(file_path):
+    if _is_rknn_filename(file_path):
+        return file_path, os.path.getsize(file_path), 'rknn'
+    if not _is_ocr_archive(file_path):
+        raise ValueError('OCR 模型必须是 .rknn 或 ZIP/TAR/TAR.GZ/TGZ 压缩包')
+    extracted_path, extracted_size = _extract_ocr_archive(file_path)
+    framework = 'rknn' if _ocr_artifact_is_rknn(extracted_path) else 'paddleocr'
+    return extracted_path, extracted_size, framework
+
+
+def _default_ocr_input_shape(model_role, framework):
+    if str(framework or '').strip().lower() != 'rknn':
+        return ''
+    return '480x480' if model_role == 'detection' else '48x320'
 
 
 def _infer_model_meta(filename, model_type=None, framework=None):
@@ -892,10 +943,10 @@ def upload_model():
         if model_type.upper() == 'OCR':
             if model_role not in OCR_MODEL_ROLES:
                 return jsonify({'success': False, 'error': 'OCR 模型角色仅支持 detection 或 recognition'}), 400
-            if not _is_ocr_archive(file.filename):
-                return jsonify({'success': False, 'error': 'OCR 模型必须上传 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
+            if not (_is_ocr_archive(file.filename) or _is_rknn_filename(file.filename)):
+                return jsonify({'success': False, 'error': 'OCR 模型必须上传 .rknn 或 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
             model_type = 'OCR'
-            framework = 'paddleocr'
+            framework = 'rknn' if _is_rknn_filename(file.filename) else (framework or 'paddleocr')
         else:
             model_role = ''
 
@@ -931,11 +982,15 @@ def upload_model():
             logger.error(f"保存文件失败: {file_path}, 错误: {e}")
             return jsonify({'success': False, 'error': f'保存文件失败: {e}'}), 500
 
-        # OCR 模型以目录形式保存；普通模型保持单文件。
+        # OCR 模型：Paddle 包解压为目录，RKNN 可保留单文件或含字典的目录。
         if model_type == 'OCR':
             try:
-                file_path, file_size = _extract_ocr_archive(file_path)
-                final_filename = f'{os.path.basename(file_path)}.zip'
+                file_path, file_size, framework = _materialize_ocr_upload(file_path)
+                input_shape = input_shape or _default_ocr_input_shape(model_role, framework)
+                if os.path.isdir(file_path):
+                    final_filename = f'{os.path.basename(file_path)}.zip'
+                else:
+                    final_filename = os.path.basename(file_path)
             except ValueError as e:
                 _remove_model_artifact(file_path)
                 return jsonify({'success': False, 'error': str(e)}), 400
@@ -1009,7 +1064,7 @@ def import_model_from_url():
             if model_role not in OCR_MODEL_ROLES:
                 return jsonify({'success': False, 'error': 'OCR 模型角色仅支持 detection 或 recognition'}), 400
             model_type = 'OCR'
-            framework = 'paddleocr'
+            framework = framework or 'paddleocr'
         else:
             model_role = ''
 
@@ -1134,12 +1189,16 @@ def import_model_from_url():
             return jsonify({'success': False, 'error': '模型下载失败，文件未生成'}), 500
 
         if model_type == 'OCR':
-            if not _is_ocr_archive(final_filename):
+            if not (_is_ocr_archive(final_filename) or _is_rknn_filename(final_filename)):
                 _remove_model_artifact(file_path)
-                return jsonify({'success': False, 'error': 'OCR 模型必须是 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
+                return jsonify({'success': False, 'error': 'OCR 模型必须是 .rknn 或 ZIP/TAR/TAR.GZ/TGZ 压缩包'}), 400
             try:
-                file_path, file_size = _extract_ocr_archive(file_path)
-                final_filename = f'{os.path.basename(file_path)}.zip'
+                file_path, file_size, framework = _materialize_ocr_upload(file_path)
+                input_shape = input_shape or _default_ocr_input_shape(model_role, framework)
+                if os.path.isdir(file_path):
+                    final_filename = f'{os.path.basename(file_path)}.zip'
+                else:
+                    final_filename = os.path.basename(file_path)
             except ValueError as e:
                 _remove_model_artifact(file_path)
                 return jsonify({'success': False, 'error': str(e)}), 400

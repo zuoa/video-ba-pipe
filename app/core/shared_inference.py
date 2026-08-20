@@ -70,6 +70,7 @@ def _selected_backend_name(
         "onnxruntime": "onnxruntime",
         "rknn": "rknn",
         "rknnlite": "rknn",
+        "rknn_ocr": "rknn_ocr",
         "ultralytics": "ultralytics",
         "paddleocr": "paddleocr",
         "ocr": "paddleocr",
@@ -79,10 +80,17 @@ def _selected_backend_name(
         return aliases[requested]
     framework = str(model_info.get("framework") or "").lower()
     model_type = str(model_info.get("model_type") or "").lower()
-    if framework in {"paddleocr", "paddle"} or model_type == "ocr":
-        return "paddleocr"
     extension = os.path.splitext(model_path)[1].lower()
-    if extension == ".rknn" or "rknn" in framework:
+    recognition_path = str(model_info.get("recognition_model_path") or config.get("recognition_model_path") or "")
+    is_ocr = framework in {"paddleocr", "paddle"} or model_type == "ocr"
+    is_rknn = (
+        extension == ".rknn"
+        or "rknn" in framework
+        or recognition_path.lower().endswith(".rknn")
+    )
+    if is_ocr:
+        return "rknn_ocr" if is_rknn else "paddleocr"
+    if is_rknn:
         return "rknn"
     if extension == ".onnx" or framework == "onnx":
         return "onnxruntime"
@@ -195,6 +203,10 @@ def _create_model_worker_backend(
         from app.core.ocr_backend import PaddleOCRBackend
 
         return PaddleOCRBackend.from_worker_spec(spec, base_config)
+    if backend_name == "rknn_ocr":
+        from app.core.ocr_backend import RKNNOcrBackend
+
+        return RKNNOcrBackend.from_worker_spec(spec, base_config)
     from app.user_scripts.common.yolo_backends import RKNNBackend, UltralyticsBackend
 
     if backend_name == "rknn":
@@ -873,7 +885,7 @@ class SharedInferenceServer:
 
 
 def _client_request_config(spec: Dict[str, Any], config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if spec.get("backend") == "paddleocr":
+    if spec.get("backend") in {"paddleocr", "rknn_ocr"}:
         return {}
     return _inference_config(config or {})
 

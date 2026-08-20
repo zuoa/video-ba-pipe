@@ -33,6 +33,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
   const [uploading, setUploading] = useState(false);
   const sourceType = Form.useWatch('source_type', form) || 'local';
   const modelType = Form.useWatch('model_type', form) || 'YOLO';
+  const modelRole = Form.useWatch('model_role', form);
   const isOcrModel = modelType === 'OCR';
 
   const handleOk = async () => {
@@ -122,14 +123,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
     fileList,
     beforeUpload: (file: RcFile) => {
       const validExtensions = isOcrModel
-        ? ['.zip', '.tar', '.tar.gz', '.tgz']
+        ? ['.zip', '.tar', '.tar.gz', '.tgz', '.rknn']
         : ['.pt', '.pth', '.safetensors', '.onnx', '.engine', '.bin', '.tflite', '.xml', '.param', '.json', '.rknn'];
       const lowerFileName = file.name.toLowerCase();
       const isValid = validExtensions.some(ext => lowerFileName.endsWith(ext));
 
       if (!isValid) {
         message.error(isOcrModel
-          ? 'OCR 模型只支持 .zip、.tar、.tar.gz 或 .tgz 压缩包'
+          ? 'OCR 模型支持 .rknn，或 .zip、.tar、.tar.gz、.tgz 压缩包'
           : '只支持 .pt、.safetensors、.onnx、.engine、.rknn 等模型文件格式');
         return Upload.LIST_IGNORE;
       }
@@ -140,9 +141,19 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
         status: 'done',
         originFileObj: file,
       }]);
-      const matchedExt = Object.keys(extensionModelHints).find(ext => lowerFileName.endsWith(ext));
-      if (matchedExt && !isOcrModel) {
-        form.setFieldsValue(extensionModelHints[matchedExt]);
+      if (isOcrModel) {
+        const rknnFile = lowerFileName.endsWith('.rknn');
+        form.setFieldsValue({
+          framework: rknnFile ? 'rknn' : 'paddleocr',
+          input_shape: rknnFile
+            ? (form.getFieldValue('input_shape') || (modelRole === 'recognition' ? '48x320' : '480x480'))
+            : form.getFieldValue('input_shape'),
+        });
+      } else {
+        const matchedExt = Object.keys(extensionModelHints).find(ext => lowerFileName.endsWith(ext));
+        if (matchedExt) {
+          form.setFieldsValue(extensionModelHints[matchedExt]);
+        }
       }
       return false;
     },
@@ -184,10 +195,19 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
             setFileList([]);
           }
           if (changedValues.model_type === 'OCR') {
-            form.setFieldsValue({ framework: 'paddleocr' });
+            form.setFieldsValue({ framework: 'paddleocr', input_shape: undefined });
             setFileList([]);
           } else if (changedValues.model_type) {
             form.setFieldValue('model_role', undefined);
+          }
+          if (changedValues.model_role && fileList[0]?.name.toLowerCase().endsWith('.rknn')) {
+            const currentShape = form.getFieldValue('input_shape');
+            if (!currentShape || currentShape === '480x480' || currentShape === '48x320') {
+              form.setFieldValue(
+                'input_shape',
+                changedValues.model_role === 'recognition' ? '48x320' : '480x480',
+              );
+            }
           }
         }}
       >
@@ -254,7 +274,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
             label="OCR 模型角色"
             name="model_role"
             rules={[{ required: true, message: '请选择 OCR 模型角色' }]}
-            extra="检测模型负责定位文字区域，识别模型负责将区域转换为文字。"
+            extra="检测模型定位文字区域，识别模型转换成文字。RK 平台上传 .rknn，CPU/CUDA 上传 PaddleOCR 推理压缩包。"
           >
             <Radio.Group>
               <Radio.Button value="detection">文字检测</Radio.Button>
@@ -263,8 +283,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
           </Form.Item>
         ) : null}
 
-        <Form.Item label="输入尺寸" name="input_shape">
-          <Input placeholder="例如: 640x640" />
+        <Form.Item
+          label="输入尺寸"
+          name="input_shape"
+          extra={isOcrModel ? 'RKNN 推荐：检测 480x480，识别 48x320。留空时服务端会写入该默认值。' : undefined}
+        >
+          <Input placeholder={isOcrModel ? (modelRole === 'recognition' ? '48x320' : '480x480') : '例如: 640x640'} />
         </Form.Item>
 
         <Form.Item
@@ -307,7 +331,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onCancel, onSuccess 
                 <InboxOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
               </p>
               <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-              <p className="ant-upload-hint">支持 .pt, .safetensors, .onnx, .engine, .rknn 等格式</p>
+              <p className="ant-upload-hint">
+                {isOcrModel
+                  ? '支持 .rknn，或包含单个 PaddleOCR/RKNN 模型的 ZIP/TAR 压缩包'
+                  : '支持 .pt, .safetensors, .onnx, .engine, .rknn 等格式'}
+              </p>
             </Dragger>
           </Form.Item>
         )}

@@ -30,7 +30,7 @@ from app.core.workflow_batch_config import (
 )
 from app.config import SNAPSHOT_SAVE_PATH
 from app.core.ocr_algorithm_config import validate_ocr_crop_node_config
-from app.core.ocr_runtime import is_ocr_runtime_available
+from app.core.ocr_algorithm_config import is_ocr_algorithm_runtime_available
 from app.web.api.auth import (
     require_auth,
     apply_owner_scope,
@@ -722,10 +722,7 @@ def register_workflows_api(app):
                     'id': a.id,
                     'name': a.name,
                     'algorithm_type': a.ext_config.get('algorithm_type') or 'script',
-                    'runtime_available': (
-                        (a.ext_config.get('algorithm_type') or 'script') != 'ocr'
-                        or is_ocr_runtime_available()
-                    ),
+                    'runtime_available': is_ocr_algorithm_runtime_available(a.ext_config),
                     'label_name': get_algorithm_label_name(a),
                     'script_path': a.script_path,
                     'created_by': a.created_by,
