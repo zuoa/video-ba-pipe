@@ -75,6 +75,7 @@ def event_settings(config: Optional[dict] = None) -> dict:
     config = config or {}
     event = normalize_event(config.get("event"))
     min_dwell = _optional_number(config, "min_dwell_seconds", float)
+    min_displace = _optional_number(config, "min_displace_px", float)
     max_displace = _optional_number(config, "max_displace_px", float)
     disappear = _optional_number(config, "disappear_seconds", float)
     history_size = _optional_number(config, "history_size", int)
@@ -89,6 +90,7 @@ def event_settings(config: Optional[dict] = None) -> dict:
     return {
         "event": event,
         "min_dwell_seconds": float(min_dwell if min_dwell is not None else DEFAULT_MIN_DWELL_SECONDS),
+        "min_displace_px": min_displace,
         "max_displace_px": max_displace,
         "disappear_seconds": float(disappear if disappear is not None else DEFAULT_DISAPPEAR_SECONDS),
         "history_size": max(8, int(history_size if history_size is not None else DEFAULT_HISTORY_SIZE)),
@@ -299,8 +301,11 @@ def apply_event(
 
         if event in (EVENT_LOITER, EVENT_STAY):
             if dwell >= settings["min_dwell_seconds"]:
+                min_displace = settings["min_displace_px"]
                 max_displace = settings["max_displace_px"]
-                if max_displace is None or displace <= float(max_displace):
+                too_still = min_displace is not None and float(min_displace) > 0 and displace < float(min_displace)
+                too_far = max_displace is not None and displace > float(max_displace)
+                if not too_still and not too_far:
                     matched = True
         elif event == EVENT_REGION_CROSS:
             if width <= 0 or height <= 0 or not roi_regions:
@@ -351,5 +356,7 @@ def apply_event(
         "live_tracks": len(live_ids),
         "skipped_no_track_id": skipped_no_id,
         "min_dwell_seconds": settings["min_dwell_seconds"],
+        "min_displace_px": settings["min_displace_px"],
+        "max_displace_px": settings["max_displace_px"],
     })
     return emitted, metadata

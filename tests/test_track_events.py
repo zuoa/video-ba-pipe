@@ -30,6 +30,26 @@ def test_loiter_waits_for_dwell():
     assert meta["event_count"] == 1
 
 
+def test_loiter_respects_custom_dwell_seconds():
+    config = {"event": EVENT_LOITER, "min_dwell_seconds": 3}
+    state = init_event_state(config)
+    apply_event([_det([0, 0, 10, 10])], config=config, state=state, timestamp=1)
+    too_soon, _ = apply_event([_det([0, 0, 10, 10])], config=config, state=state, timestamp=3)
+    ready, _ = apply_event([_det([0, 0, 10, 10])], config=config, state=state, timestamp=4)
+    assert too_soon == []
+    assert len(ready) == 1
+
+
+def test_loiter_requires_min_displace():
+    config = {"event": EVENT_LOITER, "min_dwell_seconds": 2, "min_displace_px": 10}
+    state = init_event_state(config)
+    apply_event([_det([0, 0, 10, 10])], config=config, state=state, timestamp=1)
+    still, _ = apply_event([_det([0, 0, 10, 10])], config=config, state=state, timestamp=4)
+    moved, _ = apply_event([_det([30, 0, 40, 10])], config=config, state=state, timestamp=5)
+    assert still == []
+    assert len(moved) == 1
+
+
 def test_stay_rejects_large_displacement():
     config = {"event": EVENT_STAY, "min_dwell_seconds": 2, "max_displace_px": 20}
     state = init_event_state(config)

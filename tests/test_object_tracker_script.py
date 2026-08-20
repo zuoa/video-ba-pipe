@@ -131,6 +131,24 @@ def test_script_loiter_event_waits_for_dwell():
     assert ready["metadata"]["event"] == "loiter"
 
 
+def test_script_loiter_event_uses_node_displace_limits():
+    script = _load_script()
+    config = {
+        "backend": "iou",
+        "min_hits": 1,
+        "event": "loiter",
+        "min_dwell_seconds": 2.5,
+        "min_displace_px": 15,
+        "max_displace_px": 80,
+    }
+    state = script.init(config)
+    upstream = {"algo-1": {"detections": [{"box": [0, 0, 10, 10], "confidence": 0.9, "label": "person"}]}}
+    result = script.process(_frame(), config, state=state, upstream_results=upstream, frame_timestamp=1)
+    assert result["metadata"]["min_dwell_seconds"] == 2.5
+    assert result["metadata"]["min_displace_px"] == 15
+    assert result["metadata"]["max_displace_px"] == 80
+
+
 def test_script_region_cross_uses_roi():
     script = _load_script()
     config = {

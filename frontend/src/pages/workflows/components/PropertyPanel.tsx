@@ -22,6 +22,11 @@ import {
   WEEKDAYS,
   WeeklySchedule,
 } from '../utils/timeSchedule';
+import {
+  getTrackerEventFormValues,
+  isTrackerAlgorithm,
+  trackerEventConfigFromForm,
+} from '../utils/algorithmDefaults';
 import './PropertyPanel.css';
 
 const { TextArea } = Input;
@@ -193,6 +198,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const selectedAlgorithmType = node?.data?.algorithmType || selectedAlgorithm?.algorithm_type || 'script';
   const isVlAlgorithm = selectedAlgorithmType === 'vl';
   const isOcrAlgorithm = selectedAlgorithmType === 'ocr';
+  const isTrackerEventAlgorithm = isTrackerAlgorithm(selectedAlgorithm);
   const vlDefaultTimeout = Number(selectedAlgorithm?.vl_config?.timeout_seconds || 30);
 
   // 只允许最后一次表单校验结果写入节点，避免快速输入时旧值覆盖新值。
@@ -268,6 +274,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.expandRatio = nodeConfig.expand_ratio ?? 0.1;
           formValues.maxCandidates = nodeConfig.max_candidates ?? 8;
           formValues.upstreamClassFilter = nodeConfig.upstream_class_filter || [];
+        }
+        if (isTrackerEventAlgorithm) {
+          Object.assign(formValues, getTrackerEventFormValues(selectedAlgorithm, nodeConfig));
         }
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         formValues.externalApiId = node.data.dataId ?? node.data.externalApiId;
@@ -404,7 +413,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         console.log('🔍 [PropertyPanel] 验证表单值，messageFormat:', currentValues.messageFormat);
       }, 100);
     }
-  }, [node?.id, form, vlConfigReady, isVlAlgorithm, isOcrAlgorithm, vlDefaultTimeout]);
+  }, [node?.id, form, vlConfigReady, isVlAlgorithm, isOcrAlgorithm, isTrackerEventAlgorithm, vlDefaultTimeout, selectedAlgorithm?.id, selectedAlgorithm?.script_path]);
 
   useEffect(() => () => {
     if (autoUpdateTimerRef.current) {
@@ -484,6 +493,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           config.max_candidates = values.maxCandidates ?? 8;
           config.upstream_class_filter = values.upstreamClassFilter || [];
         }
+        if (isTrackerEventAlgorithm) {
+          Object.assign(config, trackerEventConfigFromForm(values));
+        }
 
         updatedData.algorithmType = selectedAlgorithmType;
         updatedData.confidence = config.confidence ?? node.data.defaultConfidence;
@@ -498,6 +510,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.expandRatio;
         delete updatedData.maxCandidates;
         delete updatedData.upstreamClassFilter;
+        delete updatedData.trackEvent;
+        delete updatedData.minDwellSeconds;
+        delete updatedData.minDisplacePx;
+        delete updatedData.maxDisplacePx;
+        delete updatedData.disappearSeconds;
+        delete updatedData.crossMode;
+        delete updatedData.crossDirection;
       } else if (nodeType === 'externalApi' || nodeType === 'external_api') {
         const selectedApi = externalApis.find(item => String(item.id) === String(values.externalApiId));
         const config = { ...(node.data?.config || {}) };
@@ -1015,6 +1034,98 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 <Input type="color" style={{ width: 100 }} />
               </Form.Item>
             </div>
+
+            {isTrackerEventAlgorithm ? (
+              <>
+                <div className="form-divider" />
+                <div className="config-section">
+                  <div className="config-section-header">
+                    <span className="config-section-title">输出事件</span>
+                  </div>
+                  <Form.Item
+                    label="事件类型"
+                    name="trackEvent"
+                    extra="在追踪结果上直接判定，不必再串徘徊/停留节点"
+                  >
+                    <Select>
+                      <Option value="none">全部轨迹（只赋 ID）</Option>
+                      <Option value="loiter">徘徊（区域内待够久）</Option>
+                      <Option value="stay">停留（原地待够久）</Option>
+                      <Option value="region_cross">穿越热区（按方向）</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(previous, current) => previous.trackEvent !== current.trackEvent}>
+                    {({ getFieldValue }) => {
+                      const event = getFieldValue('trackEvent') || 'none';
+                      if (event === 'loiter' || event === 'stay') {
+                        return (
+                          <>
+                            <Form.Item
+                              label={event === 'stay' ? '停留多久（秒）' : '徘徊多久（秒）'}
+                              name="minDwellSeconds"
+                              extra="同一 ID 持续出现达到该时长才输出"
+                            >
+                              <InputNumber min={0.5} max={600} step={0.5} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                              label="最小位移（像素）"
+                              name="minDisplacePx"
+                              extra="活动半径低于该值不算。徘徊可用来排除站着不动；0 表示不限制"
+                            >
+                              <InputNumber min={0} max={4000} step={1} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item
+                              label="最大位移（像素）"
+                              name="maxDisplacePx"
+                              extra={event === 'stay' ? '超出该半径视为在移动，不填默认 48' : '超出该半径不算徘徊；留空不限制'}
+                            >
+                              <InputNumber min={0} max={4000} step={1} style={{ width: '100%' }} placeholder={event === 'stay' ? '48' : '不限制'} />
+                            </Form.Item>
+                            <Form.Item
+                              label="消失后遗忘（秒）"
+                              name="disappearSeconds"
+                              extra="目标丢失超过该时间后重新计时"
+                            >
+                              <InputNumber min={0.5} max={120} step={0.5} style={{ width: '100%' }} />
+                            </Form.Item>
+                          </>
+                        );
+                      }
+                      if (event === 'region_cross') {
+                        return (
+                          <>
+                            <Form.Item label="穿越方式" name="crossMode" extra="热区来自上游 ROI 绘制节点">
+                              <Select>
+                                <Option value="enter">进入热区</Option>
+                                <Option value="exit">离开热区</Option>
+                                <Option value="cross">进入或离开</Option>
+                              </Select>
+                            </Form.Item>
+                            <Form.Item label="穿越方向" name="crossDirection">
+                              <Select>
+                                <Option value="any">任意方向</Option>
+                                <Option value="left_to_right">从左到右</Option>
+                                <Option value="right_to_left">从右到左</Option>
+                                <Option value="top_to_bottom">从上到下</Option>
+                                <Option value="bottom_to_top">从下到上</Option>
+                              </Select>
+                            </Form.Item>
+                            <Form.Item
+                              label="消失后遗忘（秒）"
+                              name="disappearSeconds"
+                              extra="目标丢失超过该时间后重新检测穿越"
+                            >
+                              <InputNumber min={0.5} max={120} step={0.5} style={{ width: '100%' }} />
+                            </Form.Item>
+                          </>
+                        );
+                      }
+                      return null;
+                    }}
+                  </Form.Item>
+                </div>
+              </>
+            ) : null}
           </>
         );
 

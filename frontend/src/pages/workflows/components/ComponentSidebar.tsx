@@ -16,7 +16,12 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
-import { getAlgorithmDefaultConfidence } from '../utils/algorithmDefaults';
+import {
+  getAlgorithmDefaultConfidence,
+  getTrackerEventFormValues,
+  isTrackerAlgorithm,
+  trackerEventConfigFromForm,
+} from '../utils/algorithmDefaults';
 import './ComponentSidebar.css';
 import { createDefaultWeeklySchedule } from '../utils/timeSchedule';
 
@@ -134,6 +139,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                         window_mode: algo.window_mode || 'ratio',
                         window_threshold: algo.window_threshold !== undefined ? algo.window_threshold : 0.3,
                       },
+                      ...(isTrackerAlgorithm(algo) ? trackerEventConfigFromForm(getTrackerEventFormValues(algo)) : {}),
                     },
                   });
                 }}
