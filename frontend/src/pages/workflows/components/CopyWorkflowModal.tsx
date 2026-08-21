@@ -14,7 +14,7 @@ export interface CopyWorkflowModalProps {
   workflow: Workflow | null;
   workflows: Workflow[];
   videoSources: VideoSource[];
-  onCopy: (sourceIds: number[]) => Promise<void>;
+  onCopy: (sourceIds: number[], activateAfterCreation: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -30,6 +30,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<SourceStatusFilter>('all');
   const [showExisting, setShowExisting] = useState(false);
+  const [activateAfterCreation, setActivateAfterCreation] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const existingBySourceId = useMemo(() => {
@@ -73,6 +74,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
     setSearchText('');
     setStatusFilter('all');
     setShowExisting(false);
+    setActivateAfterCreation(true);
   }, [visible, workflow?.id]);
 
   const handleSourceChange = (sourceId: number, checked: boolean) => {
@@ -92,7 +94,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
     if (!selectedSourceIds.length) return;
     setLoading(true);
     try {
-      await onCopy(selectedSourceIds);
+      await onCopy(selectedSourceIds, activateAfterCreation);
       setSelectedSourceIds([]);
     } finally {
       setLoading(false);
@@ -180,6 +182,17 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
           <span>共显示 {filteredSources.length} 个视频源</span>
         </div>
 
+        <Checkbox
+          className="copy-activation-option"
+          checked={activateAfterCreation}
+          onChange={(event) => setActivateAfterCreation(event.target.checked)}
+        >
+          <span className="copy-activation-option__copy">
+            <strong>创建后立即激活</strong>
+            <small>新编排创建完成后自动参与运行调度</small>
+          </span>
+        </Checkbox>
+
         <div className="copy-video-sources-list">
           {!filteredSources.length ? (
             <AppEmptyState
@@ -236,7 +249,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
 
         {selectedSourceIds.length ? (
           <Alert
-            message={`将创建 ${selectedSourceIds.length} 个运行编排，之后可分别调整参数和启停。`}
+            message={`将创建 ${selectedSourceIds.length} 个运行编排${activateAfterCreation ? '并立即激活' : ''}，之后可分别调整参数和启停。`}
             type="success"
             showIcon
             className="copy-selection-feedback"

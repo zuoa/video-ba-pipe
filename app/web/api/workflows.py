@@ -922,11 +922,14 @@ def register_workflows_api(app):
     def batch_copy_workflow(workflow_id):
         """批量复制工作流到多个视频源"""
         try:
-            data = request.json
+            data = request.json or {}
             source_ids = data.get('source_ids', [])
+            is_active = data.get('is_active', False)
 
             if not source_ids:
                 return jsonify({'error': '请选择要应用的视频源'}), 400
+            if not isinstance(is_active, bool):
+                return jsonify({'error': 'is_active 必须是布尔值'}), 400
 
             # 读取模板工作流
             template = Workflow.get_by_id(workflow_id)
@@ -965,14 +968,14 @@ def register_workflows_api(app):
                     # 生成名称
                     name = generate_workflow_name(source, new_data, template.name)
 
-                    # 创建新工作流（默认不激活）
+                    # 根据应用选项创建并按需立即激活工作流
                     try:
                         with db.atomic():
                             new_workflow = Workflow.create(
                                 name=name,
                                 description=f"从模板 '{template.name}' 复制",
                                 workflow_data=json.dumps(new_data),
-                                is_active=False,
+                                is_active=is_active,
                                 is_template=False,
                                 source_template=template,
                                 video_source=source,
@@ -993,7 +996,7 @@ def register_workflows_api(app):
                         'source_id': source.id,
                         'name': name,
                         'source_name': source.name,
-                        'is_active': False,
+                        'is_active': is_active,
                         'source_template_id': template.id,
                     })
 

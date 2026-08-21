@@ -180,16 +180,20 @@ export default function Workflows() {
     });
   };
 
-  const handleCopyConfirm = async (sourceIds: number[]) => {
+  const handleCopyConfirm = async (sourceIds: number[], activateAfterCreation: boolean) => {
     if (!copyingWorkflow) return;
     try {
-      const result = await batchCopyWorkflow(copyingWorkflow.id, sourceIds);
+      const result = await batchCopyWorkflow(
+        copyingWorkflow.id,
+        sourceIds,
+        activateAfterCreation,
+      );
 
       const { errors, summary } = result;
 
       if (summary && summary.success > 0) {
         message.success(
-          `成功复制 ${summary.success} 个编排${summary.failed > 0 ? `，${summary.failed} 个失败` : ''}`
+          `成功创建${activateAfterCreation ? '并激活' : ''} ${summary.success} 个编排${summary.failed > 0 ? `，${summary.failed} 个失败` : ''}`
         );
         loadWorkflows();
       }

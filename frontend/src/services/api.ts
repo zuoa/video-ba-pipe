@@ -569,6 +569,7 @@ export interface BatchCopyWorkflowResponse {
     source_id: number;
     name: string;
     source_name: string;
+    is_active: boolean;
     source_template_id: number;
   }>;
   errors: Array<{
@@ -622,10 +623,14 @@ export async function deactivateWorkflow(id: number) {
   });
 }
 
-export async function batchCopyWorkflow(workflowId: number, sourceIds: number[]) {
+export async function batchCopyWorkflow(
+  workflowId: number,
+  sourceIds: number[],
+  isActive: boolean,
+) {
   return request<BatchCopyWorkflowResponse>(`/api/workflows/${workflowId}/batch-copy`, {
     method: 'POST',
-    data: { source_ids: sourceIds },
+    data: { source_ids: sourceIds, is_active: isActive },
   });
 }
 

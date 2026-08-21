@@ -84,6 +84,33 @@
   font-size: 12px;
 }
 
+.copy-activation-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(47, 107, 79, 0.25);
+  border-radius: var(--app-radius-control);
+  background: var(--app-success-soft);
+  cursor: pointer;
+}
+
+.copy-activation-option__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.copy-activation-option strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.copy-activation-option small {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
 .copy-video-sources-list {
   display: grid;
   max-height: 360px;

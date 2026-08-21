@@ -105,6 +105,36 @@ def test_only_template_can_copy_and_provenance_is_recorded(workflow_api):
     assert response.get_json()['error'] == '只有编排模板可以复制'
 
 
+def test_batch_copy_can_activate_created_workflow(workflow_api):
+    client, headers, source = workflow_api
+    template_id = _create_template(client, headers)
+
+    response = client.post(
+        f'/api/workflows/{template_id}/batch-copy',
+        json={'source_ids': [source.id], 'is_active': True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    created = response.get_json()['created'][0]
+    assert created['is_active'] is True
+    assert Workflow.get_by_id(created['workflow_id']).is_active is True
+
+
+def test_batch_copy_rejects_non_boolean_activation_option(workflow_api):
+    client, headers, source = workflow_api
+    template_id = _create_template(client, headers)
+
+    response = client.post(
+        f'/api/workflows/{template_id}/batch-copy',
+        json={'source_ids': [source.id], 'is_active': 'true'},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'is_active 必须是布尔值'
+
+
 def test_template_source_pair_is_unique(workflow_api):
     client, headers, source = workflow_api
     template_id = _create_template(client, headers)
