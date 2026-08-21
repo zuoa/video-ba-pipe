@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import socket
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -23,6 +24,15 @@ import psutil
 
 from app import logger
 from app.config import (
+    GPU_ALLOWED_DEVICES,
+    GPU_MEMORY_RESERVE_MB,
+    GPU_MODEL_MEMORY_MARGIN_PERCENT,
+    GPU_NEW_MODEL_DEFAULT_MB,
+    GPU_NVML_STALE_SECONDS,
+    GPU_OOM_COOLDOWN_SECONDS,
+    GPU_SCHEDULING_ENABLED,
+    GPU_SCHEDULING_FAILURE_MODE,
+    GPU_SCHEDULING_POLICY,
     INFERENCE_ADMISSION_ENABLED,
     INFERENCE_MODEL_MEMORY_MARGIN_PERCENT,
     INFERENCE_NEW_MODEL_DEFAULT_MB,
@@ -42,6 +52,7 @@ from app.config import (
     SHARED_RKNN_ENABLED,
 )
 from app.core.database_models import SystemSetting
+from app.core.gpu_placement import NvmlGpuProvider
 
 
 INFERENCE_RESOURCE_SETTING_KEY = "inference_resource_config"
@@ -49,10 +60,27 @@ INFERENCE_RESOURCE_STATUS_KEY = "inference_resource_status"
 INFERENCE_RESOURCE_CONFIG_REFRESH_SECONDS = 5.0
 INFERENCE_RESOURCE_STATUS_STALE_SECONDS = 20.0
 
+# Capability refresh is structural discovery, not live telemetry.  Keep the
+# last successful topology so a transient NVML read failure cannot disable GPU
+# scheduling and rebuild every active shared-inference process.  A successful
+# empty result still replaces the cache and represents a genuine topology
+# change; runtime metric staleness remains governed by GpuPlacementBroker.
+_GPU_CAPABILITY_CACHE_LOCK = threading.Lock()
+_LAST_VISIBLE_NVIDIA_GPUS: Optional[Tuple[Any, ...]] = None
+
 
 @dataclass(frozen=True)
 class InferenceResourceConfig:
     shared_inference_enabled: bool = False
+    gpu_scheduling_enabled: bool = True
+    gpu_scheduling_policy: str = "balanced"
+    gpu_allowed_devices: Tuple[str, ...] = ()
+    gpu_memory_reserve_mb: int = 1024
+    gpu_new_model_default_mb: int = 2048
+    gpu_model_memory_margin_percent: float = 25.0
+    gpu_oom_cooldown_seconds: int = 60
+    gpu_nvml_stale_seconds: int = 60
+    gpu_failure_mode: str = "reject"
     inference_admission_enabled: bool = False
     system_reserve_mb: int = 2048
     system_reserve_percent: float = 15.0
@@ -70,7 +98,9 @@ class InferenceResourceConfig:
     oom_restart_backoff_max_seconds: int = 300
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        values = asdict(self)
+        values["gpu_allowed_devices"] = list(self.gpu_allowed_devices)
+        return values
 
     @property
     def revision(self) -> str:
@@ -83,6 +113,15 @@ class InferenceResourceConfig:
     def service_fingerprint(self) -> Tuple[Any, ...]:
         return (
             self.shared_inference_enabled,
+            self.gpu_scheduling_enabled,
+            self.gpu_scheduling_policy,
+            self.gpu_allowed_devices,
+            self.gpu_memory_reserve_mb,
+            self.gpu_new_model_default_mb,
+            self.gpu_model_memory_margin_percent,
+            self.gpu_oom_cooldown_seconds,
+            self.gpu_nvml_stale_seconds,
+            self.gpu_failure_mode,
             self.queue_size,
             self.batch_max_size,
             self.batch_wait_ms,
@@ -104,6 +143,15 @@ class InferenceResourceConfig:
 def environment_inference_resource_config() -> InferenceResourceConfig:
     return InferenceResourceConfig(
         shared_inference_enabled=SHARED_INFERENCE_ENABLED,
+        gpu_scheduling_enabled=GPU_SCHEDULING_ENABLED,
+        gpu_scheduling_policy=GPU_SCHEDULING_POLICY,
+        gpu_allowed_devices=GPU_ALLOWED_DEVICES,
+        gpu_memory_reserve_mb=GPU_MEMORY_RESERVE_MB,
+        gpu_new_model_default_mb=GPU_NEW_MODEL_DEFAULT_MB,
+        gpu_model_memory_margin_percent=GPU_MODEL_MEMORY_MARGIN_PERCENT,
+        gpu_oom_cooldown_seconds=GPU_OOM_COOLDOWN_SECONDS,
+        gpu_nvml_stale_seconds=GPU_NVML_STALE_SECONDS,
+        gpu_failure_mode=GPU_SCHEDULING_FAILURE_MODE,
         inference_admission_enabled=INFERENCE_ADMISSION_ENABLED,
         system_reserve_mb=INFERENCE_SYSTEM_RESERVE_MB,
         system_reserve_percent=INFERENCE_SYSTEM_RESERVE_PERCENT,
@@ -181,6 +229,35 @@ def normalize_inference_resource_config(
         raise ValueError("配置必须是 JSON 对象")
     data = data if isinstance(data, dict) else {}
     defaults = defaults or environment_inference_resource_config()
+    allowed_devices_value = data.get("gpu_allowed_devices", defaults.gpu_allowed_devices)
+    if isinstance(allowed_devices_value, str):
+        allowed_devices = tuple(
+            value.strip() for value in allowed_devices_value.split(",") if value.strip()
+        )
+    elif isinstance(allowed_devices_value, (list, tuple)):
+        allowed_devices = tuple(
+            str(value).strip() for value in allowed_devices_value if str(value).strip()
+        )
+    elif strict:
+        raise ValueError("gpu_allowed_devices 必须是字符串数组")
+    else:
+        allowed_devices = defaults.gpu_allowed_devices
+
+    gpu_policy = str(
+        data.get("gpu_scheduling_policy", defaults.gpu_scheduling_policy) or "balanced"
+    ).strip().lower()
+    if gpu_policy not in {"balanced"}:
+        if strict:
+            raise ValueError("gpu_scheduling_policy 目前仅支持 balanced")
+        gpu_policy = "balanced"
+    gpu_failure_mode = str(
+        data.get("gpu_failure_mode", defaults.gpu_failure_mode) or "reject"
+    ).strip().lower()
+    if gpu_failure_mode not in {"reject", "legacy"}:
+        if strict:
+            raise ValueError("gpu_failure_mode 仅支持 reject 或 legacy")
+        gpu_failure_mode = "reject"
+
     return InferenceResourceConfig(
         shared_inference_enabled=_parse_bool(
             data.get("shared_inference_enabled"),
@@ -188,6 +265,39 @@ def normalize_inference_resource_config(
             key="shared_inference_enabled",
             strict=strict,
         ),
+        gpu_scheduling_enabled=_parse_bool(
+            data.get("gpu_scheduling_enabled"),
+            defaults.gpu_scheduling_enabled,
+            key="gpu_scheduling_enabled",
+            strict=strict,
+        ),
+        gpu_scheduling_policy=gpu_policy,
+        gpu_allowed_devices=allowed_devices,
+        gpu_memory_reserve_mb=_number(
+            data, "gpu_memory_reserve_mb", defaults.gpu_memory_reserve_mb,
+            minimum=0, maximum=1048576, integer=True, strict=strict,
+        ),
+        gpu_new_model_default_mb=_number(
+            data, "gpu_new_model_default_mb", defaults.gpu_new_model_default_mb,
+            minimum=128, maximum=1048576, integer=True, strict=strict,
+        ),
+        gpu_model_memory_margin_percent=_number(
+            data,
+            "gpu_model_memory_margin_percent",
+            defaults.gpu_model_memory_margin_percent,
+            minimum=0,
+            maximum=100,
+            strict=strict,
+        ),
+        gpu_oom_cooldown_seconds=_number(
+            data, "gpu_oom_cooldown_seconds", defaults.gpu_oom_cooldown_seconds,
+            minimum=1, maximum=86400, integer=True, strict=strict,
+        ),
+        gpu_nvml_stale_seconds=_number(
+            data, "gpu_nvml_stale_seconds", defaults.gpu_nvml_stale_seconds,
+            minimum=1, maximum=3600, integer=True, strict=strict,
+        ),
+        gpu_failure_mode=gpu_failure_mode,
         inference_admission_enabled=_parse_bool(
             data.get("inference_admission_enabled"),
             defaults.inference_admission_enabled,
@@ -394,6 +504,25 @@ def _cgroup_oom_available() -> bool:
     return False
 
 
+def _visible_nvidia_gpus() -> Tuple[list, Optional[str], bool]:
+    global _LAST_VISIBLE_NVIDIA_GPUS
+
+    provider = NvmlGpuProvider()
+    try:
+        devices = list(provider.devices())
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        with _GPU_CAPABILITY_CACHE_LOCK:
+            cached = _LAST_VISIBLE_NVIDIA_GPUS
+        return list(cached or ()), error, cached is not None
+    else:
+        with _GPU_CAPABILITY_CACHE_LOCK:
+            _LAST_VISIBLE_NVIDIA_GPUS = tuple(devices)
+        return devices, None, False
+    finally:
+        provider.close()
+
+
 def detect_inference_capabilities() -> Dict[str, Any]:
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -427,6 +556,12 @@ def detect_inference_capabilities() -> Dict[str, Any]:
     unix_socket = hasattr(socket, "AF_UNIX") and os.name != "nt"
     posix_shared_memory = os.name == "posix" and shared_memory is not None
     cgroup_oom = system == "linux" and _cgroup_oom_available()
+    if system == "linux" and not is_rk3588:
+        nvidia_gpus, gpu_detection_error, gpu_snapshot_stale = (
+            _visible_nvidia_gpus()
+        )
+    else:
+        nvidia_gpus, gpu_detection_error, gpu_snapshot_stale = [], None, False
     return {
         "mode": "auto",
         "platform": platform_name,
@@ -438,6 +573,19 @@ def detect_inference_capabilities() -> Dict[str, Any]:
         "shared_ultralytics": unix_socket and posix_shared_memory,
         "shared_ocr": unix_socket and posix_shared_memory,
         "memory_admission": True,
+        "gpu_scheduling": len(nvidia_gpus) >= 2 and not is_jetson,
+        "nvidia_gpu_count": len(nvidia_gpus),
+        "nvidia_gpu_detection_error": gpu_detection_error,
+        "nvidia_gpu_snapshot_stale": gpu_snapshot_stale,
+        "nvidia_gpus": [
+            {
+                "index": gpu.index,
+                "uuid": gpu.uuid,
+                "name": gpu.name,
+                "total_mb": round(gpu.total_mb, 1),
+            }
+            for gpu in nvidia_gpus
+        ],
         "oom_detection": cgroup_oom,
         "unix_socket": unix_socket,
         "posix_shared_memory": posix_shared_memory,
@@ -464,6 +612,11 @@ def effective_inference_resource_config(
             or capabilities.get("rknn_shared")
             or capabilities.get("shared_ocr")
         )
+    )
+    values["gpu_scheduling_enabled"] = bool(
+        config.gpu_scheduling_enabled
+        and values["shared_inference_enabled"]
+        and capabilities.get("gpu_scheduling")
     )
     values["inference_admission_enabled"] = bool(
         config.inference_admission_enabled and capabilities.get("memory_admission")

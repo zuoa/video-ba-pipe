@@ -132,6 +132,15 @@ export async function updateSourceRotationConfig(data: any) {
 
 export interface InferenceResourceConfig {
   shared_inference_enabled: boolean;
+  gpu_scheduling_enabled: boolean;
+  gpu_scheduling_policy: 'balanced';
+  gpu_allowed_devices: string[];
+  gpu_memory_reserve_mb: number;
+  gpu_new_model_default_mb: number;
+  gpu_model_memory_margin_percent: number;
+  gpu_oom_cooldown_seconds: number;
+  gpu_nvml_stale_seconds: number;
+  gpu_failure_mode: 'reject' | 'legacy';
   inference_admission_enabled: boolean;
   system_reserve_mb: number;
   system_reserve_percent: number;
@@ -159,6 +168,25 @@ export interface InferenceModelStatus {
   references?: number;
   queue_depth?: number | null;
   oom_failures?: number;
+  gpu_index?: number | null;
+  gpu_uuid?: string | null;
+  gpu_name?: string | null;
+  reserved_gpu_mb?: number | null;
+  actual_gpu_mb?: number | null;
+  gpu_retry_count?: number;
+}
+
+export interface InferenceGpuStatus {
+  index: number;
+  uuid: string;
+  name: string;
+  total_mb: number;
+  used_mb: number;
+  free_mb: number;
+  utilization_percent?: number | null;
+  pending_reserved_mb: number;
+  assignment_count: number;
+  cooldown_seconds: number;
 }
 
 export interface InferenceResourceStatus {
@@ -173,6 +201,16 @@ export interface InferenceResourceStatus {
   service_pid?: number | null;
   model_count?: number;
   models?: InferenceModelStatus[];
+  gpu_scheduler?: {
+    enabled?: boolean;
+    failure_mode?: 'reject' | 'legacy';
+    degraded_to_legacy?: boolean;
+    metrics_stale?: boolean;
+    metrics_error?: string | null;
+    reserve_mb?: number;
+    allowed_devices?: string[];
+  };
+  gpus?: InferenceGpuStatus[];
   source_host_count?: number;
   memory?: {
     total_mb: number;

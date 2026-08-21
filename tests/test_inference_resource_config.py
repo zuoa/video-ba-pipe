@@ -4,6 +4,7 @@ import time
 import pytest
 
 from app.core import inference_resource_config as resource_config
+from app.core.gpu_placement import GpuDeviceSnapshot
 from app.core.inference_resource_config import (
     InferenceResourceConfig,
     effective_inference_resource_config,
@@ -27,18 +28,42 @@ class _FakeRecord:
         self.saved = True
 
 
+class _CapabilityGpuProvider:
+    def __init__(self):
+        self.error = None
+        self.snapshots = [
+            GpuDeviceSnapshot(0, "GPU-0", "GPU 0", 24000, 0, 24000, 0),
+            GpuDeviceSnapshot(1, "GPU-1", "GPU 1", 24000, 0, 24000, 0),
+        ]
+
+    def devices(self):
+        if self.error is not None:
+            raise self.error
+        return list(self.snapshots)
+
+    def close(self):
+        pass
+
+
 def test_normalize_inference_resource_config_validates_ranges():
     with pytest.raises(ValueError, match="queue_size"):
         normalize_inference_resource_config({"queue_size": 0}, strict=True)
 
     config = normalize_inference_resource_config({
         "shared_inference_enabled": "true",
+        "gpu_scheduling_enabled": "true",
+        "gpu_allowed_devices": ["GPU-a", "1"],
+        "gpu_memory_reserve_mb": 1536,
+        "gpu_failure_mode": "reject",
         "inference_admission_enabled": "false",
         "queue_size": 8,
         "batch_wait_ms": 2.5,
     })
     assert config.shared_inference_enabled is True
     assert config.inference_admission_enabled is False
+    assert config.gpu_scheduling_enabled is True
+    assert config.gpu_allowed_devices == ("GPU-a", "1")
+    assert config.gpu_memory_reserve_mb == 1536
     assert config.queue_size == 8
     assert config.batch_wait_ms == 2.5
 
@@ -86,6 +111,56 @@ def test_effective_config_auto_downgrades_unsupported_features():
     assert effective.shared_inference_enabled is False
     assert effective.inference_admission_enabled is True
     assert effective.oom_circuit_breaker_enabled is False
+    assert effective.gpu_scheduling_enabled is False
+
+
+def test_effective_config_enables_gpu_scheduler_only_with_shared_multi_gpu():
+    requested = InferenceResourceConfig(
+        shared_inference_enabled=True,
+        gpu_scheduling_enabled=True,
+    )
+
+    effective = effective_inference_resource_config(requested, {
+        "shared_ultralytics": True,
+        "shared_ocr": True,
+        "rknn_shared": False,
+        "gpu_scheduling": True,
+        "memory_admission": True,
+        "oom_detection": False,
+    })
+
+    assert effective.shared_inference_enabled is True
+    assert effective.gpu_scheduling_enabled is True
+
+
+def test_capability_refresh_preserves_last_gpu_topology_on_nvml_failure(
+    monkeypatch,
+):
+    provider = _CapabilityGpuProvider()
+    monkeypatch.setattr(resource_config.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(resource_config.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(resource_config, "_device_model", lambda: "")
+    monkeypatch.setattr(resource_config, "_device_tree_compatible", lambda: "")
+    monkeypatch.setattr(resource_config, "NvmlGpuProvider", lambda: provider)
+    monkeypatch.setattr(resource_config, "_LAST_VISIBLE_NVIDIA_GPUS", None)
+
+    initial = resource_config.detect_inference_capabilities()
+    provider.error = RuntimeError("temporary NVML failure")
+    refreshed = resource_config.detect_inference_capabilities()
+
+    assert initial["gpu_scheduling"] is True
+    assert refreshed["gpu_scheduling"] is True
+    assert refreshed["nvidia_gpu_count"] == 2
+    assert refreshed["nvidia_gpu_snapshot_stale"] is True
+    assert "temporary NVML failure" in refreshed["nvidia_gpu_detection_error"]
+
+    provider.error = None
+    provider.snapshots = []
+    removed = resource_config.detect_inference_capabilities()
+
+    assert removed["gpu_scheduling"] is False
+    assert removed["nvidia_gpu_count"] == 0
+    assert removed["nvidia_gpu_snapshot_stale"] is False
 
 
 def test_effective_config_allows_shared_service_for_ocr_only_host():
@@ -218,6 +293,14 @@ def test_shared_service_controller_exports_database_runtime_values():
         batch_wait_ms=8.5,
         request_timeout_seconds=42,
         idle_seconds=99,
+        gpu_scheduling_enabled=True,
+        gpu_allowed_devices=("GPU-a", "GPU-b"),
+        gpu_memory_reserve_mb=1536,
+        gpu_new_model_default_mb=3072,
+        gpu_model_memory_margin_percent=35,
+        gpu_oom_cooldown_seconds=75,
+        gpu_nvml_stale_seconds=45,
+        gpu_failure_mode="reject",
         oom_circuit_enabled=False,
         oom_failure_threshold=5,
         oom_open_seconds=321,
@@ -231,6 +314,14 @@ def test_shared_service_controller_exports_database_runtime_values():
     assert environment["SHARED_INFERENCE_BATCH_WAIT_MS"] == "8.5"
     assert environment["SHARED_INFERENCE_REQUEST_TIMEOUT_SECONDS"] == "42.0"
     assert environment["SHARED_INFERENCE_IDLE_SECONDS"] == "99"
+    assert environment["GPU_SCHEDULING_ENABLED"] == "true"
+    assert environment["GPU_ALLOWED_DEVICES"] == "GPU-a,GPU-b"
+    assert environment["GPU_MEMORY_RESERVE_MB"] == "1536"
+    assert environment["GPU_NEW_MODEL_DEFAULT_MB"] == "3072"
+    assert environment["GPU_MODEL_MEMORY_MARGIN_PERCENT"] == "35.0"
+    assert environment["GPU_OOM_COOLDOWN_SECONDS"] == "75"
+    assert environment["GPU_NVML_STALE_SECONDS"] == "45"
+    assert environment["GPU_SCHEDULING_FAILURE_MODE"] == "reject"
     assert environment["OOM_CIRCUIT_BREAKER_ENABLED"] == "false"
     assert environment["OOM_CIRCUIT_FAILURE_THRESHOLD"] == "5"
     assert environment["OOM_CIRCUIT_OPEN_SECONDS"] == "321"

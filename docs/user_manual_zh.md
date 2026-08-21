@@ -482,6 +482,7 @@ def process(frame, roi_regions, state, upstream_results=None):
 ### 13.2 推理资源保护
 
 - **共享推理**：多算法共享模型实例，减少显存/内存占用（队列长度、批大小、批等待毫秒、请求超时、模型空闲回收秒数）
+- **多 GPU 动态调度（x86 CUDA）**：至少两张可见 NVIDIA GPU 时，共享 Ultralytics/PaddleOCR 模型按预计显存占用率选择物理 GPU；支持每卡保留显存、冷启动预留、允许卡列表、CUDA OOM 换卡一次和 NVML 失效策略。ONNX、RKNN 与直连 YOLO 暂不在 V1 调度范围内
 - **内存准入**：加载新模型前检查剩余内存（系统预留 MB/百分比、新模型默认占用、安全边际百分比）
 - **OOM 熔断**：模型连续失败达到阈值后熔断（失败阈值、熔断时长、稳定重置时长、重启退避上限）
 - 修改后 worker 约 5 秒内热生效

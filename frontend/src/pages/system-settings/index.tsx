@@ -70,6 +70,11 @@ const NODE_ID_SOURCE_LABELS: Record<string, string> = {
 };
 
 const EMPTY_HTTP_HEADERS: Array<{ name?: string; value?: string }> = [];
+const GPU_POLICY_OPTIONS = [{ value: 'balanced', label: '预计显存占用最低' }];
+const GPU_FAILURE_MODE_OPTIONS = [
+  { value: 'reject', label: '拒绝新模型（推荐）' },
+  { value: 'legacy', label: '降级为旧模式' },
+];
 
 const buildHttpReceiverPrompt = ({
   endpointUrl,
@@ -212,6 +217,7 @@ const SystemSettingsPage: React.FC = () => {
   const mediaDeliveryMode = Form.useWatch('delivery_mode', publicMediaForm) ?? 'url';
   const alertGrowthEnabled = Form.useWatch('notify_alert_growth', opsForm) ?? true;
   const sharedInferenceEnabled = Form.useWatch('shared_inference_enabled', inferenceForm) ?? false;
+  const gpuSchedulingEnabled = Form.useWatch('gpu_scheduling_enabled', inferenceForm) ?? false;
   const inferenceAdmissionEnabled = Form.useWatch('inference_admission_enabled', inferenceForm) ?? false;
   const oomCircuitEnabled = Form.useWatch('oom_circuit_breaker_enabled', inferenceForm) ?? false;
   const messageQueueEnabled = Form.useWatch('enabled', messageQueueForm) ?? false;
@@ -231,6 +237,12 @@ const SystemSettingsPage: React.FC = () => {
   const sharedServiceRunning = inferenceStatus?.service_running ?? false;
   const inferenceMemory = inferenceStatus?.memory;
   const inferenceModels = inferenceStatus?.models || [];
+  const inferenceGpus = inferenceStatus?.gpus || [];
+  const gpuScheduler = inferenceStatus?.gpu_scheduler;
+  const gpuOptions = (inferenceCapabilities.nvidia_gpus || inferenceGpus).map((gpu: any) => ({
+    value: gpu.uuid,
+    label: `GPU ${gpu.index} · ${gpu.name}`,
+  }));
   const httpReceiverPrompt = useMemo(() => buildHttpReceiverPrompt({
     endpointUrl: httpEndpointUrl,
     nodeId: systemInfo?.node_id || '',
@@ -520,6 +532,12 @@ const SystemSettingsPage: React.FC = () => {
                       detail={`${inferenceModels.reduce((sum, model) => sum + (model.references || 0), 0)} 个引用`}
                     />
                     <InferenceStatusMetric
+                      label="GPU 调度"
+                      value={effectiveInference?.gpu_scheduling_enabled ? `${inferenceGpus.length} 张卡` : '未启用'}
+                      tone={gpuScheduler?.degraded_to_legacy ? 'warning' : effectiveInference?.gpu_scheduling_enabled ? 'healthy' : 'neutral'}
+                      detail={gpuScheduler?.metrics_stale ? 'NVML 指标已过期' : gpuScheduler?.degraded_to_legacy ? '已降级为旧模式' : '按预计显存动态选卡'}
+                    />
+                    <InferenceStatusMetric
                       label="内存余量"
                       value={inferenceMemory ? formatMb(inferenceMemory.available_mb) : '暂无数据'}
                       tone={inferenceMemory && inferenceMemory.usage_percent >= 90 ? 'danger' : 'neutral'}
@@ -531,6 +549,7 @@ const SystemSettingsPage: React.FC = () => {
                     <span>平台能力</span>
                     <CapabilityTag supported={Boolean(inferenceCapabilities.shared_ultralytics)}>Ultralytics 共享</CapabilityTag>
                     <CapabilityTag supported={Boolean(inferenceCapabilities.memory_admission)}>内存准入</CapabilityTag>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.gpu_scheduling)}>多 GPU 调度</CapabilityTag>
                     <CapabilityTag supported={Boolean(inferenceCapabilities.oom_detection)}>OOM 检测</CapabilityTag>
                     <CapabilityTag supported={Boolean(inferenceCapabilities.rknn_shared)}>RKNN 共享</CapabilityTag>
                     {inferenceResource?.restart_required
@@ -551,10 +570,41 @@ const SystemSettingsPage: React.FC = () => {
                         : inferenceResource?.config_pending
                           ? '配置已保存，worker 正在自动应用'
                           : '推理资源保护配置已生效'}
-                    description="阈值和熔断参数热更新；共享服务、队列或批量参数变化时，只重建 source host，视频解码保持运行。RKNN、ONNX 和直连 YOLO 按本地模型副本计算。"
+                    description="共享服务或 GPU 调度参数变化时会安全重建共享模型进程。V1 管理共享 Ultralytics 与 PaddleOCR；RKNN、ONNX 和直连 YOLO 仍按本地模型副本计算。"
                   />
 
                   <Form form={inferenceForm} layout="vertical">
+                    <InferenceSectionTitle icon={<ThunderboltOutlined />} title="多 GPU 动态调度" description="加载共享模型前按预计显存选择物理 GPU，并为冷启动预留容量" />
+                    <div className="system-settings-form-grid">
+                      <Form.Item label="启用 GPU 调度" name="gpu_scheduling_enabled" valuePropName="checked" extra="仅在 x86 Linux 且至少有两张可见 NVIDIA GPU 时生效。">
+                        <Switch disabled={!inferenceCapabilities.gpu_scheduling} />
+                      </Form.Item>
+                      <Form.Item label="调度策略" name="gpu_scheduling_policy">
+                        <Select disabled={!gpuSchedulingEnabled} options={GPU_POLICY_OPTIONS} />
+                      </Form.Item>
+                      <Form.Item label="允许使用的 GPU" name="gpu_allowed_devices" extra="留空表示使用全部可见 GPU。">
+                        <Select mode="multiple" allowClear disabled={!gpuSchedulingEnabled} options={gpuOptions} placeholder="全部可见 GPU" />
+                      </Form.Item>
+                      <Form.Item label="每卡保留显存（MB）" name="gpu_memory_reserve_mb" rules={[{ required: gpuSchedulingEnabled, message: '请输入每卡保留显存' }]}>
+                        <InputNumber min={0} max={1048576} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="新模型预估显存（MB）" name="gpu_new_model_default_mb" rules={[{ required: gpuSchedulingEnabled, message: '请输入新模型预估显存' }]}>
+                        <InputNumber min={128} max={1048576} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="模型显存余量（%）" name="gpu_model_memory_margin_percent" rules={[{ required: gpuSchedulingEnabled, message: '请输入模型显存余量' }]}>
+                        <InputNumber min={0} max={100} precision={1} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="OOM 卡冷却（秒）" name="gpu_oom_cooldown_seconds" rules={[{ required: gpuSchedulingEnabled, message: '请输入 OOM 冷却时间' }]}>
+                        <InputNumber min={1} max={86400} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item label="NVML 失效策略" name="gpu_failure_mode" extra="推荐拒绝新模型，避免静默集中到 GPU 0。">
+                        <Select disabled={!gpuSchedulingEnabled} options={GPU_FAILURE_MODE_OPTIONS} />
+                      </Form.Item>
+                      <Form.Item label="NVML 快照有效期（秒）" name="gpu_nvml_stale_seconds" rules={[{ required: gpuSchedulingEnabled, message: '请输入快照有效期' }]}>
+                        <InputNumber min={1} max={3600} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </div>
+
                     <InferenceSectionTitle icon={<ThunderboltOutlined />} title="共享推理" description="相同 Ultralytics 模型只保留一个模型进程" />
                     <div className="system-settings-form-grid">
                       <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="平台不支持时自动降级，不阻止本地推理。">
@@ -616,12 +666,30 @@ const SystemSettingsPage: React.FC = () => {
                     </div>
                   </Form>
 
+                  {inferenceGpus.length > 0 ? (
+                    <div className="inference-model-list" aria-label="GPU 调度运行详情">
+                      {inferenceGpus.map((gpu) => (
+                        <div className="inference-model-row" key={gpu.uuid}>
+                          <span className={`inference-model-dot ${gpu.cooldown_seconds > 0 ? '' : 'is-ready'}`} />
+                          <strong>GPU {gpu.index} · {gpu.name}</strong>
+                          <span>显存 {formatMb(gpu.used_mb)} / {formatMb(gpu.total_mb)}</span>
+                          <span>预留 {formatMb(gpu.pending_reserved_mb)}</span>
+                          <span>{gpu.assignment_count} 个模型</span>
+                          <span>利用率 {gpu.utilization_percent ?? '—'}%</span>
+                          <span>{gpu.cooldown_seconds > 0 ? `冷却 ${gpu.cooldown_seconds.toFixed(0)}s` : '可分配'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
                   {inferenceModels.length > 0 ? (
                     <div className="inference-model-list" aria-label="共享模型运行详情">
                       {inferenceModels.map((model, index) => (
                         <div className="inference-model-row" key={`${model.model_id ?? 'model'}-${model.pid ?? index}`}>
                           <span className={`inference-model-dot ${model.ready ? 'is-ready' : ''}`} />
                           <strong>模型 {model.model_id ?? '未知'}</strong>
+                          <span>{model.gpu_index === null || model.gpu_index === undefined ? model.device || '未绑卡' : `GPU ${model.gpu_index}`}</span>
+                          <span>显存 {formatMb(model.actual_gpu_mb ?? model.reserved_gpu_mb)}</span>
                           <span>PSS {formatMb(model.pss_mb)}</span>
                           <span>{model.references || 0} 个引用</span>
                           <span>队列 {model.queue_depth ?? '—'}</span>

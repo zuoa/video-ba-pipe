@@ -183,7 +183,7 @@
 
 .inference-status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   margin: -4px 0 16px;
   overflow: hidden;
@@ -307,7 +307,7 @@
 
 .inference-model-row {
   display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) repeat(3, minmax(80px, auto));
+  grid-template-columns: auto minmax(120px, 1fr) repeat(5, minmax(80px, auto));
   align-items: center;
   gap: 14px;
   padding: 11px 14px;
@@ -599,6 +599,14 @@
   .inference-status-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .inference-model-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .inference-model-row > span:not(.inference-model-dot) {
+    grid-column: 2;
+  }
 }
 
 @media (max-width: 560px) {
@@ -652,13 +660,5 @@
 
   .inference-status-strip {
     grid-template-columns: 1fr;
-  }
-
-  .inference-model-row {
-    grid-template-columns: auto 1fr;
-  }
-
-  .inference-model-row > span:not(.inference-model-dot) {
-    grid-column: 2;
   }
 }

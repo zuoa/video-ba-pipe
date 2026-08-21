@@ -2,11 +2,15 @@ import os
 import time
 
 import app.core.shared_inference as shared_inference_module
+from app.core.gpu_placement import (
+    GpuDeviceSnapshot,
+    GpuPlacementBroker,
+)
 from app.core.ocr_backend import build_ocr_model_spec
 from app.core.shared_inference import _ModelRegistry, build_model_spec, model_key
 
 
-def _fake_worker(spec, base_config, request_queue, result_queue):
+def _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
     result_queue.put({
         "kind": "worker_ready",
         "key": model_key(spec),
@@ -26,17 +30,84 @@ def _fake_worker(spec, base_config, request_queue, result_queue):
         })
 
 
-def _slow_start_worker(spec, base_config, request_queue, result_queue):
+def _slow_start_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
     time.sleep(0.35)
-    _fake_worker(spec, base_config, request_queue, result_queue)
+    _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment)
 
 
-def _failed_start_worker(spec, _base_config, _request_queue, result_queue):
+def _failed_start_worker(spec, _base_config, _request_queue, result_queue, gpu_assignment=None):
     result_queue.put({
         "kind": "worker_start_failed",
         "key": model_key(spec),
         "error": "ImportError: missing CUDA runtime",
     })
+
+
+def _gpu0_oom_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
+    if gpu_assignment and gpu_assignment.get("gpu_index") == 0:
+        result_queue.put({
+            "kind": "worker_start_failed",
+            "key": model_key(spec),
+            "pid": os.getpid(),
+            "error": "OutOfMemoryError: CUDA out of memory",
+            "failure_kind": "cuda_oom",
+            "gpu_index": 0,
+            "gpu_uuid": gpu_assignment.get("gpu_uuid"),
+        })
+        return
+    _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment)
+
+
+def _gpu0_runtime_oom_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
+    if not gpu_assignment or gpu_assignment.get("gpu_index") != 0:
+        _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment)
+        return
+    result_queue.put({
+        "kind": "worker_ready",
+        "key": model_key(spec),
+        "pid": os.getpid(),
+        "gpu_index": 0,
+        "gpu_uuid": gpu_assignment.get("gpu_uuid"),
+    })
+    request = request_queue.get()
+    if request is None:
+        return
+    error = "OutOfMemoryError: CUDA out of memory"
+    result_queue.put({
+        "kind": "result",
+        "request_id": request["request_id"],
+        "ok": False,
+        "error": error,
+        "failure_kind": "cuda_oom",
+    })
+    result_queue.put({
+        "kind": "worker_runtime_failed",
+        "key": model_key(spec),
+        "pid": os.getpid(),
+        "error": error,
+        "failure_kind": "cuda_oom",
+        "gpu_index": 0,
+        "gpu_uuid": gpu_assignment.get("gpu_uuid"),
+    })
+
+
+class _FakeGpuProvider:
+    def devices(self):
+        return [
+            GpuDeviceSnapshot(0, "GPU-0", "GPU 0", 24000, 0, 24000, 0),
+            GpuDeviceSnapshot(1, "GPU-1", "GPU 1", 24000, 0, 24000, 0),
+        ]
+
+    def process_used_mb(self, _gpu_uuid, _pid):
+        return None
+
+    def close(self):
+        pass
+
+
+class _SingleGpuProvider(_FakeGpuProvider):
+    def devices(self):
+        return [GpuDeviceSnapshot(0, "GPU-0", "GPU 0", 24000, 0, 24000, 0)]
 
 
 def test_model_key_changes_when_model_file_changes(tmp_path):
@@ -47,6 +118,17 @@ def test_model_key_changes_when_model_file_changes(tmp_path):
     spec_b = build_model_spec(str(model), {"framework": "ultralytics"}, {"model_id": 7})
 
     assert model_key(spec_a) != model_key(spec_b)
+
+
+def test_paddle_resource_exhausted_error_is_cuda_oom():
+    class ResourceExhaustedError(RuntimeError):
+        pass
+
+    error = ResourceExhaustedError(
+        "Out of memory error on GPU 0. Cannot allocate 512MB memory."
+    )
+
+    assert shared_inference_module._is_cuda_oom(error) is True
 
 
 def test_model_spec_selects_rknn_and_keys_runtime_configuration(tmp_path):
@@ -187,6 +269,60 @@ def test_create_model_worker_backend_selects_rknn_ocr(monkeypatch, tmp_path):
     assert isinstance(backend, FakeBackend)
     assert spec["backend"] == "rknn_ocr"
     assert created["spec"]["recognition_model_id"] == 12
+
+
+def test_model_worker_binds_gpu_before_backend_creation(monkeypatch, tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 31})
+    observed = {}
+    responses = []
+
+    class FakeBackend:
+        name = "ultralytics"
+        model = None
+
+        def infer(self, _frame):
+            observed["visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES")
+            return [], [], {}
+
+        def cleanup(self):
+            observed["cleaned"] = True
+
+    class RequestQueue:
+        @staticmethod
+        def get():
+            return None
+
+    class ResultQueue:
+        @staticmethod
+        def put(value):
+            responses.append(value)
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(
+        shared_inference_module,
+        "_create_model_worker_backend",
+        lambda *_args, **_kwargs: FakeBackend(),
+    )
+
+    shared_inference_module._model_worker_main(
+        spec,
+        {},
+        RequestQueue(),
+        ResultQueue(),
+        {
+            "gpu_index": 1,
+            "gpu_uuid": "GPU-test-uuid",
+            "gpu_name": "Fake GPU",
+            "reserved_mb": 2048,
+        },
+    )
+
+    assert observed == {"visible_devices": "GPU-test-uuid", "cleaned": True}
+    assert responses[0]["kind"] == "worker_ready"
+    assert responses[0]["gpu_index"] == 1
+    assert responses[0]["gpu_uuid"] == "GPU-test-uuid"
 
 
 def test_ocr_spec_changes_when_device_or_recognition_file_changes(tmp_path):
@@ -403,5 +539,140 @@ def test_disabling_model_oom_policy_clears_active_backoff(tmp_path, monkeypatch)
         assert response["oom_policy"]["enabled"] is False
         assert restarted["ok"] is True
         assert registry.slots[first["model_key"]].process.pid != original_pid
+    finally:
+        registry.close()
+
+
+def test_cuda_oom_retries_model_once_on_another_gpu(tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 21})
+    broker = GpuPlacementBroker(
+        enabled=True,
+        reserve_mb=1024,
+        default_model_mb=2048,
+        margin_percent=0,
+        provider=_FakeGpuProvider(),
+    )
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        gpu_broker=broker,
+        worker_target=_gpu0_oom_worker,
+    )
+    try:
+        acquired = registry.acquire(spec, {})
+        response = registry.submit(
+            acquired["model_key"],
+            {"request_id": "gpu-retry-request"},
+            timeout=2,
+            startup_timeout=5,
+        )
+
+        assert response["ok"] is True
+        slot = registry.slots[acquired["model_key"]]
+        assert slot.gpu_assignment.gpu_index == 1
+        assert slot.oom_failures == 1
+    finally:
+        registry.close()
+
+
+def test_cuda_oom_slot_recovers_after_alternate_gpu_was_unavailable(tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 23})
+    clock = {"now": 0.0}
+    broker = GpuPlacementBroker(
+        enabled=True,
+        reserve_mb=1024,
+        default_model_mb=2048,
+        margin_percent=0,
+        oom_cooldown_seconds=10,
+        provider=_SingleGpuProvider(),
+        time_func=lambda: clock["now"],
+    )
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        oom_circuit_enabled=False,
+        gpu_broker=broker,
+        worker_target=_gpu0_oom_worker,
+    )
+    try:
+        acquired = registry.acquire(spec, {})
+        failed = registry.submit(
+            acquired["model_key"],
+            {"request_id": "gpu-no-alternate"},
+            timeout=2,
+            startup_timeout=5,
+        )
+
+        assert failed["ok"] is False
+        assert "out of memory" in failed["error"].lower()
+        slot = registry.slots[acquired["model_key"]]
+        assert slot.start_failure_kind == "cuda_oom"
+
+        clock["now"] = 11.0
+        registry.worker_target = _fake_worker
+        retried = registry.acquire(spec, {})
+        recovered = registry.submit(
+            acquired["model_key"],
+            {"request_id": "gpu-after-cooldown"},
+            timeout=2,
+            startup_timeout=5,
+        )
+
+        assert retried["ok"] is True
+        assert recovered["ok"] is True
+        assert registry.slots[acquired["model_key"]].start_error is None
+    finally:
+        registry.close()
+
+
+def test_runtime_cuda_oom_moves_future_requests_to_another_gpu(tmp_path):
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"weights")
+    spec = build_model_spec(str(model), {}, {"model_id": 22})
+    broker = GpuPlacementBroker(
+        enabled=True,
+        reserve_mb=1024,
+        default_model_mb=2048,
+        margin_percent=0,
+        provider=_FakeGpuProvider(),
+    )
+    registry = _ModelRegistry(
+        queue_size=1,
+        idle_seconds=60,
+        gpu_broker=broker,
+        worker_target=_gpu0_runtime_oom_worker,
+    )
+    try:
+        acquired = registry.acquire(spec, {})
+        first = registry.submit(
+            acquired["model_key"],
+            {"request_id": "runtime-oom-request"},
+            timeout=2,
+            startup_timeout=5,
+        )
+        assert first["ok"] is False
+        assert first["failure_kind"] == "cuda_oom"
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            slot = registry.slots[acquired["model_key"]]
+            if slot.ready and slot.gpu_assignment.gpu_index == 1:
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("model did not become ready on the second GPU")
+
+        second = registry.submit(
+            acquired["model_key"],
+            {"request_id": "after-runtime-oom"},
+            timeout=2,
+            startup_timeout=5,
+        )
+        assert second["ok"] is True
+        assert registry.slots[acquired["model_key"]].gpu_assignment.gpu_index == 1
     finally:
         registry.close()

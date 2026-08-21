@@ -263,6 +263,39 @@ SHARED_INFERENCE_IDLE_SECONDS = max(
     10, int(os.getenv('SHARED_INFERENCE_IDLE_SECONDS', '120'))
 )
 
+# X86 CUDA shared-model placement.  The effective runtime configuration turns
+# this off automatically unless at least two NVIDIA devices are visible.
+GPU_SCHEDULING_ENABLED = os.getenv(
+    'GPU_SCHEDULING_ENABLED', 'true'
+).lower() in ('true', '1', 'yes', 'on')
+GPU_SCHEDULING_POLICY = (
+    os.getenv('GPU_SCHEDULING_POLICY', 'balanced').strip().lower() or 'balanced'
+)
+GPU_ALLOWED_DEVICES = tuple(
+    value.strip()
+    for value in os.getenv('GPU_ALLOWED_DEVICES', '').split(',')
+    if value.strip()
+)
+GPU_MEMORY_RESERVE_MB = max(
+    0, int(os.getenv('GPU_MEMORY_RESERVE_MB', '1024'))
+)
+GPU_NEW_MODEL_DEFAULT_MB = max(
+    128, int(os.getenv('GPU_NEW_MODEL_DEFAULT_MB', '2048'))
+)
+GPU_MODEL_MEMORY_MARGIN_PERCENT = min(
+    100.0,
+    max(0.0, float(os.getenv('GPU_MODEL_MEMORY_MARGIN_PERCENT', '25'))),
+)
+GPU_OOM_COOLDOWN_SECONDS = max(
+    1, int(os.getenv('GPU_OOM_COOLDOWN_SECONDS', '60'))
+)
+GPU_NVML_STALE_SECONDS = max(
+    1, int(os.getenv('GPU_NVML_STALE_SECONDS', '60'))
+)
+GPU_SCHEDULING_FAILURE_MODE = (
+    os.getenv('GPU_SCHEDULING_FAILURE_MODE', 'reject').strip().lower() or 'reject'
+)
+
 # API forwards all interactive algorithm tests to this worker-local HTTP service.
 # The port is exposed only on the Compose network, never on the host.
 ALGORITHM_TEST_WORKER_HOST = (
