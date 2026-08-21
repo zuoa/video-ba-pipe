@@ -284,7 +284,17 @@ const SystemSettingsPage: React.FC = () => {
       recordingForm.setFieldsValue(recordingResponse.config);
       setStorageUsage(recordingResponse.usage);
       opsForm.setFieldsValue(opsResponse.config);
-      inferenceForm.setFieldsValue(inferenceResponse.config);
+      const inferenceConfig = { ...inferenceResponse.config };
+      // Multi-GPU placement is implemented by the shared model service. Keep
+      // older persisted configurations (GPU scheduling on, shared inference
+      // off) consistent with the effective backend behavior.
+      if (
+        inferenceConfig.gpu_scheduling_enabled
+        && inferenceResponse.capabilities?.gpu_scheduling
+      ) {
+        inferenceConfig.shared_inference_enabled = true;
+      }
+      inferenceForm.setFieldsValue(inferenceConfig);
       publicMediaForm.setFieldsValue(publicMediaResponse.config);
       setPublicMediaConfig(publicMediaResponse.config);
       setDeliveryStats(publicMediaResponse.delivery_stats || { pending: 0, processing: 0, retrying: 0, failed: 0 });
@@ -576,8 +586,13 @@ const SystemSettingsPage: React.FC = () => {
                   <Form form={inferenceForm} layout="vertical">
                     <InferenceSectionTitle icon={<ThunderboltOutlined />} title="多 GPU 动态调度" description="加载共享模型前按预计显存选择物理 GPU，并为冷启动预留容量" />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用 GPU 调度" name="gpu_scheduling_enabled" valuePropName="checked" extra="仅在 x86 Linux 且至少有两张可见 NVIDIA GPU 时生效。">
-                        <Switch disabled={!inferenceCapabilities.gpu_scheduling} />
+                      <Form.Item label="启用 GPU 调度" name="gpu_scheduling_enabled" valuePropName="checked" extra="仅在 x86 Linux 且至少有两张可见 NVIDIA GPU 时生效；开启后会同时启用共享推理。">
+                        <Switch
+                          disabled={!inferenceCapabilities.gpu_scheduling}
+                          onChange={(checked) => {
+                            if (checked) inferenceForm.setFieldValue('shared_inference_enabled', true);
+                          }}
+                        />
                       </Form.Item>
                       <Form.Item label="调度策略" name="gpu_scheduling_policy">
                         <Select disabled={!gpuSchedulingEnabled} options={GPU_POLICY_OPTIONS} />
@@ -607,8 +622,12 @@ const SystemSettingsPage: React.FC = () => {
 
                     <InferenceSectionTitle icon={<ThunderboltOutlined />} title="共享推理" description="相同 Ultralytics 模型只保留一个模型进程" />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="平台不支持时自动降级，不阻止本地推理。">
-                        <Switch />
+                      <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="GPU 调度依赖共享推理；关闭共享推理会同时关闭 GPU 调度。平台不支持时自动降级。">
+                        <Switch
+                          onChange={(checked) => {
+                            if (!checked) inferenceForm.setFieldValue('gpu_scheduling_enabled', false);
+                          }}
+                        />
                       </Form.Item>
                       <Form.Item label="请求队列长度" name="queue_size" rules={[{ required: sharedInferenceEnabled, message: '请输入队列长度' }]}>
                         <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />

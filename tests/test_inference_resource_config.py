@@ -133,6 +133,44 @@ def test_effective_config_enables_gpu_scheduler_only_with_shared_multi_gpu():
     assert effective.gpu_scheduling_enabled is True
 
 
+def test_effective_gpu_scheduler_implicitly_enables_shared_service():
+    requested = InferenceResourceConfig(
+        shared_inference_enabled=False,
+        gpu_scheduling_enabled=True,
+    )
+
+    effective = effective_inference_resource_config(requested, {
+        "shared_ultralytics": True,
+        "shared_ocr": True,
+        "rknn_shared": False,
+        "gpu_scheduling": True,
+        "memory_admission": True,
+        "oom_detection": False,
+    })
+
+    assert effective.shared_inference_enabled is True
+    assert effective.gpu_scheduling_enabled is True
+
+
+def test_effective_gpu_scheduler_does_not_enable_shared_on_single_gpu():
+    requested = InferenceResourceConfig(
+        shared_inference_enabled=False,
+        gpu_scheduling_enabled=True,
+    )
+
+    effective = effective_inference_resource_config(requested, {
+        "shared_ultralytics": True,
+        "shared_ocr": True,
+        "rknn_shared": False,
+        "gpu_scheduling": False,
+        "memory_admission": True,
+        "oom_detection": False,
+    })
+
+    assert effective.shared_inference_enabled is False
+    assert effective.gpu_scheduling_enabled is False
+
+
 def test_capability_refresh_preserves_last_gpu_topology_on_nvml_failure(
     monkeypatch,
 ):

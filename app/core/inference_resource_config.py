@@ -605,18 +605,28 @@ def effective_inference_resource_config(
 ) -> InferenceResourceConfig:
     capabilities = capabilities or detect_inference_capabilities()
     values = config.to_dict()
+    shared_runtime_available = bool(
+        capabilities.get("shared_ultralytics")
+        or capabilities.get("rknn_shared")
+        or capabilities.get("shared_ocr")
+    )
+    gpu_scheduling_requested = bool(
+        config.gpu_scheduling_enabled
+        and capabilities.get("gpu_scheduling")
+    )
+    # The GPU broker lives inside the shared-inference service.  Treat GPU
+    # scheduling as an implicit request for that service instead of silently
+    # disabling placement when an older persisted config has
+    # shared_inference_enabled=false.  This is capability-gated, so the generic
+    # default gpu_scheduling_enabled=true does not turn on shared inference on
+    # CPU/single-GPU hosts.
     values["shared_inference_enabled"] = bool(
-        config.shared_inference_enabled
-        and (
-            capabilities.get("shared_ultralytics")
-            or capabilities.get("rknn_shared")
-            or capabilities.get("shared_ocr")
-        )
+        (config.shared_inference_enabled or gpu_scheduling_requested)
+        and shared_runtime_available
     )
     values["gpu_scheduling_enabled"] = bool(
-        config.gpu_scheduling_enabled
+        gpu_scheduling_requested
         and values["shared_inference_enabled"]
-        and capabilities.get("gpu_scheduling")
     )
     values["inference_admission_enabled"] = bool(
         config.inference_admission_enabled and capabilities.get("memory_admission")

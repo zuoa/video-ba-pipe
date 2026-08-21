@@ -263,6 +263,16 @@ class Orchestrator:
             self.inference_config,
             self.inference_capabilities,
         )
+        logger.info(
+            "推理资源配置初始化: source=%s, shared=%s->%s, "
+            "gpu_scheduling=%s->%s, visible_nvidia_gpus=%s",
+            self.inference_config_source,
+            self.inference_config.shared_inference_enabled,
+            self.effective_inference_config.shared_inference_enabled,
+            self.inference_config.gpu_scheduling_enabled,
+            self.effective_inference_config.gpu_scheduling_enabled,
+            self.inference_capabilities.get("nvidia_gpu_count", 0),
+        )
         self.oom_circuit = OomCircuitBreaker(
             enabled=self.effective_inference_config.oom_circuit_breaker_enabled,
             failure_threshold=self.effective_inference_config.oom_failure_threshold,
