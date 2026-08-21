@@ -482,6 +482,7 @@ Entry: left menu "System Settings" (`/system-settings`, admin only) — 10 tabs.
 ### 13.2 Inference Resource Protection
 
 - **Shared inference**: multiple algorithms share model instances to save VRAM/RAM (queue size, batch max size, batch wait ms, request timeout, model idle recycle seconds)
+- **Dynamic multi-GPU placement (x86 CUDA)**: with at least two visible NVIDIA GPUs, shared Ultralytics/PaddleOCR workers are assigned by projected VRAM ratio. V1 supports per-GPU reserve, cold-start reservations, an allowlist, one cross-GPU retry after CUDA OOM, and an NVML failure policy. ONNX, RKNN, and direct YOLO loads are not managed in V1
 - **Memory admission**: check remaining memory before loading new models (system reserve MB/percent, default new-model footprint, safety margin percent)
 - **OOM circuit breaker**: trip a failing model after N consecutive failures (failure threshold, open duration, stable-reset duration, restart backoff cap)
 - Changes hot-apply to workers within ~5 seconds
