@@ -112,7 +112,7 @@ Click "Create" and fill in:
 
 - **Name / Source code**: the source code is a unique identifier used for ring-buffer naming and API calls
 - **Stream URL**: supports `rtsp://`, `http://` (HTTP-FLV/HLS), and local file paths
-- **Decode resolution**: decoded width/height (ROI coordinates are based on this resolution)
+- **Decode resolution**: decoded width/height (ROI coordinates are based on this resolution); new/imported sources default to `640×360`
 - **Target FPS**: frame rate used for analysis
 - **Enabled**: can be toggled at any time after creation
 
@@ -184,6 +184,13 @@ Use the wizard (`/algorithms/wizard`) or create directly. Main settings:
   - `runtime_timeout`: per-run timeout
   - `memory_limit_mb`: memory cap
 - **Algorithm-level window check**: `enable_window_check`, `window_size` (seconds), `window_mode` (ratio / consecutive / count), `window_threshold`
+
+The adaptive YOLO detector supports two inference modes:
+
+- **Letterbox (default)**: proportionally resize and pad the whole frame for predictable latency and resource use
+- **SAHI**: infer overlapping slices, map detections back to full-frame coordinates, and merge class-aware duplicates; slice size, overlap, IOS/IOU threshold, optional full-frame inference, and a maximum slice count are configurable
+
+> SAHI cannot recover detail already discarded during decoding. For small-object gains, first raise the source decode resolution (for example `1280×720` or `1920×1080`), then use slices close to the model input size. Inference cost grows with the number of slices.
 
 ### 7.3 Testing & Preview
 

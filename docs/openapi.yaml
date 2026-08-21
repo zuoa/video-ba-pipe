@@ -234,7 +234,7 @@ components:
         source_url: { type: string }
         enabled: { type: boolean, default: true }
         source_decode_width: { type: integer, minimum: 1, default: 640 }
-        source_decode_height: { type: integer, minimum: 1, default: 480 }
+        source_decode_height: { type: integer, minimum: 1, default: 360 }
         source_fps: { type: integer, minimum: 1, default: 5 }
         source_codec:
           type: string

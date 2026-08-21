@@ -29,8 +29,8 @@ from app.user_scripts.common.yolo_backends import create_backend
 
 SCRIPT_METADATA = {
     "name": "自适应YOLO检测",
-    "version": "v1.3",
-    "description": "根据模型类型自动在 ultralytics / ONNX Runtime / RKNNLite 之间切换，并支持模型级后处理适配",
+    "version": "v1.4",
+    "description": "根据模型类型自动在 ultralytics / ONNX Runtime / RKNNLite 之间切换，并支持 letterbox / SAHI 推理与模型级后处理适配",
     "author": "system",
     "category": "detection",
     "tags": ["yolo", "adaptive", "rknn", "ultralytics", "single-model"],
@@ -78,7 +78,89 @@ SCRIPT_METADATA = {
             "min": 0.0,
             "max": 1.0,
             "step": 0.05,
-            "description": "仅 RKNN 通用解析路径使用"
+            "description": "模型后处理 NMS 阈值；SAHI 跨切片融合使用独立阈值"
+        },
+        "inference_mode": {
+            "type": "select",
+            "label": "推理模式",
+            "default": "letterbox",
+            "options": [
+                {"value": "letterbox", "label": "Letterbox（标准）"},
+                {"value": "sahi", "label": "SAHI（切片推理）"}
+            ],
+            "description": "SAHI 适合高分辨率画面中的小目标；需将视频源解码分辨率调高，每个切片仍使用模型原有 letterbox 输入"
+        },
+        "sahi_slice_width": {
+            "type": "int",
+            "label": "SAHI切片宽度",
+            "default": 640,
+            "min": 32,
+            "max": 4096,
+            "visible_when": {"inference_mode": "sahi"},
+            "description": "建议接近模型输入宽度"
+        },
+        "sahi_slice_height": {
+            "type": "int",
+            "label": "SAHI切片高度",
+            "default": 640,
+            "min": 32,
+            "max": 4096,
+            "visible_when": {"inference_mode": "sahi"},
+            "description": "建议接近模型输入高度"
+        },
+        "sahi_overlap_width_ratio": {
+            "type": "float",
+            "label": "SAHI横向重叠率",
+            "default": 0.2,
+            "min": 0.0,
+            "max": 0.9,
+            "step": 0.05,
+            "visible_when": {"inference_mode": "sahi"}
+        },
+        "sahi_overlap_height_ratio": {
+            "type": "float",
+            "label": "SAHI纵向重叠率",
+            "default": 0.2,
+            "min": 0.0,
+            "max": 0.9,
+            "step": 0.05,
+            "visible_when": {"inference_mode": "sahi"}
+        },
+        "sahi_merge_metric": {
+            "type": "select",
+            "label": "SAHI融合度量",
+            "default": "ios",
+            "options": [
+                {"value": "ios", "label": "IOS（较小框覆盖率）"},
+                {"value": "iou", "label": "IOU"}
+            ],
+            "visible_when": {"inference_mode": "sahi"},
+            "description": "IOS 对切片边界产生的局部重复框更敏感"
+        },
+        "sahi_merge_threshold": {
+            "type": "float",
+            "label": "SAHI融合阈值",
+            "default": 0.5,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.05,
+            "visible_when": {"inference_mode": "sahi"}
+        },
+        "sahi_include_full_frame": {
+            "type": "boolean",
+            "label": "补充整帧推理",
+            "default": False,
+            "visible_when": {"inference_mode": "sahi"},
+            "description": "额外执行一次整帧推理，有利于保留大目标，但会增加耗时"
+        },
+        "sahi_max_slices": {
+            "type": "int",
+            "label": "SAHI最大切片数",
+            "default": 64,
+            "min": 1,
+            "max": 512,
+            "visible_when": {"inference_mode": "sahi"},
+            "description": "超过限制时拒绝推理，防止错误参数导致资源突增"
         },
         "roi_mode": {
             "type": "select",

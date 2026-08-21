@@ -186,6 +186,23 @@ def normalize_backend_config(config: Dict[str, Any]) -> Dict[str, Any]:
     normalized["nms_iou"] = _bounded_float(normalized, "nms_iou", 0.45)
     normalized["class_filter"] = _parse_int_list(normalized.get("class_filter"))
 
+    inference_mode_aliases = {
+        "letterbox": "letterbox",
+        "standard": "letterbox",
+        "sahi": "sahi",
+        "slice": "sahi",
+        "sliced": "sahi",
+    }
+    requested_inference_mode = str(
+        normalized.get("inference_mode") or "letterbox"
+    ).strip().lower()
+    if requested_inference_mode not in inference_mode_aliases:
+        supported = ", ".join(sorted(inference_mode_aliases))
+        raise ValueError(
+            f"不支持的推理模式: {requested_inference_mode}；可选值: {supported}"
+        )
+    normalized["inference_mode"] = inference_mode_aliases[requested_inference_mode]
+
     for key in ("input_width", "input_height"):
         raw_value = normalized.get(key)
         if raw_value in (None, ""):
@@ -197,6 +214,48 @@ def normalize_backend_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if value <= 0:
             raise ValueError(f"{key} 必须是正整数，当前值: {value}")
         normalized[key] = value
+
+    for key in ("sahi_slice_width", "sahi_slice_height"):
+        raw_value = normalized.get(key)
+        if raw_value in (None, ""):
+            continue
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} 必须是正整数，当前值: {raw_value!r}") from exc
+        if value <= 0:
+            raise ValueError(f"{key} 必须是正整数，当前值: {value}")
+        normalized[key] = value
+
+    for key in ("sahi_overlap_width_ratio", "sahi_overlap_height_ratio"):
+        normalized[key] = _bounded_float(normalized, key, 0.2)
+        if normalized[key] >= 1.0:
+            raise ValueError(f"{key} 必须小于 1，当前值: {normalized[key]}")
+
+    normalized["sahi_merge_threshold"] = _bounded_float(
+        normalized, "sahi_merge_threshold", 0.5
+    )
+    merge_metric = str(
+        normalized.get("sahi_merge_metric") or "ios"
+    ).strip().lower()
+    if merge_metric not in ("ios", "iou"):
+        raise ValueError(
+            f"sahi_merge_metric 仅支持 ios 或 iou，当前值: {merge_metric}"
+        )
+    normalized["sahi_merge_metric"] = merge_metric
+    normalized["sahi_include_full_frame"] = _parse_bool(
+        normalized.get("sahi_include_full_frame"), False
+    )
+    raw_max_slices = normalized.get("sahi_max_slices", 64)
+    try:
+        max_slices = int(raw_max_slices)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"sahi_max_slices 必须是正整数，当前值: {raw_max_slices!r}"
+        ) from exc
+    if max_slices <= 0:
+        raise ValueError(f"sahi_max_slices 必须是正整数，当前值: {max_slices}")
+    normalized["sahi_max_slices"] = max_slices
 
     for key in ("rknn_input_format", "onnx_input_format"):
         value = str(normalized.get(key) or "rgb").strip().lower()
@@ -1307,6 +1366,7 @@ class UltralyticsBackend(BaseYoloBackend):
                 })
 
         return detections, details, {
+            "inference_mode": "letterbox",
             "nms_iou": float(config.get("nms_iou", 0.45)),
         }
 
@@ -1364,6 +1424,7 @@ class SharedInferenceBackend(BaseYoloBackend):
             return [], [], {
                 "shared_inference": True,
                 "overloaded": True,
+                "inference_mode": "letterbox",
                 "nms_iou": float(self.config.get("nms_iou", 0.45)),
             }
         metadata = dict(response.get("metadata") or {})
@@ -1384,6 +1445,274 @@ class SharedUltralyticsBackend(SharedInferenceBackend):
 
 class SharedRKNNBackend(SharedInferenceBackend):
     backend_name = "rknn"
+
+
+def _sahi_axis_starts(total_size: int, slice_size: int, overlap_ratio: float) -> List[int]:
+    """Return starts that cover an axis completely, including its far edge."""
+    total_size = max(1, int(total_size))
+    slice_size = max(1, int(slice_size))
+    if slice_size >= total_size:
+        return [0]
+
+    stride = max(1, int(round(slice_size * (1.0 - float(overlap_ratio)))))
+    last_start = total_size - slice_size
+    starts = list(range(0, last_start + 1, stride))
+    if starts[-1] != last_start:
+        starts.append(last_start)
+    return starts
+
+
+def build_sahi_slice_boxes(
+    frame_shape: Tuple[int, ...],
+    slice_width: int,
+    slice_height: int,
+    overlap_width_ratio: float = 0.2,
+    overlap_height_ratio: float = 0.2,
+    max_slices: Optional[int] = None,
+) -> List[List[int]]:
+    """Build ``[x1, y1, x2, y2]`` windows for sliced YOLO inference."""
+    frame_height, frame_width = int(frame_shape[0]), int(frame_shape[1])
+    x_starts = _sahi_axis_starts(frame_width, slice_width, overlap_width_ratio)
+    y_starts = _sahi_axis_starts(frame_height, slice_height, overlap_height_ratio)
+    slice_count = len(x_starts) * len(y_starts)
+    if max_slices is not None and slice_count > int(max_slices):
+        raise ValueError(
+            f"SAHI 切片数 {slice_count} 超过限制 {int(max_slices)}；"
+            "请增大切片尺寸、减小重叠率或调整 sahi_max_slices"
+        )
+    return [
+        [
+            x_start,
+            y_start,
+            min(frame_width, x_start + int(slice_width)),
+            min(frame_height, y_start + int(slice_height)),
+        ]
+        for y_start in y_starts
+        for x_start in x_starts
+    ]
+
+
+def _sahi_item_box(item: Dict[str, Any]) -> Optional[List[float]]:
+    box = item.get("box") if isinstance(item, dict) else None
+    if not isinstance(box, (list, tuple, np.ndarray)) or len(box) < 4:
+        return None
+    try:
+        return [float(value) for value in box[:4]]
+    except (TypeError, ValueError):
+        return None
+
+
+def _remap_sahi_items(
+    items: Optional[List[Dict[str, Any]]],
+    slice_box: List[int],
+    slice_index: int,
+    annotate_slice: bool = False,
+) -> List[Dict[str, Any]]:
+    offset_x, offset_y = float(slice_box[0]), float(slice_box[1])
+    remapped = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        mapped_item = dict(item)
+        box = _sahi_item_box(item)
+        if box is not None:
+            mapped_item["box"] = [
+                box[0] + offset_x,
+                box[1] + offset_y,
+                box[2] + offset_x,
+                box[3] + offset_y,
+            ]
+        if annotate_slice:
+            mapped_item["sahi_slice_index"] = int(slice_index)
+        remapped.append(mapped_item)
+    return remapped
+
+
+def _sahi_class_key(item: Dict[str, Any]) -> Any:
+    class_id = item.get("class")
+    if class_id is not None:
+        return class_id
+    return item.get("label") or item.get("label_name") or item.get("class_name")
+
+
+def _sahi_match_score(box_a: List[float], box_b: List[float], metric: str) -> float:
+    intersection_width = max(0.0, min(box_a[2], box_b[2]) - max(box_a[0], box_b[0]))
+    intersection_height = max(0.0, min(box_a[3], box_b[3]) - max(box_a[1], box_b[1]))
+    intersection = intersection_width * intersection_height
+    if intersection <= 0.0:
+        return 0.0
+
+    area_a = max(0.0, box_a[2] - box_a[0]) * max(0.0, box_a[3] - box_a[1])
+    area_b = max(0.0, box_b[2] - box_b[0]) * max(0.0, box_b[3] - box_b[1])
+    if metric == "ios":
+        denominator = min(area_a, area_b)
+    else:
+        denominator = area_a + area_b - intersection
+    return intersection / denominator if denominator > 0.0 else 0.0
+
+
+def merge_sahi_detections(
+    detections: Optional[List[Dict[str, Any]]],
+    details: Optional[List[Dict[str, Any]]],
+    match_threshold: float = 0.5,
+    match_metric: str = "ios",
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Apply class-aware greedy suppression across overlapping slices."""
+    detections = list(detections or [])
+    details = list(details or [])
+    candidate_indices = [
+        index for index, item in enumerate(detections)
+        if _sahi_item_box(item) is not None
+    ]
+    candidate_indices.sort(
+        key=lambda index: float(detections[index].get("confidence", 0.0) or 0.0),
+        reverse=True,
+    )
+
+    kept_indices: List[int] = []
+    for candidate_index in candidate_indices:
+        candidate = detections[candidate_index]
+        candidate_box = _sahi_item_box(candidate)
+        candidate_class = _sahi_class_key(candidate)
+        duplicate = False
+        for kept_index in kept_indices:
+            kept = detections[kept_index]
+            if _sahi_class_key(kept) != candidate_class:
+                continue
+            kept_box = _sahi_item_box(kept)
+            match_score = _sahi_match_score(candidate_box, kept_box, match_metric)
+            if match_score > 0.0 and match_score >= match_threshold:
+                duplicate = True
+                break
+        if not duplicate:
+            kept_indices.append(candidate_index)
+
+    merged_detections = [detections[index] for index in kept_indices]
+    merged_details = [details[index] for index in kept_indices if index < len(details)]
+    return merged_detections, merged_details
+
+
+class SahiYoloBackend:
+    """Backend decorator that adds slicing and cross-slice result merging."""
+
+    def __init__(self, backend: BaseYoloBackend, config: Dict[str, Any]):
+        self.backend = backend
+        self.config = config
+        self.model_path = backend.model_path
+        self.model_info = backend.model_info
+        self.model = backend.model
+        self.classes = backend.classes
+        self.input_width = backend.input_width
+        self.input_height = backend.input_height
+        self.output_adapter = backend.output_adapter
+
+    @property
+    def name(self) -> str:
+        return self.backend.name
+
+    def infer(self, frame: np.ndarray):
+        slice_width = int(self.config.get("sahi_slice_width") or self.input_width)
+        slice_height = int(self.config.get("sahi_slice_height") or self.input_height)
+        overlap_width_ratio = float(self.config.get("sahi_overlap_width_ratio", 0.2))
+        overlap_height_ratio = float(self.config.get("sahi_overlap_height_ratio", 0.2))
+        max_slices = int(self.config.get("sahi_max_slices", 64))
+        slice_boxes = build_sahi_slice_boxes(
+            frame.shape,
+            slice_width=slice_width,
+            slice_height=slice_height,
+            overlap_width_ratio=overlap_width_ratio,
+            overlap_height_ratio=overlap_height_ratio,
+            max_slices=max_slices,
+        )
+
+        aggregated_detections: List[Dict[str, Any]] = []
+        aggregated_details: List[Dict[str, Any]] = []
+        base_metadata: Dict[str, Any] = {}
+        overloaded_slices = 0
+
+        for slice_index, slice_box in enumerate(slice_boxes):
+            x1, y1, x2, y2 = slice_box
+            sliced_frame = frame[y1:y2, x1:x2]
+            detections, details, metadata = self.backend.infer(sliced_frame)
+            if not base_metadata and metadata:
+                base_metadata = dict(metadata)
+            if (metadata or {}).get("overloaded"):
+                overloaded_slices += 1
+            aggregated_detections.extend(
+                _remap_sahi_items(detections, slice_box, slice_index)
+            )
+            aggregated_details.extend(
+                _remap_sahi_items(
+                    details,
+                    slice_box,
+                    slice_index,
+                    annotate_slice=True,
+                )
+            )
+
+        full_frame_requested = bool(
+            self.config.get("sahi_include_full_frame", False)
+        )
+        full_frame_inference = full_frame_requested and not (
+            len(slice_boxes) == 1
+            and slice_boxes[0] == [0, 0, int(frame.shape[1]), int(frame.shape[0])]
+        )
+        if full_frame_inference:
+            detections, details, metadata = self.backend.infer(frame)
+            if not base_metadata and metadata:
+                base_metadata = dict(metadata)
+            if (metadata or {}).get("overloaded"):
+                overloaded_slices += 1
+            full_frame_box = [0, 0, int(frame.shape[1]), int(frame.shape[0])]
+            aggregated_detections.extend(
+                _remap_sahi_items(detections, full_frame_box, -1)
+            )
+            aggregated_details.extend(
+                _remap_sahi_items(
+                    details,
+                    full_frame_box,
+                    -1,
+                    annotate_slice=True,
+                )
+            )
+
+        detections_before_merge = len(aggregated_detections)
+        merged_detections, merged_details = merge_sahi_detections(
+            aggregated_detections,
+            aggregated_details,
+            match_threshold=float(self.config.get("sahi_merge_threshold", 0.5)),
+            match_metric=str(self.config.get("sahi_merge_metric") or "ios"),
+        )
+        return merged_detections, merged_details, {
+            **base_metadata,
+            "inference_mode": "sahi",
+            "sahi_slice_width": slice_width,
+            "sahi_slice_height": slice_height,
+            "sahi_overlap_width_ratio": overlap_width_ratio,
+            "sahi_overlap_height_ratio": overlap_height_ratio,
+            "sahi_slice_count": len(slice_boxes),
+            "sahi_inference_count": len(slice_boxes) + int(full_frame_inference),
+            "sahi_slice_boxes": slice_boxes,
+            "sahi_include_full_frame": full_frame_requested,
+            "sahi_full_frame_inference": full_frame_inference,
+            "sahi_merge_metric": str(self.config.get("sahi_merge_metric") or "ios"),
+            "sahi_merge_threshold": float(self.config.get("sahi_merge_threshold", 0.5)),
+            "sahi_detections_before_merge": detections_before_merge,
+            "sahi_overloaded_slices": overloaded_slices,
+        }
+
+    def cleanup(self):
+        backend = self.backend
+        self.backend = None
+        if backend is not None:
+            backend.cleanup()
+        self.model = None
+
+
+def _apply_inference_mode(backend: BaseYoloBackend, config: Dict[str, Any]):
+    if config.get("inference_mode") == "sahi":
+        return SahiYoloBackend(backend, config)
+    return backend
 
 
 class _RKNNRuntimeEntry:
@@ -1561,6 +1890,7 @@ class RKNNBackend(BaseYoloBackend):
             pad_y=pad_y,
         )
         return detections, details, {
+            "inference_mode": "letterbox",
             "input_size": {
                 "width": int(self.input_width),
                 "height": int(self.input_height),
@@ -1679,6 +2009,7 @@ class ONNXRuntimeBackend(BaseYoloBackend):
             pad_y=pad_y,
         )
         return detections, details, {
+            "inference_mode": "letterbox",
             "input_size": {
                 "width": int(self.input_width),
                 "height": int(self.input_height),
@@ -1704,10 +2035,13 @@ def create_backend(model_path: str, model_info: Dict[str, Any], config: Dict[str
     backend_name = select_backend(model_path, model_info, normalized_config)
     if backend_name == "rknn":
         if _SHARED_RKNN_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
-            return SharedRKNNBackend(model_path, model_info, normalized_config)
-        return RKNNBackend(model_path, model_info, normalized_config)
-    if backend_name == "onnxruntime":
-        return ONNXRuntimeBackend(model_path, model_info, normalized_config)
-    if _SHARED_INFERENCE_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
-        return SharedUltralyticsBackend(model_path, model_info, normalized_config)
-    return UltralyticsBackend(model_path, model_info, normalized_config)
+            backend = SharedRKNNBackend(model_path, model_info, normalized_config)
+        else:
+            backend = RKNNBackend(model_path, model_info, normalized_config)
+    elif backend_name == "onnxruntime":
+        backend = ONNXRuntimeBackend(model_path, model_info, normalized_config)
+    elif _SHARED_INFERENCE_CLIENT_MODE and normalized_config.get("shared_inference_enabled", True):
+        backend = SharedUltralyticsBackend(model_path, model_info, normalized_config)
+    else:
+        backend = UltralyticsBackend(model_path, model_info, normalized_config)
+    return _apply_inference_mode(backend, normalized_config)

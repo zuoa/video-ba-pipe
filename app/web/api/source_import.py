@@ -7,6 +7,7 @@ import requests
 from flask import jsonify, request
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
+from app.config import DEFAULT_DECODE_HEIGHT, DEFAULT_DECODE_WIDTH
 from app.core.database_models import VideoSource, db
 from app.core.license_service import LicenseError, quota_capacity
 from app.web.api.auth import require_auth, current_username
@@ -278,8 +279,8 @@ def _commit_hikvision_import(data: Dict[str, Any], owner_username: str) -> Dict[
                     enabled=item.get('enabled', True),
                     source_code=source_code,
                     source_url=source_url,
-                    source_decode_width=int(item.get('source_decode_width') or 640),
-                    source_decode_height=int(item.get('source_decode_height') or 480),
+                    source_decode_width=int(item.get('source_decode_width') or DEFAULT_DECODE_WIDTH),
+                    source_decode_height=int(item.get('source_decode_height') or DEFAULT_DECODE_HEIGHT),
                     source_fps=int(item.get('source_fps') or 5),
                     decode_keyframes_only=decode_keyframes_only,
                     status='STOPPED',

@@ -14,6 +14,7 @@ from pathlib import Path
 from flask import jsonify, request, send_file
 from peewee import IntegrityError
 
+from app.config import DEFAULT_DECODE_HEIGHT, DEFAULT_DECODE_WIDTH
 from app.core.database_models import ApiKey, VideoSource, Workflow, db
 from app.core.mediamtx_client import mediamtx_client
 from app.core.license_service import LicenseError, quota_capacity
@@ -311,10 +312,10 @@ def register_public_api(app):
                     source_code=source_code,
                     source_url=source_url,
                     source_decode_width=_validate_positive_integer(
-                        data, 'source_decode_width', 640
+                        data, 'source_decode_width', DEFAULT_DECODE_WIDTH
                     ),
                     source_decode_height=_validate_positive_integer(
-                        data, 'source_decode_height', 480
+                        data, 'source_decode_height', DEFAULT_DECODE_HEIGHT
                     ),
                     source_fps=_validate_positive_integer(data, 'source_fps', 5),
                     source_codec=normalize_video_codec(

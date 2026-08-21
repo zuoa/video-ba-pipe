@@ -15,6 +15,12 @@ IN_DOCKER = os.path.exists('/.dockerenv')
 LOCAL_DATA_ROOT = os.path.join(APP_DIR, 'data')
 DOCKER_DATA_ROOT = '/data'
 
+# Defaults used when a video source or a standalone decoder does not provide
+# an explicit output size. Keep these in one place so every creation path uses
+# the same 16:9 low-resource profile.
+DEFAULT_DECODE_WIDTH = 640
+DEFAULT_DECODE_HEIGHT = 360
+
 
 def _resolve_data_path(env_name: str, relative_path: str) -> str:
     env_value = os.getenv(env_name)

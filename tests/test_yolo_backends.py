@@ -101,19 +101,194 @@ class BackendConfigTests(unittest.TestCase):
             "nms_iou": "0.5",
             "class_filter": "0, 2",
             "onnx_normalize": "false",
+            "inference_mode": "sliced",
+            "sahi_slice_width": "512",
+            "sahi_overlap_width_ratio": "0.25",
+            "sahi_include_full_frame": "true",
         })
 
         self.assertEqual(config["backend"], "onnxruntime")
         self.assertEqual(config["class_filter"], [0, 2])
         self.assertFalse(config["onnx_normalize"])
+        self.assertEqual(config["inference_mode"], "sahi")
+        self.assertEqual(config["sahi_slice_width"], 512)
+        self.assertEqual(config["sahi_overlap_width_ratio"], 0.25)
+        self.assertTrue(config["sahi_include_full_frame"])
 
     def test_normalize_backend_config_rejects_invalid_values(self):
         with self.assertRaisesRegex(ValueError, "confidence"):
             YOLO_BACKENDS.normalize_backend_config({"confidence": 1.5})
         with self.assertRaisesRegex(ValueError, "不支持的推理后端"):
             YOLO_BACKENDS.normalize_backend_config({"backend": "tensorrt"})
+        with self.assertRaisesRegex(ValueError, "不支持的推理模式"):
+            YOLO_BACKENDS.normalize_backend_config({"inference_mode": "stretch"})
+        with self.assertRaisesRegex(ValueError, "sahi_overlap_width_ratio 必须小于 1"):
+            YOLO_BACKENDS.normalize_backend_config({"sahi_overlap_width_ratio": 1})
+        with self.assertRaisesRegex(ValueError, "sahi_max_slices 必须是正整数"):
+            YOLO_BACKENDS.normalize_backend_config({"sahi_max_slices": 0})
         with self.assertRaisesRegex(ValueError, "模型路径不能为空"):
             YOLO_BACKENDS.create_backend("", {}, {})
+
+    def test_sahi_slice_boxes_cover_far_edges(self):
+        boxes = YOLO_BACKENDS.build_sahi_slice_boxes(
+            (60, 100, 3),
+            slice_width=60,
+            slice_height=40,
+            overlap_width_ratio=0.5,
+            overlap_height_ratio=0.5,
+        )
+
+        self.assertEqual(len(boxes), 6)
+        self.assertEqual(boxes[0], [0, 0, 60, 40])
+        self.assertEqual(boxes[-1], [40, 20, 100, 60])
+
+    def test_sahi_slice_limit_is_checked_before_materializing_windows(self):
+        with self.assertRaisesRegex(ValueError, "SAHI 切片数 .* 超过限制 64"):
+            YOLO_BACKENDS.build_sahi_slice_boxes(
+                (2160, 3840, 3),
+                slice_width=32,
+                slice_height=32,
+                overlap_width_ratio=0.9,
+                overlap_height_ratio=0.9,
+                max_slices=64,
+            )
+
+    def test_sahi_zero_merge_threshold_keeps_disjoint_same_class_boxes(self):
+        detections = [
+            {"box": [0, 0, 10, 10], "confidence": 0.9, "class": 0},
+            {"box": [20, 20, 30, 30], "confidence": 0.8, "class": 0},
+        ]
+        details = [dict(item) for item in detections]
+
+        merged_detections, merged_details = YOLO_BACKENDS.merge_sahi_detections(
+            detections,
+            details,
+            match_threshold=0.0,
+            match_metric="ios",
+        )
+
+        self.assertEqual(merged_detections, detections)
+        self.assertEqual(merged_details, details)
+
+    def test_sahi_backend_remaps_and_deduplicates_slice_detections(self):
+        class Backend:
+            name = "ultralytics"
+            model_path = "model.pt"
+            model_info = {}
+            model = object()
+            classes = {0: "person"}
+            input_width = 60
+            input_height = 60
+            output_adapter = None
+
+            def __init__(self):
+                self.cleaned = False
+
+            def infer(self, frame):
+                slice_start = int(frame[0, 0, 0])
+                confidence = 0.9 if slice_start == 40 else 0.8
+                local_box = [45 - slice_start, 10, 55 - slice_start, 20]
+                detection = {
+                    "box": local_box,
+                    "confidence": confidence,
+                    "class": 0,
+                    "label": "person",
+                }
+                detail = {
+                    "box": local_box,
+                    "confidence": confidence,
+                    "class": 0,
+                    "class_name": "person",
+                }
+                return [detection], [detail], {"inference_mode": "letterbox"}
+
+            def cleanup(self):
+                self.cleaned = True
+
+        frame = np.zeros((60, 100, 3), dtype=np.uint8)
+        frame[:, :, 0] = np.arange(100, dtype=np.uint8)
+        config = YOLO_BACKENDS.normalize_backend_config({
+            "inference_mode": "sahi",
+            "sahi_slice_width": 60,
+            "sahi_slice_height": 60,
+            "sahi_overlap_width_ratio": 1 / 3,
+            "sahi_overlap_height_ratio": 0,
+            "sahi_merge_metric": "ios",
+            "sahi_merge_threshold": 0.5,
+        })
+        wrapped_backend = YOLO_BACKENDS.SahiYoloBackend(Backend(), config)
+
+        detections, details, metadata = wrapped_backend.infer(frame)
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(len(details), 1)
+        self.assertEqual(detections[0]["box"], [45.0, 10.0, 55.0, 20.0])
+        self.assertEqual(detections[0]["confidence"], 0.9)
+        self.assertEqual(metadata["inference_mode"], "sahi")
+        self.assertEqual(metadata["sahi_slice_count"], 2)
+        self.assertEqual(metadata["sahi_detections_before_merge"], 2)
+
+        backend = wrapped_backend.backend
+        wrapped_backend.cleanup()
+        wrapped_backend.cleanup()
+        self.assertTrue(backend.cleaned)
+
+    def test_sahi_backend_rejects_excessive_slice_count(self):
+        class Backend:
+            name = "onnxruntime"
+            model_path = "model.onnx"
+            model_info = {}
+            model = object()
+            classes = {}
+            input_width = 20
+            input_height = 20
+            output_adapter = None
+
+            def infer(self, _frame):
+                return [], [], {}
+
+            def cleanup(self):
+                pass
+
+        config = YOLO_BACKENDS.normalize_backend_config({
+            "inference_mode": "sahi",
+            "sahi_slice_width": 20,
+            "sahi_slice_height": 20,
+            "sahi_max_slices": 2,
+        })
+        wrapped_backend = YOLO_BACKENDS.SahiYoloBackend(Backend(), config)
+
+        with self.assertRaisesRegex(ValueError, "SAHI 切片数"):
+            wrapped_backend.infer(np.zeros((60, 100, 3), dtype=np.uint8))
+
+    def test_create_backend_wraps_selected_backend_in_sahi_mode(self):
+        class Backend:
+            name = "ultralytics"
+            model_path = "model.pt"
+            model_info = {}
+            model = object()
+            classes = {}
+            input_width = 640
+            input_height = 640
+            output_adapter = None
+
+            def cleanup(self):
+                pass
+
+        original_backend = YOLO_BACKENDS.UltralyticsBackend
+        selected_backend = Backend()
+        YOLO_BACKENDS.UltralyticsBackend = lambda *_args, **_kwargs: selected_backend
+        try:
+            backend = YOLO_BACKENDS.create_backend(
+                "model.pt",
+                {},
+                {"inference_mode": "sahi"},
+            )
+        finally:
+            YOLO_BACKENDS.UltralyticsBackend = original_backend
+
+        self.assertIsInstance(backend, YOLO_BACKENDS.SahiYoloBackend)
+        self.assertIs(backend.backend, selected_backend)
 
     def test_onnx_backend_detects_nhwc_uint8_input(self):
         class InputDefinition:

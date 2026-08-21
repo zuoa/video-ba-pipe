@@ -200,7 +200,7 @@ def test_video_source_create_uses_low_resource_decode_defaults(public_api_client
         source.source_decode_width,
         source.source_decode_height,
         source.source_fps,
-    ) == (640, 480, 5)
+    ) == (640, 360, 5)
 
 
 @pytest.mark.parametrize('source_code', ['building/camera', 'camera 001', '摄像头-001'])

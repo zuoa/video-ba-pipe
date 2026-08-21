@@ -1,4 +1,5 @@
 from flask import jsonify, request
+from app.config import DEFAULT_DECODE_HEIGHT, DEFAULT_DECODE_WIDTH
 from app.core.database_models import VideoSource
 from app.core.video_probe import normalize_video_codec
 from app.core.mediamtx_client import mediamtx_client
@@ -78,8 +79,8 @@ def register_video_sources_api(app):
                     enabled=data.get('enabled', True),
                     source_code=data['source_code'],
                     source_url=data['source_url'],
-                    source_decode_width=data.get('source_decode_width', 640),
-                    source_decode_height=data.get('source_decode_height', 480),
+                    source_decode_width=data.get('source_decode_width', DEFAULT_DECODE_WIDTH),
+                    source_decode_height=data.get('source_decode_height', DEFAULT_DECODE_HEIGHT),
                     source_fps=data.get('source_fps', 5),
                     source_codec=normalize_video_codec(
                         data.get('source_codec'),

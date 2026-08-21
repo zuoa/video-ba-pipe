@@ -15,6 +15,8 @@ from app.config import (
     ANALYSIS_BUFFER_SECONDS,
     ANALYSIS_TARGET_FPS,
     DECODE_KEYFRAMES_ONLY,
+    DEFAULT_DECODE_HEIGHT,
+    DEFAULT_DECODE_WIDTH,
     VIDEO_DECODER_TYPE,
     VIDEO_FRAME_PIXEL_FORMAT,
     FFMPEG_DIRECT_RTSP_ENABLED,
@@ -162,8 +164,8 @@ class DecoderWorker:
                     f"使用视频源参数: width={width}, height={height}, pixel_format={VIDEO_FRAME_PIXEL_FORMAT}"
                 )
             else:
-                width = 1920
-                height = 1080
+                width = DEFAULT_DECODE_WIDTH
+                height = DEFAULT_DECODE_HEIGHT
                 logger.info(
                     f"使用默认配置: width={width}, height={height}, pixel_format={VIDEO_FRAME_PIXEL_FORMAT}"
                 )
@@ -280,8 +282,8 @@ class DecoderWorker:
             width = int(source.source_decode_width)
             height = int(source.source_decode_height)
         else:
-            width = int(self.decoder_config.get('width', 1920))
-            height = int(self.decoder_config.get('height', 1080))
+            width = int(self.decoder_config.get('width', DEFAULT_DECODE_WIDTH))
+            height = int(self.decoder_config.get('height', DEFAULT_DECODE_HEIGHT))
 
         kwargs = {
             'decoder_id': self.decoder_config.get('id', 401),
@@ -981,10 +983,10 @@ if __name__ == '__main__':
                                help='解码器类型 (RK3588 可设 rk_mpp；Jetson 可设 jetson_gst)')
     decoder_group.add_argument('--decoder-id', type=int, default=401,
                                help='解码器 ID (默认: 401)')
-    decoder_group.add_argument('--width', type=int, default=1920,
-                               help='视频宽度 (默认: 1920)')
-    decoder_group.add_argument('--height', type=int, default=1080,
-                               help='视频高度 (默认: 1080)')
+    decoder_group.add_argument('--width', type=int, default=DEFAULT_DECODE_WIDTH,
+                               help=f'视频宽度 (默认: {DEFAULT_DECODE_WIDTH})')
+    decoder_group.add_argument('--height', type=int, default=DEFAULT_DECODE_HEIGHT,
+                               help=f'视频高度 (默认: {DEFAULT_DECODE_HEIGHT})')
     decoder_group.add_argument('--input-format', default='h264',
                                choices=['h264', 'h265', 'mjpeg'],
                                help='输入格式 (默认: h264)')
