@@ -173,6 +173,9 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/data
+      # 仪表盘宿主网络速率：只读采集默认出口网卡计数，无需特权模式
+      - /proc/net/dev:/host/proc/net/dev:ro
+      - /proc/net/route:/host/proc/net/route:ro
       # 只读挂载宿主机 DRM 节点,消除 ONNX Runtime 启动时
       # device_discovery.cc 读取 /sys/class/drm/card0/device/vendor 失败的告警
       # (NVIDIA Container Runtime 不会注入 /sys/class/drm,故需显式挂载)

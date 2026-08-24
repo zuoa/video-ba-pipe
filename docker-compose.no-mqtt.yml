@@ -157,6 +157,9 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/data
+      # 仪表盘宿主网络速率：只读采集默认出口网卡计数，无需特权模式
+      - /proc/net/dev:/host/proc/net/dev:ro
+      - /proc/net/route:/host/proc/net/route:ro
 
     depends_on:
       db-init:

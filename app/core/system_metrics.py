@@ -19,7 +19,13 @@ import psutil
 
 
 _network_lock = threading.Lock()
-_previous_network_sample: Optional[Dict[str, float]] = None
+_previous_network_sample: Optional[Dict[str, Any]] = None
+_host_net_dev_path = Path(
+    os.getenv("HOST_PROC_NET_DEV_PATH", "/host/proc/net/dev")
+)
+_host_net_route_path = Path(
+    os.getenv("HOST_PROC_NET_ROUTE_PATH", "/host/proc/net/route")
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -150,38 +156,134 @@ def _collect_disks() -> List[Dict[str, Any]]:
     return disks
 
 
+def _read_default_route_interfaces(route_path: Path) -> List[str]:
+    """Return the lowest-metric IPv4 default-route interfaces from procfs."""
+    try:
+        lines = route_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    if not lines:
+        return []
+
+    header = lines[0].split()
+    try:
+        iface_index = header.index("Iface")
+        destination_index = header.index("Destination")
+        flags_index = header.index("Flags")
+        metric_index = header.index("Metric")
+    except ValueError:
+        return []
+
+    routes = []
+    for line in lines[1:]:
+        fields = line.split()
+        try:
+            interface = fields[iface_index]
+            destination = fields[destination_index]
+            flags = int(fields[flags_index], 16)
+            metric = int(fields[metric_index])
+        except (IndexError, ValueError):
+            continue
+        if destination == "00000000" and flags & 0x1 and interface != "lo":
+            routes.append((metric, interface))
+
+    if not routes:
+        return []
+    lowest_metric = min(metric for metric, _ in routes)
+    return sorted({interface for metric, interface in routes if metric == lowest_metric})
+
+
+def _read_proc_network_counters(
+    dev_path: Path,
+    interfaces: List[str],
+) -> Optional[Dict[str, Any]]:
+    """Read aggregate RX/TX byte counters for selected procfs interfaces."""
+    selected_interfaces = set(interfaces)
+    if not selected_interfaces:
+        return None
+    try:
+        lines = dev_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    bytes_received = 0
+    bytes_sent = 0
+    found_interfaces = []
+    for line in lines:
+        if ":" not in line:
+            continue
+        raw_interface, raw_counters = line.split(":", 1)
+        interface = raw_interface.strip()
+        if interface not in selected_interfaces:
+            continue
+        counters = raw_counters.split()
+        try:
+            bytes_received += int(counters[0])
+            bytes_sent += int(counters[8])
+        except (IndexError, ValueError):
+            continue
+        found_interfaces.append(interface)
+
+    if not found_interfaces:
+        return None
+    return {
+        "bytes_sent": bytes_sent,
+        "bytes_received": bytes_received,
+        "active_interfaces": sorted(found_interfaces),
+    }
+
+
+def _read_host_network_counters() -> Optional[Dict[str, Any]]:
+    interfaces = _read_default_route_interfaces(_host_net_route_path)
+    return _read_proc_network_counters(_host_net_dev_path, interfaces)
+
+
 def _collect_network() -> Dict[str, Any]:
     global _previous_network_sample
 
-    counters = psutil.net_io_counters()
+    host_counters = _read_host_network_counters()
+    if host_counters:
+        bytes_sent = host_counters["bytes_sent"]
+        bytes_received = host_counters["bytes_received"]
+        active_interfaces = host_counters["active_interfaces"]
+        scope = "host"
+    else:
+        counters = psutil.net_io_counters()
+        bytes_sent = counters.bytes_sent
+        bytes_received = counters.bytes_recv
+        interface_stats = psutil.net_if_stats()
+        active_interfaces = sorted(
+            name
+            for name, stats in interface_stats.items()
+            if stats.isup and not name.lower().startswith(("lo", "loopback"))
+        )
+        scope = "container"
+
     now = time.monotonic()
     upload_bps = 0.0
     download_bps = 0.0
+    sample_key = f"{scope}:{','.join(active_interfaces)}"
 
     with _network_lock:
         previous = _previous_network_sample
-        if previous:
+        if previous and previous.get("sample_key") == sample_key:
             elapsed = max(now - previous["timestamp"], 0.001)
-            upload_bps = max(counters.bytes_sent - previous["bytes_sent"], 0) / elapsed
-            download_bps = max(counters.bytes_recv - previous["bytes_recv"], 0) / elapsed
+            upload_bps = max(bytes_sent - previous["bytes_sent"], 0) / elapsed
+            download_bps = max(bytes_received - previous["bytes_received"], 0) / elapsed
         _previous_network_sample = {
             "timestamp": now,
-            "bytes_sent": float(counters.bytes_sent),
-            "bytes_recv": float(counters.bytes_recv),
+            "bytes_sent": float(bytes_sent),
+            "bytes_received": float(bytes_received),
+            "sample_key": sample_key,
         }
 
-    interface_stats = psutil.net_if_stats()
-    active_interfaces = sorted(
-        name
-        for name, stats in interface_stats.items()
-        if stats.isup and not name.lower().startswith(("lo", "loopback"))
-    )
     return {
-        "bytes_sent": counters.bytes_sent,
-        "bytes_received": counters.bytes_recv,
+        "bytes_sent": bytes_sent,
+        "bytes_received": bytes_received,
         "upload_bytes_per_second": round(upload_bps),
         "download_bytes_per_second": round(download_bps),
         "active_interfaces": active_interfaces,
+        "scope": scope,
     }
 
 

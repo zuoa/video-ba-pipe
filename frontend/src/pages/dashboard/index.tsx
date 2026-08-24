@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Row, Col } from 'antd';
 import {
   AlertOutlined,
@@ -27,6 +27,61 @@ import type {
 } from './components/LatestAlertTicker';
 import './index.css';
 
+interface NetworkCounterSample {
+  sampledAtMs: number;
+  bytesSent: number;
+  bytesReceived: number;
+  scope?: string;
+  interfacesKey: string;
+}
+
+const createNetworkCounterSample = (
+  metrics: SystemMetrics,
+  sampledAtMs: number,
+): NetworkCounterSample => ({
+  sampledAtMs,
+  bytesSent: metrics.network.bytes_sent,
+  bytesReceived: metrics.network.bytes_received,
+  scope: metrics.network.scope,
+  interfacesKey: metrics.network.active_interfaces.join(','),
+});
+
+const applyMeasuredNetworkRates = (
+  metrics: SystemMetrics,
+  previous: NetworkCounterSample | null,
+  current: NetworkCounterSample,
+): SystemMetrics => {
+  const elapsedSeconds = previous
+    ? (current.sampledAtMs - previous.sampledAtMs) / 1000
+    : 0;
+  const isSameCounterSeries = previous
+    && previous.scope === current.scope
+    && previous.interfacesKey === current.interfacesKey;
+  const countersAreMonotonic = previous
+    && current.bytesSent >= previous.bytesSent
+    && current.bytesReceived >= previous.bytesReceived;
+  const canMeasureRate = Boolean(
+    isSameCounterSeries && countersAreMonotonic && elapsedSeconds > 0,
+  );
+
+  const uploadRate = canMeasureRate && previous
+    ? Math.round((current.bytesSent - previous.bytesSent) / elapsedSeconds)
+    : 0;
+  const downloadRate = canMeasureRate && previous
+    ? Math.round((current.bytesReceived - previous.bytesReceived) / elapsedSeconds)
+    : 0;
+
+  return {
+    ...metrics,
+    network: {
+      ...metrics.network,
+      upload_bytes_per_second: uploadRate,
+      download_bytes_per_second: downloadRate,
+      rate_sampled: canMeasureRate,
+    },
+  };
+};
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     totalSources: 0,
@@ -43,6 +98,7 @@ export default function Dashboard() {
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
   const [systemMetricsLoading, setSystemMetricsLoading] = useState(true);
   const [systemMetricsError, setSystemMetricsError] = useState('');
+  const networkSampleRef = useRef<NetworkCounterSample | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -61,7 +117,22 @@ export default function Dashboard() {
       try {
         const response = await getSystemMetrics();
         if (!cancelled) {
-          setSystemMetrics(response?.data || null);
+          const nextMetrics = (response?.data || null) as SystemMetrics | null;
+          if (nextMetrics) {
+            const currentSample = createNetworkCounterSample(
+              nextMetrics,
+              performance.now(),
+            );
+            setSystemMetrics(applyMeasuredNetworkRates(
+              nextMetrics,
+              networkSampleRef.current,
+              currentSample,
+            ));
+            networkSampleRef.current = currentSample;
+          } else {
+            setSystemMetrics(null);
+            networkSampleRef.current = null;
+          }
           setSystemMetricsError('');
         }
       } catch (error) {

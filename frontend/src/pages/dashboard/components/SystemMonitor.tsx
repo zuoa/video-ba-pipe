@@ -41,6 +41,8 @@ export interface NetworkMetrics {
   upload_bytes_per_second: number;
   download_bytes_per_second: number;
   active_interfaces: string[];
+  scope?: 'host' | 'container';
+  rate_sampled?: boolean;
 }
 
 export interface GpuMetrics {
@@ -182,6 +184,11 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
   ].filter(Boolean).join(' · ');
   const primaryDisk = metrics.disks[0];
   const interfaces = metrics.network.active_interfaces;
+  const networkScopeLabel = metrics.network.scope === 'host'
+    ? '宿主网络'
+    : metrics.network.scope === 'container'
+      ? 'API 容器网络'
+      : '网络';
 
   return (
     <section className="system-monitor" aria-labelledby="system-monitor-title">
@@ -262,7 +269,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
         <article className="system-metric-card system-metric-card--network">
           <MetricCardHeader
             icon={<CloudServerOutlined />}
-            title="网络"
+            title={networkScopeLabel}
             value={`${interfaces.length} 个接口`}
           />
           <div className="system-network-rates">
@@ -270,14 +277,22 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
               <span className="system-network-rates__arrow">↓</span>
               <div>
                 <small>下载</small>
-                <strong>{formatRate(metrics.network.download_bytes_per_second)}</strong>
+                <strong>
+                  {metrics.network.rate_sampled === false
+                    ? '采样中…'
+                    : formatRate(metrics.network.download_bytes_per_second)}
+                </strong>
               </div>
             </div>
             <div>
               <span className="system-network-rates__arrow">↑</span>
               <div>
                 <small>上传</small>
-                <strong>{formatRate(metrics.network.upload_bytes_per_second)}</strong>
+                <strong>
+                  {metrics.network.rate_sampled === false
+                    ? '采样中…'
+                    : formatRate(metrics.network.upload_bytes_per_second)}
+                </strong>
               </div>
             </div>
           </div>
