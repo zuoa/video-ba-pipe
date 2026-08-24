@@ -173,10 +173,12 @@ def verify_database_schema():
 
 
 def _apply_schema_changes():
-    # 旧库必须先补工作流列，再让 Peewee 为新模型创建索引。
-    # SQLite 会把不存在的双引号索引列当成表达式，之后再补列会造成 schema 异常。
+    # 旧库必须先补所有新增的索引列，再让 Peewee 创建模型索引。
+    # PostgreSQL 会直接拒绝引用不存在列的 CREATE INDEX；SQLite 还可能把
+    # 不存在的双引号列当成表达式，留下不可用的索引。
     if db.table_exists(Workflow._meta.table_name):
         _ensure_workflow_columns()
+    _ensure_portability_columns(create_indexes=False)
     # 创建所有数据库表，按依赖顺序
     db.create_tables(_DATABASE_MODELS, safe=True)
     _ensure_ownership_columns()
@@ -530,22 +532,48 @@ def _ensure_nullable_text_column(table_name: str, column_name: str, max_length: 
     )
 
 
-def _ensure_portability_columns():
+def _has_columns_index(
+    table_name: str,
+    columns: tuple[str, ...],
+    *,
+    unique: bool | None = None,
+) -> bool:
+    for index in db.get_indexes(table_name):
+        if tuple(index.columns) != columns:
+            continue
+        if unique is None or bool(index.unique) == unique:
+            return True
+    return False
+
+
+def _ensure_portability_columns(*, create_indexes: bool = True):
     resources = (Algorithm, ExternalApi, Workflow, Hook, MLModel)
     for model in resources:
         table_name = model._meta.table_name
+        if not db.table_exists(table_name):
+            continue
         _ensure_nullable_text_column(table_name, 'portable_id', 36)
-        db.execute_sql(
-            f"CREATE UNIQUE INDEX IF NOT EXISTS {table_name}_portable_id_unique "
-            f"ON {table_name} (portable_id)"
-        )
+        if (
+            create_indexes
+            and not _has_columns_index(table_name, ('portable_id',), unique=True)
+        ):
+            db.execute_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {table_name}_portable_id_unique "
+                f"ON {table_name} (portable_id)"
+            )
 
     model_table = MLModel._meta.table_name
+    if not db.table_exists(model_table):
+        return
     _ensure_nullable_text_column(model_table, 'artifact_sha256', 64)
-    db.execute_sql(
-        f"CREATE INDEX IF NOT EXISTS {model_table}_artifact_sha256 "
-        f"ON {model_table} (artifact_sha256)"
-    )
+    if (
+        create_indexes
+        and not _has_columns_index(model_table, ('artifact_sha256',))
+    ):
+        db.execute_sql(
+            f"CREATE INDEX IF NOT EXISTS {model_table}_artifact_sha256 "
+            f"ON {model_table} (artifact_sha256)"
+        )
 
 
 if __name__ == "__main__":

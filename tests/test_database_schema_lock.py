@@ -49,3 +49,39 @@ def test_schema_lock_timeout_configuration_rejects_invalid_value(monkeypatch):
 
     with pytest.raises(ValueError, match='must be a number'):
         database_setup._schema_lock_timeout_seconds()
+
+
+def test_portability_columns_are_added_before_peewee_creates_indexes(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(database_setup.db, 'table_exists', lambda _table: False)
+    monkeypatch.setattr(
+        database_setup,
+        '_ensure_portability_columns',
+        lambda *, create_indexes=True: events.append(
+            ('portability', create_indexes)
+        ),
+    )
+    monkeypatch.setattr(
+        database_setup.db,
+        'create_tables',
+        lambda _models, safe: events.append(('create_tables', safe)),
+    )
+    for helper_name in (
+        '_ensure_ownership_columns',
+        '_ensure_video_source_columns',
+        '_ensure_model_columns',
+        '_ensure_workflow_columns',
+        '_normalize_existing_records',
+        '_ensure_workflow_indexes',
+        'ensure_default_admin_user',
+    ):
+        monkeypatch.setattr(database_setup, helper_name, lambda: None)
+
+    database_setup._apply_schema_changes()
+
+    assert events == [
+        ('portability', False),
+        ('create_tables', True),
+        ('portability', True),
+    ]

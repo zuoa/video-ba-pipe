@@ -115,3 +115,62 @@ db.close()
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_setup_upgrades_legacy_tables_before_creating_portability_indexes(tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    database_path = tmp_path / 'legacy-portability.db'
+    script = """
+from app.setup_database import setup_database, verify_database_schema
+from app.core.database_models import Algorithm, MLModel, db
+
+setup_database()
+db.connect(reuse_if_open=True)
+for model, columns in (
+    (Algorithm, ('portable_id',)),
+    (MLModel, ('portable_id', 'artifact_sha256')),
+):
+    table_name = model._meta.table_name
+    for index in db.get_indexes(table_name):
+        if set(index.columns or ()) & set(columns):
+            db.execute_sql(f'DROP INDEX IF EXISTS "{index.name}"')
+    for column_name in columns:
+        db.execute_sql(
+            f'ALTER TABLE "{table_name}" DROP COLUMN "{column_name}"'
+        )
+db.close()
+
+setup_database()
+verify_database_schema()
+db.connect(reuse_if_open=True)
+algorithm_columns = {column.name for column in db.get_columns(Algorithm._meta.table_name)}
+model_columns = {column.name for column in db.get_columns(MLModel._meta.table_name)}
+assert 'portable_id' in algorithm_columns
+assert {'portable_id', 'artifact_sha256'} <= model_columns
+assert any(
+    index.unique and tuple(index.columns) == ('portable_id',)
+    for index in db.get_indexes(Algorithm._meta.table_name)
+)
+assert any(
+    tuple(index.columns) == ('artifact_sha256',)
+    for index in db.get_indexes(MLModel._meta.table_name)
+)
+db.close()
+"""
+    env = {
+        **os.environ,
+        'DB_BACKEND': 'sqlite',
+        'DB_PATH': str(database_path),
+        'PYTHONPATH': str(project_root),
+    }
+
+    result = subprocess.run(
+        [sys.executable, '-c', script],
+        cwd=project_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
