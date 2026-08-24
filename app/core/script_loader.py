@@ -8,6 +8,7 @@ import importlib.util
 import os
 import sys
 import threading
+import types
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 
@@ -134,6 +135,8 @@ class _ScriptSecurityValidator(ast.NodeVisitor):
 class ScriptLoader:
     """脚本加载器"""
 
+    _module_import_lock = threading.RLock()
+
     def __init__(self, scripts_root: str = None):
         """
         初始化脚本加载器
@@ -209,7 +212,11 @@ class ScriptLoader:
             content = f.read()
             file_hash = hashlib.sha256(content).hexdigest()
             # 也可以计算不含空行和注释的内容hash
-            lines = [l for l in content.split(b'\n') if l.strip() and not l.strip().startswith(b'#')]
+            lines = [
+                line
+                for line in content.split(b'\n')
+                if line.strip() and not line.strip().startswith(b'#')
+            ]
             content_hash = hashlib.sha256(b'\n'.join(lines)).hexdigest()
 
         return file_hash, content_hash
@@ -301,15 +308,94 @@ class ScriptLoader:
         return f"user_scripts_isolated.{normalized_path}__{suffix}"
 
     @staticmethod
-    def _load_module_from_path(abs_path: str, module_name: str):
-        spec = importlib.util.spec_from_file_location(module_name, abs_path)
-        if spec is None or spec.loader is None:
-            raise ScriptLoadError(f"无法创建模块规范: {abs_path}")
+    def _script_root(abs_path: str, script_path: str) -> Path:
+        parts = Path(ScriptLoader._normalize_script_path(script_path)).parts
+        return Path(abs_path).resolve().parents[len(parts) - 1]
 
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        return module
+    @staticmethod
+    def _ensure_namespace_packages(
+        module_name: str,
+        abs_path: str,
+        script_path: str,
+    ) -> None:
+        root = ScriptLoader._script_root(abs_path, script_path)
+        path_parts = Path(ScriptLoader._normalize_script_path(script_path)).parts[:-1]
+        package_names = module_name.split('.')[:-1]
+        package_paths = [root]
+        current = root
+        for part in path_parts:
+            current = current / part
+            package_paths.append(current)
+        for package_name, package_path in zip(package_names, package_paths):
+            package = sys.modules.get(package_name)
+            if package is None:
+                package = types.ModuleType(package_name)
+                package.__package__ = package_name
+                package.__path__ = [str(package_path)]
+                package.__spec__ = importlib.machinery.ModuleSpec(
+                    package_name,
+                    loader=None,
+                    is_package=True,
+                )
+                sys.modules[package_name] = package
+            elif hasattr(package, '__path__') and str(package_path) not in package.__path__:
+                package.__path__.append(str(package_path))
+
+    @staticmethod
+    def _local_import_context(abs_path: str, script_path: str) -> Tuple[list[str], set[str]]:
+        script_root = ScriptLoader._script_root(abs_path, script_path)
+        normalized_parts = Path(ScriptLoader._normalize_script_path(script_path)).parts
+        import_roots = [Path(abs_path).resolve().parent]
+        if len(normalized_parts) >= 3 and normalized_parts[0] == 'imports':
+            import_roots.append(script_root.joinpath(*normalized_parts[:2]))
+        else:
+            import_roots.append(script_root)
+
+        paths: list[str] = []
+        local_names: set[str] = set()
+        for root in import_roots:
+            root_text = str(root)
+            if root_text not in paths:
+                paths.append(root_text)
+            if not root.is_dir():
+                continue
+            for child in root.iterdir():
+                name = child.stem if child.is_file() and child.suffix == '.py' else child.name
+                if name != '__init__' and name.isidentifier():
+                    local_names.add(name)
+        return paths, local_names
+
+    def _load_module_from_path(self, abs_path: str, module_name: str, script_path: str):
+        import_paths, local_names = self._local_import_context(abs_path, script_path)
+        with self._module_import_lock:
+            saved_path = list(sys.path)
+            saved_modules = {
+                name: module
+                for name, module in list(sys.modules.items())
+                if name.split('.', 1)[0] in local_names
+            }
+            for name in saved_modules:
+                sys.modules.pop(name, None)
+            for path in reversed(import_paths):
+                if path in sys.path:
+                    sys.path.remove(path)
+                sys.path.insert(0, path)
+            try:
+                self._ensure_namespace_packages(module_name, abs_path, script_path)
+                spec = importlib.util.spec_from_file_location(module_name, abs_path)
+                if spec is None or spec.loader is None:
+                    raise ScriptLoadError(f"无法创建模块规范: {abs_path}")
+
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                return module
+            finally:
+                for name in list(sys.modules):
+                    if name.split('.', 1)[0] in local_names:
+                        sys.modules.pop(name, None)
+                sys.modules.update(saved_modules)
+                sys.path[:] = saved_path
 
     @staticmethod
     def _remove_module(module_name: Optional[str]):
@@ -374,7 +460,11 @@ class ScriptLoader:
 
         # 动态加载模块
         try:
-            module = self._load_module_from_path(abs_path, module_name)
+            module = self._load_module_from_path(
+                abs_path,
+                module_name,
+                script_path,
+            )
             
             # === 注入模型解析器辅助函数 ===
             # 让脚本可以直接使用 resolve_model() 等函数，无需导入
@@ -403,7 +493,7 @@ class ScriptLoader:
         # 验证必需函数
         if not hasattr(module, 'process'):
             self._remove_module(module_name)
-            raise ScriptLoadError(f"脚本缺少必需的 process() 函数")
+            raise ScriptLoadError("脚本缺少必需的 process() 函数")
 
         # 缓存
         cache_entry = {

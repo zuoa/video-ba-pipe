@@ -57,6 +57,9 @@ os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 EXPORT_SAVE_PATH = _resolve_data_path('EXPORT_SAVE_PATH', 'exports')
 os.makedirs(EXPORT_SAVE_PATH, exist_ok=True)
 
+TEMPLATE_TRANSFER_PATH = _resolve_data_path('TEMPLATE_TRANSFER_PATH', 'template_transfers')
+os.makedirs(TEMPLATE_TRANSFER_PATH, exist_ok=True)
+
 # Video source files storage path (uploaded video files for analysis)
 VIDEO_SOURCE_PATH = _resolve_data_path('VIDEO_SOURCE_PATH', 'video_sources')
 os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
@@ -425,6 +428,11 @@ ALERT_SUPPRESSION_DURATION = int(os.getenv('ALERT_SUPPRESSION_DURATION', '10'))
 # 推荐在 .env 中显式设置 NODE_ID，便于集群可读与可追溯。
 NODE_ID = (os.getenv('NODE_ID') or '').strip()
 NODE_ID_FILE = _resolve_data_path('NODE_ID_FILE', 'node_id.json')
+
+# Product/SKU code shared by boxes of the exact same hardware model. Template
+# transfer deliberately does not infer this from NODE_ID: NODE_ID identifies one
+# physical box, while this code identifies a compatible model family.
+DEVICE_MODEL_CODE = (os.getenv('DEVICE_MODEL_CODE') or '').strip()
 
 # ============ MediaMTX / WebRTC 实时预览 ============
 # 通过部署 MediaMTX 作为「按需拉流」中继，前端用 WebRTC(WHEP) 直接看实时画面。

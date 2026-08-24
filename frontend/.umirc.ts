@@ -1,6 +1,8 @@
 import { defineConfig } from '@umijs/max';
 import { SYSTEM_NAME_ZH } from './src/constants/branding';
 
+const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://10.0.4.147:5002';
+
 export default defineConfig({
   title: SYSTEM_NAME_ZH,
   antd: {
@@ -126,7 +128,7 @@ export default defineConfig({
   npmClient: 'npm',
   proxy: {
     '/api': {
-      target: 'http://10.0.4.147:5002',
+      target: apiProxyTarget,
       changeOrigin: true,
       // Avoid HPM HPE_UNEXPECTED_CONTENT_LENGTH for range video responses
       onProxyReq: (proxyReq) => {
@@ -140,7 +142,7 @@ export default defineConfig({
       },
     },
     '/media': {
-      target: 'http://10.0.4.147:5002',
+      target: apiProxyTarget,
       changeOrigin: true,
     },
   },

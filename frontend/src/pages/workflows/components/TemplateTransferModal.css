@@ -1,0 +1,156 @@
+.template-transfer {
+  display: grid;
+  gap: 16px;
+}
+
+.transfer-device-rail {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--app-info) 30%, var(--app-line));
+  border-radius: 12px;
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--app-info) 8%, transparent), transparent 62%),
+    var(--app-surface);
+  color: var(--app-info);
+}
+
+.transfer-device-rail--pair {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+}
+
+.transfer-device-rail > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.transfer-device-rail span,
+.transfer-summary span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.transfer-device-rail strong {
+  overflow: hidden;
+  color: var(--app-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-model-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.transfer-model-option > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.transfer-model-option small {
+  color: var(--app-text-muted);
+  line-height: 1.6;
+}
+
+.transfer-dropzone .ant-upload-drag {
+  min-height: 156px;
+  border-color: color-mix(in srgb, var(--app-info) 45%, var(--app-line));
+  background: color-mix(in srgb, var(--app-info) 4%, var(--app-surface));
+}
+
+.transfer-loading {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  color: var(--app-text-muted);
+}
+
+.transfer-summary {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  background: var(--app-line);
+}
+
+.transfer-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  background: var(--app-surface);
+}
+
+.transfer-dependencies {
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+}
+
+.transfer-dependency-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.transfer-dependency-row:last-child {
+  border-bottom: 0;
+}
+
+.transfer-dependency-kind {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.transfer-dependency-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-resolution {
+  display: grid;
+  gap: 7px;
+}
+
+.transfer-resolution label {
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.transfer-resolution .ant-select {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .transfer-device-rail--pair {
+    grid-template-columns: 1fr auto;
+  }
+
+  .transfer-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-dependency-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .transfer-dependency-row .ant-tag {
+    grid-column: 2;
+    width: fit-content;
+  }
+}

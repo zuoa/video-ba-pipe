@@ -13,6 +13,7 @@ import {
   EditOutlined,
   EllipsisOutlined,
   FileTextOutlined,
+  ExportOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   VideoCameraOutlined,
@@ -39,6 +40,7 @@ export interface WorkflowTableProps {
   onActivate: (id: number) => void;
   onDeactivate: (id: number) => void;
   onCopy?: (workflow: Workflow) => void;
+  onExport?: (workflow: Workflow) => void;
   onBatchActivate?: (ids: number[]) => void;
   onBatchDeactivate?: (ids: number[]) => void;
   onBatchDelete?: (ids: number[]) => void;
@@ -65,6 +67,7 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
   onActivate,
   onDeactivate,
   onCopy,
+  onExport,
   onBatchActivate,
   onBatchDeactivate,
   onBatchDelete,
@@ -183,12 +186,16 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
     items: [
       { key: 'structure', icon: <ApartmentOutlined />, label: '编辑模板结构' },
       { key: 'details', icon: <EditOutlined />, label: '编辑基本信息' },
+      ...(onExport
+        ? [{ key: 'export', icon: <ExportOutlined />, label: '导出迁移包' }]
+        : []),
       { type: 'divider' },
       { key: 'delete', icon: <DeleteOutlined />, label: '删除模板', danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'structure') navigate(`/workflows/editor/${record.id}`);
       if (key === 'details') onEdit(record);
+      if (key === 'export') onExport?.(record);
       if (key === 'delete') onDelete(record.id);
     },
   });

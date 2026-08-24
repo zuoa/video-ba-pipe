@@ -26,6 +26,10 @@ export interface SystemInfo {
   company_name: string;
   node_id: string;
   node_id_source: string;
+  device_model_code?: string;
+  platform?: string;
+  machine?: string;
+  device_model?: string;
   hostname: string;
 }
 
@@ -692,6 +696,129 @@ export async function batchConfigWorkflows(data: {
     method: 'POST',
     data,
   });
+}
+
+export interface TemplateTransferManifest {
+  format: 'video-ba-workflow-template';
+  schema_version: number;
+  created_at: string;
+  source: {
+    device_model_code: string;
+    app_version: string;
+    platform: string;
+    machine: string;
+    device_model?: string;
+  };
+  template: {
+    portable_id: string;
+    name: string;
+    description?: string | null;
+    workflow_path: string;
+  };
+  options: { models_included: boolean };
+  dependencies: {
+    models: Array<Record<string, any>>;
+    algorithms: Array<Record<string, any>>;
+    external_apis: Array<Record<string, any>>;
+    hooks?: Array<Record<string, any>>;
+  };
+  required_inputs: Array<{ key: string; label: string; secret?: boolean }>;
+  entries: Array<{ path: string; size: number; sha256: string }>;
+}
+
+export interface TemplateImportPreflight {
+  success: boolean;
+  compatible: boolean;
+  ready: boolean;
+  source: TemplateTransferManifest['source'];
+  target: TemplateTransferManifest['source'];
+  template: {
+    portable_id: string;
+    name: string;
+    status: 'import' | 'conflict' | 'already_imported';
+    existing_id?: number | null;
+  };
+  dependencies: {
+    models: Array<Record<string, any>>;
+    algorithms: Array<Record<string, any>>;
+    external_apis: Array<Record<string, any>>;
+    hooks: Array<Record<string, any>>;
+  };
+  required_inputs: Array<{ key: string; label: string; secret?: boolean }>;
+  missing_inputs: Array<{ key: string; label: string; secret?: boolean }>;
+  blockers: Array<Record<string, any>>;
+}
+
+export type TemplateImportResolutions = {
+  models?: Record<string, { target_id?: number; action?: 'rename'; name?: string; version?: string }>;
+  algorithms?: Record<string, { target_id?: number; action?: 'rename'; name?: string }>;
+  external_apis?: Record<string, { target_id?: number; action?: 'rename'; name?: string }>;
+  hooks?: Record<string, { target_id?: number; action?: 'rename'; name?: string }>;
+  template?: { action?: 'rename'; name?: string };
+  secrets?: Record<string, string>;
+};
+
+export async function getTemplateTransferCapabilities() {
+  return request<{
+    success: boolean;
+    configured: boolean;
+    device_model_code: string;
+    app_version: string;
+    platform: string;
+    machine: string;
+    device_model?: string;
+  }>('/api/workflow-template-transfers/capabilities');
+}
+
+export async function downloadWorkflowTemplate(id: number, includeModels: boolean) {
+  const response = await fetch(`/api/workflow-templates/${id}/export`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ include_models: includeModels }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '导出失败');
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const matched = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)"?/i);
+  const filename = decodeURIComponent(matched?.[1] || `workflow-template-${id}.vbt.zip`);
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export async function preflightWorkflowTemplate(
+  manifest: TemplateTransferManifest,
+  resolutions: TemplateImportResolutions = {},
+) {
+  return request<TemplateImportPreflight>('/api/workflow-template-imports/preflight', {
+    method: 'POST',
+    data: { manifest, resolutions },
+  });
+}
+
+export async function importWorkflowTemplate(
+  file: File,
+  resolutions: TemplateImportResolutions,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('resolutions', JSON.stringify(resolutions));
+  const response = await fetch('/api/workflow-template-imports', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || '导入失败');
+  return data;
 }
 
 // 算法

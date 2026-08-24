@@ -183,6 +183,7 @@ def _apply_schema_changes():
     _ensure_video_source_columns()
     _ensure_model_columns()
     _ensure_workflow_columns()
+    _ensure_portability_columns()
     _normalize_existing_records()
     _ensure_workflow_indexes()
 
@@ -518,6 +519,32 @@ def _ensure_model_columns():
         MLModel._meta.table_name,
         'model_role',
         '',
+    )
+
+
+def _ensure_nullable_text_column(table_name: str, column_name: str, max_length: int):
+    if _column_exists(table_name, column_name):
+        return
+    db.execute_sql(
+        f"ALTER TABLE {table_name} ADD COLUMN {column_name} VARCHAR({max_length}) NULL"
+    )
+
+
+def _ensure_portability_columns():
+    resources = (Algorithm, ExternalApi, Workflow, Hook, MLModel)
+    for model in resources:
+        table_name = model._meta.table_name
+        _ensure_nullable_text_column(table_name, 'portable_id', 36)
+        db.execute_sql(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {table_name}_portable_id_unique "
+            f"ON {table_name} (portable_id)"
+        )
+
+    model_table = MLModel._meta.table_name
+    _ensure_nullable_text_column(model_table, 'artifact_sha256', 64)
+    db.execute_sql(
+        f"CREATE INDEX IF NOT EXISTS {model_table}_artifact_sha256 "
+        f"ON {model_table} (artifact_sha256)"
     )
 
 

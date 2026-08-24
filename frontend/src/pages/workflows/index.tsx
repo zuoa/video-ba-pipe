@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
-import { message } from 'antd';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
+import { message, Space, Spin } from 'antd';
+import { useModel } from '@umijs/max';
 import { useNavigate } from 'umi';
 import Button from '@/components/common/AppButton';
 import {
   PlusOutlined,
   ApartmentOutlined,
+  ImportOutlined,
 } from '@ant-design/icons';
 import {
   getWorkflows,
@@ -27,8 +29,12 @@ import CopyWorkflowModal from './components/CopyWorkflowModal';
 import BatchConfigDrawer from './components/BatchConfigDrawer';
 import './index.css';
 
+const TemplateTransferModal = lazy(() => import('./components/TemplateTransferModal'));
+
 export default function Workflows() {
   const navigate = useNavigate();
+  const { initialState } = useModel('@@initialState');
+  const isAdmin = initialState?.currentUser?.role === 'admin';
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
@@ -37,6 +43,10 @@ export default function Workflows() {
   const [copyingWorkflow, setCopyingWorkflow] = useState<Workflow | null>(null);
   const [videoSources, setVideoSources] = useState<VideoSource[]>([]);
   const [batchConfigWorkflows, setBatchConfigWorkflows] = useState<Workflow[]>([]);
+  const [templateTransfer, setTemplateTransfer] = useState<{
+    mode: 'export' | 'import';
+    template?: Workflow | null;
+  } | null>(null);
   const confirmAction = useAppConfirm();
 
   const loadWorkflows = useCallback(async () => {
@@ -219,17 +229,28 @@ export default function Workflows() {
         subtitle="分别管理可复用模板与绑定视频源的运行编排"
         count={workflows.length}
         countLabel="个算法编排"
-        extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleCreate}
-            size="large"
-            className="app-primary-button create-btn"
-          >
-            新建算法编排
-          </Button>
-        }
+        extra={(
+          <Space wrap>
+            {isAdmin ? (
+              <Button
+                icon={<ImportOutlined />}
+                onClick={() => setTemplateTransfer({ mode: 'import' })}
+                size="large"
+              >
+                导入模板
+              </Button>
+            ) : null}
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleCreate}
+              size="large"
+              className="app-primary-button create-btn"
+            >
+              新建算法编排
+            </Button>
+          </Space>
+        )}
       />
 
       <WorkflowTable
@@ -241,6 +262,9 @@ export default function Workflows() {
         onActivate={handleActivate}
         onDeactivate={handleDeactivate}
         onCopy={handleCopy}
+        onExport={isAdmin
+          ? (template) => setTemplateTransfer({ mode: 'export', template })
+          : undefined}
         onBatchActivate={handleBatchActivate}
         onBatchDeactivate={handleBatchDeactivate}
         onBatchDelete={handleBatchDelete}
@@ -272,6 +296,18 @@ export default function Workflows() {
         onClose={() => setBatchConfigWorkflows([])}
         onApplied={loadWorkflows}
       />
+
+      {templateTransfer ? (
+        <Suspense fallback={<div className="template-transfer-loading"><Spin /></div>}>
+          <TemplateTransferModal
+            open
+            mode={templateTransfer.mode}
+            template={templateTransfer.template}
+            onClose={() => setTemplateTransfer(null)}
+            onImported={loadWorkflows}
+          />
+        </Suspense>
+      ) : null}
 
     </div>
   );

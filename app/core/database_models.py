@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import peewee as pw
 
@@ -59,12 +60,17 @@ db_config = DatabaseConfig()
 db = db_config.get_database()
 
 
+def _new_portable_id():
+    return str(uuid.uuid4())
+
+
 class BaseModel(pw.Model):
     class Meta:
         database = db
 
 
 class Algorithm(BaseModel):
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField(unique=True)
     description = pw.TextField(null=True)
 
@@ -134,6 +140,7 @@ class VideoSource(BaseModel):
 class ExternalApi(BaseModel):
     """外部算法 API 配置表"""
     id = pw.AutoField()
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField(unique=True)
     description = pw.TextField(null=True)
     endpoint_url = pw.TextField()
@@ -193,6 +200,7 @@ class ExternalApi(BaseModel):
 class Workflow(BaseModel):
     """工作流配置表"""
     id = pw.AutoField()
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField()                    # 工作流名称
     description = pw.TextField(null=True)    # 描述
     workflow_data = pw.TextField(default='{}')  # 工作流数据（JSON）：包含节点和连线
@@ -405,6 +413,7 @@ class ScriptVersion(BaseModel):
 
 class Hook(BaseModel):
     """Hook定义"""
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField(unique=True)
     hook_point = pw.CharField()  # 'pre_detect', 'post_detect', 'pre_alert', 'pre_record', 'post_record'
     script_path = pw.TextField()  # Hook脚本路径
@@ -467,10 +476,12 @@ class ScriptExecutionLog(BaseModel):
 class MLModel(BaseModel):
     """AI模型文件管理表"""
     id = pw.AutoField()
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField()                # 模型显示名称，如 "YOLOv8n Person"
     filename = pw.CharField()            # 实际文件名，如 "yolov8n.pt"
     file_path = pw.CharField()           # 完整路径
     file_size = pw.IntegerField()        # 文件大小（字节）
+    artifact_sha256 = pw.CharField(max_length=64, null=True, index=True)
     model_type = pw.CharField()          # 类型：YOLO, ONNX, TensorRT等
     model_role = pw.CharField(null=True) # 模型角色：OCR detection/recognition 等
     framework = pw.CharField()           # 框架：ultralytics, pytorch, onnx等

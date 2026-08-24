@@ -31,6 +31,7 @@ from app.config import (
     VIDEO_SAVE_PATH,
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
+    DEVICE_MODEL_CODE,
 )
 from app.core.message_queue_publisher import (
     reload_message_queue_publishers,
@@ -302,6 +303,7 @@ def list_plugin_modules():
 @require_auth
 def get_system_info():
     node_identity = get_node_identity()
+    capabilities = detect_inference_capabilities()
     return jsonify({
         'success': True,
         'version': get_app_version(),
@@ -309,6 +311,10 @@ def get_system_info():
         'node_id': node_identity['node_id'],
         'node_id_source': node_identity['source'],
         'hostname': node_identity['hostname'],
+        'device_model_code': DEVICE_MODEL_CODE,
+        'platform': capabilities.get('platform'),
+        'machine': capabilities.get('machine'),
+        'device_model': capabilities.get('device_model'),
     })
 
 
@@ -2363,6 +2369,14 @@ try:
 
 except ImportError as e:
     app.logger.warning(f"检测器模板API注册失败: {e}")
+
+# ========== 编排模板跨设备迁移 API ==========
+try:
+    from app.web.api.template_transfers import register_template_transfer_api
+    register_template_transfer_api(app)
+    app.logger.info("编排模板迁移API已注册")
+except ImportError as e:
+    app.logger.warning(f"编排模板迁移API注册失败: {e}")
 
 # ========== 注册工作流测试API ==========
 try:

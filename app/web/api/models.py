@@ -825,10 +825,12 @@ def serialize_model(model):
     quick_setup = _quick_setup_definition(model)
     return {
         'id': model.id,
+        'portable_id': model.portable_id,
         'name': model.name,
         'filename': model.filename,
         'file_path': model.file_path,
         'file_size': model.file_size,
+        'artifact_sha256': model.artifact_sha256,
         'file_size_mb': round(model.file_size / (1024 * 1024), 2),
         'model_type': model.model_type,
         'model_role': model.model_role or None,
