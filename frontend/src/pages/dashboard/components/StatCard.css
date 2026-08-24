@@ -71,3 +71,9 @@
   color: var(--app-text-muted);
   margin: 4px 0 0 0;
 }
+
+.stat-card-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-line-soft);
+}

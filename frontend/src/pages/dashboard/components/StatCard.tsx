@@ -6,6 +6,7 @@ export interface StatCardProps {
   title: string;
   value: number | string;
   subtitle?: string;
+  footer?: React.ReactNode;
   iconBgColor?: string;
   onClick?: () => void;
 }
@@ -15,6 +16,7 @@ const StatCard: React.FC<StatCardProps> = ({
   title,
   value,
   subtitle,
+  footer,
   iconBgColor = '#000000',
   onClick,
 }) => {
@@ -40,6 +42,7 @@ const StatCard: React.FC<StatCardProps> = ({
           {subtitle ? <p className="stat-card-subtitle">{subtitle}</p> : null}
         </div>
       </div>
+      {footer ? <div className="stat-card-footer">{footer}</div> : null}
     </div>
   );
 };

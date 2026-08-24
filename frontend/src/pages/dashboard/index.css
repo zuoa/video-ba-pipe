@@ -7,8 +7,16 @@
   margin-bottom: 22px;
 }
 
-.dashboard-insights-row--channels {
+.dashboard-insights-row {
   margin-bottom: 0;
+}
+
+.dashboard-insights-row > .ant-col {
+  display: flex;
+}
+
+.dashboard-insights-row > .ant-col > * {
+  width: 100%;
 }
 
 @media (max-width: 576px) {

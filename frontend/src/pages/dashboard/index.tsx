@@ -3,7 +3,6 @@ import { Row, Col } from 'antd';
 import {
   AlertOutlined,
   ApartmentOutlined,
-  HistoryOutlined,
   ExperimentOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -19,10 +18,13 @@ import {
 import StatCard from './components/StatCard';
 import ChannelAlertChart from './components/ChannelAlertChart';
 import AlertTrendChart from './components/AlertTrendChart';
-import RecentAlertCard from './components/RecentAlertCard';
+import LatestAlertTicker from './components/LatestAlertTicker';
 import SystemMonitor from './components/SystemMonitor';
 import type { SystemMetrics } from './components/SystemMonitor';
-import type { Alert as AlertType, Task as TaskType } from './components/RecentAlertCard';
+import type {
+  TickerAlert as AlertType,
+  TickerTask as TaskType,
+} from './components/LatestAlertTicker';
 import './index.css';
 
 export default function Dashboard() {
@@ -170,6 +172,14 @@ export default function Dashboard() {
             value={stats.todayAlerts}
             subtitle="今日累计触发"
             iconBgColor="#b54743"
+            footer={(
+              <LatestAlertTicker
+                alerts={alerts}
+                tasks={tasks}
+                loading={loading}
+                maxItems={3}
+              />
+            )}
           />
         </Col>
       </Row>
@@ -180,29 +190,12 @@ export default function Dashboard() {
         error={systemMetricsError}
       />
 
-      {/* 告警趋势和紧凑的最近告警 */}
+      {/* 告警趋势和通道告警 */}
       <Row gutter={[14, 14]} className="dashboard-insights-row">
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={12}>
           <AlertTrendChart />
         </Col>
-        <Col xs={24} lg={8}>
-          <RecentAlertCard
-            title="最新告警"
-            icon={<HistoryOutlined />}
-            alerts={alerts}
-            tasks={tasks}
-            viewAllPath="/alert-wall"
-            viewAllLabel="告警大屏"
-            loading={loading}
-            compact
-            minimal
-            maxItems={3}
-          />
-        </Col>
-      </Row>
-
-      <Row gutter={[14, 14]} className="dashboard-insights-row dashboard-insights-row--channels">
-        <Col span={24}>
+        <Col xs={24} lg={12}>
           <ChannelAlertChart />
         </Col>
       </Row>
