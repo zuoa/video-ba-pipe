@@ -15,6 +15,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 from app.core.alert_query import apply_alert_filters, parse_alert_filters
+from app.core.alert_stats import build_alert_trend, get_alert_period_spec
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, Workflow
 from app.core.database_models import db
 from app.config import (
@@ -1719,12 +1720,27 @@ def get_today_alerts_count():
 @app.route('/api/alerts/trend', methods=['GET'])
 @require_auth
 def get_alert_trend():
-    """获取告警趋势数据"""
+    """获取告警趋势数据，支持时/日/周/月/年时间维度切换。"""
     from datetime import datetime, timedelta
 
-    # 获取查询参数（天数）
+    period = request.args.get('period')
+
+    if period is not None:
+        now = datetime.now()
+        spec = get_alert_period_spec(period, now=now)
+        alerts = apply_owner_scope(Alert.select(), Alert).where(
+            (Alert.alert_time >= spec.start) &
+            (Alert.alert_time < spec.end)
+        )
+        return jsonify(build_alert_trend(
+            spec.period,
+            (alert.alert_time for alert in alerts),
+            now=now,
+        ))
+
+    # 兼容旧版按最近若干自然日查询的接口参数。
     days = request.args.get('days', 7, type=int)
-    days = min(days, 30)  # 最多30天
+    days = max(1, min(days, 30))
 
     # 计算日期范围
     end_date = datetime.now().replace(hour=23, minute=59, second=59)
@@ -1757,28 +1773,18 @@ def get_alert_trend():
 @app.route('/api/alerts/channel-stats', methods=['GET'])
 @require_auth
 def get_alert_channel_stats():
-    """按通道统计告警数量，支持 日/周/月/年 时间维度切换"""
-    from datetime import timedelta
-
+    """按通道统计告警数量，支持时/日/周/月/年时间维度切换。"""
     period = request.args.get('period', 'day')
     now = datetime.now()
-
-    if period == 'week':
-        # 本周（周一起）
-        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'month':
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'year':
-        start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-    else:
-        # 默认今日
-        period = 'day'
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    spec = get_alert_period_spec(period, now=now)
 
     # 统计时间范围内各通道的告警数量
     counts = {}
     alerts = apply_owner_scope(
-        Alert.select(Alert.video_source).where(Alert.alert_time >= start),
+        Alert.select(Alert.video_source).where(
+            (Alert.alert_time >= spec.start) &
+            (Alert.alert_time < spec.end)
+        ),
         Alert,
     )
     for alert in alerts:
@@ -1795,8 +1801,9 @@ def get_alert_channel_stats():
     channels.sort(key=lambda c: (-c['count'], c['id']))
 
     return jsonify({
-        'period': period,
-        'start': start.strftime('%Y-%m-%d %H:%M:%S'),
+        'period': spec.period,
+        'start': spec.start.strftime('%Y-%m-%d %H:%M:%S'),
+        'end': spec.end.strftime('%Y-%m-%d %H:%M:%S'),
         'channels': channels,
     })
 

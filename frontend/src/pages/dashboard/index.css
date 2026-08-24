@@ -7,6 +7,10 @@
   margin-bottom: 22px;
 }
 
+.dashboard-insights-row--channels {
+  margin-bottom: 0;
+}
+
 @media (max-width: 576px) {
   .dashboard-stats-row,
   .dashboard-insights-row {

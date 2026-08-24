@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Segmented } from 'antd';
 import { BarChartOutlined } from '@ant-design/icons';
 import { getChannelAlertStats } from '@/services/api';
+import type { AlertStatsPeriod } from '@/services/api';
 import './ChannelAlertChart.css';
-
-type Period = 'day' | 'week' | 'month' | 'year';
 
 interface ChannelStat {
   id: number;
@@ -12,7 +11,8 @@ interface ChannelStat {
   count: number;
 }
 
-const PERIOD_LABELS: Record<Period, string> = {
+const PERIOD_LABELS: Record<AlertStatsPeriod, string> = {
+  hour: '时',
   day: '日',
   week: '周',
   month: '月',
@@ -20,25 +20,32 @@ const PERIOD_LABELS: Record<Period, string> = {
 };
 
 const ChannelAlertChart: React.FC = () => {
-  const [period, setPeriod] = useState<Period>('day');
+  const [period, setPeriod] = useState<AlertStatsPeriod>('day');
   const [channels, setChannels] = useState<ChannelStat[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadStats = useCallback(async (p: Period) => {
-    try {
-      setLoading(true);
-      const response = await getChannelAlertStats(p);
-      setChannels(response?.channels || []);
-    } catch (error) {
-      console.error('加载通道告警统计失败:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    loadStats(period);
-  }, [period, loadStats]);
+    let active = true;
+
+    const loadStats = async () => {
+      try {
+        setLoading(true);
+        const response = await getChannelAlertStats(period);
+        if (active) setChannels(response?.channels || []);
+      } catch (error) {
+        console.error('加载通道告警统计失败:', error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadStats();
+    const refreshTimer = window.setInterval(loadStats, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [period]);
 
   const maxCount = Math.max(0, ...channels.map((c) => c.count));
   const totalCount = channels.reduce((sum, c) => sum + c.count, 0);
@@ -55,8 +62,8 @@ const ChannelAlertChart: React.FC = () => {
         <Segmented
           size="small"
           value={period}
-          onChange={(value) => setPeriod(value as Period)}
-          options={(['day', 'week', 'month', 'year'] as Period[]).map((p) => ({
+          onChange={(value) => setPeriod(value as AlertStatsPeriod)}
+          options={(['hour', 'day', 'week', 'month', 'year'] as AlertStatsPeriod[]).map((p) => ({
             label: PERIOD_LABELS[p],
             value: p,
           }))}

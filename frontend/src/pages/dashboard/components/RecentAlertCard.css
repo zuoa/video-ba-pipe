@@ -87,6 +87,8 @@
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease;
   gap: 12px;
+  color: inherit;
+  text-decoration: none;
 }
 
 .recent-alert-item:hover {
@@ -181,4 +183,80 @@
   flex-shrink: 0;
   margin: 0;
   font-weight: 500;
+}
+
+.recent-alerts-card--compact {
+  padding: 18px;
+}
+
+.recent-alerts-card--compact .recent-alerts-header {
+  margin-bottom: 14px;
+}
+
+.recent-alerts-card--compact .recent-alerts-list {
+  gap: 8px;
+  max-height: none;
+}
+
+.recent-alerts-card--compact .recent-alert-item {
+  gap: 9px;
+  min-height: 58px;
+  padding: 8px;
+}
+
+.recent-alerts-card--compact .alert-image-wrapper {
+  width: 72px;
+  height: 42px;
+}
+
+.recent-alerts-card--compact .alert-icon-placeholder {
+  width: 36px;
+  height: 36px;
+}
+
+.recent-alerts-card--compact .alert-type-tag {
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+.recent-alerts-card--minimal {
+  height: auto;
+}
+
+.recent-alerts-card--minimal .recent-alerts-header {
+  margin-bottom: 4px;
+}
+
+.recent-alerts-card--minimal .recent-alerts-list {
+  flex: none;
+  gap: 0;
+  overflow: visible;
+}
+
+.recent-alerts-card--minimal .recent-alert-item {
+  min-height: 48px;
+  padding: 9px 2px;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid var(--app-line-soft);
+  border-radius: 0;
+  background: transparent;
+}
+
+.recent-alerts-card--minimal .recent-alert-item:hover {
+  border-color: var(--app-line-soft);
+  background: var(--app-surface-muted);
+}
+
+.recent-alerts-card--minimal .recent-alerts-empty {
+  min-height: 144px;
+  padding: 24px 12px;
+  border-top: 1px solid var(--app-line-soft);
+}
+
+@media (max-width: 576px) {
+  .recent-alerts-card,
+  .recent-alerts-card--compact {
+    padding: 16px;
+  }
 }

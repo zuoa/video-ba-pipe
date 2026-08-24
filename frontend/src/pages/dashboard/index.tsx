@@ -1,25 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Row, Col } from 'antd';
 import {
-  AppstoreOutlined,
   AlertOutlined,
+  ApartmentOutlined,
   HistoryOutlined,
-  ArrowUpOutlined,
-  CheckCircleOutlined,
-  ExclamationCircleOutlined,
   ExperimentOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import {
   getVideoSources,
+  getWorkflows,
   getAlgorithms,
+  getModels,
   getTodayAlertsCount,
   getAlerts,
   getSystemMetrics,
 } from '@/services/api';
 import StatCard from './components/StatCard';
 import ChannelAlertChart from './components/ChannelAlertChart';
+import AlertTrendChart from './components/AlertTrendChart';
 import RecentAlertCard from './components/RecentAlertCard';
-import WelcomeBanner from './components/WelcomeBanner';
 import SystemMonitor from './components/SystemMonitor';
 import type { SystemMetrics } from './components/SystemMonitor';
 import type { Alert as AlertType, Task as TaskType } from './components/RecentAlertCard';
@@ -27,9 +27,12 @@ import './index.css';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
-    totalTasks: 0,
-    runningTasks: 0,
+    totalSources: 0,
+    runningSources: 0,
+    totalWorkflows: 0,
+    activeWorkflows: 0,
     totalAlgorithms: 0,
+    totalModels: 0,
     todayAlerts: 0,
   });
   const [alerts, setAlerts] = useState<AlertType[]>([]);
@@ -85,20 +88,38 @@ export default function Dashboard() {
       setLoading(true);
 
       // 并行加载数据
-      const [sources, algorithms, alertsResponse, todayAlertsResponse] =
+      const [
+        sources,
+        workflows,
+        algorithms,
+        modelsResponse,
+        alertsResponse,
+        todayAlertsResponse,
+      ] =
         await Promise.all([
           getVideoSources(),
+          getWorkflows(),
           getAlgorithms(),
-          getAlerts({ page: 1, per_page: 5 }),
+          getModels(),
+          getAlerts({ page: 1, per_page: 3 }),
           getTodayAlertsCount(),
         ]);
 
-      const runningTasksCount = sources?.filter((t: any) => t.status === 'RUNNING').length || 0;
+      const runningSources = sources?.filter(
+        (source) => source.status?.toUpperCase() === 'RUNNING',
+      ).length || 0;
+      const runtimeWorkflows = workflows?.filter((workflow) => !workflow.is_template) || [];
+      const totalModels = Array.isArray(modelsResponse?.models)
+        ? modelsResponse.models.length
+        : Number(modelsResponse?.total) || 0;
 
       setStats({
-        totalTasks: sources?.length || 0,
-        runningTasks: runningTasksCount,
+        totalSources: sources?.length || 0,
+        runningSources,
+        totalWorkflows: runtimeWorkflows.length,
+        activeWorkflows: runtimeWorkflows.filter((workflow) => workflow.is_active).length,
         totalAlgorithms: algorithms?.length || 0,
+        totalModels,
         todayAlerts: todayAlertsResponse?.count || 0,
       });
 
@@ -113,28 +134,33 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-page">
-      <WelcomeBanner />
-
-      {/* 统计卡片 */}
+      {/* 资产概览 */}
       <Row gutter={[14, 14]} className="dashboard-stats-row">
         <Col xs={24} sm={12} lg={6}>
           <StatCard
-            icon={<AppstoreOutlined />}
-            title="视频源总数"
-            value={stats.totalTasks}
-            subtitle={`当前有 ${stats.runningTasks} 路视频源正在运行`}
+            icon={<VideoCameraOutlined />}
+            title="视频源"
+            value={`${stats.runningSources} / ${stats.totalSources}`}
+            subtitle="运行中 / 总数"
             iconBgColor="#14202b"
-            trendIcon={<ArrowUpOutlined />}
+          />
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            icon={<ApartmentOutlined />}
+            title="工作流"
+            value={`${stats.activeWorkflows} / ${stats.totalWorkflows}`}
+            subtitle="启用中 / 总数"
+            iconBgColor="#203b48"
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<ExperimentOutlined />}
-            title="算法模型"
-            value={stats.totalAlgorithms}
-            subtitle="已接入的算法与模型总数"
-            iconBgColor="#203b48"
-            trendIcon={<CheckCircleOutlined />}
+            title="算法与模型"
+            value={stats.totalAlgorithms + stats.totalModels}
+            subtitle={`算法 ${stats.totalAlgorithms} · 模型 ${stats.totalModels}`}
+            iconBgColor="#2f5f68"
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -142,23 +168,8 @@ export default function Dashboard() {
             icon={<AlertOutlined />}
             title="今日告警"
             value={stats.todayAlerts}
-            subtitle="今日累计触发的告警次数"
+            subtitle="今日累计触发"
             iconBgColor="#b54743"
-            trendIcon={<ExclamationCircleOutlined />}
-          />
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <StatCard
-            icon={<CheckCircleOutlined />}
-            title="系统状态"
-            value={systemMetricsError && !systemMetrics ? '监控异常' : systemMetrics ? '运行中' : '检测中'}
-            subtitle={systemMetrics
-              ? `${systemMetrics.hostname} · 已采集主机资源状态`
-              : '正在连接系统状态服务'}
-            iconBgColor={systemMetricsError && !systemMetrics ? '#9a681f' : '#2f6b4f'}
-            trendIcon={systemMetricsError && !systemMetrics
-              ? <ExclamationCircleOutlined />
-              : <CheckCircleOutlined />}
           />
         </Col>
       </Row>
@@ -169,20 +180,30 @@ export default function Dashboard() {
         error={systemMetricsError}
       />
 
-      {/* 通道告警统计和最近告警 */}
+      {/* 告警趋势和紧凑的最近告警 */}
       <Row gutter={[14, 14]} className="dashboard-insights-row">
-        <Col xs={24} lg={12}>
-          <ChannelAlertChart />
+        <Col xs={24} lg={16}>
+          <AlertTrendChart />
         </Col>
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={8}>
           <RecentAlertCard
             title="最新告警"
             icon={<HistoryOutlined />}
             alerts={alerts}
             tasks={tasks}
-            viewAllPath="/alerts"
+            viewAllPath="/alert-wall"
+            viewAllLabel="告警大屏"
             loading={loading}
+            compact
+            minimal
+            maxItems={3}
           />
+        </Col>
+      </Row>
+
+      <Row gutter={[14, 14]} className="dashboard-insights-row dashboard-insights-row--channels">
+        <Col span={24}>
+          <ChannelAlertChart />
         </Col>
       </Row>
     </div>

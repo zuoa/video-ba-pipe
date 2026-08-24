@@ -15,18 +15,7 @@
   cursor: pointer;
 }
 
-.dashboard-stat-card::after {
-  position: absolute;
-  right: -24px;
-  bottom: -36px;
-  width: 86px;
-  height: 86px;
-  border: 1px solid rgba(20, 32, 43, 0.035);
-  border-radius: 50%;
-  content: '';
-}
-
-.dashboard-stat-card:hover {
+.dashboard-stat-card.is-interactive:hover {
   border-color: var(--app-line);
   box-shadow: 0 12px 30px rgba(11, 23, 34, 0.065);
 }
@@ -81,15 +70,4 @@
   font-size: 13px;
   color: var(--app-text-muted);
   margin: 4px 0 0 0;
-}
-
-.stat-card-trend {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 9px;
-  color: var(--app-success);
-  background: var(--app-success-soft);
-  font-size: 12px;
 }

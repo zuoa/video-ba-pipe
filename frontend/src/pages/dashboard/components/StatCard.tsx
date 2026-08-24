@@ -1,5 +1,4 @@
 import React from 'react';
-import { Badge } from 'antd';
 import './StatCard.css';
 
 export interface StatCardProps {
@@ -7,9 +6,7 @@ export interface StatCardProps {
   title: string;
   value: number | string;
   subtitle?: string;
-  iconColor?: string;
   iconBgColor?: string;
-  trendIcon?: React.ReactNode;
   onClick?: () => void;
 }
 
@@ -18,9 +15,7 @@ const StatCard: React.FC<StatCardProps> = ({
   title,
   value,
   subtitle,
-  iconColor = '#000000',
   iconBgColor = '#000000',
-  trendIcon,
   onClick,
 }) => {
   return (
@@ -44,7 +39,6 @@ const StatCard: React.FC<StatCardProps> = ({
           <p className="stat-card-value">{value}</p>
           {subtitle ? <p className="stat-card-subtitle">{subtitle}</p> : null}
         </div>
-        {trendIcon ? <div className="stat-card-trend">{trendIcon}</div> : null}
       </div>
     </div>
   );

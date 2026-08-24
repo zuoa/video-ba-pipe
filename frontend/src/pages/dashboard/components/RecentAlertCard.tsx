@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Tag } from 'antd';
 import {
   BellOutlined,
@@ -32,7 +32,11 @@ export interface RecentAlertCardProps {
   alerts: Alert[];
   tasks: Task[];
   viewAllPath?: string;
+  viewAllLabel?: string;
   loading?: boolean;
+  compact?: boolean;
+  minimal?: boolean;
+  maxItems?: number;
 }
 
 const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
@@ -41,8 +45,16 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
   alerts,
   tasks,
   viewAllPath,
+  viewAllLabel = '查看告警',
   loading = false,
+  compact = false,
+  minimal = false,
+  maxItems = 5,
 }) => {
+  const taskById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
   const getAlertTypeConfig = (type: string) => {
     const typeMap: Record<string, { color: string; bgColor: string }> = {
       warning: { color: '#faad14', bgColor: '#fff7e6' },
@@ -57,27 +69,27 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
     if (loading) {
       return (
         <div className="recent-alerts-empty">
-          <BellOutlined className="loading-icon" spin />
-          <p>正在加载最新告警...</p>
+          {!minimal && <BellOutlined className="loading-icon" spin />}
+          <p>正在加载最新告警…</p>
         </div>
       );
     }
     return (
       <div className="recent-alerts-empty">
-        <BellOutlined className="empty-icon" />
+        {!minimal && <BellOutlined className="empty-icon" />}
         <p>当前没有新的告警记录</p>
       </div>
     );
   };
 
-  const handleAlertClick = () => {
-    if (viewAllPath) {
-      window.location.href = viewAllPath;
-    }
-  };
-
   return (
-    <div className="recent-alerts-card">
+    <div
+      className={[
+        'recent-alerts-card',
+        compact ? 'recent-alerts-card--compact' : '',
+        minimal ? 'recent-alerts-card--minimal' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <div className="recent-alerts-header">
         <h3 className="recent-alerts-title">
           <span className="title-icon">{icon}</span>
@@ -85,7 +97,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
         </h3>
         {viewAllPath && (
           <a href={viewAllPath} className="view-all-link">
-            查看告警
+            {viewAllLabel}
           </a>
         )}
       </div>
@@ -93,8 +105,8 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
         {alerts.length === 0 ? (
           renderEmpty()
         ) : (
-          alerts.slice(0, 5).map((alert) => {
-            const task = tasks.find((t) => t.id === alert.task_id);
+          alerts.slice(0, maxItems).map((alert) => {
+            const task = taskById.get(alert.task_id);
             const taskName = task
               ? `${task.name} #${task.source_code}`
               : `视频源 #${alert.task_id}`;
@@ -103,13 +115,9 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
             const imageUrl = alert.alert_image_url
               || (alert.alert_image ? `/api/image/frames/${alert.alert_image}` : '');
 
-            return (
-              <div
-                key={alert.id}
-                className="recent-alert-item"
-                onClick={handleAlertClick}
-              >
-                {imageUrl ? (
+            const itemContent = (
+              <>
+                {!minimal && (imageUrl ? (
                   <div className="alert-image-wrapper">
                     <img
                       src={imageUrl}
@@ -144,7 +152,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
                       }}
                     />
                   </div>
-                )}
+                ))}
                 <div className="alert-content-wrapper">
                   <div className="alert-content">
                     <p className="alert-task-name">{taskName}</p>
@@ -164,6 +172,21 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
                     {alert.alert_type}
                   </Tag>
                 </div>
+              </>
+            );
+
+            return viewAllPath ? (
+              <a
+                key={alert.id}
+                href={viewAllPath}
+                className="recent-alert-item"
+                aria-label={`查看 ${taskName} 的 ${alert.alert_type} 告警`}
+              >
+                {itemContent}
+              </a>
+            ) : (
+              <div key={alert.id} className="recent-alert-item">
+                {itemContent}
               </div>
             );
           })

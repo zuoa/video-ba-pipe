@@ -925,11 +925,13 @@ export async function getTodayAlertsCount() {
   return request('/api/alerts/today-count');
 }
 
-export async function getAlertTrend(days: number = 7) {
-  return request(`/api/alerts/trend?days=${days}`);
+export type AlertStatsPeriod = 'hour' | 'day' | 'week' | 'month' | 'year';
+
+export async function getAlertTrend(period: AlertStatsPeriod = 'day') {
+  return request(`/api/alerts/trend?period=${period}`);
 }
 
-export async function getChannelAlertStats(period: 'day' | 'week' | 'month' | 'year' = 'day') {
+export async function getChannelAlertStats(period: AlertStatsPeriod = 'day') {
   return request(`/api/alerts/channel-stats?period=${period}`);
 }
 
