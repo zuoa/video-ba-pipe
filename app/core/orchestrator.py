@@ -47,8 +47,6 @@ from app.config import (
     SOURCE_MAX_CONCURRENT_STARTS,
     SHARED_INFERENCE_SOCKET_PATH,
 )
-from app.core.alert_media_cleaner import AlertMediaCleaner
-from app.core.alert_delivery import alert_delivery_worker
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
 from app.core.database_models import (
@@ -213,8 +211,6 @@ class Orchestrator:
         self.last_health_log_times = {}  # 记录上次健康日志时间
         self.workflow_host_signatures = {}
         self.draining_sources = {}
-        self.media_cleaner = AlertMediaCleaner()
-        self.alert_delivery_worker = alert_delivery_worker
         self.rotation_selector = RoundRobinBatchSelector()
         self.rotation_config = normalize_source_rotation_config(
             get_source_rotation_config()
@@ -2366,8 +2362,6 @@ class Orchestrator:
 
     def run(self):
         print("🚀 编排器启动，开始动态管理视频源和工作流...")
-        self.media_cleaner.start()
-        self.alert_delivery_worker.start()
         while True:
             now = time.monotonic()
             if now - self.last_algorithm_test_service_check_at >= 5.0:
@@ -2383,9 +2377,6 @@ class Orchestrator:
 
     def stop(self):
         print("\n优雅地关闭所有正在运行的工作流和视频源...")
-        self.alert_delivery_worker.stop()
-        self.media_cleaner.stop()
-
         for source_id in list(self.workflow_hosts.keys()):
             self._stop_source_host(source_id)
 

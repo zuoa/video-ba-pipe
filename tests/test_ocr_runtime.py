@@ -7,6 +7,21 @@ from app.core.ocr_runtime import (
 )
 
 
+def test_worker_capability_source_proxies_ocr_backends(monkeypatch):
+    monkeypatch.setenv("OCR_RUNTIME_CAPABILITY_SOURCE", "worker")
+    monkeypatch.setattr(
+        "app.core.algorithm_test_service.fetch_ocr_runtime_capabilities",
+        lambda: ({
+            "success": True,
+            "available": True,
+            "error": None,
+            "backends": [OCR_BACKEND_PADDLE, OCR_BACKEND_RKNN],
+        }, 200),
+    )
+
+    assert list_ocr_backends() == [OCR_BACKEND_PADDLE, OCR_BACKEND_RKNN]
+
+
 def test_ocr_runtime_reports_missing_dependencies(monkeypatch):
     monkeypatch.setattr("app.core.ocr_runtime.importlib.util.find_spec", lambda _name: None)
 

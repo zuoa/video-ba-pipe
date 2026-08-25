@@ -1,0 +1,4 @@
+# Inference worker dependencies extend the lightweight control plane.
+-r requirements.control.txt
+ultralytics
+onnxruntime; platform_machine != "aarch64" and platform_machine != "arm64"

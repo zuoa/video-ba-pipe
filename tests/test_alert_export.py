@@ -27,8 +27,6 @@ def export_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(export_mod, 'EXPORT_SAVE_PATH', str(exports_dir))
     monkeypatch.setattr(alert_media_cleaner, 'FRAME_SAVE_PATH', str(frames_dir))
-    monkeypatch.setattr(export_mod, 'ensure_export_worker_started', lambda: None)
-
     with test_db.bind_ctx(models):
         test_db.connect()
         test_db.create_tables(models)

@@ -103,11 +103,16 @@ def get_face_recognition_config() -> FaceRecognitionConfig:
     return config
 
 
-def available_face_inference_backends() -> list[str]:
+def available_face_inference_backends(
+    capabilities: Optional[Dict[str, Any]] = None,
+) -> list[str]:
     try:
         from app.core.face_inference import available_face_runtimes
 
-        runtimes, _errors = available_face_runtimes()
+        if capabilities is None:
+            runtimes, _errors = available_face_runtimes()
+        else:
+            runtimes, _errors = available_face_runtimes(capabilities)
         return ["auto", *[item for item in runtimes if item != "auto"]]
     except Exception:
         return ["auto"]
@@ -116,6 +121,7 @@ def available_face_inference_backends() -> list[str]:
 def save_face_recognition_config(
     data: Optional[Dict[str, Any]],
     updated_by: str = "system",
+    available_backends: Optional[list[str]] = None,
 ) -> FaceRecognitionConfig:
     global _last_known_config
     if not isinstance(data, dict):
@@ -146,7 +152,8 @@ def save_face_recognition_config(
             raise ValueError(f"{label}必须是 0 到 3650 的整数")
 
     backend = str(data.get("inference_backend") or "").strip().lower()
-    if backend not in set(available_face_inference_backends()):
+    backends = available_backends or available_face_inference_backends()
+    if backend not in set(backends):
         raise ValueError("推理后端在当前主机不可用")
     if not isinstance(data.get("require_commercial_models"), bool):
         raise ValueError("商用模型门禁必须是布尔值")

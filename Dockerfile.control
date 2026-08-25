@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1.7
+
+FROM python:3.11-slim-bookworm AS runtime-base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TZ=Asia/Shanghai \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN set -eux; \
+    apt-get -o Acquire::Retries=5 update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      ffmpeg \
+      fonts-wqy-zenhei \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
+      libsm6 \
+      libxext6 \
+      libxrender1 \
+      postgresql-client \
+      tzdata; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.control.txt .
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir -r requirements.control.txt \
+    && python -c "import importlib.util as u; forbidden=('torch','ultralytics','onnxruntime','paddle','rknnlite'); found=[name for name in forbidden if u.find_spec(name)]; assert not found, 'heavy frameworks leaked into control image: ' + ','.join(found)"
+
+FROM runtime-base AS control
+
+ARG APP_VERSION=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    BUILD_TIME=${BUILD_TIME}
+
+COPY app/ /app/app/
+COPY scripts/ /app/scripts/
+COPY docs/openapi.yaml docs/openapi_usage.md /app/docs/
+COPY env.example /app/.env.example
+
+RUN mkdir -p \
+      /data/db \
+      /data/frames \
+      /data/videos \
+      /data/video_sources \
+      /data/models \
+      /data/snapshots \
+      /data/logs \
+      /data/user_scripts \
+    && chmod +x /app/app/entrypoint.sh
+
+VOLUME ["/data"]
+EXPOSE 5000
+WORKDIR /app/app
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+LABEL maintainer="Video BA Pipe Team" \
+      version="${APP_VERSION}" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      description="Video Behavior Analysis Pipeline - Control Plane"

@@ -1,7 +1,6 @@
 import signal
 
 from app.core.orchestrator import Orchestrator
-from app.core.alert_media_cleaner import AlertMediaCleaner
 from app.setup_database import verify_database_schema
 
 #
@@ -90,8 +89,6 @@ from app.setup_database import verify_database_schema
 #         print("所有组件已安全关闭。")
 if __name__ == "__main__":
     verify_database_schema()
-    # 优先尊重系统设置中的容量上限；只有数据库确实不可用时才回退环境默认值。
-    AlertMediaCleaner().run_startup_filesystem_cleanup()
     orch = Orchestrator()
     signal.signal(signal.SIGINT, lambda s, f: orch.stop() or exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: orch.stop() or exit(0))

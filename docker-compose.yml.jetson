@@ -108,7 +108,7 @@ x-jetson-environment: &jetson-environment
 
 services:
   db-init:
-    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-jetson-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-db-init-jetson
     restart: "no"
@@ -125,11 +125,10 @@ services:
         condition: service_healthy
 
   storage-guard:
-    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-jetson-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: missing
     container_name: video-ba-pipe-storage-guard-jetson
     restart: "no"
-    runtime: nvidia
     environment: *jetson-environment
     command:
       - python3
@@ -171,15 +170,15 @@ services:
       start_period: 15s
 
   api:
-    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-jetson-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-api-jetson
     restart: unless-stopped
     init: true
-    runtime: nvidia
-    shm_size: "4gb"
     command: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
-    environment: *jetson-environment
+    environment:
+      <<: *jetson-environment
+      OCR_RUNTIME_CAPABILITY_SOURCE: worker
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/data
@@ -208,8 +207,30 @@ services:
       postgres:
         condition: service_healthy
 
+  jobs:
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-jetson-${VIDEO_BA_PIPE_RELEASE:-stable}}
+    pull_policy: always
+    container_name: video-ba-pipe-jobs-jetson
+    restart: unless-stopped
+    init: true
+    entrypoint: ["python3", "-m", "app.jobs"]
+    environment: *jetson-environment
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+    networks:
+      - video-ba-network
+    logging: *default-logging
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      storage-guard:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
   worker:
-    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson}
+    image: ${VIDEO_BA_PIPE_JETSON_IMAGE:-ghcr.io/zuoa/video-ba-pipe:jetson-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-worker-jetson
     restart: unless-stopped

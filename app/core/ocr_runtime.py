@@ -23,7 +23,7 @@ def _has_module(name: str) -> bool:
         return False
 
 
-def list_ocr_backends() -> List[str]:
+def _list_local_ocr_backends() -> List[str]:
     backends: List[str] = []
     if _has_module("paddle") and _has_module("paddleocr"):
         backends.append(OCR_BACKEND_PADDLE)
@@ -35,6 +35,22 @@ def list_ocr_backends() -> List[str]:
         else:
             backends.append(OCR_BACKEND_RKNN)
     return backends
+
+
+def list_ocr_backends() -> List[str]:
+    if os.getenv("OCR_RUNTIME_CAPABILITY_SOURCE", "local").strip().lower() == "worker":
+        from app.core.algorithm_test_service import fetch_ocr_runtime_capabilities
+
+        payload, status = fetch_ocr_runtime_capabilities()
+        backends = payload.get("backends")
+        if status == 200 and isinstance(backends, list):
+            return list(
+                dict.fromkeys(
+                    str(item).strip() for item in backends if str(item).strip()
+                )
+            )
+        return []
+    return _list_local_ocr_backends()
 
 
 def ocr_backend_family(path: Optional[str] = None, framework: Optional[str] = None) -> str:

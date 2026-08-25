@@ -574,7 +574,7 @@ Full spec: `docs/openapi.yaml`; usage guide: `docs/openapi_usage.md`; also brows
 
 | Compose file | Platform | Default decoder | Notes |
 |---|---|---|---|
-| `docker-compose.yml` | Generic CPU | ffmpeg software decode | postgres + db-init + api + worker + frontend + mosquitto + mediamtx |
+| `docker-compose.yml` | Generic CPU | ffmpeg software decode | postgres + db-init + api + jobs + worker + frontend + mosquitto + mediamtx |
 | `docker-compose.yml.x86+cuda` | x86 + NVIDIA GPU | NVDEC hardware decode (auto concurrency limit via NVML utilization) | Bundles RabbitMQ (console 15672, admin/admin123) |
 | `docker-compose.yml.jetson` | Jetson Orin (JetPack 6.2.1) | nvv4l2decoder hardware decode | runtime: nvidia, extra storage-guard service |
 | `docker-compose.yml.rknn` | RK3588 and other Rockchip platforms | rk_mpp hardware decode | WEB_CONCURRENCY=1 |
@@ -593,13 +593,14 @@ docker compose -f docker-compose.yml.x86+cuda up -d
 docker logs video-ba-pipe-cpu -f
 ```
 
-On first start, the `db-init` service runs database initialization/migration automatically.
+On first start, the `db-init` service runs database initialization/migration automatically. `db-init`, `api`, and `jobs` use the inference-free control image; only `worker` uses the platform-specific heavyweight inference image. Each platform workflow publishes both images from the same commit; production deployments should set `VIDEO_BA_PIPE_RELEASE=<full commit SHA>` in `.env`.
 
 ### 15.2 Local Development
 
 ```bash
 pip install -r requirements.txt
 python3 -m app.setup_database   # initialize the database
+python3 -m app.jobs             # start background jobs (separate terminal)
 python app/main.py              # start the worker (workflow execution)
 python app/web/webapp.py        # start the Web API (separate terminal)
 ```

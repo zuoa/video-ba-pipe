@@ -8,11 +8,7 @@
 
 # 使用官方NVIDIA CUDA基础镜像
 # CUDA 11.8 + cuDNN 8 + Ubuntu 22.04
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
-
-# 由镜像构建流程根据最近 Git 提交注入。
-ARG APP_VERSION=unknown
-ARG BUILD_TIME=unknown
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS runtime-base
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -20,9 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-    APP_VERSION=${APP_VERSION} \
-    BUILD_TIME=${BUILD_TIME}
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
 # 设置工作目录
 WORKDIR /app
@@ -104,18 +98,18 @@ RUN python3 -m pip install --upgrade pip setuptools wheel
 # 不钉版会把 torch 拉到最新的 2.5.1(cuDNN 9),import torch 即报
 # "libcudnn.so.9: cannot open shared object file"。2.3.1 是最后一个 cuDNN 8 的
 # cu118 release,与基础层、paddlepaddle-gpu(cuDNN 8) 三者一致。
-# 注意:requirements.txt 里的 ultralytics 声明的是 torch>=1.8(下限),
-# 后续 `pip install -r requirements.txt` 不会把 torch 顶回 2.5.x,钉版安全。
+# 注意:requirements.worker.txt 里的 ultralytics 声明的是 torch>=1.8(下限),
+# 后续依赖安装不会把 torch 顶回 2.5.x,钉版安全。
 RUN pip3 install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu118
 
 # 复制依赖文件
-COPY requirements.txt .
+COPY requirements.control.txt requirements.worker.txt ./
 COPY requirements.ocr.txt .
 
 # 安装Python依赖
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.worker.txt
 
-# requirements.txt 为 CPU/通用镜像安装 CPU 版 ONNX Runtime。CUDA 镜像必须将其
+# 通用 worker 依赖安装 CPU 版 ONNX Runtime。CUDA 镜像必须将其
 # 替换为 CUDA 11.8 + cuDNN 8 构建，否则人脸 ONNX 模型只会暴露
 # CPUExecutionProvider。1.20.1 与本镜像的 PyTorch 2.3.1/cu118/cuDNN 8
 # 组合一致；CUDA 11 wheel 使用 ONNX Runtime 官方 Azure feed 发布。
@@ -134,6 +128,14 @@ RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.0.0 \
 # NVIDIA 驱动或可见 GPU，只验证 import，避免把 libcudnn.so 版本不匹配的
 # 镜像成功推送后才在共享模型子进程中循环超时。
 RUN python3 -c "import torch; from ultralytics import YOLO; print('torch=' + torch.__version__ + ', cuda=' + str(torch.version.cuda) + ', ultralytics_import=ok')"
+
+FROM runtime-base AS worker
+
+# 版本参数只影响轻量应用层，避免每次发布让 GB 级依赖层失效。
+ARG APP_VERSION=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    BUILD_TIME=${BUILD_TIME}
 
 # 复制应用代码
 COPY app/ /app/app/

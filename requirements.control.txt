@@ -1,0 +1,21 @@
+# API, database migration, and background jobs. Keep inference frameworks out.
+numpy<2
+python-dotenv
+opencv-python
+pyclipper
+Pillow
+peewee
+psycopg2-binary
+flask
+flask-cors
+pika
+paho-mqtt>=2.1,<3
+boto3>=1.34,<2
+gunicorn
+PyJWT
+cryptography>=42,<46
+requests
+onvif-zeep
+psutil
+pynvml
+concurrent-log-handler>=0.9.25

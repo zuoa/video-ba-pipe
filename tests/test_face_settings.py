@@ -169,6 +169,13 @@ def test_available_face_backends_use_host_runnable_choices(monkeypatch):
     ]
 
 
+def test_available_face_backends_can_use_worker_capabilities():
+    assert face_settings.available_face_inference_backends({
+        'available_runtimes': ['onnxruntime-cuda', 'torchscript'],
+        'plugin_errors': [],
+    }) == ['auto', 'onnxruntime-cuda', 'torchscript']
+
+
 def test_save_rejects_uploadable_but_host_unavailable_backend(monkeypatch):
     monkeypatch.setattr(
         face_settings,

@@ -124,7 +124,7 @@ services:
       start_period: 15s
 
   db-init:
-    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda}
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-cuda-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-db-init-cuda
     restart: "no"
@@ -156,17 +156,14 @@ services:
   # NVML 解码引擎利用率 + GPU 型号查表自动限制并发路数
   # ============================================
   app:
-    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda}
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-cuda-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-api-cuda
     restart: unless-stopped
-    shm_size: '8gb'
     entrypoint: ["gunicorn", "-w", "4", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
-
-    # GPU配置 - 使用所有可用GPU
-    gpus: all
     environment:
       <<: *app-environment
+      OCR_RUNTIME_CAPABILITY_SOURCE: worker
       COMPANY_NAME: ${COMPANY_NAME:-码全科技}
       HF_USE_MIRROR: ${HF_USE_MIRROR:-false}
       HF_MIRROR_ENDPOINT: ${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
@@ -180,10 +177,6 @@ services:
       # 仪表盘宿主网络速率：只读采集默认出口网卡计数，无需特权模式
       - /proc/net/dev:/host/proc/net/dev:ro
       - /proc/net/route:/host/proc/net/route:ro
-      # 只读挂载宿主机 DRM 节点,消除 ONNX Runtime 启动时
-      # device_discovery.cc 读取 /sys/class/drm/card0/device/vendor 失败的告警
-      # (NVIDIA Container Runtime 不会注入 /sys/class/drm,故需显式挂载)
-      - /sys/class/drm:/sys/class/drm:ro
 
     # 端口映射
     ports:
@@ -213,8 +206,29 @@ services:
       postgres:
         condition: service_healthy
 
+  jobs:
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-cuda-${VIDEO_BA_PIPE_RELEASE:-stable}}
+    pull_policy: always
+    container_name: video-ba-pipe-jobs-cuda
+    restart: unless-stopped
+    init: true
+    entrypoint: ["python3", "-m", "app.jobs"]
+    environment:
+      <<: *app-environment
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+    networks:
+      - video-ba-network
+    logging: *app-logging
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
   worker:
-    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda}
+    image: ${VIDEO_BA_PIPE_CUDA_IMAGE:-ghcr.io/zuoa/video-ba-pipe:cuda-${VIDEO_BA_PIPE_RELEASE:-stable}}
     pull_policy: always
     container_name: video-ba-pipe-worker-cuda
     restart: unless-stopped

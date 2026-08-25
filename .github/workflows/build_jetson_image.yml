@@ -9,10 +9,6 @@ on:
         default: nvcr.io/nvidia/pytorch:25.05-py3-igpu
         type: string
 
-concurrency:
-  group: build-jetson-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -22,6 +18,9 @@ jobs:
   build-backend:
     name: Jetson Orin (linux/arm64)
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-jetson-stable
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -71,7 +70,46 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Jetson image
+      - name: Build and push stable Jetson runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.jetson
+          target: runtime-base
+          platforms: linux/arm64
+          pull: true
+          push: true
+          build-args: |
+            JETSON_PYTORCH_IMAGE=${{ inputs.jetson_pytorch_image }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:runtime-jetson
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-jetson
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-jetson,mode=max
+          provenance: false
+
+      - name: Build immutable Jetson control image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.control
+          target: control
+          platforms: linux/arm64
+          pull: true
+          load: true
+          build-args: |
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
+            BUILD_TIME=${{ steps.build_info.outputs.build_time }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-jetson-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-control-jetson
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-control-jetson,mode=max
+          provenance: false
+
+      - name: Enforce Jetson control image size budget
+        run: python3 scripts/check_docker_image_size.py ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-jetson-${{ github.sha }} --max-mib 1024
+
+      - name: Push checked Jetson control image
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-jetson-${{ github.sha }}
+
+      - name: Build and push Jetson worker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -84,14 +122,29 @@ jobs:
             APP_VERSION=${{ steps.build_info.outputs.app_version }}
             BUILD_TIME=${{ steps.build_info.outputs.build_time }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:jetson
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:jetson-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             com.nvidia.jetpack.version=6.2.1
             com.nvidia.l4t.version=36.4.4
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-jetson
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:runtime-jetson
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-jetson,mode=max
           provenance: false
+
+      - name: Promote matching Jetson release tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          docker buildx imagetools create \
+            --tag "${image}:jetson-stable" \
+            "${image}:jetson-${{ github.sha }}"
+          docker buildx imagetools create \
+            --tag "${image}:control-jetson-stable" \
+            "${image}:control-jetson-${{ github.sha }}"
 
   build-frontend:
     name: Frontend (linux/arm64)

@@ -1,22 +1,2 @@
-numpy<2
-python-dotenv
-opencv-python
-pyclipper
-Pillow
-peewee
-psycopg2-binary
-ultralytics
-onnxruntime; platform_machine != "aarch64" and platform_machine != "arm64"
-flask
-flask-cors
-pika
-paho-mqtt>=2.1,<3
-boto3>=1.34,<2
-gunicorn
-PyJWT
-cryptography>=42,<46
-requests
-onvif-zeep
-psutil
-pynvml  # 可选:NVIDIA GPU 指标采集与 NVDEC 容量探针(仅 X86+CUDA 需要)
-concurrent-log-handler>=0.9.25
+# Backward-compatible full runtime dependency set.
+-r requirements.worker.txt

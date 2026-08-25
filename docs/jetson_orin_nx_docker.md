@@ -8,7 +8,8 @@
 - JetPack：6.2.1
 - Jetson Linux / L4T：36.4.4
 - 容器架构：`linux/arm64`
-- 后端镜像：`ghcr.io/<owner>/<repo>:jetson`
+- control 镜像：`ghcr.io/<owner>/<repo>:control-jetson-<release>`（db-init、API、jobs）
+- worker 镜像：`ghcr.io/<owner>/<repo>:jetson-<release>`（推理与硬解）
 - 前端镜像：`ghcr.io/<owner>/<repo>-frontend:arm64`
 - CUDA/PyTorch 基座：`nvcr.io/nvidia/pytorch:25.05-py3-igpu`
 - 视频硬解：GStreamer `nvv4l2decoder`，支持 H.264/H.265 Annex-B 字节流
@@ -42,8 +43,10 @@ Build Jetson image
 工作流会先发布后端：
 
 ```text
-ghcr.io/<owner>/<repo>:jetson
+ghcr.io/<owner>/<repo>:control-jetson-<commit>
 ghcr.io/<owner>/<repo>:jetson-<commit>
+ghcr.io/<owner>/<repo>:control-jetson-stable
+ghcr.io/<owner>/<repo>:jetson-stable
 ```
 
 随后自动发布同一提交的 ARM64 前端：
@@ -85,13 +88,16 @@ docker buildx build --platform=linux/arm64 \
 如镜像不在默认的 `ghcr.io/zuoa` 路径，先在 `.env` 中覆盖：
 
 ```dotenv
-VIDEO_BA_PIPE_JETSON_IMAGE=ghcr.io/<owner>/<repo>:jetson
+VIDEO_BA_PIPE_RELEASE=<完整 commit SHA>
+# 使用私有仓库时再覆盖下面两项，并确保 SHA 相同：
+VIDEO_BA_PIPE_JETSON_IMAGE=ghcr.io/<owner>/<repo>:jetson-<完整 commit SHA>
+VIDEO_BA_PIPE_CONTROL_IMAGE=ghcr.io/<owner>/<repo>:control-jetson-<完整 commit SHA>
 VIDEO_BA_PIPE_FRONTEND_IMAGE=ghcr.io/<owner>/<repo>-frontend:arm64
 ```
 
-需要跟随 GitHub Actions 最新构建时，应使用上面的 `:jetson` 和 `:arm64`
-标签，不要在 `.env` 中固定旧的 `@sha256:...` digest。Action 只负责推送镜像，
-不会自动重建 Jetson 上已经运行的容器。
+生产环境建议固定 `VIDEO_BA_PIPE_RELEASE` 为完整 commit SHA。需要自动跟随最近一次
+Jetson 成功发布时可不设置它，Compose 会同时使用 `control-jetson-stable` 和
+`jetson-stable`。Action 只负责推送镜像，不会自动重建 Jetson 上已经运行的容器。
 
 启动或更新：
 
@@ -131,7 +137,7 @@ NVDEC 的 DMA 缓冲区来自宿主机 CMA（默认 256MB），每路 `nvv4l2dec
 - **自动软解兜底**：拿不到槽位的源自动改用 `ffmpeg_sw` 软解（`HW_DECODE_SW_FALLBACK_*` 控制，可用 `HW_DECODE_SW_FALLBACK_MAX` 限制软解路数保护 CPU）；硬解槽位空闲后每 60s 自动把一路软解源升级回硬解。
 - **失败分类退避**：解码进程退出按 stderr/退出码分类为 resource/stream/crash，分别走 15s/30s/5s 起始的指数退避（上限 `SOURCE_RESTART_BACKOFF_MAX_SECONDS`，默认 300s），期间视频源状态为 `ERROR` 并记录健康事件（`restart_backoff`/`resource_wait`/`sw_fallback`/`hw_upgrade`）。上游流不存在（如 RTSP 404）不再每秒空转重启。
 - **启动限流**：每个管理周期最多启动 `SOURCE_MAX_CONCURRENT_STARTS`（默认 2）个源，防止容器启动时 ffprobe/NVDEC 通道惊群。
-- **僵尸回收**：worker/api 容器启用 `init: true`，orchestrator 每 10s 主动回收僵尸子进程。
+- **僵尸回收**：worker 容器启用 `init: true`，orchestrator 每 10s 主动回收僵尸子进程。
 
 CMA 余量可在系统指标 API（`memory.cma_free_mb`）中观测。
 
@@ -161,8 +167,8 @@ worker 启动后会将默认值写入 `SystemSetting`，此后由“系统设置
 `simple_yolo_detector.py`、`yolo_detector.py` 以及直接实例化
 `ultralytics.YOLO` 的自定义脚本仍在各 source host 内加载模型。准入控制会将
 这些模型按 host 和模型配置项逐份计算，不会把同一模型 ID 误判为已共享。
-API 容器保持共享推理关闭，因此算法测试接口不会连接 worker 私有的 `/tmp`
-socket。
+API 容器不包含 CUDA/PyTorch 等推理框架，也不申请 NVIDIA runtime；算法测试和
+人脸批量录入通过容器网络转发到 worker 的内部测试服务，不连接 worker 私有的 `/tmp` socket。
 
 关键默认配置：
 

@@ -474,6 +474,57 @@ def test_runtime_reports_bundle_not_ready_when_verification_fails(
     assert '文件不存在' in runtime_bundle['error']
 
 
+def test_runtime_uses_worker_capabilities_for_bundle_verification(
+    face_api, monkeypatch,
+):
+    client, headers = face_api
+    now = datetime.now()
+    bundle = FaceModelBundle.create(
+        name='worker-runtime', version='v1', contract_id='worker-v1',
+        created_at=now, updated_at=now,
+    )
+    capabilities = {
+        'machine': 'x86_64',
+        'available_runtimes': ['onnxruntime-cuda'],
+        'plugin_errors': [],
+    }
+    captured = {}
+    monkeypatch.setattr(
+        faces,
+        'fetch_face_runtime_capabilities',
+        lambda: ({'success': True, 'capabilities': capabilities}, 200),
+    )
+    monkeypatch.setattr(
+        faces,
+        'runtime_capabilities',
+        lambda: (_ for _ in ()).throw(AssertionError('local probe must not run')),
+    )
+
+    def verify(actual_bundle, requested_backend, actual_capabilities):
+        captured['bundle'] = actual_bundle
+        captured['backend'] = requested_backend
+        captured['capabilities'] = actual_capabilities
+        artifact = type('Artifact', (), {'filename': 'face.onnx'})()
+        return 'onnxruntime-cuda', {
+            'detection': artifact,
+            'embedding': artifact,
+        }, actual_capabilities
+
+    monkeypatch.setattr(faces, 'verify_bundle_artifacts', verify)
+
+    response = client.get('/api/face/runtime', headers=headers)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['capability_source'] == 'worker'
+    assert payload['capabilities'] == capabilities
+    assert captured == {
+        'bundle': bundle,
+        'backend': 'auto',
+        'capabilities': capabilities,
+    }
+
+
 @pytest.mark.parametrize('field', ['name', 'person_code'])
 def test_person_update_rejects_empty_identity_fields(face_api, field):
     client, headers = face_api

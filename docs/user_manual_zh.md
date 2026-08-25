@@ -590,7 +590,7 @@ DEVICE_MODEL_CODE=VB-RK3588-16G-V2
 
 | Compose 文件 | 适用平台 | 默认解码器 | 特点 |
 |---|---|---|---|
-| `docker-compose.yml` | 通用 CPU | ffmpeg 软解 | postgres + db-init + api + worker + frontend + mosquitto + mediamtx |
+| `docker-compose.yml` | 通用 CPU | ffmpeg 软解 | postgres + db-init + api + jobs + worker + frontend + mosquitto + mediamtx |
 | `docker-compose.yml.x86+cuda` | x86 + NVIDIA GPU | NVDEC 硬解（按 NVML 利用率自动限并发） | 额外内置 RabbitMQ（管理台 15672，admin/admin123） |
 | `docker-compose.yml.jetson` | Jetson Orin（JetPack 6.2.1） | nvv4l2decoder 硬解 | runtime: nvidia，额外 storage-guard 服务 |
 | `docker-compose.yml.rknn` | RK3588 等瑞芯微平台 | rk_mpp 硬解 | WEB_CONCURRENCY=1 |
@@ -609,13 +609,14 @@ docker compose -f docker-compose.yml.x86+cuda up -d
 docker logs video-ba-pipe-cpu -f
 ```
 
-首次启动时 `db-init` 服务会自动完成数据库初始化/迁移。
+首次启动时 `db-init` 服务会自动完成数据库初始化/迁移。`db-init`、`api` 和 `jobs` 使用不含推理框架的 control 镜像；只有 `worker` 使用对应平台的重型推理镜像。两类镜像由同一平台工作流按 commit 成对发布，生产环境建议在 `.env` 设置 `VIDEO_BA_PIPE_RELEASE=<完整 commit SHA>`。
 
 ### 15.2 本地开发
 
 ```bash
 pip install -r requirements.txt
 python3 -m app.setup_database   # 初始化数据库
+python3 -m app.jobs             # 启动后台任务（独立终端）
 python app/main.py              # 启动 worker（编排执行）
 python app/web/webapp.py        # 启动 Web API（另开终端）
 ```

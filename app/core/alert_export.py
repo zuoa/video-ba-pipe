@@ -635,7 +635,3 @@ def stop_alert_export_worker() -> None:
     with _worker_lock:
         if _worker is not None:
             _worker.stop()
-
-
-def ensure_export_worker_started() -> None:
-    start_alert_export_worker()

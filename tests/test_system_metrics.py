@@ -152,3 +152,15 @@ def test_capacity_parser_rejects_unknown_values():
     assert system_metrics._parse_capacity_bytes("16 GB") == 16 * 1024 ** 3
     assert system_metrics._parse_capacity_bytes("N/A") is None
     assert system_metrics._parse_capacity_bytes(None) is None
+
+
+def test_collect_accelerator_metrics_is_a_serializable_worker_snapshot(monkeypatch):
+    monkeypatch.setattr(system_metrics, "_collect_gpus", lambda: [{"index": 0}])
+    monkeypatch.setattr(system_metrics, "_collect_npus", lambda: [{"index": 1}])
+    monkeypatch.setattr(system_metrics.time, "time", lambda: 123.9)
+
+    assert system_metrics.collect_accelerator_metrics() == {
+        "timestamp": 123,
+        "gpus": [{"index": 0}],
+        "npus": [{"index": 1}],
+    }

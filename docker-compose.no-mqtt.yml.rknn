@@ -113,7 +113,7 @@ services:
       start_period: 15s
 
   db-init:
-    image: ghcr.io/zuoa/video-ba-pipe:rk
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-rk-${VIDEO_BA_PIPE_RELEASE:-stable}}
     container_name: video-ba-pipe-db-init-rk
     restart: "no"
     entrypoint: ["python3", "-m", "app.setup_database"]
@@ -138,15 +138,15 @@ services:
         condition: service_healthy
 
   api:
-    image: ghcr.io/zuoa/video-ba-pipe:rk
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-rk-${VIDEO_BA_PIPE_RELEASE:-stable}}
     container_name: video-ba-pipe-rknn
     restart: unless-stopped
-    shm_size: '8gb'
     entrypoint: ["gunicorn", "-w", "${WEB_CONCURRENCY:-1}", "--timeout", "${WEB_REQUEST_TIMEOUT_SECONDS:-1800}", "--bind", "0.0.0.0:5002", "web.webapp:app"]
 
     # 环境变量
     environment:
       <<: *app-environment
+      OCR_RUNTIME_CAPABILITY_SOURCE: worker
       COMPANY_NAME: ${COMPANY_NAME:-码全科技}
       HF_USE_MIRROR: ${HF_USE_MIRROR:-false}
       HF_MIRROR_ENDPOINT: ${HF_MIRROR_ENDPOINT:-https://hf-mirror.com}
@@ -190,8 +190,28 @@ services:
     # 日志配置
     logging: *default-logging
 
+  jobs:
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:-ghcr.io/zuoa/video-ba-pipe:control-rk-${VIDEO_BA_PIPE_RELEASE:-stable}}
+    container_name: video-ba-pipe-jobs-rk
+    restart: unless-stopped
+    init: true
+    entrypoint: ["python3", "-m", "app.jobs"]
+    environment:
+      <<: *app-environment
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - video-ba-network
+    logging: *default-logging
+
   worker:
-    image: ghcr.io/zuoa/video-ba-pipe:rk
+    image: ${VIDEO_BA_PIPE_RK_IMAGE:-ghcr.io/zuoa/video-ba-pipe:rk-${VIDEO_BA_PIPE_RELEASE:-stable}}
     container_name: video-ba-pipe-worker
     restart: unless-stopped
     init: true

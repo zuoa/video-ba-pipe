@@ -1,5 +1,6 @@
 import ast
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -275,6 +276,91 @@ def test_worker_client_maps_unavailable_service_to_503(monkeypatch):
     assert body == {"success": False, "error": "推理 Worker 不可用"}
 
 
+def test_internal_http_service_reports_runtime_capabilities():
+    class FakeRunner:
+        def runtime_capabilities(self):
+            return {
+                "success": True,
+                "app_version": "test-version",
+                "face": {
+                    "machine": "x86_64",
+                    "available_runtimes": ["onnxruntime-cuda", "torchscript"],
+                },
+                "ocr": {
+                    "available": True,
+                    "error": None,
+                    "backends": ["paddleocr"],
+                },
+            }, 200
+
+    server = service._AlgorithmTestHttpServer(("127.0.0.1", 0), FakeRunner())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/v1/capabilities/runtime"
+    try:
+        unauthorized = requests.get(url, timeout=2)
+        assert unauthorized.status_code == 401
+
+        authorized = requests.get(
+            url,
+            headers={"X-Algorithm-Test-Token": service.ALGORITHM_TEST_WORKER_TOKEN},
+            timeout=2,
+        )
+        assert authorized.status_code == 200
+        assert authorized.json()["face"]["available_runtimes"] == [
+            "onnxruntime-cuda",
+            "torchscript",
+        ]
+        assert authorized.json()["ocr"]["backends"] == ["paddleocr"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_face_capability_client_maps_unavailable_worker_to_503(monkeypatch):
+    def fail(*_args, **_kwargs):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(service.requests, "get", fail)
+    monkeypatch.setattr(service, "_runtime_capability_cache", None)
+
+    body, status = service.fetch_face_runtime_capabilities()
+
+    assert status == 503
+    assert body == {"success": False, "error": "推理 Worker 不可用"}
+
+
+def test_accelerator_metrics_endpoint_uses_worker_hardware(monkeypatch):
+    class FakeRunner:
+        pass
+
+    monkeypatch.setattr(
+        "app.core.system_metrics.collect_accelerator_metrics",
+        lambda: {
+            "timestamp": 123,
+            "gpus": [{"index": 0, "usage_percent": 42.0}],
+            "npus": [],
+        },
+    )
+    server = service._AlgorithmTestHttpServer(("127.0.0.1", 0), FakeRunner())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/v1/metrics/accelerators"
+    try:
+        response = requests.get(
+            url,
+            headers={"X-Algorithm-Test-Token": service.ALGORITHM_TEST_WORKER_TOKEN},
+            timeout=2,
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["gpus"][0]["usage_percent"] == 42.0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_job_runner_rejects_full_queue():
     runner = service.AlgorithmTestJobRunner(queue_size=0, timeout_seconds=1)
     assert runner._capacity.acquire(blocking=False)
@@ -299,6 +385,55 @@ def test_job_runner_counts_queue_wait_toward_total_timeout():
 
     assert status == 504
     assert "等待超时" in body["error"]
+
+
+def test_runtime_capability_probe_returns_when_child_exits_without_result():
+    class EmptyResultQueue:
+        def __init__(self):
+            self.timeouts = []
+
+        def get(self, timeout):
+            self.timeouts.append(timeout)
+            raise queue.Empty
+
+        def close(self):
+            pass
+
+        def join_thread(self):
+            pass
+
+    class ExitedProcess:
+        exitcode = 137
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return False
+
+        def join(self, timeout=None):
+            pass
+
+    result_queue = EmptyResultQueue()
+    process = ExitedProcess()
+
+    class FakeContext:
+        def Queue(self, maxsize):
+            assert maxsize == 1
+            return result_queue
+
+        def Process(self, **kwargs):
+            assert kwargs["name"] == "runtime-capability-probe"
+            return process
+
+    runner = service.AlgorithmTestJobRunner(queue_size=0, timeout_seconds=1)
+    runner._mp_context = FakeContext()
+
+    body, status = runner.runtime_capabilities()
+
+    assert status == 500
+    assert body["error"] == "运行时能力探测进程异常退出，退出码: 137"
+    assert result_queue.timeouts == [0.2]
 
 
 def test_public_test_routes_only_forward_and_do_not_create_models_in_api():

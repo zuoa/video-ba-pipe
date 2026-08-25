@@ -1,5 +1,4 @@
 import os
-import sys
 import base64
 from datetime import datetime
 from pathlib import Path
@@ -137,7 +136,11 @@ from app.core.workflow_runtime import (
     extract_source_id_from_workflow_data,
     workflow_references_algorithm,
 )
-from app.core.algorithm_test_service import submit_algorithm_test
+from app.core.algorithm_test_service import (
+    fetch_accelerator_metrics,
+    fetch_face_runtime_capabilities,
+    submit_algorithm_test,
+)
 from app.core.window_detector import get_window_detector
 from app.core.video_probe import normalize_video_codec
 from app.core.system_metrics import collect_system_metrics
@@ -330,9 +333,20 @@ def get_system_info():
 @require_auth
 def get_system_metrics():
     try:
+        metrics = collect_system_metrics()
+        worker_payload, worker_status = fetch_accelerator_metrics()
+        worker_metrics = worker_payload.get('data')
+        if worker_status == 200 and isinstance(worker_metrics, dict):
+            metrics['gpus'] = list(worker_metrics.get('gpus') or [])
+            metrics['npus'] = list(worker_metrics.get('npus') or [])
+            metrics['accelerator_metrics_source'] = 'worker'
+            metrics['accelerator_metrics_error'] = None
+        else:
+            metrics['accelerator_metrics_source'] = 'local_fallback'
+            metrics['accelerator_metrics_error'] = worker_payload.get('error')
         return jsonify({
             'success': True,
-            'data': collect_system_metrics(),
+            'data': metrics,
         })
     except Exception as e:
         app.logger.error(f"采集系统状态失败: {e}")
@@ -456,16 +470,25 @@ def update_system_video_decode_config():
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
+def _worker_face_inference_backends():
+    payload, status = fetch_face_runtime_capabilities()
+    capabilities = payload.get('capabilities')
+    if status == 200 and isinstance(capabilities, dict):
+        return available_face_inference_backends(capabilities)
+    return available_face_inference_backends()
+
+
 @app.route('/api/system/face-recognition-config', methods=['GET'])
 @require_auth
 @require_admin
 def get_system_face_recognition_config():
     config, source, _database_available = load_face_recognition_config()
+    available_backends = _worker_face_inference_backends()
     return jsonify({
         'success': True,
         'config': config.to_dict(),
         'config_source': source,
-        'available_backends': available_face_inference_backends(),
+        'available_backends': available_backends,
         'apply_mode': 'dynamic_on_next_face_runtime',
     })
 
@@ -475,15 +498,17 @@ def get_system_face_recognition_config():
 @require_admin
 def update_system_face_recognition_config():
     try:
+        available_backends = _worker_face_inference_backends()
         config = save_face_recognition_config(
             request.json or {},
             updated_by=current_username('admin'),
+            available_backends=available_backends,
         )
         return jsonify({
             'success': True,
             'config': config.to_dict(),
             'config_source': 'database',
-            'available_backends': available_face_inference_backends(),
+            'available_backends': available_backends,
             'apply_mode': 'dynamic_on_next_face_runtime',
             'message': '人脸识别配置已保存，新事件和新加载的人脸实例将自动使用',
         })
@@ -2468,22 +2493,6 @@ try:
     app.logger.info("告警导出API已注册")
 except ImportError as e:
     app.logger.warning(f"告警导出API注册失败: {e}")
-
-if 'pytest' not in sys.modules and os.environ.get('ALERT_EXPORT_WORKER_DISABLED') != '1':
-    try:
-        from app.core.alert_export import start_alert_export_worker
-        start_alert_export_worker()
-        app.logger.info("告警导出后台任务已启动")
-    except Exception as e:
-        app.logger.warning(f"告警导出后台任务启动失败: {e}")
-
-if 'pytest' not in sys.modules and os.environ.get('FACE_IMPORT_WORKER_DISABLED') != '1':
-    try:
-        from app.web.api.faces import start_face_import_worker
-        start_face_import_worker()
-        app.logger.info("人脸批量录入后台任务已启动")
-    except Exception as e:
-        app.logger.warning(f"人脸批量录入后台任务启动失败: {e}")
 
 # ========== 注册离线许可证 API ==========
 from app.web.api.license import register_license_api

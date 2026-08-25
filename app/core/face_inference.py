@@ -98,9 +98,12 @@ def _host_available_face_backends(capabilities: Dict[str, Any]) -> List[str]:
     return sorted(available)
 
 
-def available_face_runtimes():
+def available_face_runtimes(
+    capabilities: Optional[Dict[str, Any]] = None,
+):
     """Return host-runnable backends, separate from uploadable artifact types."""
-    capabilities = runtime_capabilities()
+    if capabilities is None:
+        capabilities = runtime_capabilities()
     runtimes = (
         capabilities.get('available_runtimes')
         or _host_available_face_backends(capabilities)
@@ -732,7 +735,11 @@ def runtime_capabilities() -> Dict[str, Any]:
     return capabilities
 
 
-def select_bundle_artifacts(bundle, requested_backend: str = 'auto'):
+def select_bundle_artifacts(
+    bundle,
+    requested_backend: str = 'auto',
+    capabilities: Optional[Dict[str, Any]] = None,
+):
     from app.core.face_settings import get_face_recognition_config
 
     system_config = get_face_recognition_config()
@@ -741,7 +748,8 @@ def select_bundle_artifacts(bundle, requested_backend: str = 'auto'):
         and not bool(getattr(bundle, 'commercial_use_allowed', False))
     ):
         raise FaceInferenceError('当前部署禁止加载未声明可商用的人脸模型包')
-    capabilities = runtime_capabilities()
+    if capabilities is None:
+        capabilities = runtime_capabilities()
     requested = str(requested_backend or 'auto').strip().lower()
     if requested == 'auto':
         requested = system_config.inference_backend
@@ -853,10 +861,14 @@ def select_bundle_artifacts(bundle, requested_backend: str = 'auto'):
     )
 
 
-def verify_bundle_artifacts(bundle, requested_backend: str = 'auto'):
+def verify_bundle_artifacts(
+    bundle,
+    requested_backend: str = 'auto',
+    capabilities: Optional[Dict[str, Any]] = None,
+):
     """Validate selected artifact availability and integrity without loading models."""
     backend, artifacts, capabilities = select_bundle_artifacts(
-        bundle, requested_backend
+        bundle, requested_backend, capabilities
     )
     for role in ('detection', 'embedding'):
         _verified_artifact(bundle, artifacts[role], role, backend)

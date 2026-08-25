@@ -16,8 +16,10 @@
 
 ## 系统组成
 
+- `db-init`：一次性数据库初始化与迁移（轻量 control 镜像）
 - `api`：Flask + Gunicorn Web API（默认 `5002`）
-- `worker`：视频解码与工作流执行进程
+- `jobs`：告警导出、告警投递、人脸批量录入和媒体清理（轻量 control 镜像）
+- `worker`：视频解码、算法编排与推理（对应平台的重型 worker 镜像）
 - `frontend`：前端管理界面（默认 `8080`）
 - `mqtt`：内置 Mosquitto Broker（默认主通道）
 - `rabbitmq`：兼容消息队列（CUDA compose 中内置）
@@ -69,9 +71,9 @@ docker compose -f docker-compose.yml.rknn up -d
 docker compose -f docker-compose.yml.jetson up -d
 ```
 
-要求：目标设备运行 JetPack 6.2.1 / L4T 36.4.4，并已安装 Docker NVIDIA Runtime。后端使用独立的 `:jetson` ARM64 镜像，CUDA 推理由 NVIDIA PyTorch iGPU 运行时提供，H.264/H.265 默认使用 `nvv4l2decoder` 硬解；启动视频源时会用 `ffprobe` 探测并保存实际编码。前端复用通用 `:arm64` 镜像。Super 功耗模式需在宿主机刷机和 `nvpmodel` 配置中启用。
+要求：目标设备运行 JetPack 6.2.1 / L4T 36.4.4，并已安装 Docker NVIDIA Runtime。后端使用独立的 `:jetson-<release>` ARM64 worker 镜像，CUDA 推理由 NVIDIA PyTorch iGPU 运行时提供，H.264/H.265 默认使用 `nvv4l2decoder` 硬解；启动视频源时会用 `ffprobe` 探测并保存实际编码。前端复用通用 `:arm64` 镜像。Super 功耗模式需在宿主机刷机和 `nvpmodel` 配置中启用。
 
-所有 Compose 部署都会先运行一次性 `db-init` 服务。该服务完成事务化数据库迁移后，API 和 worker 才会启动；迁移失败时业务容器保持停止，避免在不完整 schema 上继续提供服务。排查部署门禁可使用：
+所有 Compose 部署都会先运行一次性 `db-init` 服务。该服务完成事务化数据库迁移后，API、jobs 和 worker 才会启动；迁移失败时业务容器保持停止，避免在不完整 schema 上继续提供服务。API、db-init 和 jobs 共用平台对应的轻量 `:control-<platform>-<release>` 镜像，只有 worker 拉取 CPU/CUDA/Jetson/RK 推理框架。control 与 worker 由同一个工作流按同一 commit 成对发布；生产环境建议在 `.env` 中设置 `VIDEO_BA_PIPE_RELEASE=<完整 commit SHA>`。普通应用更新通常只变化轻量代码层，不再重复下载 GB 级 PyTorch、Paddle 或平台运行时层。排查部署门禁可使用：
 
 ```bash
 docker compose -f docker-compose.yml.x86+cuda ps
@@ -116,10 +118,13 @@ pip install -r requirements.txt
 # 本地直跑默认使用 SQLite；必须先完成数据库初始化
 python3 -m app.setup_database
 
-# 终端 1：启动 worker
+# 终端 1：启动后台任务
+python3 -m app.jobs
+
+# 终端 2：启动 worker
 python app/main.py
 
-# 终端 2：启动 API
+# 终端 3：启动 API
 python app/web/webapp.py
 ```
 

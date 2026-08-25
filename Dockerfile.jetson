@@ -3,11 +3,7 @@
 # JetPack 6.2 compatible NVIDIA iGPU image.
 # Keep this image aligned with the L4T/JetPack version on the target Jetson.
 ARG JETSON_PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:25.05-py3-igpu
-FROM --platform=linux/arm64 ${JETSON_PYTORCH_IMAGE}
-
-# 由镜像构建流程根据最近 Git 提交注入。
-ARG APP_VERSION=unknown
-ARG BUILD_TIME=unknown
+FROM --platform=linux/arm64 ${JETSON_PYTORCH_IMAGE} AS runtime-base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -16,9 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_CONSTRAINT=/etc/pip/constraint.txt \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=all \
-    TZ=Asia/Shanghai \
-    APP_VERSION=${APP_VERSION} \
-    BUILD_TIME=${BUILD_TIME}
+    TZ=Asia/Shanghai
 
 WORKDIR /app
 
@@ -51,10 +45,18 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.control.txt requirements.worker.txt ./
 RUN python3 -m pip install --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
+    && python3 -m pip install --no-cache-dir -r requirements.worker.txt \
     && python3 -c "from importlib.metadata import version; print('torch=' + version('torch')); print('ultralytics=' + version('ultralytics'))"
+
+FROM runtime-base AS worker
+
+# 版本参数只影响轻量应用层，避免每次发布让 GB 级依赖层失效。
+ARG APP_VERSION=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    BUILD_TIME=${BUILD_TIME}
 
 COPY app/ /app/app/
 COPY scripts/ /app/scripts/

@@ -552,6 +552,15 @@ def _collect_gpus() -> List[Dict[str, Any]]:
     return _collect_macos_gpus()
 
 
+def collect_accelerator_metrics() -> Dict[str, Any]:
+    """Collect hardware metrics in the device-enabled worker container."""
+    return {
+        "timestamp": int(time.time()),
+        "gpus": _collect_gpus(),
+        "npus": _collect_npus(),
+    }
+
+
 def collect_system_metrics() -> Dict[str, Any]:
     """Return a serializable snapshot of the machine running the web service."""
     return {
@@ -563,6 +572,5 @@ def collect_system_metrics() -> Dict[str, Any]:
         "memory": _collect_memory(),
         "disks": _collect_disks(),
         "network": _collect_network(),
-        "gpus": _collect_gpus(),
-        "npus": _collect_npus(),
+        **collect_accelerator_metrics(),
     }

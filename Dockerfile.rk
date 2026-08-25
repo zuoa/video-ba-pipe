@@ -7,20 +7,14 @@ ARG FFMPEG_RK_IMAGE=video-ba-pipe-ffmpeg-rk:rkmpp
 FROM ${FFMPEG_RK_IMAGE} AS ffmpeg_rk
 
 # 明确 arm64 架构；RKNNLite 2.3.2 wheel 与 Python 3.11 ABI 匹配。
-FROM --platform=linux/arm64 arm64v8/python:3.11-slim-bookworm
-
-# 由镜像构建流程根据最近 Git 提交注入。
-ARG APP_VERSION=unknown
-ARG BUILD_TIME=unknown
+FROM --platform=linux/arm64 arm64v8/python:3.11-slim-bookworm AS runtime-base
 
 # 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    TZ=Asia/Shanghai \
-    APP_VERSION=${APP_VERSION} \
-    BUILD_TIME=${BUILD_TIME}
+    TZ=Asia/Shanghai
 
 # 设置工作目录
 WORKDIR /app
@@ -74,10 +68,10 @@ ARG ONNXRUNTIME_WHL=""
 RUN if [ -n "$ONNXRUNTIME_WHL" ]; then pip install "$ONNXRUNTIME_WHL"; fi
 
 # 复制依赖文件
-COPY requirements.txt .
+COPY requirements.control.txt requirements.worker.txt ./
 
 # 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.worker.txt
 
 # 固定安装与 librknnrt.so 匹配的 Rockchip 官方 v2.3.2 CPython 3.11 ARM64 wheel。
 # checksum 可避免下载内容或上游 tag 被意外替换。
@@ -89,6 +83,14 @@ RUN set -eux; \
     pip install /tmp/rknn_toolkit_lite2-2.3.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl; \
     python -c "import importlib.metadata as m; assert m.version('rknn-toolkit-lite2') == '2.3.2'"; \
     rm -f /tmp/rknn_toolkit_lite2-2.3.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+
+FROM runtime-base AS worker
+
+# 版本参数只影响轻量应用层，避免每次发布让 GB 级依赖层失效。
+ARG APP_VERSION=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    BUILD_TIME=${BUILD_TIME}
 
 # 复制应用代码
 COPY app/ /app/app/

@@ -11,6 +11,7 @@
    - `linux/arm64`：RK3588、Jetson Orin 等 ARM64 设备
 
 2. 后端运行时（runtime）
+   - `control`：API、数据库迁移和后台 jobs，不包含推理框架，使用 `Dockerfile.control`
    - `cpu`：x86 CPU 推理，使用 `Dockerfile.cpu`
    - `cuda`：x86 NVIDIA GPU 推理（NVDEC 硬解），使用 `Dockerfile.cuda`
    - `rk`：RK3588 / NPU 推理，使用 `Dockerfile.rk`
@@ -22,7 +23,10 @@
 
 ### 后端镜像
 
-工作流：`Build backend images`
+`Build control image` 在 `main` 相关文件变化时构建多架构轻量制品，但不推进任何部署标签。
+各平台发布工作流会从同一个 checkout 同时构建 control 与 worker，确认两者成功后才推进
+该平台的 `*-stable` 标签。同一平台的发布任务使用共享串行锁，独立工作流也不会交错
+改写这两个标签。CPU worker 由 `Build backend images` 构建。
 
 手动触发参数：
 
@@ -39,12 +43,22 @@ X86+CUDA 与 RKNN 镜像分别由独立工作流 `Build X86+CUDA image`、`Build
 
 | runtime | platform | Dockerfile | 镜像 tag |
 | --- | --- | --- | --- |
-| `cpu` | `linux/amd64` | `Dockerfile.cpu` | `ghcr.io/<owner>/<repo>:cpu` |
-| `cuda`(独立工作流) | `linux/amd64` | `Dockerfile.cuda` | `ghcr.io/<owner>/<repo>:cuda` |
-| `rk`(独立工作流) | `linux/arm64` | `Dockerfile.rk` | `ghcr.io/<owner>/<repo>:rk` |
-| `jetson` | `linux/arm64` | `Dockerfile.jetson` | `ghcr.io/<owner>/<repo>:jetson` |
+| `control-cpu` | `linux/amd64` | `Dockerfile.control` | `ghcr.io/<owner>/<repo>:control-cpu-<commit>`、`:control-cpu-stable` |
+| `cpu` | `linux/amd64` | `Dockerfile.cpu` | `ghcr.io/<owner>/<repo>:cpu-<commit>`、`:cpu-stable` |
+| `control-cuda` / `cuda` | `linux/amd64` | `Dockerfile.control` / `Dockerfile.cuda` | `:control-cuda-<commit>` / `:cuda-<commit>`（以及对应 `-stable`） |
+| `control-rk` / `rk` | `linux/arm64` | `Dockerfile.control` / `Dockerfile.rk` | `:control-rk-<commit>` / `:rk-<commit>`（以及对应 `-stable`） |
+| `control-jetson` / `jetson` | `linux/arm64` | `Dockerfile.control` / `Dockerfile.jetson` | `:control-jetson-<commit>` / `:jetson-<commit>`（以及对应 `-stable`） |
 
-每个镜像还会额外推送一个带 commit 的 tag，例如 `cpu-<commit>`。
+完整 commit tag 是不可变部署标识。生产环境在 `.env` 设置
+`VIDEO_BA_PIPE_RELEASE=<完整 commit SHA>` 后，Compose 会为 control 和 worker 使用同一个后缀。
+不设置时使用成对推进的 `stable`，适合跟随对应平台的最近一次成功发布。不要分别覆盖两个
+不同提交的 `VIDEO_BA_PIPE_CONTROL_IMAGE` 和 worker 镜像变量。
+
+每个 Dockerfile 都把依赖阶段命名为 `runtime-base`。CI 同时发布稳定的
+`:runtime-control`、`:runtime-cpu`、`:runtime-cuda`、`:runtime-jetson` 和
+`:runtime-rk`，并将 BuildKit 缓存写入 GHCR 的 `:buildcache-*` 引用。版本号和构建时间
+只注入最终应用层，因此普通代码发布不会让重型依赖层失效。control 镜像还会执行
+1 GiB 上限检查，并在构建阶段断言没有 Torch、Ultralytics、ONNX Runtime、Paddle 或 RKNN。
 
 push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。Jetson 镜像通过
 `Build backend images`（或 `Build Jetson image`）手动触发构建；X86+CUDA 与 RKNN 镜像分别通过
@@ -52,7 +66,7 @@ push 到 `main` 时，后端 workflow 默认只自动构建 `runtime=cpu`。Jets
 
 ### 应用版本和构建时间
 
-所有后端镜像在 GitHub Actions 构建时都会自动生成以下镜像内环境变量：
+所有最终应用镜像在 GitHub Actions 构建时都会自动生成以下镜像内环境变量：
 
 - `APP_VERSION`：最近 Git 提交的日期和 7 位 commit hash，格式为
   `YYYYMMDD-<commit>`，例如 `20260813-7b59fd9`
@@ -68,7 +82,7 @@ Git 本身不记录 push 时间，因此版本日期使用最新提交的 commit
 可以直接检查已发布镜像中的值：
 
 ```bash
-docker image inspect ghcr.io/<owner>/<repo>:cpu \
+docker image inspect ghcr.io/<owner>/<repo>:cpu-<commit> \
   --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(APP_VERSION|BUILD_TIME)='
 ```
 
@@ -136,6 +150,18 @@ Build frontend images -> platform=linux/amd64
 x86 不需要运行 `Build and publish RK3588 FFmpeg image`。
 
 ### 本地构建
+
+control（本机架构）：
+
+```bash
+docker buildx build \
+  -f Dockerfile.control \
+  --build-arg "APP_VERSION=$app_version" \
+  --build-arg "BUILD_TIME=$build_time" \
+  -t video-ba-pipe:control \
+  --load \
+  .
+```
 
 后端 CPU：
 
@@ -210,9 +236,9 @@ docker buildx build --platform=linux/arm64 \
 
 ## 部署对应关系
 
-| 部署方式 | 后端镜像 | 前端镜像 | compose 文件 |
-| --- | --- | --- | --- |
-| x86 CPU | `ghcr.io/<owner>/<repo>:cpu` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml` |
-| x86 CUDA | `ghcr.io/<owner>/<repo>:cuda` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.x86+cuda` |
-| RK3588 | `ghcr.io/<owner>/<repo>:rk` | `ghcr.io/<owner>/<repo>-frontend:rk` | `docker-compose.yml.rknn` |
-| Jetson Orin NX | `ghcr.io/<owner>/<repo>:jetson` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `docker-compose.yml.jetson` |
+| 部署方式 | control（db-init/api/jobs） | worker | 前端镜像 | compose 文件 |
+| --- | --- | --- | --- | --- |
+| x86 CPU | `ghcr.io/<owner>/<repo>:control-cpu-<release>` | `ghcr.io/<owner>/<repo>:cpu-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml` |
+| x86 CUDA | `ghcr.io/<owner>/<repo>:control-cuda-<release>` | `ghcr.io/<owner>/<repo>:cuda-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.x86+cuda` |
+| RK3588 | `ghcr.io/<owner>/<repo>:control-rk-<release>` | `ghcr.io/<owner>/<repo>:rk-<release>` | `ghcr.io/<owner>/<repo>-frontend:rk` | `docker-compose.yml.rknn` |
+| Jetson Orin NX | `ghcr.io/<owner>/<repo>:control-jetson-<release>` | `ghcr.io/<owner>/<repo>:jetson-<release>` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `docker-compose.yml.jetson` |

@@ -7,7 +7,6 @@ from app.core.alert_export import (
     cancel_export_task,
     create_export_task,
     delete_export_task,
-    ensure_export_worker_started,
     resolve_export_file,
     serialize_export_task,
     x_accel_redirect_path,
@@ -74,7 +73,6 @@ def register_alert_exports_api(app):
             )
         except ExportValidationError as exc:
             return jsonify({'error': str(exc)}), exc.status_code
-        ensure_export_worker_started()
         return jsonify({
             **serialize_export_task(task),
             'message': '导出进行中',

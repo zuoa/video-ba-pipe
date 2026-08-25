@@ -3,10 +3,6 @@ name: Build X86+CUDA image
 on:
   workflow_dispatch:
 
-concurrency:
-  group: build-x86-cuda-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -15,6 +11,9 @@ jobs:
   build-backend:
     name: X86+CUDA (linux/amd64)
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-cuda-stable
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -59,7 +58,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push X86+CUDA image
+      - name: Build and push stable X86+CUDA runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.cuda
+          target: runtime-base
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:runtime-cuda
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda,mode=max
+          provenance: false
+
+      - name: Build immutable CUDA control image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.control
+          target: control
+          platforms: linux/amd64
+          pull: true
+          load: true
+          build-args: |
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
+            BUILD_TIME=${{ steps.build_info.outputs.build_time }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-cuda-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-control-cuda
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-control-cuda,mode=max
+          provenance: false
+
+      - name: Enforce CUDA control image size budget
+        run: python3 scripts/check_docker_image_size.py ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-cuda-${{ github.sha }} --max-mib 1024
+
+      - name: Push checked CUDA control image
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:control-cuda-${{ github.sha }}
+
+      - name: Build and push X86+CUDA worker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -71,9 +107,24 @@ jobs:
             APP_VERSION=${{ steps.build_info.outputs.app_version }}
             BUILD_TIME=${{ steps.build_info.outputs.build_time }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cuda
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cuda-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:runtime-cuda
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda,mode=max
           provenance: false
+
+      - name: Promote matching CUDA release tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          docker buildx imagetools create \
+            --tag "${image}:cuda-stable" \
+            "${image}:cuda-${{ github.sha }}"
+          docker buildx imagetools create \
+            --tag "${image}:control-cuda-stable" \
+            "${image}:control-cuda-${{ github.sha }}"

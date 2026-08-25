@@ -27,6 +27,7 @@ from werkzeug.utils import secure_filename
 
 from app.config import FACE_DATA_PATH, FACE_EVENT_PATH, FACE_MODEL_PATH
 from app.core.algorithm_test_service import submit_algorithm_test
+from app.core.algorithm_test_service import fetch_face_runtime_capabilities
 from app.core.database_models import (
     FaceEvent,
     FaceGallery,
@@ -614,11 +615,22 @@ def upload_model_package(bundle_id):
 
 @faces_bp.route('/runtime', methods=['GET'])
 def get_face_runtime():
-    capabilities = runtime_capabilities()
+    worker_payload, worker_status = fetch_face_runtime_capabilities()
+    worker_capabilities = worker_payload.get('capabilities')
+    if worker_status == 200 and isinstance(worker_capabilities, dict):
+        capabilities = worker_capabilities
+        capability_source = 'worker'
+        capability_error = None
+    else:
+        capabilities = runtime_capabilities()
+        capability_source = 'local_fallback'
+        capability_error = worker_payload.get('error')
     bundles = []
     for bundle in FaceModelBundle.select().where(FaceModelBundle.enabled == True):
         try:
-            backend, artifacts, _ = verify_bundle_artifacts(bundle, 'auto')
+            backend, artifacts, _ = verify_bundle_artifacts(
+                bundle, 'auto', capabilities
+            )
             bundles.append({
                 'bundle_id': bundle.id,
                 'bundle_name': bundle.name,
@@ -637,6 +649,8 @@ def get_face_runtime():
         'success': True,
         'encryption_ready': encryption_ready(),
         'capabilities': capabilities,
+        'capability_source': capability_source,
+        'capability_error': capability_error,
         'bundles': bundles,
     })
 
@@ -1970,6 +1984,13 @@ def start_face_import_worker():
             _face_import_worker = FaceImportWorker()
         _face_import_worker.start()
         return _face_import_worker
+
+
+def stop_face_import_worker():
+    global _face_import_worker
+    with _face_import_worker_lock:
+        if _face_import_worker is not None:
+            _face_import_worker.stop()
 
 
 @faces_bp.route('/events', methods=['GET'])
