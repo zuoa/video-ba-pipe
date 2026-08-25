@@ -42,6 +42,7 @@ RUN set -eux; \
         libxrender-dev \
         libgomp1 \
         libgl1-mesa-glx \
+        zlib1g \
         fonts-wqy-zenhei \
         ffmpeg \
         libavcodec-dev \
@@ -113,6 +114,18 @@ COPY requirements.ocr.txt .
 
 # 安装Python依赖
 RUN pip3 install --no-cache-dir -r requirements.txt
+
+# requirements.txt 为 CPU/通用镜像安装 CPU 版 ONNX Runtime。CUDA 镜像必须将其
+# 替换为 CUDA 11.8 + cuDNN 8 构建，否则人脸 ONNX 模型只会暴露
+# CPUExecutionProvider。1.20.1 与本镜像的 PyTorch 2.3.1/cu118/cuDNN 8
+# 组合一致；CUDA 11 wheel 使用 ONNX Runtime 官方 Azure feed 发布。
+ARG ONNXRUNTIME_GPU_VERSION=1.20.1
+ARG ONNXRUNTIME_CUDA11_INDEX=https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/
+RUN pip3 uninstall -y onnxruntime \
+    && pip3 install --no-cache-dir --no-deps \
+      "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}" \
+      --index-url "${ONNXRUNTIME_CUDA11_INDEX}" \
+    && python3 -c "import onnxruntime as ort; providers = ort.get_available_providers(); assert 'CUDAExecutionProvider' in providers, providers; print('onnxruntime=' + ort.__version__ + ', providers=' + ','.join(providers))"
 RUN pip3 install --no-cache-dir paddlepaddle-gpu==3.0.0 \
       -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ \
     && pip3 install --no-cache-dir -r requirements.ocr.txt

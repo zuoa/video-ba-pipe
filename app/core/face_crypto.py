@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+import tempfile
 from functools import lru_cache
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -14,6 +15,7 @@ _ENVELOPE_VERSION = b'FCE1'
 _NONCE_BYTES = 12
 _STREAM_ENVELOPE_VERSION = b'FCS1'
 _TAG_BYTES = 16
+_MANAGED_KEY_RELATIVE_PATH = ('secrets', 'face-data.key')
 
 
 class FaceEncryptionConfigurationError(RuntimeError):
@@ -33,20 +35,108 @@ def _decode_key(value: str) -> bytes:
     return key
 
 
+def _read_key_file(path: str) -> bytes:
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            return _decode_key(handle.read())
+    except OSError as exc:
+        raise FaceEncryptionConfigurationError(
+            f'无法读取人脸数据加密密钥文件: {path}'
+        ) from exc
+
+
+def managed_face_encryption_key_file() -> str:
+    """Return the shared persistent fallback used by one-click setup."""
+    from app.config import FACE_DATA_PATH
+
+    return os.path.join(FACE_DATA_PATH, *_MANAGED_KEY_RELATIVE_PATH)
+
+
 @lru_cache(maxsize=1)
 def face_encryption_key() -> bytes:
     # Resolve at first use rather than module import so the API can still start
     # and report a clear enrollment error when the deployment secret is absent.
     key_file = os.getenv('FACE_DATA_ENCRYPTION_KEY_FILE', '').strip()
     if key_file:
+        return _read_key_file(key_file)
+    key_value = os.getenv('FACE_DATA_ENCRYPTION_KEY', '').strip()
+    if key_value:
+        return _decode_key(key_value)
+    managed_key_file = managed_face_encryption_key_file()
+    if os.path.exists(managed_key_file):
+        return _read_key_file(managed_key_file)
+    return _decode_key('')
+
+
+def generate_face_encryption_key() -> tuple[bool, str]:
+    """Create a persistent 256-bit key without exposing it through the API.
+
+    Returns ``(created, source)``. The exclusive hard-link publish keeps the
+    destination atomic across multiple Gunicorn processes.
+    """
+    face_encryption_key.cache_clear()
+    try:
+        face_encryption_key()
+        source = (
+            'configured_file'
+            if os.getenv('FACE_DATA_ENCRYPTION_KEY_FILE', '').strip()
+            else 'environment'
+            if os.getenv('FACE_DATA_ENCRYPTION_KEY', '').strip()
+            else 'managed_file'
+        )
+        return False, source
+    except FaceEncryptionConfigurationError:
+        pass
+
+    configured_key_file = os.getenv('FACE_DATA_ENCRYPTION_KEY_FILE', '').strip()
+    if (
+        not configured_key_file
+        and os.getenv('FACE_DATA_ENCRYPTION_KEY', '').strip()
+    ):
+        raise FaceEncryptionConfigurationError(
+            '环境变量 FACE_DATA_ENCRYPTION_KEY 已配置但无效，请先修正或清除'
+        )
+
+    target_path = configured_key_file or managed_face_encryption_key_file()
+    parent = os.path.dirname(os.path.abspath(target_path))
+    os.makedirs(parent, mode=0o700, exist_ok=True)
+
+    encoded_key = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=') + b'\n'
+    descriptor, temporary_path = tempfile.mkstemp(
+        prefix='.face-data-key-', dir=parent
+    )
+    published = False
+    try:
+        os.fchmod(descriptor, 0o400)
+        with os.fdopen(descriptor, 'wb') as handle:
+            descriptor = -1
+            handle.write(encoded_key)
+            handle.flush()
+            os.fsync(handle.fileno())
         try:
-            with open(key_file, 'r', encoding='utf-8') as handle:
-                return _decode_key(handle.read())
-        except OSError as exc:
+            os.link(temporary_path, target_path)
+            published = True
+        except FileExistsError:
+            # Another API worker may have completed the same request first.
+            published = False
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.remove(temporary_path)
+        except FileNotFoundError:
+            pass
+
+    face_encryption_key.cache_clear()
+    try:
+        face_encryption_key()
+    except FaceEncryptionConfigurationError as exc:
+        if not published:
             raise FaceEncryptionConfigurationError(
-                f'无法读取人脸数据加密密钥文件: {key_file}'
+                '人脸数据加密密钥文件已存在，但内容无效或不可读'
             ) from exc
-    return _decode_key(os.getenv('FACE_DATA_ENCRYPTION_KEY', ''))
+        raise
+    return published, 'configured_file' if configured_key_file else 'managed_file'
 
 
 def encryption_ready() -> bool:

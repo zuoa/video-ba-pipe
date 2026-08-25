@@ -9,7 +9,7 @@
 | 部署 | 首选运行时 | 制品 | 建议 `architecture` / `device` |
 | --- | --- | --- | --- |
 | x86 CPU | ONNX Runtime CPU | `.onnx` | `amd64` / `cpu` |
-| x86 NVIDIA | TorchScript CUDA；安装 ORT GPU 后可用 ONNX CUDA | `.pt` 或 `.onnx` | `amd64` / `cuda` |
+| x86 NVIDIA | ONNX Runtime CUDA | `.onnx` | `amd64` / `cuda` |
 | Jetson Orin NX | TorchScript CUDA；安装 TensorRT EP 后可用 TensorRT | `.pt` 或 `.onnx` | `arm64` / `jetson` |
 | RK3588 | RKNNLite 2.3.2 | `.rknn` | `arm64` / `rk3588` |
 
@@ -21,7 +21,7 @@ TensorRT 制品当前通过 ONNX Runtime TensorRT Execution Provider 执行，�
 
 ## 上线步骤
 
-1. 生成生物数据密钥，并保证 API、worker 和 source host 读取同一密钥。推荐把密钥写入权限为 `0400` 的持久文件，并设置 `FACE_DATA_ENCRYPTION_KEY_FILE=/data/secrets/face-data.key`。
+1. 生成生物数据密钥，并保证 API、worker 和 source host 读取同一密钥。可在“人脸识别”页点击“自动生成”，密钥会以 `0400` 权限保存到共享持久目录 `FACE_DATA_PATH/secrets/face-data.key`；如已设置 `FACE_DATA_ENCRYPTION_KEY_FILE`，则写入该路径。也可手工生成并设置 `FACE_DATA_ENCRYPTION_KEY_FILE=/data/secrets/face-data.key`。密钥必须随数据卷一起备份，丢失后已加密的人脸模板和抓拍无法恢复。
 
    ```bash
    mkdir -p data/secrets

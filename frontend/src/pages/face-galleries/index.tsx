@@ -35,6 +35,7 @@ import {
   FileImageOutlined,
   FileZipOutlined,
   FolderOpenOutlined,
+  KeyOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
   ScanOutlined,
@@ -60,6 +61,7 @@ import {
   getFaceModelBundles,
   getFacePersons,
   getFaceRuntime,
+  generateFaceEncryptionKey,
   preflightFaceImport,
   updateFaceGallery,
   uploadFaceModelArtifact,
@@ -77,7 +79,7 @@ import './index.css';
 
 const PLATFORM_STEPS = [
   { key: 'cpu', label: 'x86 CPU', backend: 'ONNX CPU' },
-  { key: 'cuda', label: 'x86 CUDA', backend: 'CUDA / TorchScript' },
+  { key: 'cuda', label: 'x86 CUDA', backend: 'ONNX CUDA / TorchScript' },
   { key: 'jetson', label: 'Jetson', backend: 'TRT / TorchScript' },
   { key: 'rk', label: 'RK3588', backend: 'RKNN' },
 ] as const;
@@ -120,6 +122,7 @@ const FaceGalleriesPage: React.FC = () => {
   const [calibration, setCalibration] = useState<FaceCalibrationResult>();
   const [eventSnapshotUrl, setEventSnapshotUrl] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
   const [galleryForm] = Form.useForm();
   const [personForm] = Form.useForm();
   const [bundleForm] = Form.useForm();
@@ -141,6 +144,21 @@ const FaceGalleriesPage: React.FC = () => {
       setImportFiles([]);
     }
     setImportModalOpen(true);
+  };
+
+  const handleGenerateEncryptionKey = async () => {
+    setGeneratingKey(true);
+    try {
+      const response = await generateFaceEncryptionKey();
+      setRuntime((current) => current
+        ? { ...current, encryption_ready: response.encryption_ready }
+        : current);
+      message.success(response.created ? '生物数据密钥已生成并持久化' : '生物数据密钥已就绪');
+    } catch (error: any) {
+      message.error(errorText(error, '生成生物数据密钥失败'));
+    } finally {
+      setGeneratingKey(false);
+    }
   };
 
   const loadOverview = useCallback(async () => {
@@ -751,9 +769,23 @@ const FaceGalleriesPage: React.FC = () => {
             );
           })}
         </div>
-        <div className={`runtime-secret ${runtime?.encryption_ready ? 'is-ready' : ''}`}>
+        <div className={`runtime-secret ${runtime?.encryption_ready ? 'is-ready' : ''}`} aria-live="polite">
           <SafetyCertificateOutlined />
-          <span>{runtime?.encryption_ready ? '生物数据密钥就绪' : '未配置加密密钥'}</span>
+          <span>{runtime ? (runtime.encryption_ready ? '生物数据密钥就绪' : '未配置加密密钥') : '密钥状态检测中'}</span>
+          {runtime && !runtime.encryption_ready ? (
+            <Tooltip title="生成 256 位密钥并保存到持久化数据目录，请随数据卷一起备份">
+              <AppButton
+                className="runtime-secret__action"
+                tone="warning"
+                icon={<KeyOutlined />}
+                loading={generatingKey}
+                aria-label="自动生成生物数据加密密钥"
+                onClick={() => void handleGenerateEncryptionKey()}
+              >
+                自动生成
+              </AppButton>
+            </Tooltip>
+          ) : null}
         </div>
       </section>
 

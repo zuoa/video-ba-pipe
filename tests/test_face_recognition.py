@@ -84,6 +84,45 @@ def test_face_crypto_stream_round_trip(monkeypatch):
     assert decrypted.getvalue() == cleartext
 
 
+def test_face_crypto_generates_persistent_managed_key(monkeypatch, tmp_path):
+    key_path = tmp_path / 'secrets' / 'face-data.key'
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY', raising=False)
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY_FILE', raising=False)
+    monkeypatch.setattr(
+        face_crypto, 'managed_face_encryption_key_file', lambda: str(key_path)
+    )
+    face_crypto.face_encryption_key.cache_clear()
+
+    created, source = face_crypto.generate_face_encryption_key()
+
+    assert created is True
+    assert source == 'managed_file'
+    assert key_path.is_file()
+    assert key_path.stat().st_mode & 0o777 == 0o400
+    assert len(face_crypto.face_encryption_key()) == 32
+    created_again, source_again = face_crypto.generate_face_encryption_key()
+    assert created_again is False
+    assert source_again == 'managed_file'
+    face_crypto.face_encryption_key.cache_clear()
+
+
+def test_face_crypto_does_not_overwrite_invalid_key_file(monkeypatch, tmp_path):
+    key_path = tmp_path / 'face-data.key'
+    key_path.write_text('invalid', encoding='utf-8')
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY', raising=False)
+    monkeypatch.setenv('FACE_DATA_ENCRYPTION_KEY_FILE', str(key_path))
+    face_crypto.face_encryption_key.cache_clear()
+
+    with pytest.raises(
+        face_crypto.FaceEncryptionConfigurationError,
+        match='已存在',
+    ):
+        face_crypto.generate_face_encryption_key()
+
+    assert key_path.read_text(encoding='utf-8') == 'invalid'
+    face_crypto.face_encryption_key.cache_clear()
+
+
 def test_face_event_storage_writes_encrypted_snapshot_atomically(monkeypatch, tmp_path):
     _set_face_key(monkeypatch)
     monkeypatch.setattr(face_event_storage, 'FACE_EVENT_PATH', str(tmp_path))

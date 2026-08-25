@@ -138,6 +138,17 @@ export async function getFaceRuntime() {
   return request<FaceRuntimeStatus>('/api/face/runtime');
 }
 
+export async function generateFaceEncryptionKey() {
+  return request<{
+    success: boolean;
+    encryption_ready: boolean;
+    created: boolean;
+    source?: 'configured_file' | 'environment' | 'managed_file';
+  }>('/api/face/encryption-key/generate', {
+    method: 'POST',
+  });
+}
+
 export async function getFaceModelBundles() {
   return request<{ success: boolean; bundles: FaceModelBundle[] }>('/api/face/model-bundles');
 }

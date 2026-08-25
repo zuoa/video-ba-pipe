@@ -44,6 +44,8 @@ def face_api(monkeypatch, tmp_path):
     database.create_tables(models)
     monkeypatch.setattr(faces, 'db', database)
     monkeypatch.setattr(faces, 'FACE_MODEL_PATH', str(tmp_path / 'face-models'))
+    monkeypatch.setattr(faces, 'FACE_DATA_PATH', str(tmp_path / 'face-data'))
+    monkeypatch.setattr(faces, 'FACE_EVENT_PATH', str(tmp_path / 'face-events'))
 
     key = base64.urlsafe_b64encode(b'a' * 32).decode('ascii').rstrip('=')
     monkeypatch.setenv('FACE_DATA_ENCRYPTION_KEY', key)
@@ -70,6 +72,73 @@ def face_api(monkeypatch, tmp_path):
         for model, original in originals.items():
             model._meta.set_database(original)
         face_crypto.face_encryption_key.cache_clear()
+
+
+def test_admin_can_generate_face_encryption_key(face_api, monkeypatch, tmp_path):
+    client, headers = face_api
+    key_path = tmp_path / 'secrets' / 'face-data.key'
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY', raising=False)
+    monkeypatch.setenv('FACE_DATA_ENCRYPTION_KEY_FILE', str(key_path))
+    face_crypto.face_encryption_key.cache_clear()
+
+    response = client.post('/api/face/encryption-key/generate', headers=headers)
+
+    assert response.status_code == 201
+    assert response.get_json() == {
+        'success': True,
+        'encryption_ready': True,
+        'created': True,
+        'source': 'configured_file',
+    }
+    assert key_path.stat().st_mode & 0o777 == 0o400
+    assert client.get('/api/face/runtime', headers=headers).get_json()[
+        'encryption_ready'
+    ] is True
+
+    second = client.post('/api/face/encryption-key/generate', headers=headers)
+    assert second.status_code == 200
+    assert second.get_json()['created'] is False
+
+
+def test_face_encryption_key_generation_requires_admin(
+    face_api, monkeypatch, tmp_path,
+):
+    client, _headers = face_api
+    user = User.create(
+        username='face-viewer', password_hash='unused', role='user', enabled=True,
+        created_at=datetime.now(),
+    )
+    viewer_headers = {
+        'Authorization': f'Bearer {generate_token(user.id, user.username, user.role)}'
+    }
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY', raising=False)
+    monkeypatch.setenv(
+        'FACE_DATA_ENCRYPTION_KEY_FILE', str(tmp_path / 'viewer-face-data.key')
+    )
+    face_crypto.face_encryption_key.cache_clear()
+
+    response = client.post(
+        '/api/face/encryption-key/generate', headers=viewer_headers
+    )
+
+    assert response.status_code == 403
+
+
+def test_face_encryption_key_generation_refuses_existing_protected_data(
+    face_api, monkeypatch, tmp_path,
+):
+    client, headers = face_api
+    key_path = tmp_path / 'replacement-face-data.key'
+    monkeypatch.delenv('FACE_DATA_ENCRYPTION_KEY', raising=False)
+    monkeypatch.setenv('FACE_DATA_ENCRYPTION_KEY_FILE', str(key_path))
+    monkeypatch.setattr(faces, '_protected_face_data_exists', lambda: True)
+    face_crypto.face_encryption_key.cache_clear()
+
+    response = client.post('/api/face/encryption-key/generate', headers=headers)
+
+    assert response.status_code == 409
+    assert '恢复原密钥' in response.get_json()['error']
+    assert not key_path.exists()
 
 
 def test_face_admin_enrollment_flow_encrypts_biometrics(face_api, monkeypatch):

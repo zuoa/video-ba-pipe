@@ -58,8 +58,9 @@
 .runtime-step.is-active { opacity: 1; }
 .runtime-step.is-active .runtime-step__dot { background: var(--face-teal); border-color: var(--face-teal); box-shadow: 0 0 0 5px var(--face-teal-soft); }
 
-.runtime-secret { gap: 7px; padding: 7px 10px; color: #9a3412; background: #fff7ed; border-radius: 7px; font-size: 12px; white-space: nowrap; }
+.runtime-secret { gap: 7px; padding: 4px 6px 4px 10px; color: #9a3412; background: #fff7ed; border-radius: 7px; font-size: 12px; white-space: nowrap; }
 .runtime-secret.is-ready { color: #166534; background: #f0fdf4; }
+.runtime-secret__action { min-height: 44px; padding-inline: 10px !important; }
 .face-runtime-error { margin: -8px 0 18px; }
 
 .face-workbench {

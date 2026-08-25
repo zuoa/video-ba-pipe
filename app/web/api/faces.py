@@ -16,7 +16,7 @@ import threading
 import uuid
 import zipfile
 from datetime import datetime, timedelta
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import numpy as np
 from cryptography.exceptions import InvalidTag
@@ -45,6 +45,7 @@ from app.core.face_crypto import (
     encrypt_biometric,
     encrypt_biometric_stream,
     encryption_ready,
+    generate_face_encryption_key,
 )
 from app.core.face_gallery import gallery_index_cache
 from app.core.face_inference import (
@@ -482,6 +483,55 @@ def get_face_runtime():
         'capabilities': capabilities,
         'bundles': bundles,
     })
+
+
+def _protected_face_data_exists() -> bool:
+    if FaceTemplate.select(FaceTemplate.id).limit(1).exists():
+        return True
+    import_paths = FaceImportJob.select(FaceImportJob.encrypted_archive_path)
+    if any(
+        os.path.isfile(str(job.encrypted_archive_path or ''))
+        for job in import_paths
+    ):
+        return True
+    for root in (Path(FACE_EVENT_PATH), Path(FACE_DATA_PATH) / 'imports'):
+        if root.is_dir() and next(root.rglob('*.face'), None) is not None:
+            return True
+    return False
+
+
+@faces_bp.route('/encryption-key/generate', methods=['POST'])
+def generate_encryption_key():
+    guard = _admin_guard()
+    if guard is not None:
+        return guard
+    if encryption_ready():
+        return jsonify({
+            'success': True,
+            'encryption_ready': True,
+            'created': False,
+        })
+    if _protected_face_data_exists():
+        return jsonify({
+            'success': False,
+            'error': '检测到已加密的人脸数据，不能生成新密钥；请恢复原密钥',
+        }), 409
+    try:
+        created, source = generate_face_encryption_key()
+    except FaceEncryptionConfigurationError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 409
+    except OSError as exc:
+        logger.exception('生成人脸数据加密密钥失败')
+        return jsonify({
+            'success': False,
+            'error': f'无法写入人脸数据加密密钥: {exc}',
+        }), 503
+    return jsonify({
+        'success': True,
+        'encryption_ready': True,
+        'created': created,
+        'source': source,
+    }), 201 if created else 200
 
 
 @faces_bp.route('/galleries', methods=['GET'])
