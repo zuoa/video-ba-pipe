@@ -64,10 +64,117 @@
   margin-bottom: 16px;
 }
 
-.face-model-wizard__upload {
+.face-model-wizard__source-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 18px 0 14px;
+}
+
+.face-model-wizard__source-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.face-model-wizard__source-head strong {
+  color: #17212b;
+  font-size: 15px;
+}
+
+.face-model-wizard__source-head small {
+  margin-top: 2px;
+  color: #6b7882;
+  font-size: 12px;
+}
+
+.face-model-wizard__source-head .ant-radio-button-wrapper {
+  min-height: 40px;
+  padding-inline: 18px;
+  line-height: 38px;
+}
+
+.face-model-wizard__download-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.face-model-wizard__download {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 70px;
+  gap: 10px;
+  padding: 11px 13px;
+  color: #24323d;
+  background: #fff;
+  border: 1px solid #d9e2e6;
+  border-radius: 10px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.face-model-wizard__download:hover,
+.face-model-wizard__download:focus-visible {
+  color: #0f766e;
+  border-color: #60a99f;
+  box-shadow: 0 5px 16px rgba(15, 118, 110, 0.11);
+  transform: translateY(-1px);
+}
+
+.face-model-wizard__download.is-primary {
+  background: #f1faf8;
+  border-color: #9fd2c9;
+}
+
+.face-model-wizard__download > .anticon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  color: #0f766e;
+  background: #ddf2ed;
+  border-radius: 9px;
+  font-size: 18px;
+  place-items: center;
+}
+
+.face-model-wizard__download > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.face-model-wizard__download strong {
+  font-size: 13px;
+}
+
+.face-model-wizard__download small {
+  overflow: hidden;
+  color: #6f7d86;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.face-model-wizard__download em {
+  color: #0f766e;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.face-model-wizard__upload,
+.face-model-wizard__package-upload {
   height: 100%;
   background: #f8fafb;
   border: 1px solid #dbe3e8 !important;
+}
+
+.face-model-wizard__package-upload {
+  height: auto;
 }
 
 .face-model-wizard__role {
@@ -102,18 +209,22 @@
   font-size: 11px;
 }
 
-.face-model-wizard__upload .ant-upload-wrapper .ant-upload-drag {
+.face-model-wizard__upload .ant-upload-wrapper .ant-upload-drag,
+.face-model-wizard__package-upload .ant-upload-wrapper .ant-upload-drag {
   min-height: 156px;
   background: #fff;
   border-color: #b8c8cc;
 }
 
 .face-model-wizard__upload .ant-upload-wrapper .ant-upload-drag:hover,
-.face-model-wizard__upload .ant-upload-wrapper .ant-upload-drag:focus-within {
+.face-model-wizard__upload .ant-upload-wrapper .ant-upload-drag:focus-within,
+.face-model-wizard__package-upload .ant-upload-wrapper .ant-upload-drag:hover,
+.face-model-wizard__package-upload .ant-upload-wrapper .ant-upload-drag:focus-within {
   border-color: #0f766e;
 }
 
-.face-model-wizard__upload .ant-upload-list {
+.face-model-wizard__upload .ant-upload-list,
+.face-model-wizard__package-upload .ant-upload-list {
   text-align: left;
 }
 
@@ -215,5 +326,11 @@
   .face-model-wizard__body { min-height: 0; padding-top: 18px; }
   .face-model-wizard__platform { grid-template-columns: 42px minmax(0, 1fr); }
   .face-model-wizard__platform > .ant-tag { grid-column: 2; width: max-content; }
+  .face-model-wizard__source-head { align-items: stretch; flex-direction: column; gap: 10px; }
+  .face-model-wizard__source-head .ant-radio-group { display: grid; grid-template-columns: 1fr 1fr; }
+  .face-model-wizard__source-head .ant-radio-button-wrapper { text-align: center; }
+  .face-model-wizard__download-list { grid-template-columns: 1fr; }
+  .face-model-wizard__download { grid-template-columns: 38px minmax(0, 1fr); }
+  .face-model-wizard__download em { grid-column: 2; }
   .face-model-wizard__progress-head { grid-template-columns: 1fr; gap: 5px; }
 }

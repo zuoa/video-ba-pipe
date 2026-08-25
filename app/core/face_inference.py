@@ -1,8 +1,8 @@
 """Portable face detection and embedding runtime.
 
-The business contract is deliberately backend-neutral. Model artifacts must
-emit either a combined ``N x 15`` face tensor (box, score, five landmarks) or
-separate boxes/scores/landmarks tensors declared in artifact metadata.
+The business contract is deliberately backend-neutral. Detection artifacts may
+emit SCRFD multi-scale tensors, a combined ``N x 15`` face tensor, or separate
+boxes/scores/landmarks tensors declared in artifact metadata.
 """
 
 from __future__ import annotations
@@ -140,6 +140,84 @@ def _parse_shape(value: Any, default: Tuple[int, int]) -> Tuple[int, int]:
     if isinstance(value, (list, tuple)) and len(value) >= 2:
         return int(value[-1]), int(value[-2])
     return default
+
+
+def _scrfd_matrix(value: np.ndarray, columns: int, label: str) -> np.ndarray:
+    array = np.asarray(value)
+    if array.ndim == 0:
+        raise FaceInferenceError(f'SCRFD {label}输出维度无效')
+    if array.ndim > 1 and array.shape[-1] == columns:
+        return array.reshape(-1, columns).astype(np.float32, copy=False)
+    if columns == 1:
+        return array.reshape(-1, 1).astype(np.float32, copy=False)
+    raise FaceInferenceError(f'SCRFD {label}输出应为 N×{columns}')
+
+
+def _decode_scrfd_outputs(
+    arrays: Sequence[np.ndarray], input_width: int, input_height: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    output_count = len(arrays)
+    if output_count == 9:
+        strides = (8, 16, 32)
+        anchors = 2
+    elif output_count == 15:
+        strides = (8, 16, 32, 64, 128)
+        anchors = 1
+    elif output_count in {6, 10}:
+        raise FaceInferenceError('SCRFD 检测模型没有五点关键点输出')
+    else:
+        raise FaceInferenceError('SCRFD 检测模型应提供 9 或 15 个多尺度输出')
+
+    feature_map_count = len(strides)
+    decoded_boxes = []
+    decoded_scores = []
+    decoded_landmarks = []
+    for index, stride in enumerate(strides):
+        scores = np.asarray(arrays[index])
+        if scores.ndim > 1 and scores.shape[-1] > 1:
+            scores = scores.reshape(-1, scores.shape[-1])[:, -1]
+        else:
+            scores = _scrfd_matrix(scores, 1, '分数').reshape(-1)
+        boxes = _scrfd_matrix(
+            arrays[index + feature_map_count], 4, '边框',
+        ) * float(stride)
+        landmarks = _scrfd_matrix(
+            arrays[index + feature_map_count * 2], 10, '关键点',
+        ) * float(stride)
+        height = input_height // stride
+        width = input_width // stride
+        expected = height * width * anchors
+        if not (
+            len(scores) == expected
+            and len(boxes) == expected
+            and len(landmarks) == expected
+        ):
+            raise FaceInferenceError(
+                f'SCRFD stride={stride} 输出数量与 {input_width}x{input_height} 输入不匹配'
+            )
+        centers = np.stack(
+            np.mgrid[:height, :width][::-1], axis=-1,
+        ).astype(np.float32)
+        centers = (centers * float(stride)).reshape(-1, 2)
+        if anchors > 1:
+            centers = np.repeat(centers, anchors, axis=0)
+        level_boxes = np.stack((
+            centers[:, 0] - boxes[:, 0],
+            centers[:, 1] - boxes[:, 1],
+            centers[:, 0] + boxes[:, 2],
+            centers[:, 1] + boxes[:, 3],
+        ), axis=-1)
+        level_landmarks = np.empty_like(landmarks, dtype=np.float32)
+        level_landmarks[:, 0::2] = centers[:, 0:1] + landmarks[:, 0::2]
+        level_landmarks[:, 1::2] = centers[:, 1:2] + landmarks[:, 1::2]
+        decoded_boxes.append(level_boxes)
+        decoded_scores.append(scores.astype(np.float32, copy=False))
+        decoded_landmarks.append(level_landmarks)
+    return (
+        np.concatenate(decoded_boxes, axis=0),
+        np.concatenate(decoded_scores, axis=0),
+        np.concatenate(decoded_landmarks, axis=0),
+    )
 
 
 def _letterbox(image: np.ndarray, width: int, height: int):
@@ -431,6 +509,14 @@ class FaceDetector:
             )
             if combined is not None:
                 return combined[:, :4], combined[:, 4], combined[:, 5:15]
+        if output_format in {'scrfd', 'auto'}:
+            try:
+                return _decode_scrfd_outputs(
+                    arrays, self.input_width, self.input_height,
+                )
+            except FaceInferenceError:
+                if output_format == 'scrfd':
+                    raise
         indexes = self.metadata.get('output_indexes') or {'boxes': 0, 'scores': 1, 'landmarks': 2}
         try:
             boxes = arrays[int(indexes['boxes'])]

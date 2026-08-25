@@ -353,6 +353,98 @@ def test_face_artifact_runtime_requires_compatible_file_type(face_api):
     assert '.rknn' in response.get_json()['error']
 
 
+def test_insightface_model_package_imports_detection_and_embedding(face_api):
+    client, headers = face_api
+    bundle = FaceModelBundle.create(
+        name='buffalo-package', version='v1', contract_id='buffalo-v1',
+        created_at=datetime.now(), updated_at=datetime.now(),
+    )
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('buffalo_l/det_10g.onnx', b'scrfd-model')
+        archive.writestr('buffalo_l/w600k_r50.onnx', b'arcface-model')
+        archive.writestr('buffalo_l/genderage.onnx', b'ignored-model')
+    payload.seek(0)
+
+    response = client.post(
+        f'/api/face/model-bundles/{bundle.id}/packages',
+        headers=headers,
+        data={
+            'runtime': 'onnxruntime',
+            'architecture': 'any',
+            'device': 'any',
+            'file': (payload, 'buffalo_l.zip'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()['imported'] == {
+        'detection': 'buffalo_l/det_10g.onnx',
+        'embedding': 'buffalo_l/w600k_r50.onnx',
+    }
+    artifacts = {
+        artifact.role: artifact
+        for artifact in FaceModelArtifact.select().where(
+            FaceModelArtifact.bundle == bundle.id
+        )
+    }
+    assert set(artifacts) == {'detection', 'embedding'}
+    assert artifacts['detection'].metadata['output_format'] == 'scrfd'
+    assert artifacts['detection'].metadata['input_shape'] == '640x640'
+    assert artifacts['embedding'].metadata['batch_size'] == 1
+    assert open(artifacts['detection'].file_path, 'rb').read() == b'scrfd-model'
+    assert open(artifacts['embedding'].file_path, 'rb').read() == b'arcface-model'
+
+
+def test_insightface_model_package_rejects_unsafe_paths(face_api):
+    client, headers = face_api
+    bundle = FaceModelBundle.create(
+        name='unsafe-package', version='v1', contract_id='unsafe-v1',
+        created_at=datetime.now(), updated_at=datetime.now(),
+    )
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, 'w') as archive:
+        archive.writestr('../det_10g.onnx', b'detector')
+        archive.writestr('w600k_r50.onnx', b'embedding')
+    payload.seek(0)
+
+    response = client.post(
+        f'/api/face/model-bundles/{bundle.id}/packages',
+        headers=headers,
+        data={'file': (payload, 'unsafe.zip')},
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert '非法路径' in response.get_json()['error']
+    assert FaceModelArtifact.select().where(
+        FaceModelArtifact.bundle == bundle.id
+    ).count() == 0
+
+
+def test_insightface_model_package_reports_missing_pair(face_api):
+    client, headers = face_api
+    bundle = FaceModelBundle.create(
+        name='incomplete-package', version='v1', contract_id='incomplete-v1',
+        created_at=datetime.now(), updated_at=datetime.now(),
+    )
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, 'w') as archive:
+        archive.writestr('det_10g.onnx', b'detector')
+    payload.seek(0)
+
+    response = client.post(
+        f'/api/face/model-bundles/{bundle.id}/packages',
+        headers=headers,
+        data={'file': (payload, 'incomplete.zip')},
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert 'w600k_r50.onnx' in response.get_json()['error']
+
+
 def test_runtime_reports_bundle_not_ready_when_verification_fails(
     face_api, monkeypatch,
 ):

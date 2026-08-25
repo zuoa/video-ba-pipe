@@ -38,7 +38,7 @@ TensorRT 制品当前通过 ONNX Runtime TensorRT Execution Provider 执行，�
 
 3. 启动后在“系统设置 > 人脸识别”管理事件保留期、默认推理后端和商用模型门禁。这些运行策略存储在 `SystemSetting` 中，由 API、worker 和 source host 共享；数据目录、加密密钥和可信插件模块仍是启动级配置。
 
-4. 以管理员进入“人脸识别 → 跨平台模型”，点击“快速配置模型”。页面会自动识别当前设备和可用推理后端，只需同时上传 `detection`（检测）与 `embedding`（特征）两个模型文件，再确认名称、特征维度和许可证信息。向导会自动填写 runtime、架构、设备和常用预处理元数据，上传后检查当前平台是否能选中完整组合。空模型包、单制品上传和原始 metadata 编辑仍保留在“高级管理”中。
+4. 以管理员进入“人脸识别 → 跨平台模型”，点击“快速配置模型”。页面会自动识别当前设备和推理后端。ONNX Runtime / TensorRT 平台默认提供 Buffalo L 官方直链：下载 `buffalo_l.zip` 后无需解压，直接上传，系统会自动提取检测与特征模型并检查当前平台组合。RKNN、TorchScript 或自定义模型仍可选择“分别上传”。空模型包、单制品上传和原始 metadata 编辑保留在“高级管理”中。
 
 5. 创建人脸库并绑定模型包。单人录入建议 3–5 张清晰正脸，覆盖现场常见角度和光照。也可使用批量 ZIP。
 
@@ -48,7 +48,10 @@ TensorRT 制品当前通过 ONNX Runtime TensorRT Execution Provider 执行，�
 
 ### 关于模型文件与 CUDA 显示
 
-仓库和部署镜像不附带生产模型权重，配置时必须上传一套已获得授权、且特征契约一致的检测模型与特征模型。系统不自动下载权重，是为了避免许可证不清、镜像体积失控和生产环境隐式联网。
+仓库和部署镜像不附带模型权重，配置时需要上传特征契约一致的检测模型与特征模型。快速配置页面列出了可点击的直接下载地址：
+
+- [InsightFace Buffalo L 整包（SCRFD-10G + ResNet50）](https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip)：推荐的开箱即用组合，可将 ZIP 原样上传。
+- [ByteDance LVFace-B（Glint360K）](https://huggingface.co/bytedance-research/LVFace/resolve/main/LVFace-B_Glint360K/LVFace-B_Glint360K.onnx?download=true)：可选的高精度 512 维特征模型；在“分别上传”模式中搭配 `det_10g.onnx`。
 
 CUDA 平台显示 `onnxruntime` 是正常的：模型制品仍是 ONNX Runtime 格式，实际加速由 `CUDAExecutionProvider` 提供。快速配置向导会将它显示为“ONNX Runtime · CUDA 加速”；只有运行环境未加载 `CUDAExecutionProvider` 时才会按 CPU 能力处理。
 
@@ -87,17 +90,17 @@ E-1002,李四
 
 ## 模型输出契约
 
-检测制品支持一个 `N×15` 输出：`x1,y1,x2,y2,score` 加 5 个关键点；也支持通过制品 `metadata.output_indexes` 指定独立的 boxes、scores、landmarks 输出。常用元数据示例：
+检测制品支持 InsightFace 官方 SCRFD 的 9/15 路多尺度原始输出，也支持一个已解码的 `N×15` 输出（`x1,y1,x2,y2,score` 加 5 个关键点），以及通过制品 `metadata.output_indexes` 指定的独立 boxes、scores、landmarks 输出。Buffalo L 使用以下元数据：
 
 ```json
 {
-  "input_shape": "320x320",
+  "input_shape": "640x640",
   "input_layout": "nchw",
   "input_dtype": "float32",
   "color": "rgb",
   "mean": [127.5, 127.5, 127.5],
   "std": [128, 128, 128],
-  "output_format": "combined",
+  "output_format": "scrfd",
   "coordinates_are_absolute": true
 }
 ```

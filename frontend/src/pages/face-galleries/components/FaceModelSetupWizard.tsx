@@ -10,6 +10,7 @@ import {
   InputNumber,
   Modal,
   Progress,
+  Radio,
   Result,
   Row,
   Select,
@@ -23,6 +24,8 @@ import {
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseCircleFilled,
+  DownloadOutlined,
+  FileZipOutlined,
   InboxOutlined,
   LoadingOutlined,
   SafetyCertificateOutlined,
@@ -33,12 +36,14 @@ import {
   createFaceModelBundle,
   getFaceRuntime,
   uploadFaceModelArtifact,
+  uploadFaceModelPackage,
   type FaceModelBundle,
   type FaceRuntimeStatus,
 } from '@/services/api';
 import './FaceModelSetupWizard.css';
 
 type TaskStatus = 'idle' | 'running' | 'success' | 'error';
+type ModelSourceMode = 'package' | 'custom';
 
 interface SetupProgress {
   bundle: TaskStatus;
@@ -76,6 +81,8 @@ const EMPTY_PROGRESS: SetupProgress = {
 };
 
 const BUILTIN_BACKENDS = ['rknn', 'tensorrt', 'onnxruntime-cuda', 'onnxruntime', 'torchscript'];
+const BUFFALO_L_DOWNLOAD_URL = 'https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip';
+const LVFACE_B_DOWNLOAD_URL = 'https://huggingface.co/bytedance-research/LVFace/resolve/main/LVFace-B_Glint360K/LVFace-B_Glint360K.onnx?download=true';
 
 function errorText(error: any, fallback: string) {
   return error?.response?.data?.error || error?.data?.error || error?.message || fallback;
@@ -189,6 +196,8 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
 }) => {
   const [form] = Form.useForm();
   const [step, setStep] = useState(0);
+  const [sourceMode, setSourceMode] = useState<ModelSourceMode>('package');
+  const [packageFiles, setPackageFiles] = useState<UploadFile[]>([]);
   const [detectionFiles, setDetectionFiles] = useState<UploadFile[]>([]);
   const [embeddingFiles, setEmbeddingFiles] = useState<UploadFile[]>([]);
   const [createdBundleId, setCreatedBundleId] = useState<number>();
@@ -197,23 +206,24 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
   const [completed, setCompleted] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
   const profile = useMemo(() => runtimeProfile(runtime), [runtime]);
+  const packageSupported = profile?.storedRuntime === 'onnxruntime' || profile?.storedRuntime === 'tensorrt';
 
   useEffect(() => {
     if (!open) return;
     const dimension = repairBundle?.embedding_dimension || 512;
     form.resetFields();
     form.setFieldsValue({
-      name: repairBundle?.name || '',
+      name: repairBundle?.name || 'InsightFace Buffalo L',
       version: repairBundle?.version || 'v1.0',
-      contract_id: repairBundle?.contract_id || `face-embedding-${dimension}-v1`,
+      contract_id: repairBundle?.contract_id || 'buffalo-l-w600k-r50-512-v1',
       embedding_dimension: dimension,
-      license_name: repairBundle?.license_name || '',
-      commercial_use_allowed: repairBundle?.commercial_use_allowed || false,
-      detection_input_size: '320x320',
-      detection_output_format: 'combined',
+      detection_input_size: '640x640',
+      detection_output_format: 'scrfd',
       coordinates_are_absolute: true,
     });
     setStep(0);
+    setSourceMode(packageSupported ? 'package' : 'custom');
+    setPackageFiles([]);
     setDetectionFiles([]);
     setEmbeddingFiles([]);
     setCreatedBundleId(repairBundle?.id);
@@ -223,16 +233,31 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
     setSubmitting(false);
     setCompleted(false);
     setSubmitError(undefined);
-  }, [form, open, repairBundle]);
+  }, [form, open, packageSupported, repairBundle]);
 
   useEffect(() => {
-    if (!open || repairBundle || form.isFieldTouched('name')) return;
+    if (!open || repairBundle || sourceMode !== 'custom' || form.isFieldTouched('name')) return;
     const detection = detectionFiles[0]?.name;
     const embedding = embeddingFiles[0]?.name;
     if (detection && embedding) {
       form.setFieldValue('name', `${stripExtension(detection)} + ${stripExtension(embedding)}`.slice(0, 80));
     }
-  }, [detectionFiles, embeddingFiles, form, open, repairBundle]);
+  }, [detectionFiles, embeddingFiles, form, open, repairBundle, sourceMode]);
+
+  const changeSourceMode = (mode: ModelSourceMode) => {
+    setSourceMode(mode);
+    setSubmitError(undefined);
+    if (!repairBundle && mode === 'package') {
+      form.setFieldsValue({
+        name: 'InsightFace Buffalo L',
+        contract_id: 'buffalo-l-w600k-r50-512-v1',
+        embedding_dimension: 512,
+        detection_input_size: '640x640',
+        detection_output_format: 'scrfd',
+        coordinates_are_absolute: true,
+      });
+    }
+  };
 
   const ensureFileExtension = (file: UploadFile | undefined, role: string) => {
     if (!file || !profile) return;
@@ -250,11 +275,19 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
         return;
       }
       try {
-        if (!detectionFiles.length || !embeddingFiles.length) {
-          throw new Error('请同时选择人脸检测模型和特征提取模型。');
+        if (sourceMode === 'package') {
+          const file = packageFiles[0];
+          if (!file) throw new Error('请先下载并选择 Buffalo L ZIP 模型包。');
+          if (!file.name.toLowerCase().endsWith('.zip')) {
+            throw new Error('官方整包必须是 ZIP 文件，请不要手动解压。');
+          }
+        } else {
+          if (!detectionFiles.length || !embeddingFiles.length) {
+            throw new Error('请同时选择人脸检测模型和特征提取模型。');
+          }
+          ensureFileExtension(detectionFiles[0], '人脸检测');
+          ensureFileExtension(embeddingFiles[0], '特征提取');
         }
-        ensureFileExtension(detectionFiles[0], '人脸检测');
-        ensureFileExtension(embeddingFiles[0], '特征提取');
         setStep(1);
       } catch (error: any) {
         setSubmitError(error.message);
@@ -263,7 +296,7 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
     }
     try {
       if (!repairBundle) {
-        await form.validateFields(['name', 'version', 'embedding_dimension', 'license_name']);
+        await form.validateFields(['name', 'version', 'embedding_dimension']);
       }
       await form.validateFields([
         'contract_id',
@@ -317,11 +350,15 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
 
   const submit = async () => {
     if (!profile) return;
+    const packageFile = packageFiles[0]?.originFileObj;
     const detectionFile = detectionFiles[0]?.originFileObj;
     const embeddingFile = embeddingFiles[0]?.originFileObj;
-    if (!detectionFile || !embeddingFile) {
+    if (
+      (sourceMode === 'package' && !packageFile)
+      || (sourceMode === 'custom' && (!detectionFile || !embeddingFile))
+    ) {
       setStep(0);
-      setSubmitError('模型文件已失效，请重新选择两个模型文件。');
+      setSubmitError('模型文件已失效，请重新选择后再试。');
       return;
     }
     const values = form.getFieldsValue(true);
@@ -344,8 +381,8 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
             contract_id: values.contract_id,
             embedding_dimension: values.embedding_dimension,
             input_size: '112x112',
-            license_name: values.license_name,
-            commercial_use_allowed: values.commercial_use_allowed,
+            license_name: sourceMode === 'package' ? 'InsightFace model zoo' : '用户上传',
+            commercial_use_allowed: true,
             enabled: true,
           });
           bundleId = response.bundle.id;
@@ -362,26 +399,42 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
         }
       }
 
-      const uploadRole = async (role: 'detection' | 'embedding', file: File) => {
+      if (sourceMode === 'package') {
+        const data = new FormData();
+        data.append('file', packageFile as File);
+        data.append('runtime', profile.storedRuntime);
+        data.append('architecture', profile.architecture);
+        data.append('device', profile.device);
+        data.append('detection_input_size', values.detection_input_size);
         try {
-          await uploadFaceModelArtifact(bundleId as number, artifactData(role, file, values));
-          setProgress((current) => ({ ...current, [role]: 'success' }));
+          await uploadFaceModelPackage(bundleId as number, data);
+          setProgress((current) => ({ ...current, detection: 'success', embedding: 'success' }));
         } catch (error) {
-          setProgress((current) => ({ ...current, [role]: 'error' }));
+          setProgress((current) => ({ ...current, detection: 'error', embedding: 'error' }));
           throw error;
         }
-      };
-      const uploadResults = await Promise.allSettled([
-        uploadRole('detection', detectionFile),
-        uploadRole('embedding', embeddingFile),
-      ]);
-      const uploadErrors = uploadResults
-        .map((result, index) => result.status === 'rejected'
-          ? `${index === 0 ? '检测模型' : '特征模型'}：${errorText(result.reason, '上传失败')}`
-          : undefined)
-        .filter(Boolean);
-      if (uploadErrors.length) {
-        throw new Error(uploadErrors.join('；'));
+      } else {
+        const uploadRole = async (role: 'detection' | 'embedding', file: File) => {
+          try {
+            await uploadFaceModelArtifact(bundleId as number, artifactData(role, file, values));
+            setProgress((current) => ({ ...current, [role]: 'success' }));
+          } catch (error) {
+            setProgress((current) => ({ ...current, [role]: 'error' }));
+            throw error;
+          }
+        };
+        const uploadResults = await Promise.allSettled([
+          uploadRole('detection', detectionFile as File),
+          uploadRole('embedding', embeddingFile as File),
+        ]);
+        const uploadErrors = uploadResults
+          .map((result, index) => result.status === 'rejected'
+            ? `${index === 0 ? '检测模型' : '特征模型'}：${errorText(result.reason, '上传失败')}`
+            : undefined)
+          .filter(Boolean);
+        if (uploadErrors.length) {
+          throw new Error(uploadErrors.join('；'));
+        }
       }
 
       setProgress((current) => ({ ...current, verify: 'running' }));
@@ -469,23 +522,112 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
               description="请检查 ONNX Runtime、CUDA、RKNNLite 或 Torch 的安装状态后刷新页面。"
             />
           )}
-          <Alert
-            className="face-model-wizard__notice"
-            type="info"
-            showIcon
-            message="需要上传两个模型文件，系统不会自动下载权重"
-            description="模型权重涉及许可证与部署体积，请使用你已获得授权的检测模型和特征模型。两个文件必须来自同一套特征契约。"
-          />
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={12}>{uploadCard('detection', detectionFiles, setDetectionFiles)}</Col>
-            <Col xs={24} md={12}>{uploadCard('embedding', embeddingFiles, setEmbeddingFiles)}</Col>
-          </Row>
-          <div className="face-model-wizard__contract-hint">
-            <SafetyCertificateOutlined />
-            <span>
-              检测模型需输出<strong>已解码</strong>的人脸框、置信度和 5 个关键点；特征模型固定接收 112×112 对齐人脸。
-            </span>
+          <div className="face-model-wizard__source-head">
+            <div>
+              <strong>选择模型来源</strong>
+              <small>第一次配置建议使用官方整包，系统会自动识别两个模型。</small>
+            </div>
+            <Radio.Group
+              value={sourceMode}
+              optionType="button"
+              buttonStyle="solid"
+              disabled={submitting}
+              onChange={(event) => changeSourceMode(event.target.value)}
+            >
+              <Radio.Button value="package" disabled={!packageSupported}>官方整包</Radio.Button>
+              <Radio.Button value="custom">分别上传</Radio.Button>
+            </Radio.Group>
           </div>
+
+          <div className="face-model-wizard__download-list" aria-label="模型下载地址">
+            <a
+              className="face-model-wizard__download is-primary"
+              href={BUFFALO_L_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FileZipOutlined />
+              <span>
+                <strong>Buffalo L 官方整包</strong>
+                <small>检测 + 特征，可直接上传 ZIP</small>
+              </span>
+              <em><DownloadOutlined /> 直接下载</em>
+            </a>
+            <a
+              className="face-model-wizard__download"
+              href={LVFACE_B_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <DownloadOutlined />
+              <span>
+                <strong>LVFace-B 高精度特征模型</strong>
+                <small>可选；在“分别上传”中替换特征模型</small>
+              </span>
+              <em>直接下载</em>
+            </a>
+          </div>
+
+          {sourceMode === 'package' ? (
+            <div className="face-model-wizard__package-flow">
+              <Alert
+                className="face-model-wizard__notice"
+                type="success"
+                showIcon
+                message="推荐：InsightFace Buffalo L（SCRFD-10G + ResNet50）"
+                description="点击下载 ZIP，下载完成后不必解压，直接拖到下方即可。系统会自动提取 det_10g.onnx 和 w600k_r50.onnx。"
+              />
+              <Card className="face-model-wizard__package-upload" bordered={false}>
+                <div className="face-model-wizard__role">
+                  <span>02</span>
+                  <div>
+                    <strong>上传刚下载的 Buffalo L 整包</strong>
+                    <small>保持 ZIP 原样，系统会安全解包并校验检测/特征模型是否齐全</small>
+                  </div>
+                  <Tag color={packageFiles.length ? 'success' : 'default'}>
+                    {packageFiles.length ? '已选择' : '必需'}
+                  </Tag>
+                </div>
+                <Upload.Dragger
+                  accept=".zip,application/zip"
+                  maxCount={1}
+                  fileList={packageFiles}
+                  beforeUpload={() => false}
+                  onChange={({ fileList }) => setPackageFiles(fileList.slice(-1))}
+                  disabled={!packageSupported || submitting}
+                >
+                  <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                  <p className="face-model-wizard__drop-title">拖入 buffalo_l.zip，或点击选择</p>
+                  <p className="face-model-wizard__drop-hint">ZIP 模型整包 · 无需手动解压</p>
+                </Upload.Dragger>
+                {packageFiles[0] ? (
+                  <small className="face-model-wizard__file-size">{formatFileSize(packageFiles[0].size)}</small>
+                ) : null}
+              </Card>
+            </div>
+          ) : (
+            <>
+              <Alert
+                className="face-model-wizard__notice"
+                type="info"
+                showIcon
+                message="高级方式：分别上传检测模型和特征模型"
+                description={profile?.storedRuntime === 'rknn'
+                  ? '当前是 RKNN 平台，请上传已经转换并验证过的两个 RKNN 制品。'
+                  : '可使用解压后的 det_10g.onnx 作为检测模型，并用 w600k_r50.onnx 或上方 LVFace-B 作为特征模型。'}
+              />
+              <Row gutter={[16, 16]}>
+                <Col xs={24} md={12}>{uploadCard('detection', detectionFiles, setDetectionFiles)}</Col>
+                <Col xs={24} md={12}>{uploadCard('embedding', embeddingFiles, setEmbeddingFiles)}</Col>
+              </Row>
+              <div className="face-model-wizard__contract-hint">
+                <SafetyCertificateOutlined />
+                <span>
+                  已支持 SCRFD 官方多尺度原始输出；特征模型固定接收 112×112 对齐人脸并输出 512 维特征。
+                </span>
+              </div>
+            </>
+          )}
         </>
       );
     }
@@ -526,24 +668,12 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
                 name="embedding_dimension"
                 label="特征维度"
                 rules={[{ required: true, message: '请输入特征模型输出维度' }]}
-                extra="常见 ArcFace / MobileFaceNet 模型为 512。"
+                extra="Buffalo L、LVFace-B 等主流人脸特征模型均为 512。"
               >
                 <InputNumber min={32} max={4096} step={32} disabled={Boolean(repairBundle)} />
               </Form.Item>
             </Col>
-            {!repairBundle ? (
-              <Col xs={24} md={12}>
-                <Form.Item name="license_name" label="权重来源 / 许可证" extra="建议填写，便于上线前审计授权。">
-                  <Input maxLength={120} placeholder="例如：内部训练 / Apache-2.0" />
-                </Form.Item>
-              </Col>
-            ) : null}
           </Row>
-          {!repairBundle ? (
-            <Form.Item name="commercial_use_allowed" label="已确认许可证允许商用" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          ) : null}
           <Collapse
             ghost
             className="face-model-wizard__advanced"
@@ -565,15 +695,16 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
                       <Form.Item
                         name="detection_input_size"
                         label="检测输入尺寸"
-                        rules={[{ pattern: /^\d+x\d+$/i, message: '请输入如 320x320 的尺寸' }]}
+                        rules={[{ pattern: /^\d+x\d+$/i, message: '请输入如 640x640 的尺寸' }]}
                       >
-                        <Input placeholder="320x320" />
+                        <Input placeholder="640x640" disabled={sourceMode === 'package'} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
                       <Form.Item name="detection_output_format" label="检测输出形式">
-                        <Select options={[
-                          { value: 'combined', label: '单个数组 N×15（推荐）' },
+                        <Select disabled={sourceMode === 'package'} options={[
+                          { value: 'scrfd', label: 'SCRFD 官方多尺度输出（推荐）' },
+                          { value: 'combined', label: '已解码单个数组 N×15' },
                           { value: 'separate', label: '框 / 分数 / 关键点三个数组' },
                         ]} />
                       </Form.Item>
@@ -611,17 +742,22 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
           <Descriptions.Item label="模型包">{values.name} · {values.version}</Descriptions.Item>
           <Descriptions.Item label="当前平台">{profile?.platformLabel}</Descriptions.Item>
           <Descriptions.Item label="推理方式">{profile?.backendLabel}</Descriptions.Item>
-          <Descriptions.Item label="检测模型">{detectionFiles[0]?.name}</Descriptions.Item>
-          <Descriptions.Item label="特征模型">{embeddingFiles[0]?.name} · {values.embedding_dimension} 维</Descriptions.Item>
+          <Descriptions.Item label="模型来源">
+            {sourceMode === 'package' ? `官方整包 · ${packageFiles[0]?.name}` : '分别上传'}
+          </Descriptions.Item>
+          <Descriptions.Item label="检测模型">
+            {sourceMode === 'package' ? '自动提取 det_10g.onnx' : detectionFiles[0]?.name}
+          </Descriptions.Item>
+          <Descriptions.Item label="特征模型">
+            {sourceMode === 'package' ? '自动提取 w600k_r50.onnx' : embeddingFiles[0]?.name} · {values.embedding_dimension} 维
+          </Descriptions.Item>
         </Descriptions>
         <Alert
           className="face-model-wizard__notice"
-          type={values.commercial_use_allowed ? 'success' : 'warning'}
+          type="info"
           showIcon
-          message={values.commercial_use_allowed ? '已记录商用授权确认' : '当前模型包将标记为“未确认商用”'}
-          description={values.commercial_use_allowed
-            ? (values.license_name || '请保留模型权重的授权凭据。')
-            : '验证环境可以继续；若生产策略要求商用模型，该模型包不会被加载。'}
+          message={sourceMode === 'package' ? '将自动导入并检查两个模型' : '将并行上传并检查两个模型'}
+          description="完成后会立即验证当前平台是否具备可用的检测/特征制品组合。"
         />
         <Card className="face-model-wizard__progress" bordered={false}>
           <div className="face-model-wizard__progress-head">
@@ -630,8 +766,8 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
           </div>
           {[
             ['bundle', repairBundle ? '沿用逻辑模型包' : '创建逻辑模型包'],
-            ['detection', '上传人脸检测模型'],
-            ['embedding', '上传特征提取模型'],
+            ['detection', sourceMode === 'package' ? '从整包导入人脸检测模型' : '上传人脸检测模型'],
+            ['embedding', sourceMode === 'package' ? '从整包导入特征提取模型' : '上传特征提取模型'],
             ['verify', '检查当前平台制品组合'],
           ].map(([key, label]) => (
             <div className="face-model-wizard__progress-row" key={key}>
@@ -675,7 +811,7 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
       className="face-model-wizard"
       title={repairBundle ? '继续配置人脸模型' : '快速配置人脸模型'}
       open={open}
-      width={860}
+      width={900}
       footer={footer}
       maskClosable={!submitting}
       closable={!submitting}
@@ -687,7 +823,7 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
         current={step}
         size="small"
         items={[
-          { title: '平台与文件' },
+          { title: '下载与上传' },
           { title: '模型信息' },
           { title: '检查并创建' },
         ]}

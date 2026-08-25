@@ -429,6 +429,53 @@ def test_detector_accepts_unbatched_multi_face_separate_outputs(monkeypatch):
     assert len(detector.detect(np.zeros((320, 320, 3), dtype=np.uint8))) == 2
 
 
+def test_detector_decodes_buffalo_scrfd_multiscale_outputs(monkeypatch):
+    outputs = []
+    score_outputs = []
+    box_outputs = []
+    landmark_outputs = []
+    for stride in (8, 16, 32):
+        count = (32 // stride) * (32 // stride) * 2
+        score_outputs.append(np.zeros((1, count, 1), dtype=np.float32))
+        box_outputs.append(np.full((1, count, 4), 0.5, dtype=np.float32))
+        landmark_outputs.append(np.zeros((1, count, 10), dtype=np.float32))
+    # stride=8, grid=(1,1), first of two anchors => center=(8,8).
+    score_outputs[0][0, 10, 0] = 0.9
+    outputs.extend(score_outputs)
+    outputs.extend(box_outputs)
+    outputs.extend(landmark_outputs)
+
+    class ScrfdRunner:
+        def infer(self, _tensor):
+            return outputs
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        'app.core.face_inference.create_runner',
+        lambda *_args, **_kwargs: ScrfdRunner(),
+    )
+    detector = FaceDetector(SimpleNamespace(
+        file_path='det_10g.onnx',
+        runtime='onnxruntime',
+        metadata={
+            'input_shape': '32x32',
+            'input_dtype': 'uint8',
+            'output_format': 'scrfd',
+        },
+    ))
+
+    faces = detector.detect(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert len(faces) == 1
+    assert faces[0].box == pytest.approx((4, 4, 12, 12))
+    assert faces[0].confidence == pytest.approx(0.9)
+    assert np.asarray(faces[0].landmarks) == pytest.approx(
+        np.asarray(((8, 8),) * 5),
+    )
+
+
 def test_face_embedder_defaults_to_fixed_batch_one(monkeypatch):
     observed_batches = []
 

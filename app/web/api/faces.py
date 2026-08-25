@@ -69,6 +69,9 @@ _IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 _MAX_ENROLLMENT_BYTES = 20 * 1024 * 1024
 _MAX_TEMPLATES_PER_PERSON = 5
 _MAX_ARTIFACT_BYTES = 1024 * 1024 * 1024
+_MAX_MODEL_PACKAGE_UPLOAD_BYTES = 1024 * 1024 * 1024
+_MAX_MODEL_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024
+_MAX_MODEL_PACKAGE_ENTRIES = 100
 _MAX_IMPORT_ENTRIES = 10_000
 _MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024
 _MAX_IMPORT_UPLOAD_BYTES = 512 * 1024 * 1024
@@ -127,6 +130,128 @@ def _remove_files(paths):
                 os.remove(path)
             except OSError:
                 logger.warning('无法删除人脸临时文件: %s', path)
+
+
+def _artifact_platform(runtime, architecture, device):
+    runtime = str(runtime or '').strip().lower()
+    supported_runtimes, _plugin_errors = supported_face_runtimes()
+    if runtime not in supported_runtimes:
+        raise ValueError('推理运行时无效')
+    architecture = str(architecture or 'any').strip().lower()
+    device = str(device or 'any').strip().lower()
+    platform_tag = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
+    if not platform_tag.fullmatch(architecture) or not platform_tag.fullmatch(device):
+        raise ValueError('架构和设备标签格式无效')
+    return runtime, architecture, device
+
+
+def _stage_model_artifact(bundle, stream, *, role, runtime, filename, metadata,
+                          architecture='any', device='any'):
+    filename = secure_filename(filename or '')
+    if not filename:
+        raise ValueError('模型文件类型不支持')
+    expected_extensions = face_runtime_extensions(runtime)
+    extension = os.path.splitext(filename)[1].lower()
+    if not expected_extensions or extension not in expected_extensions:
+        allowed = ' / '.join(sorted(expected_extensions)) or '插件声明的扩展名'
+        raise ValueError(f'{runtime} 制品必须使用 {allowed} 文件')
+    target_dir = os.path.join(FACE_MODEL_PATH, str(bundle.id), runtime, role)
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, f'{uuid.uuid4().hex}{extension}')
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with open(target_path, 'wb') as handle:
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_ARTIFACT_BYTES:
+                    raise ValueError('模型制品不能超过1GB')
+                digest.update(chunk)
+                handle.write(chunk)
+        if size == 0:
+            raise ValueError('模型制品不能为空')
+    except Exception:
+        _remove_files((target_path,))
+        raise
+    return {
+        'role': role,
+        'runtime': runtime,
+        'architecture': architecture,
+        'device': device,
+        'filename': filename,
+        'file_path': target_path,
+        'file_size': size,
+        'artifact_sha256': digest.hexdigest(),
+        'metadata_json': json.dumps(metadata, ensure_ascii=False),
+    }
+
+
+def _publish_model_artifacts(bundle, staged):
+    new_paths = [item['file_path'] for item in staged]
+    old_paths = []
+    try:
+        with db.atomic():
+            for item in staged:
+                artifact = FaceModelArtifact.get_or_none(
+                    (FaceModelArtifact.bundle == bundle.id)
+                    & (FaceModelArtifact.role == item['role'])
+                    & (FaceModelArtifact.runtime == item['runtime'])
+                    & (FaceModelArtifact.architecture == item['architecture'])
+                    & (FaceModelArtifact.device == item['device'])
+                )
+                if artifact is None:
+                    FaceModelArtifact.create(
+                        bundle=bundle,
+                        enabled=True,
+                        created_at=datetime.now(),
+                        **item,
+                    )
+                else:
+                    old_paths.append(artifact.file_path)
+                    for key, value in item.items():
+                        setattr(artifact, key, value)
+                    artifact.enabled = True
+                    artifact.created_at = datetime.now()
+                    artifact.save()
+            bundle.updated_at = datetime.now()
+            bundle.save()
+    except Exception:
+        _remove_files(new_paths)
+        raise
+    _remove_files(path for path in old_paths if path not in new_paths)
+
+
+def _model_package_member(archive, candidates):
+    by_basename = {}
+    total_size = 0
+    members = archive.infolist()
+    if len(members) > _MAX_MODEL_PACKAGE_ENTRIES:
+        raise ValueError('模型包文件数量不能超过100个')
+    for member in members:
+        path = PurePosixPath(member.filename.replace('\\', '/'))
+        if path.is_absolute() or '..' in path.parts:
+            raise ValueError('模型包包含非法路径')
+        if member.flag_bits & 0x1:
+            raise ValueError('模型包不能使用加密ZIP条目')
+        if member.is_dir():
+            continue
+        total_size += member.file_size
+        if member.file_size > _MAX_ARTIFACT_BYTES:
+            raise ValueError('模型包中的单个制品不能超过1GB')
+        basename = path.name.lower()
+        by_basename.setdefault(basename, []).append(member)
+    if total_size > _MAX_MODEL_PACKAGE_BYTES:
+        raise ValueError('模型包解压后不能超过2GB')
+    for candidate in candidates:
+        matches = by_basename.get(candidate.lower(), [])
+        if len(matches) > 1:
+            raise ValueError(f'模型包包含重复文件: {candidate}')
+        if matches:
+            return matches[0]
+    return None
 
 
 def _validated_image_mime(payload):
@@ -356,104 +481,135 @@ def upload_model_artifact(bundle_id):
         return jsonify({'success': False, 'error': '模型包不存在'}), 404
     uploaded = request.files.get('file')
     role = str(request.form.get('role') or '').strip().lower()
-    runtime = str(request.form.get('runtime') or '').strip().lower()
     if uploaded is None or role not in {'detection', 'embedding'}:
         return jsonify({'success': False, 'error': '缺少模型文件或模型角色无效'}), 400
-    supported_runtimes, _plugin_errors = supported_face_runtimes()
-    if runtime not in supported_runtimes:
-        return jsonify({'success': False, 'error': '推理运行时无效'}), 400
-    filename = secure_filename(uploaded.filename or '')
-    if not filename:
-        return jsonify({'success': False, 'error': '模型文件类型不支持'}), 400
-    expected_extensions = face_runtime_extensions(runtime)
-    extension = os.path.splitext(filename)[1].lower()
-    if not expected_extensions or extension not in expected_extensions:
-        allowed = ' / '.join(sorted(expected_extensions)) or '插件声明的扩展名'
-        return jsonify({
-            'success': False,
-            'error': f'{runtime} 制品必须使用 {allowed} 文件',
-        }), 400
-    architecture = str(request.form.get('architecture') or 'any').strip().lower()
-    device = str(request.form.get('device') or 'any').strip().lower()
-    platform_tag = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
-    if not platform_tag.fullmatch(architecture) or not platform_tag.fullmatch(device):
-        return jsonify({'success': False, 'error': '架构和设备标签格式无效'}), 400
     try:
+        runtime, architecture, device = _artifact_platform(
+            request.form.get('runtime'),
+            request.form.get('architecture'),
+            request.form.get('device'),
+        )
         metadata = _json_object(request.form.get('metadata'), 'metadata')
+        staged = _stage_model_artifact(
+            bundle,
+            uploaded.stream,
+            role=role,
+            runtime=runtime,
+            filename=uploaded.filename,
+            metadata=metadata,
+            architecture=architecture,
+            device=device,
+        )
+        _publish_model_artifacts(bundle, [staged])
     except ValueError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 400
-    target_dir = os.path.join(FACE_MODEL_PATH, str(bundle.id), runtime, role)
-    os.makedirs(target_dir, exist_ok=True)
-    target_path = os.path.join(target_dir, f'{uuid.uuid4().hex}{extension}')
-    digest = hashlib.sha256()
-    size = 0
-    try:
-        with open(target_path, 'wb') as handle:
-            while True:
-                chunk = uploaded.stream.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > _MAX_ARTIFACT_BYTES:
-                    raise ValueError('模型制品不能超过1GB')
-                digest.update(chunk)
-                handle.write(chunk)
-        if size == 0:
-            raise ValueError('模型制品不能为空')
-    except ValueError as exc:
-        _remove_files((target_path,))
-        return jsonify({'success': False, 'error': str(exc)}), 413
-    except Exception:
-        _remove_files((target_path,))
-        raise
-    old_path = None
-    try:
-        with db.atomic():
-            artifact = FaceModelArtifact.get_or_none(
-                (FaceModelArtifact.bundle == bundle.id)
-                & (FaceModelArtifact.role == role)
-                & (FaceModelArtifact.runtime == runtime)
-                & (FaceModelArtifact.architecture == architecture)
-                & (FaceModelArtifact.device == device)
-            )
-            if artifact is None:
-                artifact = FaceModelArtifact.create(
-                    bundle=bundle,
-                    role=role,
-                    runtime=runtime,
-                    architecture=architecture,
-                    device=device,
-                    filename=filename,
-                    file_path=target_path,
-                    file_size=size,
-                    artifact_sha256=digest.hexdigest(),
-                    metadata_json=json.dumps(metadata, ensure_ascii=False),
-                    enabled=True,
-                    created_at=datetime.now(),
-                )
-            else:
-                old_path = artifact.file_path
-                artifact.filename = filename
-                artifact.file_path = target_path
-                artifact.file_size = size
-                artifact.artifact_sha256 = digest.hexdigest()
-                artifact.metadata_json = json.dumps(metadata, ensure_ascii=False)
-                artifact.enabled = True
-                artifact.created_at = datetime.now()
-                artifact.save()
-            bundle.updated_at = datetime.now()
-            bundle.save()
-    except Exception:
-        _remove_files((target_path,))
-        raise
-    if old_path and old_path != target_path and os.path.isfile(old_path):
-        try:
-            os.remove(old_path)
-        except OSError as exc:
-            # The database already references the durable new artifact.  Old
-            # file reclamation is best effort and must not corrupt that state.
-            logger.warning('无法删除已替换的人脸模型制品 %s: %s', old_path, exc)
+        status = 413 if '不能超过' in str(exc) else 400
+        return jsonify({'success': False, 'error': str(exc)}), status
     return jsonify({'success': True, 'bundle': _serialize_bundle(bundle)}), 201
+
+
+@faces_bp.route('/model-bundles/<int:bundle_id>/packages', methods=['POST'])
+def upload_model_package(bundle_id):
+    guard = _admin_guard()
+    if guard is not None:
+        return guard
+    try:
+        bundle = FaceModelBundle.get_by_id(bundle_id)
+    except FaceModelBundle.DoesNotExist:
+        return jsonify({'success': False, 'error': '模型包不存在'}), 404
+    uploaded = request.files.get('file')
+    if uploaded is None:
+        return jsonify({'success': False, 'error': '请选择 InsightFace ZIP 模型包'}), 400
+    try:
+        runtime, architecture, device = _artifact_platform(
+            request.form.get('runtime') or 'onnxruntime',
+            request.form.get('architecture'),
+            request.form.get('device'),
+        )
+        if runtime not in {'onnxruntime', 'tensorrt'}:
+            raise ValueError('InsightFace 模型包仅支持 ONNX Runtime 或 TensorRT')
+        detection_input_size = str(
+            request.form.get('detection_input_size') or '640x640'
+        ).strip().lower()
+        if not re.fullmatch(r'\d{2,4}x\d{2,4}', detection_input_size):
+            raise ValueError('检测输入尺寸必须类似 640x640')
+        uploaded.stream.seek(0, os.SEEK_END)
+        upload_size = uploaded.stream.tell()
+        uploaded.stream.seek(0)
+        if upload_size > _MAX_MODEL_PACKAGE_UPLOAD_BYTES:
+            raise ValueError('模型ZIP包不能超过1GB')
+        with zipfile.ZipFile(uploaded.stream) as archive:
+            detection_member = _model_package_member(archive, (
+                'det_10g.onnx', 'det_2.5g.onnx', 'det_500m.onnx',
+            ))
+            embedding_member = _model_package_member(archive, (
+                'w600k_r50.onnx', 'glintr100.onnx', 'w600k_mbf.onnx',
+            ))
+            missing = []
+            if detection_member is None:
+                missing.append('检测模型 det_10g.onnx')
+            if embedding_member is None:
+                missing.append('特征模型 w600k_r50.onnx')
+            if missing:
+                raise ValueError('模型包缺少' + '和'.join(missing))
+            detection_metadata = {
+                'input_shape': detection_input_size,
+                'input_layout': 'nchw',
+                'input_dtype': 'float32',
+                'color': 'rgb',
+                'mean': [127.5, 127.5, 127.5],
+                'std': [128.0, 128.0, 128.0],
+                'output_format': 'scrfd',
+                'coordinates_are_absolute': True,
+            }
+            embedding_metadata = {
+                'input_shape': '1x3x112x112',
+                'input_layout': 'nchw',
+                'input_dtype': 'float32',
+                'color': 'rgb',
+                'mean': [127.5, 127.5, 127.5],
+                'std': [127.5, 127.5, 127.5],
+                'batch_size': 1,
+            }
+            staged = []
+            try:
+                with archive.open(detection_member) as source:
+                    staged.append(_stage_model_artifact(
+                        bundle,
+                        source,
+                        role='detection',
+                        runtime=runtime,
+                        filename=PurePosixPath(detection_member.filename).name,
+                        metadata=detection_metadata,
+                        architecture=architecture,
+                        device=device,
+                    ))
+                with archive.open(embedding_member) as source:
+                    staged.append(_stage_model_artifact(
+                        bundle,
+                        source,
+                        role='embedding',
+                        runtime=runtime,
+                        filename=PurePosixPath(embedding_member.filename).name,
+                        metadata=embedding_metadata,
+                        architecture=architecture,
+                        device=device,
+                    ))
+            except Exception:
+                _remove_files(item['file_path'] for item in staged)
+                raise
+        _publish_model_artifacts(bundle, staged)
+    except (OSError, zipfile.BadZipFile, ValueError) as exc:
+        status = 413 if '不能超过' in str(exc) else 400
+        return jsonify({'success': False, 'error': str(exc)}), status
+    return jsonify({
+        'success': True,
+        'profile': 'insightface',
+        'imported': {
+            'detection': detection_member.filename,
+            'embedding': embedding_member.filename,
+        },
+        'bundle': _serialize_bundle(bundle),
+    }), 201
 
 
 @faces_bp.route('/runtime', methods=['GET'])

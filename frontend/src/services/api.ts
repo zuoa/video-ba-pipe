@@ -167,6 +167,18 @@ export async function uploadFaceModelArtifact(bundleId: number, data: FormData) 
   );
 }
 
+export async function uploadFaceModelPackage(bundleId: number, data: FormData) {
+  return request<{
+    success: boolean;
+    profile: string;
+    imported: { detection: string; embedding: string };
+    bundle: FaceModelBundle;
+  }>(`/api/face/model-bundles/${bundleId}/packages`, {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function getFaceGalleries() {
   return request<{ success: boolean; galleries: FaceGallery[] }>('/api/face/galleries');
 }
