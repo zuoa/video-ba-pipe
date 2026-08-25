@@ -197,6 +197,8 @@ export default function AlgorithmWizard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
+  const requestedPreset = searchParams.get('preset');
+  const requestedGalleryId = Number(searchParams.get('gallery_id') || 0);
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scripts, setScripts] = useState<DetectorPreset[]>([]);
@@ -229,9 +231,11 @@ export default function AlgorithmWizard() {
         getPluginModules().catch(() => ({ modules: [], capabilities: {} })),
         getFaceGalleries().catch(() => ({ galleries: [] })),
       ]);
-      setScripts(getAvailableDetectorPresets(scriptsData?.scripts || []));
+      const availableScripts = getAvailableDetectorPresets(scriptsData?.scripts || []);
+      setScripts(availableScripts);
       setModels(modelsData?.models || []);
-      setFaceGalleries(faceGalleryData?.galleries || []);
+      const availableFaceGalleries = faceGalleryData?.galleries || [];
+      setFaceGalleries(availableFaceGalleries);
       setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
       setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
       setOcrBackends(Array.isArray(pluginData?.capabilities?.ocr?.backends)
@@ -247,13 +251,37 @@ export default function AlgorithmWizard() {
           message.error('算法不存在');
           navigate('/algorithms');
         }
+      } else if (requestedPreset === 'face-recognition') {
+        const facePreset = availableScripts.find(
+          (script) => script.path === 'templates/face_recognizer.py',
+        );
+        if (facePreset) {
+          setAlgorithmType('script');
+          setSelectedDetector({
+            type: 'script',
+            id: null,
+            name: facePreset.name,
+            description: facePreset.description,
+            scriptPath: facePreset.path,
+          });
+          const schemaResponse = await getScriptConfigSchema(facePreset.path);
+          if (schemaResponse.success) setConfigSchema(schemaResponse.config_schema || {});
+          if (requestedGalleryId && availableFaceGalleries.some(
+            (gallery: FaceGallery) => gallery.id === requestedGalleryId,
+          )) {
+            form.setFieldValue('config_gallery_id', requestedGalleryId);
+          }
+          setCurrentStep(1);
+        } else {
+          message.warning('跨平台人脸识别脚本尚未部署');
+        }
       }
     } catch (error) {
       message.error('加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, [editId, navigate]);
+  }, [editId, form, navigate, requestedGalleryId, requestedPreset]);
 
   const loadEditData = async (algorithm: any) => {
     const currentType: AlgorithmType = ['vl', 'ocr', 'cascade'].includes(algorithm.algorithm_type)

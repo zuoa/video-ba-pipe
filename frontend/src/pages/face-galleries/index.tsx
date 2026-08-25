@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@umijs/max';
 import {
   Alert,
   Badge,
@@ -6,6 +7,7 @@ import {
   Col,
   Descriptions,
   Divider,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -40,11 +42,13 @@ import {
   SafetyCertificateOutlined,
   ScanOutlined,
   SearchOutlined,
+  SettingOutlined,
   UploadOutlined,
   UserAddOutlined,
 } from '@ant-design/icons';
 import AppButton from '@/components/common/AppButton';
 import { PageHeader, useAppConfirm } from '@/components/common';
+import FaceModelSetupWizard from './components/FaceModelSetupWizard';
 import {
   calibrateFaceThresholds,
   createFaceGallery,
@@ -97,7 +101,22 @@ function activePlatform(runtime?: FaceRuntimeStatus) {
   return 'cpu';
 }
 
+function readableModelError(error?: string) {
+  if (!error) return '';
+  if (error.includes('模型包缺少当前平台可用的检测/特征制品组合')) {
+    return '当前平台还没有成对的“检测模型 + 特征模型”文件。';
+  }
+  if (error.includes('未提供人脸推理后端')) {
+    return '模型文件已上传，但当前服务缺少对应的推理环境。';
+  }
+  if (error.includes('商用')) {
+    return '当前生产策略要求确认模型商用授权。';
+  }
+  return error;
+}
+
 const FaceGalleriesPage: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [galleries, setGalleries] = useState<FaceGallery[]>([]);
   const [bundles, setBundles] = useState<FaceModelBundle[]>([]);
@@ -112,6 +131,9 @@ const FaceGalleriesPage: React.FC = () => {
   const [personModalOpen, setPersonModalOpen] = useState(false);
   const [bundleModalOpen, setBundleModalOpen] = useState(false);
   const [artifactModalOpen, setArtifactModalOpen] = useState(false);
+  const [modelWizardOpen, setModelWizardOpen] = useState(false);
+  const [repairBundle, setRepairBundle] = useState<FaceModelBundle>();
+  const [activeTab, setActiveTab] = useState('galleries');
   const [templatePerson, setTemplatePerson] = useState<FacePerson>();
   const [templateFiles, setTemplateFiles] = useState<UploadFile[]>([]);
   const [artifactFiles, setArtifactFiles] = useState<UploadFile[]>([]);
@@ -129,13 +151,66 @@ const FaceGalleriesPage: React.FC = () => {
   const [artifactForm] = Form.useForm();
   const confirmAction = useAppConfirm();
 
+  const openModelWizard = (bundle?: FaceModelBundle) => {
+    setRepairBundle(bundle);
+    setModelWizardOpen(true);
+  };
+
+  const closeModelWizard = () => {
+    setModelWizardOpen(false);
+    setRepairBundle(undefined);
+  };
+
+  const openArtifactUpload = (bundleId?: number) => {
+    setArtifactFiles([]);
+    artifactForm.resetFields();
+    if (bundleId) artifactForm.setFieldValue('bundle_id', bundleId);
+    setArtifactModalOpen(true);
+  };
+
   const selectedGallery = useMemo(
     () => galleries.find((item) => item.id === selectedGalleryId),
     [galleries, selectedGalleryId],
   );
+  const readyBundles = useMemo(() => {
+    const readyIds = new Set(
+      (runtime?.bundles || []).filter((item) => item.ready).map((item) => item.bundle_id),
+    );
+    return bundles.filter((bundle) => readyIds.has(bundle.id));
+  }, [bundles, runtime]);
   const importFinished = Boolean(
     importJob && ['completed', 'completed_with_errors', 'failed'].includes(importJob.status),
   );
+
+  const openGalleryCreation = () => {
+    if (!readyBundles.length) {
+      setActiveTab('models');
+      message.info('请先完成一组当前平台可用的人脸模型，再创建人脸库。');
+      return;
+    }
+    galleryForm.resetFields();
+    galleryForm.setFieldValue('model_bundle_id', readyBundles[0].id);
+    setActiveTab('galleries');
+    setGalleryModalOpen(true);
+  };
+
+  const openPersonCreation = () => {
+    if (!selectedGallery) {
+      openGalleryCreation();
+      return;
+    }
+    setActiveTab('galleries');
+    setPersonModalOpen(true);
+  };
+
+  const openFaceAlgorithmWizard = () => {
+    if (!selectedGalleryId) {
+      message.info('请先创建并选择一个人脸库。');
+      openGalleryCreation();
+      return;
+    }
+    navigate(`/algorithms/wizard?preset=face-recognition&gallery_id=${selectedGalleryId}`);
+  };
 
   const openImportModal = () => {
     if (importFinished) {
@@ -173,6 +248,12 @@ const FaceGalleriesPage: React.FC = () => {
       setGalleries(nextGalleries);
       setBundles(bundleResponse.bundles || []);
       setRuntime(runtimeResponse);
+      const readyBundleIds = new Set(
+        (runtimeResponse.bundles || []).filter((item) => item.ready).map((item) => item.bundle_id),
+      );
+      if (!bundleResponse.bundles?.some((bundle) => readyBundleIds.has(bundle.id))) {
+        setActiveTab('models');
+      }
       setSelectedGalleryId((current) =>
         current && nextGalleries.some((item) => item.id === current)
           ? current
@@ -257,7 +338,8 @@ const FaceGalleriesPage: React.FC = () => {
       await loadOverview();
       setPersonPage(1);
       setSelectedGalleryId(response.gallery.id);
-      message.success('人脸库已创建');
+      setPersonModalOpen(true);
+      message.success('人脸库已创建，接下来添加第一位人员');
     } catch (error: any) {
       message.error(errorText(error, '创建人脸库失败'));
     } finally {
@@ -269,11 +351,12 @@ const FaceGalleriesPage: React.FC = () => {
     const values = await personForm.validateFields();
     setSaving(true);
     try {
-      await createFacePerson({ ...values, gallery_ids: [selectedGalleryId] });
+      const response = await createFacePerson({ ...values, gallery_ids: [selectedGalleryId] });
       setPersonModalOpen(false);
       personForm.resetFields();
       await Promise.all([loadPersons(), loadOverview()]);
-      message.success('人员已加入当前人脸库');
+      setTemplatePerson(response.person);
+      message.success('人员已加入，接下来录入一张清晰正脸照片');
     } catch (error: any) {
       message.error(errorText(error, '添加人员失败'));
     } finally {
@@ -285,6 +368,10 @@ const FaceGalleriesPage: React.FC = () => {
     const file = templateFiles[0]?.originFileObj;
     if (!templatePerson || !file) {
       message.warning('请选择一张只包含单个人脸的照片');
+      return;
+    }
+    if (!runtime?.encryption_ready) {
+      message.warning('请先自动生成生物数据加密密钥，再录入人脸照片');
       return;
     }
     setSaving(true);
@@ -495,7 +582,7 @@ const FaceGalleriesPage: React.FC = () => {
             iconOnly
             aria-label="创建人脸库"
             icon={<PlusOutlined />}
-            onClick={() => setGalleryModalOpen(true)}
+            onClick={openGalleryCreation}
           />
         </div>
         <div className="gallery-ledger__list">
@@ -627,44 +714,101 @@ const FaceGalleriesPage: React.FC = () => {
     <div className="face-model-grid">
       <div className="face-model-grid__toolbar">
         <div>
-          <h2>逻辑模型包</h2>
-          <p>一个版本管理多平台制品，保证预处理与 512 维特征契约一致。</p>
+          <h2>人脸模型</h2>
+          <p>先为当前设备上传一组检测与特征模型；需要跨平台时，再向同一模型包追加平台制品。</p>
         </div>
-        <Space>
-          <AppButton icon={<PlusOutlined />} onClick={() => setBundleModalOpen(true)}>新建模型包</AppButton>
-          <AppButton type="primary" tone="info" icon={<UploadOutlined />} onClick={() => setArtifactModalOpen(true)} disabled={!bundles.length}>上传平台制品</AppButton>
+        <Space wrap>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'bundle', label: '只创建空模型包', icon: <PlusOutlined /> },
+                { key: 'artifact', label: '上传单个平台制品', icon: <UploadOutlined />, disabled: !bundles.length },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'bundle') setBundleModalOpen(true);
+                if (key === 'artifact') openArtifactUpload();
+              },
+            }}
+          >
+            <AppButton icon={<SettingOutlined />}>高级管理</AppButton>
+          </Dropdown>
+          <AppButton type="primary" tone="info" icon={<ScanOutlined />} onClick={() => openModelWizard()}>
+            快速配置模型
+          </AppButton>
         </Space>
       </div>
-      <Row gutter={[16, 16]}>
-        {bundles.map((bundle) => {
-          const runtimeBundle = runtime?.bundles.find((item) => item.bundle_id === bundle.id);
-          return (
-            <Col xs={24} lg={12} key={bundle.id}>
-              <Card className="face-model-card">
-                <div className="face-model-card__title">
-                  <div><strong>{bundle.name}</strong><span>{bundle.version}</span></div>
-                  <Badge status={runtimeBundle?.ready ? 'success' : 'warning'} text={runtimeBundle?.ready ? runtimeBundle.backend : '制品不完整'} />
-                </div>
-                <Descriptions column={2} size="small">
-                  <Descriptions.Item label="契约">{bundle.contract_id}</Descriptions.Item>
-                  <Descriptions.Item label="特征">{bundle.embedding_dimension} 维</Descriptions.Item>
-                  <Descriptions.Item label="授权">{bundle.commercial_use_allowed ? '允许商用' : '仅验证'}</Descriptions.Item>
-                  <Descriptions.Item label="制品">{bundle.artifacts.length} 个</Descriptions.Item>
-                </Descriptions>
-                <Divider />
-                <Space size={[6, 6]} wrap>
-                  {bundle.artifacts.map((artifact) => (
-                    <Tag key={artifact.id} color={artifact.role === 'detection' ? 'cyan' : 'purple'}>
-                      {artifact.runtime} · {artifact.role === 'detection' ? '检测' : '特征'}
-                    </Tag>
-                  ))}
-                </Space>
-                {runtimeBundle?.error ? <p className="face-model-card__error">{runtimeBundle.error}</p> : null}
-              </Card>
-            </Col>
-          );
-        })}
-      </Row>
+      {!bundles.length ? (
+        <section className="face-model-onboarding">
+          <div className="face-model-onboarding__lead">
+            <span>从这里开始</span>
+            <h3>三步完成人脸模型配置</h3>
+            <p>无需理解 Runtime、架构和设备标签，向导会根据当前服务器自动填写。</p>
+          </div>
+          <ol>
+            <li><span>1</span><div><strong>上传两个文件</strong><small>检测模型 + 特征模型</small></div></li>
+            <li><span>2</span><div><strong>自动匹配平台</strong><small>CUDA / CPU / Jetson / RK3588</small></div></li>
+            <li><span>3</span><div><strong>组合检查</strong><small>确认当前设备可以选中整套模型</small></div></li>
+          </ol>
+          <AppButton type="primary" tone="info" icon={<ScanOutlined />} onClick={() => openModelWizard()}>
+            开始配置
+          </AppButton>
+        </section>
+      ) : (
+        <>
+          {bundles.some((bundle) => !runtime?.bundles.find((item) => item.bundle_id === bundle.id)?.ready) ? (
+            <Alert
+              className="face-model-grid__alert"
+              type="warning"
+              showIcon
+              message="有模型尚未适配当前平台"
+              description="模型必须同时具备当前平台可用的检测与特征文件。可在下方对应卡片中继续配置。"
+            />
+          ) : null}
+          <Row gutter={[16, 16]}>
+            {bundles.map((bundle) => {
+              const runtimeBundle = runtime?.bundles.find((item) => item.bundle_id === bundle.id);
+              return (
+                <Col xs={24} lg={12} key={bundle.id}>
+                  <Card className="face-model-card">
+                    <div className="face-model-card__title">
+                      <div><strong>{bundle.name}</strong><span>{bundle.version}</span></div>
+                      <Badge status={runtimeBundle?.ready ? 'success' : 'warning'} text={runtimeBundle?.ready ? runtimeBundle.backend : '配置未完成'} />
+                    </div>
+                    <Descriptions column={2} size="small">
+                      <Descriptions.Item label="契约">{bundle.contract_id}</Descriptions.Item>
+                      <Descriptions.Item label="特征">{bundle.embedding_dimension} 维</Descriptions.Item>
+                      <Descriptions.Item label="授权">{bundle.commercial_use_allowed ? '允许商用' : '仅验证'}</Descriptions.Item>
+                      <Descriptions.Item label="制品">{bundle.artifacts.length} 个</Descriptions.Item>
+                    </Descriptions>
+                    <Divider />
+                    <Space size={[6, 6]} wrap>
+                      {bundle.artifacts.length ? bundle.artifacts.map((artifact) => (
+                        <Tag key={artifact.id} color={artifact.role === 'detection' ? 'cyan' : 'purple'}>
+                          {artifact.runtime} · {artifact.role === 'detection' ? '检测' : '特征'}
+                        </Tag>
+                      )) : <span className="face-model-card__empty">尚未上传模型文件</span>}
+                    </Space>
+                    {runtimeBundle?.error ? (
+                      <div className="face-model-card__recovery">
+                        <p>{readableModelError(runtimeBundle.error)}</p>
+                        <Space size={4} wrap>
+                          <AppButton size="small" type="primary" tone="warning" onClick={() => openModelWizard(bundle)}>
+                            继续配置
+                          </AppButton>
+                          <Tooltip title={runtimeBundle.error}>
+                            <AppButton size="small" variant="text">查看技术详情</AppButton>
+                          </Tooltip>
+                        </Space>
+                      </div>
+                    ) : null}
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        </>
+      )}
     </div>
   );
 
@@ -799,11 +943,82 @@ const FaceGalleriesPage: React.FC = () => {
         />
       ) : null}
 
+      {!loading ? (
+        <section className="face-setup-path" aria-label="人脸识别配置流程">
+          <div className="face-setup-path__heading">
+            <div>
+              <span>配置流程</span>
+              <strong>按顺序完成，系统会自动带你进入下一步</strong>
+            </div>
+            <AppButton
+              size="small"
+              type="primary"
+              tone="success"
+              icon={<ExperimentOutlined />}
+              disabled={!galleries.length}
+              onClick={openFaceAlgorithmWizard}
+            >
+              进入算法编排
+            </AppButton>
+          </div>
+          <div className="face-setup-path__steps">
+            {[
+              {
+                key: 'secret',
+                title: '加密密钥',
+                hint: runtime?.encryption_ready ? '已就绪' : '保护生物数据',
+                done: Boolean(runtime?.encryption_ready),
+                action: () => void handleGenerateEncryptionKey(),
+              },
+              {
+                key: 'model',
+                title: '当前平台模型',
+                hint: readyBundles.length ? `${readyBundles.length} 套可用` : '上传两个模型文件',
+                done: Boolean(readyBundles.length),
+                action: () => setActiveTab('models'),
+              },
+              {
+                key: 'gallery',
+                title: '人脸库',
+                hint: galleries.length ? `${galleries.length} 个名单` : '绑定可用模型',
+                done: Boolean(galleries.length),
+                action: openGalleryCreation,
+              },
+              {
+                key: 'person',
+                title: '人员与照片',
+                hint: galleries.some((gallery) => gallery.template_count > 0) ? '已有可用模板' : '建议每人 3–5 张',
+                done: galleries.some((gallery) => gallery.template_count > 0),
+                action: openPersonCreation,
+              },
+              {
+                key: 'algorithm',
+                title: '算法编排',
+                hint: '绑定人脸库后使用',
+                done: false,
+                action: openFaceAlgorithmWizard,
+              },
+            ].map((item, index) => (
+              <button
+                type="button"
+                key={item.key}
+                className={item.done ? 'is-done' : ''}
+                onClick={item.action}
+              >
+                <span>{item.done ? '✓' : index + 1}</span>
+                <div><strong>{item.title}</strong><small>{item.hint}</small></div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {loading ? (
         <div className="face-page__loading"><Spin size="large" /></div>
       ) : (
         <Tabs
-          defaultActiveKey="galleries"
+          activeKey={activeTab}
+          onChange={setActiveTab}
           items={[
             { key: 'galleries', label: '人员与名单', children: galleryPanel },
             { key: 'events', label: '识别事件', children: eventPanel },
@@ -817,7 +1032,7 @@ const FaceGalleriesPage: React.FC = () => {
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入人脸库名称' }]}><Input placeholder="例如：园区员工" /></Form.Item>
           <Form.Item name="description" label="说明"><Input.TextArea rows={2} placeholder="这份名单在哪些场景使用" /></Form.Item>
           <Form.Item name="model_bundle_id" label="逻辑模型包" rules={[{ required: true, message: '请选择模型包' }]}>
-            <Select options={bundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} />
+            <Select options={readyBundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} />
           </Form.Item>
           <Row gutter={12}>
             <Col span={12}><Form.Item name="low_threshold" label="低阈值"><InputNumber min={0} max={1} step={0.01} /></Form.Item></Col>
@@ -826,6 +1041,18 @@ const FaceGalleriesPage: React.FC = () => {
           <Form.Item name="enabled" label="立即启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
+
+      <FaceModelSetupWizard
+        open={modelWizardOpen}
+        runtime={runtime}
+        repairBundle={repairBundle}
+        onCancel={closeModelWizard}
+        onComplete={loadOverview}
+        onCreateGallery={() => {
+          closeModelWizard();
+          openGalleryCreation();
+        }}
+      />
 
       <Modal title="添加人员" open={personModalOpen} onCancel={() => setPersonModalOpen(false)} onOk={submitPerson} confirmLoading={saving} okText="添加人员">
         <Form form={personForm} layout="vertical" initialValues={{ enabled: true }}>
@@ -836,6 +1063,14 @@ const FaceGalleriesPage: React.FC = () => {
       </Modal>
 
       <Modal title={`录入人脸 · ${templatePerson?.name || ''}`} open={Boolean(templatePerson)} onCancel={() => { setTemplatePerson(undefined); setTemplateFiles([]); }} onOk={submitTemplate} confirmLoading={saving} okText="检查并录入">
+        {!runtime?.encryption_ready ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="录入前需要生物数据加密密钥"
+            description={<AppButton size="small" loading={generatingKey} onClick={() => void handleGenerateEncryptionKey()}>自动生成密钥</AppButton>}
+          />
+        ) : null}
         <Alert type="info" showIcon message="选择清晰正脸照片" description="照片必须只包含一人，建议短边不低于 320px。服务会检查人脸尺寸、清晰度和曝光。" />
         <Upload.Dragger accept="image/jpeg,image/png,image/webp" maxCount={1} fileList={templateFiles} beforeUpload={() => false} onChange={({ fileList }) => setTemplateFiles(fileList)}>
           <p className="ant-upload-drag-icon"><FileImageOutlined /></p>
@@ -975,7 +1210,7 @@ const FaceGalleriesPage: React.FC = () => {
         {eventSnapshotUrl ? <img className="face-event-snapshot" src={eventSnapshotUrl} alt="人脸识别事件抓拍" /> : null}
       </Modal>
 
-      <Modal title="上传平台模型制品" open={artifactModalOpen} onCancel={() => setArtifactModalOpen(false)} onOk={submitArtifact} confirmLoading={saving} okText="上传制品">
+      <Modal title="高级：上传单个平台制品" open={artifactModalOpen} onCancel={() => setArtifactModalOpen(false)} onOk={submitArtifact} confirmLoading={saving} okText="上传制品">
         <Form form={artifactForm} layout="vertical" initialValues={{ architecture: 'any', device: 'any', metadata: '{}', runtime: 'onnxruntime', role: 'detection' }}>
           <Form.Item name="bundle_id" label="逻辑模型包" rules={[{ required: true }]}><Select options={bundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="role" label="模型角色"><Select options={[{ value: 'detection', label: '人脸检测' }, { value: 'embedding', label: '特征提取' }]} /></Form.Item></Col><Col span={12}><Form.Item name="runtime" label="运行时"><Select options={[{ value: 'onnxruntime', label: 'ONNX Runtime' }, { value: 'tensorrt', label: 'TensorRT EP' }, { value: 'torchscript', label: 'TorchScript' }, { value: 'rknn', label: 'RKNNLite' }]} /></Form.Item></Col></Row>
