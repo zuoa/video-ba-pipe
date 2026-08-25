@@ -168,7 +168,7 @@ def model_key(spec: Dict[str, Any]) -> str:
 def _inference_config(config: Dict[str, Any]) -> Dict[str, Any]:
     result = {
         "confidence": float(config.get("confidence", 0.6)),
-        "nms_iou": float(config.get("nms_iou", 0.45)),
+        "nms_iou": float(config.get("nms_iou", 0.7)),
         "class_filter": list(config.get("class_filter") or []),
         "label_name": config.get("label_name"),
         "input_width": int(config.get("input_width") or 640),

@@ -29,7 +29,7 @@ from app.user_scripts.common.yolo_backends import create_backend
 
 SCRIPT_METADATA = {
     "name": "自适应YOLO检测",
-    "version": "v1.4",
+    "version": "v1.5",
     "description": "根据模型类型自动在 ultralytics / ONNX Runtime / RKNNLite 之间切换，并支持 letterbox / SAHI 推理与模型级后处理适配",
     "author": "system",
     "category": "detection",
@@ -74,11 +74,11 @@ SCRIPT_METADATA = {
         "nms_iou": {
             "type": "float",
             "label": "NMS IOU",
-            "default": 0.45,
+            "default": 0.7,
             "min": 0.0,
             "max": 1.0,
             "step": 0.05,
-            "description": "模型后处理 NMS 阈值；SAHI 跨切片融合使用独立阈值"
+            "description": "模型后处理 NMS 阈值，默认 0.7 与 Ultralytics 一致；值越小相邻目标越容易被合并。SAHI 跨切片融合使用独立阈值"
         },
         "inference_mode": {
             "type": "select",
@@ -418,7 +418,7 @@ def _run_crop_infer(
         aggregated_detections,
         aggregated_details,
         score_threshold=float(config.get("confidence", 0.6)),
-        nms_threshold=float(config.get("nms_iou", 0.45)),
+        nms_threshold=float(config.get("nms_iou", 0.7)),
     )
     merged_detections, merged_details = _apply_roi_filter(
         frame=frame,

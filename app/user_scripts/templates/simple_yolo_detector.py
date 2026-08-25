@@ -359,7 +359,8 @@ def process(
     if class_filter:
         kwargs['classes'] = class_filter
 
-    results = model.predict(frame_to_detect, **kwargs)
+    # Ultralytics treats numpy images as OpenCV BGR; the pipeline frame is RGB.
+    results = model.predict(cv2.cvtColor(frame_to_detect, cv2.COLOR_RGB2BGR), **kwargs)
 
     # 7. 转换检测结果为标准格式
     detections = []

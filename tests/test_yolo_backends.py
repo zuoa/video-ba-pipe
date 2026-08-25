@@ -94,6 +94,64 @@ class BackendConfigTests(unittest.TestCase):
 
         self.assertEqual((backend.input_width, backend.input_height), (960, 544))
 
+    def test_normalize_backend_config_defaults_match_ultralytics(self):
+        config = YOLO_BACKENDS.normalize_backend_config({})
+        self.assertEqual(config["confidence"], 0.6)
+        self.assertEqual(config["nms_iou"], 0.7)
+
+    def test_rgb_frame_to_bgr_swaps_channels(self):
+        rgb = np.zeros((2, 3, 3), dtype=np.uint8)
+        rgb[..., 0] = 10
+        rgb[..., 2] = 200
+
+        bgr = YOLO_BACKENDS._rgb_frame_to_bgr(rgb)
+
+        self.assertEqual(bgr[0, 0].tolist(), [200, 0, 10])
+        self.assertEqual(rgb[0, 0].tolist(), [10, 0, 200])
+
+    def test_ultralytics_backend_predicts_bgr_from_rgb_frame(self):
+        captured = {}
+
+        class FakeBoxes:
+            def __init__(self):
+                self.data = types.SimpleNamespace(tolist=lambda: [])
+
+        class FakeResult:
+            names = {0: "car"}
+            boxes = FakeBoxes()
+
+        class FakeModel:
+            def __init__(self, _path):
+                pass
+
+            def predict(self, source, **kwargs):
+                captured["source"] = source
+                captured["kwargs"] = kwargs
+                return [FakeResult()]
+
+        original_yolo = YOLO_BACKENDS.YOLO
+        YOLO_BACKENDS.YOLO = FakeModel
+        try:
+            backend = YOLO_BACKENDS.UltralyticsBackend(
+                "model.pt",
+                {},
+                YOLO_BACKENDS.normalize_backend_config({
+                    "confidence": 0.3,
+                    "nms_iou": 0.5,
+                }),
+            )
+            rgb = np.zeros((8, 8, 3), dtype=np.uint8)
+            rgb[..., 0] = 10
+            rgb[..., 2] = 200
+            backend.infer(rgb)
+        finally:
+            YOLO_BACKENDS.YOLO = original_yolo
+
+        self.assertEqual(captured["source"][0, 0].tolist(), [200, 0, 10])
+        self.assertEqual(captured["kwargs"]["conf"], 0.3)
+        self.assertEqual(captured["kwargs"]["iou"], 0.5)
+        self.assertEqual(rgb[0, 0].tolist(), [10, 0, 200])
+
     def test_normalize_backend_config_handles_string_values(self):
         config = YOLO_BACKENDS.normalize_backend_config({
             "backend": "onnx",

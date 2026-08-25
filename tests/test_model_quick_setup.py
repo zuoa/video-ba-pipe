@@ -85,6 +85,7 @@ def test_quick_setup_creates_algorithm_and_three_node_template(quick_setup_api):
     assert algorithm.config_dict['model_id'] == model.id
     assert algorithm.config_dict['backend'] == 'auto'
     assert algorithm.config_dict['confidence'] == 0.6
+    assert algorithm.config_dict['nms_iou'] == 0.7
     assert algorithm.ext_config['runtime_timeout'] == 15
     assert algorithm.ext_config['memory_limit_mb'] == 256
     assert algorithm.ext_config['quick_create']['model_id'] == model.id

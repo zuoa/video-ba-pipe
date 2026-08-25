@@ -511,7 +511,7 @@ def process(frame: np.ndarray,
             class_filter = [model_cfg.get('class', 0)]
 
             results = model.predict(
-                frame_to_detect,
+                cv2.cvtColor(frame_to_detect, cv2.COLOR_RGB2BGR),
                 save=False,
                 classes=class_filter,
                 conf=conf_thresh,

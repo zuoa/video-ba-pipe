@@ -163,6 +163,19 @@ def _bounded_float(config: Dict[str, Any], key: str, default: float) -> float:
     return value
 
 
+def _rgb_frame_to_bgr(frame: np.ndarray) -> np.ndarray:
+    """Convert pipeline RGB frames to the BGR layout Ultralytics expects.
+
+    YOLO.predict() treats numpy images as OpenCV BGR and converts them to RGB
+    internally. This pipeline (ring buffer, algorithm test, workflow) feeds RGB.
+    Passing RGB through that conversion would send BGR into the model and drop
+    recall compared with a local script that uses cv2.imread().
+    """
+    if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
+        return frame
+    return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+
 def normalize_backend_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Validate and normalize the configuration shared by all YOLO backends."""
     if not isinstance(config, dict):
@@ -183,7 +196,7 @@ def normalize_backend_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"不支持的推理后端: {requested_backend}；可选值: {supported}")
     normalized["backend"] = backend_aliases[requested_backend]
     normalized["confidence"] = _bounded_float(normalized, "confidence", 0.6)
-    normalized["nms_iou"] = _bounded_float(normalized, "nms_iou", 0.45)
+    normalized["nms_iou"] = _bounded_float(normalized, "nms_iou", 0.7)
     normalized["class_filter"] = _parse_int_list(normalized.get("class_filter"))
 
     inference_mode_aliases = {
@@ -678,7 +691,7 @@ def _build_detections_from_rows(
         bboxes=nms_boxes,
         scores=nms_scores,
         score_threshold=confidence_threshold,
-        nms_threshold=float(config.get("nms_iou", 0.45)),
+        nms_threshold=float(config.get("nms_iou", 0.7)),
     )
     if len(indices) == 0:
         return [], []
@@ -1335,7 +1348,7 @@ class UltralyticsBackend(BaseYoloBackend):
         kwargs = {
             "save": False,
             "conf": float(config.get("confidence", 0.6)),
-            "iou": float(config.get("nms_iou", 0.45)),
+            "iou": float(config.get("nms_iou", 0.7)),
             "verbose": False,
         }
         class_filter = config.get("class_filter", [])
@@ -1367,11 +1380,14 @@ class UltralyticsBackend(BaseYoloBackend):
 
         return detections, details, {
             "inference_mode": "letterbox",
-            "nms_iou": float(config.get("nms_iou", 0.45)),
+            "nms_iou": float(config.get("nms_iou", 0.7)),
         }
 
     def infer(self, frame: np.ndarray):
-        results = self.model.predict(frame, **self._predict_kwargs(self.config))
+        results = self.model.predict(
+            _rgb_frame_to_bgr(frame),
+            **self._predict_kwargs(self.config),
+        )
         result = results[0] if results and len(results) > 0 else None
         return self._parse_result(result, self.config)
 
@@ -1380,7 +1396,10 @@ class UltralyticsBackend(BaseYoloBackend):
             return []
         if len(frames) != len(configs):
             raise ValueError("frames/configs batch length mismatch")
-        results = self.model.predict(frames, **self._predict_kwargs(configs[0]))
+        results = self.model.predict(
+            [_rgb_frame_to_bgr(frame) for frame in frames],
+            **self._predict_kwargs(configs[0]),
+        )
         parsed = []
         for index, config in enumerate(configs):
             result = results[index] if results and index < len(results) else None
@@ -1425,7 +1444,7 @@ class SharedInferenceBackend(BaseYoloBackend):
                 "shared_inference": True,
                 "overloaded": True,
                 "inference_mode": "letterbox",
-                "nms_iou": float(self.config.get("nms_iou", 0.45)),
+                "nms_iou": float(self.config.get("nms_iou", 0.7)),
             }
         metadata = dict(response.get("metadata") or {})
         metadata["shared_inference"] = True
@@ -1896,7 +1915,7 @@ class RKNNBackend(BaseYoloBackend):
                 "height": int(self.input_height),
             },
             "rknn_input_format": self.rknn_input_format,
-            "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            "nms_iou": float(self.config.get("nms_iou", 0.7)),
             **adapter_metadata,
         }
 
@@ -2019,7 +2038,7 @@ class ONNXRuntimeBackend(BaseYoloBackend):
             "onnx_input_dtype": self.onnx_input_dtype,
             "onnx_normalize": self.onnx_normalize,
             "onnx_provider": self.session.get_providers()[0] if self.session.get_providers() else None,
-            "nms_iou": float(self.config.get("nms_iou", 0.45)),
+            "nms_iou": float(self.config.get("nms_iou", 0.7)),
             **adapter_metadata,
         }
 
