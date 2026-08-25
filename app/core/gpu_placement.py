@@ -66,6 +66,8 @@ class GpuAssignment:
 
 def spec_requires_cuda(spec: Dict[str, Any]) -> bool:
     """Return whether a shared worker should be isolated onto a CUDA device."""
+    if isinstance(spec.get("requires_cuda"), bool):
+        return spec["requires_cuda"]
     backend = str(spec.get("backend") or "").strip().lower()
     if backend == "ultralytics":
         return True

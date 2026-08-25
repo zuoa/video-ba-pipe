@@ -80,7 +80,7 @@ from app.core.webhook_notifier import (
 from app.core.public_media_config import build_public_media_url
 
 try:
-    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi, db
+    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi, User, db
 except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
     _WORKFLOW_EXECUTOR_IMPORT_ERROR = exc
 
@@ -93,7 +93,7 @@ except ImportError as exc:  # pragma: no cover - optional in lightweight test en
         def create(cls, *args, **kwargs):
             raise ImportError("WorkflowExecutor requires peewee/database dependencies") from _WORKFLOW_EXECUTOR_IMPORT_ERROR
 
-    Workflow = VideoSource = Algorithm = Alert = ExternalApi = _MissingDatabaseModel
+    Workflow = VideoSource = Algorithm = Alert = ExternalApi = User = _MissingDatabaseModel
 
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
 DETECTION_SNAPSHOT_COORDINATOR_LOCK = threading.Lock()
@@ -512,6 +512,20 @@ class WorkflowExecutor:
 
     def _load_algorithms(self):
         """加载算法节点所需的算法（供测试模式和实时模式使用）"""
+        execution_owner = (
+            getattr(self.video_source, 'created_by', None)
+            or getattr(self.workflow, 'created_by', None)
+            or 'system'
+        )
+        execution_role = 'user'
+        try:
+            owner_user = User.get_or_none(User.username == execution_owner)
+            if owner_user is not None:
+                execution_role = str(owner_user.role or 'user').lower()
+        except Exception:
+            # Lightweight test environments may not bind the users table. The
+            # owner comparison in sensitive scripts still fails closed.
+            execution_role = 'user'
         for node_id, node in self.nodes.items():
             # 只加载算法节点，函数节点有独立的处理逻辑
             if node.node_type == 'algorithm':
@@ -571,6 +585,8 @@ class WorkflowExecutor:
                             "source_name": getattr(self.video_source, 'name', ''),
                             "source_code": getattr(self.video_source, 'source_code', ''),
                             "workflow_name": getattr(self.workflow, 'name', ''),
+                            "workflow_id": self.workflow_id,
+                            "created_by": getattr(self.video_source, 'created_by', 'system'),
                             "script_path": algo.script_path,
                             "entry_function": 'process',
                             # 运行时配置
@@ -596,6 +612,16 @@ class WorkflowExecutor:
                             and node_config.get('runtime_timeout_override_enabled') is True
                         ):
                             full_config['vl_timeout_override_seconds'] = node_config.get('runtime_timeout')
+                        # These fields come from persisted workflow/source
+                        # ownership and must win over algorithm and node config.
+                        full_config.update({
+                            'source_id': getattr(self.video_source, 'id', 0),
+                            'workflow_id': self.workflow_id,
+                            'created_by': execution_owner,
+                            '_execution_owner': execution_owner,
+                            '_execution_role': execution_role,
+                            '_preview_mode': bool(getattr(self, 'test_mode', False)),
+                        })
                         full_config, effective_confidence_threshold = self._sync_single_model_confidence(full_config)
 
                         logger.info(f"[Workflow-{self.workflow_id}] 节点 {node_id} 合并后的完整配置 models: {full_config.get('models', 'NOT_FOUND')}")

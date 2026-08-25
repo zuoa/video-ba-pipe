@@ -508,6 +508,14 @@ def _portable_model_refs(
                 result[key] = portable_ids
             elif normalized == "models":
                 result[key] = _portable_models_container(item, models_by_id, models_by_name)
+            elif normalized == "gallery_id":
+                # Face galleries contain biometric identities and are not part
+                # of workflow transfer packages.  Never preserve a destination-
+                # local numeric ID, which could silently select another gallery.
+                raise TemplateTransferError(
+                    "face_gallery_transfer_unsupported",
+                    "引用人脸库的算法不能直接迁移；请在目标设备重新创建并绑定人脸识别算法",
+                )
             elif normalized == "model_id" or normalized.endswith("_model_id"):
                 try:
                     model = models_by_id[int(item)]

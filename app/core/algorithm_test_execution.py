@@ -11,7 +11,7 @@ import numpy as np
 from app import logger
 from app.core.algorithm import BaseAlgorithm
 from app.core.cascade_algorithm_config import normalize_cascade_algorithm_config
-from app.core.database_models import Algorithm
+from app.core.database_models import Algorithm, FaceModelBundle
 
 
 class AlgorithmTestInputError(ValueError):
@@ -69,7 +69,12 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def _saved_algorithm_config(algorithm: Algorithm) -> tuple[str, Dict[str, Any]]:
+def _saved_algorithm_config(
+    algorithm: Algorithm,
+    *,
+    execution_owner: str | None = None,
+    execution_role: str | None = None,
+) -> tuple[str, Dict[str, Any]]:
     script_config = dict(algorithm.config_dict)
     ext_config = dict(algorithm.ext_config)
     algorithm_type = ext_config.get("algorithm_type") or "script"
@@ -94,10 +99,30 @@ def _saved_algorithm_config(algorithm: Algorithm) -> tuple[str, Dict[str, Any]]:
     }
     full_config.update(script_config)
     full_config.update(ext_config)
+    # A preview is always side-effect-free. These trusted fields are applied
+    # after saved configuration so a script owner cannot override them.
+    trusted_owner = str(
+        execution_owner or getattr(algorithm, 'created_by', None) or 'system'
+    )
+    full_config.update({
+        'source_id': 0,
+        'workflow_id': None,
+        'created_by': trusted_owner,
+        '_execution_owner': trusted_owner,
+        '_execution_role': str(execution_role or 'user').lower(),
+        '_preview_mode': True,
+        'save_events': False,
+    })
     return algorithm_type, full_config
 
 
-def execute_saved_algorithm_test(algorithm_id: int, image_bytes: bytes) -> Dict[str, Any]:
+def execute_saved_algorithm_test(
+    algorithm_id: int,
+    image_bytes: bytes,
+    *,
+    execution_owner: str | None = None,
+    execution_role: str | None = None,
+) -> Dict[str, Any]:
     try:
         algorithm = Algorithm.get_by_id(int(algorithm_id))
     except (TypeError, ValueError):
@@ -115,7 +140,11 @@ def execute_saved_algorithm_test(algorithm_id: int, image_bytes: bytes) -> Dict[
             interpolation=cv2.INTER_LINEAR,
         )
 
-    algorithm_type, full_config = _saved_algorithm_config(algorithm)
+    algorithm_type, full_config = _saved_algorithm_config(
+        algorithm,
+        execution_owner=execution_owner,
+        execution_role=execution_role,
+    )
     instance = None
     try:
         instance = _create_algorithm_instance(algorithm_type, full_config)
@@ -243,18 +272,165 @@ def execute_cascade_preview(cascade_config: Dict[str, Any], image_bytes: bytes) 
                 logger.warning("组合检测预览资源清理失败", exc_info=True)
 
 
+def execute_face_enrollment(
+    bundle_id: int,
+    image_bytes: bytes,
+    backend: str = 'auto',
+    min_face_size: int = 80,
+) -> Dict[str, Any]:
+    """Extract one enrollment template on the hardware-capable worker."""
+    bundle = _face_enrollment_bundle(bundle_id)
+
+    from app.core.face_inference import FaceWorkerBackend
+
+    runtime = None
+    try:
+        selected_backend = str(backend or 'auto').lower()
+        runtime = FaceWorkerBackend(
+            bundle,
+            selected_backend,
+            {
+                'face_detection_confidence': 0.6,
+                'face_nms_iou': 0.4,
+                'min_face_size': int(min_face_size),
+            },
+        )
+        return _execute_face_enrollment_with_runtime(bundle, runtime, image_bytes)
+    finally:
+        if runtime is not None:
+            runtime.cleanup()
+
+
+def _face_enrollment_bundle(bundle_id: int):
+    try:
+        bundle = FaceModelBundle.get_by_id(int(bundle_id))
+    except (TypeError, ValueError):
+        raise AlgorithmTestInputError('无效的人脸模型包ID')
+    except FaceModelBundle.DoesNotExist:
+        raise AlgorithmTestInputError('人脸模型包不存在', status_code=404)
+    if not bundle.enabled:
+        raise AlgorithmTestInputError('人脸模型包已禁用')
+    return bundle
+
+
+def _execute_face_enrollment_with_runtime(bundle, runtime, image_bytes):
+    """Extract one template with an already-loaded face runtime."""
+
+    from app.core.face_gallery import serialize_embedding
+
+    image = _decode_image(image_bytes)
+    detections, details, metadata = runtime.infer(image)
+    qualified = [item for item in details if item.get('embedding') is not None]
+    if not detections:
+        raise AlgorithmTestInputError('录入图片中未检测到人脸', status_code=422)
+    if len(detections) != 1:
+        raise AlgorithmTestInputError('录入图片必须且只能包含一张人脸', status_code=422)
+    if not qualified:
+        quality = details[0].get('quality') or {}
+        reason = quality.get('reason') or 'low_quality'
+        raise AlgorithmTestInputError(f'录入人脸质量不合格: {reason}', status_code=422)
+    embedding = qualified[0]['embedding']
+    if len(embedding) != int(bundle.embedding_dimension):
+        raise AlgorithmTestInputError(
+            '特征维度与模型包契约不一致: '
+            f'expected={bundle.embedding_dimension}, actual={len(embedding)}',
+            status_code=422,
+        )
+    payload = base64.b64encode(serialize_embedding(embedding)).decode('ascii')
+    return _json_safe({
+        'success': True,
+        'embedding_base64': payload,
+        'quality': qualified[0].get('quality') or {},
+        'box': qualified[0].get('box'),
+        'model_contract': bundle.contract_id,
+        'backend': metadata.get('backend') or runtime.pipeline.backend,
+        'metadata': metadata,
+    })
+
+
+def execute_face_enrollment_batch(
+    bundle_id: int,
+    images: list[bytes],
+    backend: str = 'auto',
+    min_face_size: int = 80,
+) -> Dict[str, Any]:
+    """Extract multiple templates while loading model artifacts only once."""
+    if not images or len(images) > 64:
+        raise AlgorithmTestInputError('批量录入每批必须包含 1 到 64 张图片')
+    bundle = _face_enrollment_bundle(bundle_id)
+
+    from app.core.face_inference import FaceWorkerBackend
+
+    runtime = None
+    try:
+        runtime = FaceWorkerBackend(
+            bundle,
+            str(backend or 'auto').lower(),
+            {
+                'face_detection_confidence': 0.6,
+                'face_nms_iou': 0.4,
+                'min_face_size': int(min_face_size),
+            },
+        )
+        results = []
+        for image_bytes in images:
+            try:
+                results.append(
+                    _execute_face_enrollment_with_runtime(bundle, runtime, image_bytes)
+                )
+            except AlgorithmTestInputError as exc:
+                results.append({
+                    'success': False,
+                    'error': str(exc),
+                    'status_code': int(exc.status_code),
+                })
+        return {'success': True, 'results': results}
+    finally:
+        if runtime is not None:
+            runtime.cleanup()
+
+
 def execute_algorithm_test_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    kind = job.get("kind")
+    if kind == 'face_enrollment_batch':
+        encoded_images = job.get('images_base64')
+        if not isinstance(encoded_images, list) or not encoded_images:
+            raise AlgorithmTestInputError('批量录入图片数据格式不正确')
+        images = []
+        try:
+            for encoded in encoded_images:
+                images.append(base64.b64decode(encoded or '', validate=True))
+        except (ValueError, TypeError) as exc:
+            raise AlgorithmTestInputError('批量录入图片数据格式不正确') from exc
+        return execute_face_enrollment_batch(
+            job.get('bundle_id'),
+            images,
+            backend=str(job.get('backend') or 'auto'),
+            min_face_size=int(job.get('min_face_size') or 80),
+        )
+
     try:
         image_bytes = base64.b64decode(job.get("image_base64") or "", validate=True)
     except (ValueError, TypeError) as exc:
         raise AlgorithmTestInputError("图片数据格式不正确") from exc
 
-    kind = job.get("kind")
     if kind == "saved_algorithm":
-        return execute_saved_algorithm_test(job.get("algorithm_id"), image_bytes)
+        return execute_saved_algorithm_test(
+            job.get("algorithm_id"),
+            image_bytes,
+            execution_owner=job.get('execution_owner'),
+            execution_role=job.get('execution_role'),
+        )
     if kind == "cascade_preview":
         config = job.get("cascade_config")
         if not isinstance(config, dict):
             raise AlgorithmTestInputError("组合检测配置格式不正确")
         return execute_cascade_preview(config, image_bytes)
+    if kind == 'face_enrollment':
+        return execute_face_enrollment(
+            job.get('bundle_id'),
+            image_bytes,
+            backend=str(job.get('backend') or 'auto'),
+            min_face_size=int(job.get('min_face_size') or 80),
+        )
     raise AlgorithmTestInputError("不支持的测试任务类型")

@@ -60,6 +60,10 @@ x-app-environment: &app-environment
   VIDEO_SAVE_PATH: /data/videos
   VIDEO_SOURCE_PATH: /data/video_sources
   MODEL_SAVE_PATH: /data/models
+  FACE_DATA_PATH: /data/face
+  FACE_DATA_ENCRYPTION_KEY_FILE: ${FACE_DATA_ENCRYPTION_KEY_FILE:-}
+  FACE_DATA_ENCRYPTION_KEY: ${FACE_DATA_ENCRYPTION_KEY:-}
+  FACE_INFERENCE_PLUGIN_MODULES: ${FACE_INFERENCE_PLUGIN_MODULES:-}
   USER_SCRIPTS_ROOT: /data/user_scripts
   SNAPSHOT_PATH: /data/snapshots
   SNAPSHOT_ENABLED: "true"

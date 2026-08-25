@@ -69,6 +69,18 @@ os.makedirs(VIDEO_SOURCE_PATH, exist_ok=True)
 MODEL_SAVE_PATH = _resolve_data_path('MODEL_SAVE_PATH', 'models')
 os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
 
+# Face recognition data is kept separately because enrollment images and
+# embeddings are biometric data with stricter access and retention rules.
+FACE_DATA_PATH = _resolve_data_path('FACE_DATA_PATH', 'face')
+FACE_MODEL_PATH = os.path.join(FACE_DATA_PATH, 'models')
+FACE_EVENT_PATH = os.path.join(FACE_DATA_PATH, 'events')
+os.makedirs(FACE_MODEL_PATH, exist_ok=True)
+os.makedirs(FACE_EVENT_PATH, exist_ok=True)
+FACE_DATA_ENCRYPTION_KEY_FILE = (
+    os.getenv('FACE_DATA_ENCRYPTION_KEY_FILE', '').strip()
+)
+FACE_DATA_ENCRYPTION_KEY = os.getenv('FACE_DATA_ENCRYPTION_KEY', '').strip()
+
 # Hugging Face model import
 HF_USE_MIRROR = os.getenv('HF_USE_MIRROR', 'false').lower() in ('true', '1', 'yes', 'on')
 HF_MIRROR_ENDPOINT = (

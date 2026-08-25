@@ -41,6 +41,303 @@ export async function getSystemMetrics() {
   return request('/api/system/metrics');
 }
 
+export interface FaceModelArtifact {
+  id: number;
+  role: 'detection' | 'embedding';
+  runtime: 'onnxruntime' | 'tensorrt' | 'rknn' | 'torchscript';
+  architecture: string;
+  device: string;
+  filename: string;
+  file_size: number;
+  artifact_sha256: string;
+  metadata: Record<string, any>;
+  enabled: boolean;
+}
+
+export interface FaceModelBundle {
+  id: number;
+  name: string;
+  version: string;
+  contract_id: string;
+  embedding_dimension: number;
+  input_size: string;
+  license_name?: string | null;
+  license_url?: string | null;
+  commercial_use_allowed: boolean;
+  enabled: boolean;
+  artifacts: FaceModelArtifact[];
+}
+
+export interface FaceGallery {
+  id: number;
+  name: string;
+  description?: string | null;
+  model_bundle_id?: number | null;
+  model_bundle_name?: string | null;
+  model_contract?: string | null;
+  gallery_version: number;
+  high_threshold: number;
+  low_threshold: number;
+  enabled: boolean;
+  person_count: number;
+  template_count: number;
+  updated_at: string;
+}
+
+export interface FaceTemplate {
+  id: number;
+  image_mime: string;
+  image_sha256: string;
+  quality_score?: number | null;
+  model_contract?: string | null;
+  inference_backend?: string | null;
+  created_at: string;
+}
+
+export interface FacePerson {
+  id: number;
+  person_code: string;
+  name: string;
+  metadata: Record<string, any>;
+  enabled: boolean;
+  gallery_ids: number[];
+  template_count: number;
+  ready_template_count: number;
+  templates: FaceTemplate[];
+  updated_at: string;
+}
+
+export interface FaceRuntimeStatus {
+  success: boolean;
+  encryption_ready: boolean;
+  capabilities: {
+    machine: string;
+    compatible: string;
+    is_rockchip: boolean;
+    is_jetson: boolean;
+    onnx_providers: string[];
+    rknn_available: boolean;
+    torch_cuda_available: boolean;
+    preferred_backend?: string | null;
+    supported_runtimes?: string[];
+    available_runtimes?: string[];
+    torch_available?: boolean;
+    plugin_errors?: string[];
+  };
+  bundles: Array<{
+    bundle_id: number;
+    bundle_name: string;
+    ready: boolean;
+    backend?: string;
+    artifacts?: Record<string, string>;
+    error?: string;
+  }>;
+}
+
+export async function getFaceRuntime() {
+  return request<FaceRuntimeStatus>('/api/face/runtime');
+}
+
+export async function getFaceModelBundles() {
+  return request<{ success: boolean; bundles: FaceModelBundle[] }>('/api/face/model-bundles');
+}
+
+export async function createFaceModelBundle(data: Record<string, any>) {
+  return request<{ success: boolean; bundle: FaceModelBundle }>('/api/face/model-bundles', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function uploadFaceModelArtifact(bundleId: number, data: FormData) {
+  return request<{ success: boolean; bundle: FaceModelBundle }>(
+    `/api/face/model-bundles/${bundleId}/artifacts`,
+    { method: 'POST', data },
+  );
+}
+
+export async function getFaceGalleries() {
+  return request<{ success: boolean; galleries: FaceGallery[] }>('/api/face/galleries');
+}
+
+export async function createFaceGallery(data: Record<string, any>) {
+  return request<{ success: boolean; gallery: FaceGallery }>('/api/face/galleries', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function updateFaceGallery(id: number, data: Record<string, any>) {
+  return request<{ success: boolean; gallery: FaceGallery }>(`/api/face/galleries/${id}`, {
+    method: 'PATCH',
+    data,
+  });
+}
+
+export async function deleteFaceGallery(id: number) {
+  return request<{ success: boolean; deleted: boolean }>(`/api/face/galleries/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getFacePersons(
+  galleryId?: number,
+  search?: string,
+  page = 1,
+  pageSize = 12,
+) {
+  return request<{
+    success: boolean;
+    persons: FacePerson[];
+    pagination: { page: number; page_size: number; total: number; total_pages: number };
+  }>('/api/face/persons', {
+    params: {
+      gallery_id: galleryId,
+      q: search || undefined,
+      page,
+      page_size: pageSize,
+    },
+  });
+}
+
+export async function createFacePerson(data: Record<string, any>) {
+  return request<{ success: boolean; person: FacePerson }>('/api/face/persons', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function updateFacePerson(id: number, data: Record<string, any>) {
+  return request<{ success: boolean; person: FacePerson }>(`/api/face/persons/${id}`, {
+    method: 'PATCH',
+    data,
+  });
+}
+
+export async function deleteFacePerson(id: number) {
+  return request<{ success: boolean; deleted: boolean }>(`/api/face/persons/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function uploadFaceTemplate(personId: number, file: File, galleryId?: number) {
+  const data = new FormData();
+  data.append('file', file);
+  if (galleryId) data.append('gallery_id', String(galleryId));
+  return request<{ success: boolean; person: FacePerson; template_id: number }>(
+    `/api/face/persons/${personId}/templates`,
+    { method: 'POST', data },
+  );
+}
+
+export async function deleteFaceTemplate(id: number) {
+  return request<{ success: boolean; deleted: boolean }>(`/api/face/templates/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export interface FaceImportPreflight {
+  success: boolean;
+  person_count: number;
+  image_count: number;
+  errors: Array<{ row?: number; error: string }>;
+}
+
+export interface FaceImportJob {
+  id: number;
+  gallery_id: number;
+  status: 'pending' | 'processing' | 'completed' | 'completed_with_errors' | 'failed';
+  total_people: number;
+  total_images: number;
+  processed_people: number;
+  succeeded_people: number;
+  failed_people: number;
+  errors: Array<{ row?: number; person_code?: string; error?: string; warning?: string }>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
+export async function preflightFaceImport(file: File) {
+  const data = new FormData();
+  data.append('file', file);
+  return request<FaceImportPreflight>('/api/face/imports/preflight', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function createFaceImport(galleryId: number, file: File) {
+  const data = new FormData();
+  data.append('gallery_id', String(galleryId));
+  data.append('file', file);
+  return request<{ success: boolean; job: FaceImportJob }>('/api/face/imports', {
+    method: 'POST',
+    data,
+  });
+}
+
+export async function getFaceImport(id: number) {
+  return request<{ success: boolean; job: FaceImportJob }>(`/api/face/imports/${id}`);
+}
+
+export interface FaceCalibrationResult {
+  success: boolean;
+  gallery_id: number;
+  suggested_low_threshold: number;
+  suggested_high_threshold: number;
+  target_fpir: number;
+  measured_fpir: number;
+  measured_fnir?: number | null;
+  genuine_pair_count: number;
+  impostor_pair_count: number;
+  template_count: number;
+  sampled: boolean;
+  applied: false;
+}
+
+export async function calibrateFaceThresholds(galleryId: number, targetFpir = 0.001) {
+  return request<FaceCalibrationResult>('/api/face/calibrations', {
+    method: 'POST',
+    data: { gallery_id: galleryId, target_fpir: targetFpir },
+  });
+}
+
+export interface FaceRecognitionEvent {
+  id: number;
+  gallery_id?: number | null;
+  person_id?: number | null;
+  person_code?: string | null;
+  person_name?: string | null;
+  track_id?: string | null;
+  identity_status: 'known' | 'unknown';
+  similarity?: number | null;
+  threshold?: number | null;
+  quality: Record<string, any>;
+  snapshot_path?: string | null;
+  liveness_status: 'not_checked';
+  model_contract?: string | null;
+  inference_backend?: string | null;
+  occurred_at: string;
+  expires_at?: string | null;
+}
+
+export async function getFaceEvents(galleryId?: number, identityStatus?: string) {
+  return request<{ success: boolean; events: FaceRecognitionEvent[] }>('/api/face/events', {
+    params: {
+      gallery_id: galleryId,
+      identity_status: identityStatus || undefined,
+      limit: 100,
+    },
+  });
+}
+
+export async function getFaceEventSnapshot(id: number) {
+  return request<Blob>(`/api/face/events/${id}/snapshot`, {
+    responseType: 'blob',
+  });
+}
+
 export interface LicenseStatus {
   success: boolean;
   tier: 'free' | 'licensed';
@@ -271,6 +568,33 @@ export async function getVideoDecodeConfig() {
 
 export async function updateVideoDecodeConfig(data: VideoDecodeConfig) {
   return request<VideoDecodeConfigResponse>('/api/system/video-decode-config', {
+    method: 'PUT',
+    data,
+  });
+}
+
+export interface FaceRecognitionConfig {
+  known_retention_days: number;
+  unknown_retention_days: number;
+  inference_backend: string;
+  require_commercial_models: boolean;
+}
+
+export interface FaceRecognitionConfigResponse {
+  success: boolean;
+  config: FaceRecognitionConfig;
+  config_source: 'database' | 'default' | 'cache';
+  available_backends: string[];
+  apply_mode: 'dynamic_on_next_face_runtime';
+  message?: string;
+}
+
+export async function getFaceRecognitionConfig() {
+  return request<FaceRecognitionConfigResponse>('/api/system/face-recognition-config');
+}
+
+export async function updateFaceRecognitionConfig(data: FaceRecognitionConfig) {
+  return request<FaceRecognitionConfigResponse>('/api/system/face-recognition-config', {
     method: 'PUT',
     data,
   });

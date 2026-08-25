@@ -78,6 +78,38 @@ def test_saved_algorithm_execution_returns_compatible_result_and_cleans_up(monke
     assert instance.cleaned is True
 
 
+def test_saved_algorithm_preview_overrides_untrusted_execution_fields():
+    class FakeAlgorithm:
+        id = 8
+        name = "人脸预览"
+        script_path = "templates/face_recognizer.py"
+        created_by = "algorithm-owner"
+        config_dict = {
+            "created_by": "victim",
+            "_execution_owner": "victim",
+            "_execution_role": "admin",
+            "_preview_mode": False,
+            "save_events": True,
+            "source_id": 99,
+            "workflow_id": 88,
+        }
+        ext_config = {"algorithm_type": "script"}
+
+    _algorithm_type, config = execution._saved_algorithm_config(
+        FakeAlgorithm(),
+        execution_owner="requester",
+        execution_role="user",
+    )
+
+    assert config["created_by"] == "requester"
+    assert config["_execution_owner"] == "requester"
+    assert config["_execution_role"] == "user"
+    assert config["_preview_mode"] is True
+    assert config["save_events"] is False
+    assert config["source_id"] == 0
+    assert config["workflow_id"] is None
+
+
 def test_cascade_preview_exposes_step_diagnostics(monkeypatch):
     config = {
         "version": 2,
@@ -149,6 +181,55 @@ def test_algorithm_test_job_rejects_invalid_image_payload():
         assert "图片数据格式" in str(exc)
     else:
         raise AssertionError("invalid base64 should be rejected")
+
+
+def test_face_enrollment_batch_reuses_one_loaded_runtime(monkeypatch):
+    from app.core import face_inference
+
+    bundle = type('Bundle', (), {
+        'id': 7,
+        'enabled': True,
+        'embedding_dimension': 3,
+        'contract_id': 'batch-v1',
+    })()
+    monkeypatch.setattr(execution.FaceModelBundle, 'get_by_id', lambda _id: bundle)
+    calls = {'created': 0, 'inferred': 0, 'cleaned': 0}
+
+    class FakeRuntime:
+        pipeline = type('Pipeline', (), {'backend': 'fake'})()
+
+        def __init__(self, actual_bundle, backend, config):
+            assert actual_bundle is bundle
+            assert backend == 'auto'
+            assert config['min_face_size'] == 80
+            calls['created'] += 1
+
+        def infer(self, image):
+            assert image.shape[2] == 3
+            calls['inferred'] += 1
+            return (
+                [{'box': [0, 0, 10, 10]}],
+                [{
+                    'embedding': np.asarray([1.0, 0.0, 0.0], dtype=np.float32),
+                    'quality': {'accepted': True, 'score': 0.9},
+                    'box': [0, 0, 10, 10],
+                }],
+                {'backend': 'fake'},
+            )
+
+        def cleanup(self):
+            calls['cleaned'] += 1
+
+    monkeypatch.setattr(face_inference, 'FaceWorkerBackend', FakeRuntime)
+
+    result = execution.execute_face_enrollment_batch(
+        bundle.id, [_jpeg_bytes(), _jpeg_bytes()]
+    )
+
+    assert result['success'] is True
+    assert len(result['results']) == 2
+    assert all(item['success'] for item in result['results'])
+    assert calls == {'created': 1, 'inferred': 2, 'cleaned': 1}
 
 
 def test_internal_http_service_requires_token_and_forwards_job():

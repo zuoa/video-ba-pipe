@@ -160,6 +160,49 @@ def build_model_spec(model_path: str, model_info: Dict[str, Any], config: Dict[s
     }
 
 
+def build_face_model_spec(bundle, requested_backend: str = 'auto') -> Dict[str, Any]:
+    """Build a stable shared-worker key for a logical face model bundle."""
+    from app.core.face_inference import select_bundle_artifacts
+
+    selected_backend, artifacts, _capabilities = select_bundle_artifacts(
+        bundle, requested_backend
+    )
+    file_size = sum(int(item.file_size or 0) for item in artifacts.values())
+    artifact_metadata = [dict(item.metadata or {}) for item in artifacts.values()]
+    requires_cuda = selected_backend in {'onnxruntime-cuda', 'tensorrt'}
+    if selected_backend == 'torchscript':
+        # TorchScript's default "auto" device chooses CUDA when this runtime
+        # is selected on a CUDA-capable node. Only an explicit CPU declaration
+        # on every artifact opts the pipeline out of GPU placement.
+        requires_cuda = any(
+            str(metadata.get('device') or 'auto').strip().lower() != 'cpu'
+            for metadata in artifact_metadata
+        )
+    requires_cuda = requires_cuda or any(
+        metadata.get('requires_cuda') is True for metadata in artifact_metadata
+    )
+    return {
+        'model_id': f'face-bundle:{bundle.id}',
+        'bundle_id': int(bundle.id),
+        'bundle_version': bundle.version,
+        'contract_id': bundle.contract_id,
+        'backend': 'face_pipeline',
+        'face_runtime': selected_backend,
+        'requires_cuda': requires_cuda,
+        'model_path': artifacts['detection'].file_path,
+        'recognition_model_path': artifacts['embedding'].file_path,
+        'file_size': file_size,
+        'artifact_sha256': {
+            role: artifact.artifact_sha256 for role, artifact in artifacts.items()
+        },
+        'framework': 'face_pipeline',
+        'model_type': 'FACE',
+        'input_width': int(artifacts['detection'].metadata.get('input_width') or 320),
+        'input_height': int(artifacts['detection'].metadata.get('input_height') or 320),
+        'backend_config': {},
+    }
+
+
 def model_key(spec: Dict[str, Any]) -> str:
     payload = json.dumps(spec, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
@@ -176,6 +219,9 @@ def _inference_config(config: Dict[str, Any]) -> Dict[str, Any]:
     }
     for key in (
         "backend",
+        "face_detection_confidence",
+        "face_nms_iou",
+        "min_face_size",
         "rknn_core_mask",
         "rknn_input_format",
         "postprocess_profile",
@@ -228,6 +274,16 @@ def _create_model_worker_backend(
     backend_name = spec.get("backend") or _selected_backend_name(
         spec["model_path"], model_info, base_config
     )
+    if backend_name == "face_pipeline":
+        from app.core.database_models import FaceModelBundle
+        from app.core.face_inference import FaceWorkerBackend
+
+        bundle = FaceModelBundle.get_by_id(int(spec["bundle_id"]))
+        return FaceWorkerBackend(
+            bundle,
+            backend=spec.get("face_runtime") or "auto",
+            config=base_config,
+        )
     if backend_name == "paddleocr":
         from app.core.ocr_backend import PaddleOCRBackend
 

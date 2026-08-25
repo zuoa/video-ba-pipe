@@ -1,13 +1,20 @@
 import os
 import time
+from types import SimpleNamespace
 
 import app.core.shared_inference as shared_inference_module
 from app.core.gpu_placement import (
     GpuDeviceSnapshot,
     GpuPlacementBroker,
+    spec_requires_cuda,
 )
 from app.core.ocr_backend import build_ocr_model_spec
-from app.core.shared_inference import _ModelRegistry, build_model_spec, model_key
+from app.core.shared_inference import (
+    _ModelRegistry,
+    build_face_model_spec,
+    build_model_spec,
+    model_key,
+)
 
 
 def _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
@@ -150,6 +157,43 @@ def test_model_spec_selects_rknn_and_keys_runtime_configuration(tmp_path):
     assert spec_auto["classes"] == {"0": "person"}
     assert spec_auto["model_postprocess"]["reg_max"] == 16
     assert model_key(spec_auto) != model_key(spec_core_0)
+
+
+def test_face_model_spec_exposes_selected_cuda_runtime_to_placement(monkeypatch):
+    bundle = SimpleNamespace(
+        id=9, version='v1', contract_id='face-v1',
+    )
+
+    def build(runtime, device=None):
+        metadata = {} if device is None else {'device': device}
+        artifacts = {
+            'detection': SimpleNamespace(
+                file_path='/models/detector.bin', file_size=10,
+                artifact_sha256='a' * 64, metadata=metadata,
+            ),
+            'embedding': SimpleNamespace(
+                file_path='/models/embedder.bin', file_size=20,
+                artifact_sha256='b' * 64, metadata=metadata,
+            ),
+        }
+        monkeypatch.setattr(
+            'app.core.face_inference.select_bundle_artifacts',
+            lambda *_args, **_kwargs: (runtime, artifacts, {}),
+        )
+        return build_face_model_spec(bundle)
+
+    for runtime in ('onnxruntime-cuda', 'tensorrt', 'torchscript'):
+        spec = build(runtime)
+        assert spec['backend'] == 'face_pipeline'
+        assert spec['requires_cuda'] is True
+        assert spec_requires_cuda(spec) is True
+
+    cpu_torch = build('torchscript', device='cpu')
+    assert cpu_torch['requires_cuda'] is False
+    assert spec_requires_cuda(cpu_torch) is False
+    cpu_onnx = build('onnxruntime')
+    assert cpu_onnx['requires_cuda'] is False
+    assert spec_requires_cuda(cpu_onnx) is False
 
 
 def test_model_key_normalizes_auto_and_explicit_rknn_backend(tmp_path):

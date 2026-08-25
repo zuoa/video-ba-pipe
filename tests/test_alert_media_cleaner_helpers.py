@@ -1,4 +1,5 @@
 import importlib.util
+from contextlib import nullcontext
 from enum import Enum
 import os
 import sys
@@ -400,6 +401,42 @@ def test_startup_cleanup_uses_loaded_persisted_config(
     assert captured == [persisted]
 
 
+def test_face_retention_scheduler_starts_when_alert_cleanup_is_disabled(
+    alert_media_cleaner_module,
+    monkeypatch,
+):
+    cleaner = alert_media_cleaner_module.AlertMediaCleaner()
+    cleaner.enabled = False
+    started = []
+    monkeypatch.setattr(cleaner, '_run_loop', lambda: started.append(True))
+
+    cleaner.start()
+    cleaner._thread.join(timeout=1)
+
+    assert started == [True]
+
+
+def test_disabled_alert_cleanup_still_runs_face_retention_only(
+    alert_media_cleaner_module,
+    monkeypatch,
+):
+    cleaner = alert_media_cleaner_module.AlertMediaCleaner()
+    cleaner.enabled = False
+    cleaned = []
+    monkeypatch.setattr(
+        cleaner, '_cleanup_expired_face_events', lambda: cleaned.append(True) or 2
+    )
+    monkeypatch.setattr(
+        cleaner,
+        'run_filesystem_cleanup_once',
+        lambda *_args: (_ for _ in ()).throw(AssertionError('alert cleanup ran')),
+    )
+
+    cleaner.run_once()
+
+    assert cleaned == [True]
+
+
 def test_filesystem_capacity_cleanup_continues_when_delivery_query_fails(
     tmp_path: Path,
     alert_media_cleaner_module,
@@ -429,3 +466,64 @@ def test_filesystem_capacity_cleanup_continues_when_delivery_query_fails(
     cleaner.run_filesystem_cleanup_once(config)
 
     assert calls == [str(video_dir), str(frame_dir)]
+
+
+def test_expired_face_event_row_is_retained_when_snapshot_delete_fails(
+    tmp_path: Path,
+    alert_media_cleaner_module,
+    monkeypatch,
+):
+    class FakeField:
+        def is_null(self, _value):
+            return self
+
+        def __le__(self, _value):
+            return self
+
+        def __and__(self, _other):
+            return self
+
+    event_path = tmp_path / '20260825' / 'event.face'
+    event_path.parent.mkdir(parents=True)
+    event_path.write_bytes(b'encrypted')
+    event = types.SimpleNamespace(
+        snapshot_path='20260825/event.face',
+        deleted=False,
+    )
+    event.delete_instance = lambda: setattr(event, 'deleted', True)
+
+    class FakeQuery:
+        def where(self, _condition):
+            return self
+
+        def iterator(self):
+            return iter([event])
+
+    class FakeFaceEvent:
+        expires_at = FakeField()
+
+        @classmethod
+        def select(cls):
+            return FakeQuery()
+
+    monkeypatch.setattr(alert_media_cleaner_module, 'FaceEvent', FakeFaceEvent)
+    monkeypatch.setattr(alert_media_cleaner_module, 'FACE_EVENT_PATH', str(tmp_path))
+    monkeypatch.setattr(
+        alert_media_cleaner_module.db,
+        'connection_context',
+        lambda: nullcontext(),
+    )
+    original_unlink = Path.unlink
+
+    def fail_snapshot(path, *args, **kwargs):
+        if path == event_path:
+            raise PermissionError('read only')
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'unlink', fail_snapshot)
+
+    removed = alert_media_cleaner_module.AlertMediaCleaner._cleanup_expired_face_events()
+
+    assert removed == 0
+    assert event.deleted is False
+    assert event_path.exists()

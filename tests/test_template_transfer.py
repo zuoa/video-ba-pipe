@@ -288,6 +288,24 @@ def test_export_import_round_trip_rewrites_local_ids(transfer_env, tmp_path):
     assert forked.portable_id != imported.portable_id
 
 
+def test_export_rejects_destination_local_face_gallery_id(transfer_env, tmp_path):
+    script_root, _model_root = transfer_env
+    source_model = tmp_path / 'face-transfer.onnx'
+    source_model.write_bytes(b'face-transfer-model')
+    template, algorithm, _model = _create_template_resources(
+        script_root, source_model
+    )
+    config = algorithm.config_dict
+    config['gallery_id'] = 17
+    algorithm.script_config = json.dumps(config)
+    algorithm.save(only=[Algorithm.script_config])
+
+    with pytest.raises(template_transfer.TemplateTransferError) as error:
+        template_transfer.build_export_package(template, include_models=False)
+
+    assert error.value.code == 'face_gallery_transfer_unsupported'
+
+
 def test_preflight_rejects_different_device_model(transfer_env, tmp_path, monkeypatch):
     script_root, _model_root = transfer_env
     source_model = tmp_path / 'model.onnx'

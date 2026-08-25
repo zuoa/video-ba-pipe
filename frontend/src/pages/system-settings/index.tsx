@@ -20,6 +20,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   PlusOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '@/components/common';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -28,6 +29,7 @@ import {
   getVideoDecodeConfig,
   getSystemInfo,
   getInferenceResourceConfig,
+  getFaceRecognitionConfig,
   getRecordingStorageConfig,
   getOpsNotificationConfig,
   getPublicMediaConfig,
@@ -35,6 +37,7 @@ import {
   getVlConfig,
   RecordingStorageUsage,
   InferenceResourceResponse,
+  FaceRecognitionConfigResponse,
   PublicMediaConfig,
   AlertDeliveryStats,
   SystemInfo,
@@ -44,6 +47,7 @@ import {
   updateSourceRotationConfig,
   updateVideoDecodeConfig,
   updateInferenceResourceConfig,
+  updateFaceRecognitionConfig,
   updateRecordingStorageConfig,
   updateOpsNotificationConfig,
   updatePublicMediaConfig,
@@ -75,6 +79,13 @@ const GPU_FAILURE_MODE_OPTIONS = [
   { value: 'reject', label: '拒绝新模型（推荐）' },
   { value: 'legacy', label: '降级为旧模式' },
 ];
+const FACE_BACKEND_LABELS: Record<string, string> = {
+  auto: '自动选择（推荐）',
+  onnxruntime: 'ONNX Runtime',
+  tensorrt: 'TensorRT / CUDA',
+  torchscript: 'TorchScript',
+  rknn: 'RKNNLite',
+};
 
 const buildHttpReceiverPrompt = ({
   endpointUrl,
@@ -192,6 +203,7 @@ const SystemSettingsPage: React.FC = () => {
   const [opsForm] = Form.useForm();
   const [publicMediaForm] = Form.useForm();
   const [inferenceForm] = Form.useForm();
+  const [faceForm] = Form.useForm();
   const [messageQueueForm] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -203,6 +215,7 @@ const SystemSettingsPage: React.FC = () => {
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
   const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
+  const [faceRecognition, setFaceRecognition] = useState<FaceRecognitionConfigResponse | null>(null);
   const [publicMediaConfig, setPublicMediaConfig] = useState<PublicMediaConfig | null>(null);
   const [deliveryStats, setDeliveryStats] = useState<AlertDeliveryStats>({ pending: 0, processing: 0, retrying: 0, failed: 0 });
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -255,13 +268,14 @@ const SystemSettingsPage: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const [vlResponse, rotationResponse, videoDecodeResponse, recordingResponse, opsResponse, inferenceResponse, publicMediaResponse, messageQueueResponse, systemInfoResponse] = await Promise.all([
+      const [vlResponse, rotationResponse, videoDecodeResponse, recordingResponse, opsResponse, inferenceResponse, faceResponse, publicMediaResponse, messageQueueResponse, systemInfoResponse] = await Promise.all([
         getVlConfig(),
         getSourceRotationConfig(),
         getVideoDecodeConfig(),
         getRecordingStorageConfig(),
         getOpsNotificationConfig(),
         getInferenceResourceConfig(),
+        getFaceRecognitionConfig(),
         getPublicMediaConfig(),
         getMessageQueueConfig(),
         getSystemInfo(),
@@ -295,6 +309,8 @@ const SystemSettingsPage: React.FC = () => {
         inferenceConfig.shared_inference_enabled = true;
       }
       inferenceForm.setFieldsValue(inferenceConfig);
+      faceForm.setFieldsValue(faceResponse.config);
+      setFaceRecognition(faceResponse);
       publicMediaForm.setFieldsValue(publicMediaResponse.config);
       setPublicMediaConfig(publicMediaResponse.config);
       setDeliveryStats(publicMediaResponse.delivery_stats || { pending: 0, processing: 0, retrying: 0, failed: 0 });
@@ -331,6 +347,7 @@ const SystemSettingsPage: React.FC = () => {
     // 逐个校验，第一个出错的页签自动切过去，避免错误藏在其它页签里
     const sections = [
       { key: 'inference', validate: () => validateAndGetAllFields(inferenceForm) },
+      { key: 'faceRecognition', validate: () => validateAndGetAllFields(faceForm) },
       { key: 'videoDecode', validate: () => validateAndGetAllFields(videoDecodeForm) },
       { key: 'recording', validate: () => validateAndGetAllFields(recordingForm) },
       { key: 'publicMedia', validate: () => validateAndGetAllFields(publicMediaForm) },
@@ -348,6 +365,7 @@ const SystemSettingsPage: React.FC = () => {
     }
     const [
       inferenceValues,
+      faceValues,
       videoDecodeValues,
       recordingValues,
       publicMediaValues,
@@ -358,17 +376,19 @@ const SystemSettingsPage: React.FC = () => {
     ] = results.map((result) => (result.status === 'fulfilled' ? result.value : undefined));
     try {
       setSaving(true);
-      const [, , , , , inferenceResponse] = await Promise.all([
+      const [, , , , , inferenceResponse, faceResponse] = await Promise.all([
         updateVlConfig(vlValues),
         updateSourceRotationConfig(rotationValues),
         updateVideoDecodeConfig(videoDecodeValues),
         updateRecordingStorageConfig(recordingValues),
         updateOpsNotificationConfig(opsValues),
         updateInferenceResourceConfig(inferenceValues),
+        updateFaceRecognitionConfig(faceValues),
         updatePublicMediaConfig(publicMediaValues),
         updateMessageQueueConfig(messageQueueValues),
       ]);
       setInferenceResource(inferenceResponse);
+      setFaceRecognition(faceResponse);
       message.success('系统配置已保存');
       await loadConfig();
     } catch (error: any) {
@@ -454,7 +474,7 @@ const SystemSettingsPage: React.FC = () => {
         icon={<SettingOutlined />}
         eyebrow="SYSTEM CONTROL"
         title="系统设置"
-        subtitle="统一管理推理资源、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。"
+        subtitle="统一管理推理资源、人脸识别、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。"
         extra={!['apiKeys', 'license'].includes(activeTabKey) ? (
           <Button
             type="primary"
@@ -716,6 +736,83 @@ const SystemSettingsPage: React.FC = () => {
                       ))}
                     </div>
                   ) : null}
+                </Card>
+              ),
+            },
+            {
+              key: 'faceRecognition',
+              label: (<span><TeamOutlined /> 人脸识别</span>),
+              children: (
+                <Card
+                  className="system-settings-card"
+                  title={<span><TeamOutlined /> 人脸识别运行策略</span>}
+                  extra={(
+                    <span className="inference-config-source">
+                      来源：{faceRecognition?.config_source === 'database'
+                        ? '系统配置'
+                        : faceRecognition?.config_source === 'cache'
+                          ? '上次有效配置'
+                          : '内置默认值'}
+                    </span>
+                  )}
+                >
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="system-settings-alert"
+                    message="运行策略由系统设置统一管理"
+                    description="保留期对新事件立即生效；默认后端和商用门禁对下一次加载的人脸模型实例生效。各工作流仍可显式覆盖默认后端。"
+                  />
+
+                  <Form form={faceForm} layout="vertical">
+                    <div className="system-settings-form-grid">
+                      <Form.Item
+                        label="全局默认推理后端"
+                        name="inference_backend"
+                        extra="推荐保持自动选择，以便同一配置在 RK、Jetson、x86 CPU/GPU 等架构间迁移。"
+                        rules={[{ required: true, message: '请选择默认推理后端' }]}
+                      >
+                        <Select
+                          options={(faceRecognition?.available_backends || ['auto']).map((backend) => ({
+                            value: backend,
+                            label: FACE_BACKEND_LABELS[backend] || backend,
+                          }))}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        label="只允许已声明可商用的模型"
+                        name="require_commercial_models"
+                        valuePropName="checked"
+                        extra="开启后，未勾选“许可证允许商用”的模型包会被拒绝加载。"
+                      >
+                        <Switch checkedChildren="强制" unCheckedChildren="不强制" />
+                      </Form.Item>
+                      <Form.Item
+                        label="已识别事件保留（天）"
+                        name="known_retention_days"
+                        extra="设置为 0 时不再持久化新的已识别事件及抓拍。"
+                        rules={[{ required: true, message: '请输入保留天数' }]}
+                      >
+                        <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item
+                        label="陌生人事件保留（天）"
+                        name="unknown_retention_days"
+                        extra="陌生人抓拍通常更敏感，建议使用更短的保留期；0 表示不持久化。"
+                        rules={[{ required: true, message: '请输入保留天数' }]}
+                      >
+                        <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </div>
+                  </Form>
+
+                  <Alert
+                    type="warning"
+                    showIcon
+                    className="system-settings-alert"
+                    message="仍需在启动环境中提供生物数据密钥"
+                    description="数据目录、加密密钥和可信推理插件涉及卷挂载、密钥注入或 Python 模块加载，仍属于启动级配置；页面不会读取或回显密钥。"
+                  />
                 </Card>
               ),
             },

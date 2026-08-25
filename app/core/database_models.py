@@ -543,6 +543,212 @@ class MLModel(BaseModel):
             self.save()
 
 
+# ==================== 人脸识别相关表 ====================
+
+class FaceModelBundle(BaseModel):
+    """Logical face model with platform-specific artifacts."""
+
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
+    name = pw.CharField()
+    version = pw.CharField(default='v1.0')
+    contract_id = pw.CharField(max_length=128)
+    embedding_dimension = pw.IntegerField(default=512)
+    input_size = pw.CharField(default='112x112')
+    preprocess_json = pw.TextField(default='{}')
+    license_name = pw.CharField(null=True)
+    license_url = pw.TextField(null=True)
+    commercial_use_allowed = pw.BooleanField(default=False)
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'face_model_bundles'
+        indexes = ((('name', 'version'), True),)
+
+    @property
+    def preprocess(self):
+        try:
+            return json.loads(self.preprocess_json) if self.preprocess_json else {}
+        except Exception:
+            return {}
+
+
+class FaceModelArtifact(BaseModel):
+    """One executable detector/embedder artifact for a model bundle."""
+
+    bundle = pw.ForeignKeyField(FaceModelBundle, backref='artifacts', on_delete='CASCADE')
+    role = pw.CharField(max_length=32)  # detection | embedding
+    runtime = pw.CharField(max_length=32)  # onnxruntime | tensorrt | rknn
+    architecture = pw.CharField(max_length=32, default='any')
+    device = pw.CharField(max_length=32, default='any')
+    filename = pw.CharField()
+    file_path = pw.TextField()
+    file_size = pw.IntegerField(default=0)
+    artifact_sha256 = pw.CharField(max_length=64, index=True)
+    metadata_json = pw.TextField(default='{}')
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+
+    class Meta:
+        table_name = 'face_model_artifacts'
+        indexes = (
+            (('bundle', 'role', 'runtime', 'architecture', 'device'), True),
+        )
+
+    @property
+    def metadata(self):
+        try:
+            return json.loads(self.metadata_json) if self.metadata_json else {}
+        except Exception:
+            return {}
+
+
+class FaceGallery(BaseModel):
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
+    name = pw.CharField()
+    description = pw.TextField(null=True)
+    model_bundle = pw.ForeignKeyField(
+        FaceModelBundle,
+        backref='galleries',
+        null=True,
+        on_delete='SET NULL',
+    )
+    gallery_version = pw.IntegerField(default=1)
+    high_threshold = pw.FloatField(default=0.60)
+    low_threshold = pw.FloatField(default=0.50)
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'face_galleries'
+        indexes = ((('created_by', 'name'), True),)
+
+
+class FacePerson(BaseModel):
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
+    person_code = pw.CharField(max_length=128)
+    name = pw.CharField()
+    metadata_json = pw.TextField(default='{}')
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'face_persons'
+        indexes = ((('created_by', 'person_code'), True),)
+
+    @property
+    def metadata(self):
+        try:
+            return json.loads(self.metadata_json) if self.metadata_json else {}
+        except Exception:
+            return {}
+
+
+class FaceGalleryMembership(BaseModel):
+    gallery = pw.ForeignKeyField(FaceGallery, backref='memberships', on_delete='CASCADE')
+    person = pw.ForeignKeyField(FacePerson, backref='gallery_memberships', on_delete='CASCADE')
+    created_at = pw.DateTimeField()
+
+    class Meta:
+        table_name = 'face_gallery_memberships'
+        indexes = ((('gallery', 'person'), True),)
+
+
+class FaceTemplate(BaseModel):
+    person = pw.ForeignKeyField(FacePerson, backref='face_templates', on_delete='CASCADE')
+    encrypted_image = pw.BlobField()
+    encrypted_embedding = pw.BlobField(null=True)
+    image_mime = pw.CharField(max_length=64, default='image/jpeg')
+    image_sha256 = pw.CharField(max_length=64, index=True)
+    quality_score = pw.FloatField(null=True)
+    model_contract = pw.CharField(max_length=128, null=True)
+    inference_backend = pw.CharField(max_length=32, null=True)
+    created_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'face_templates'
+        indexes = ((('person', 'image_sha256', 'model_contract'), True),)
+
+
+class FaceEvent(BaseModel):
+    video_source = pw.ForeignKeyField(
+        VideoSource, backref='face_events', null=True, on_delete='SET NULL'
+    )
+    workflow = pw.ForeignKeyField(
+        Workflow, backref='face_events', null=True, on_delete='SET NULL'
+    )
+    gallery = pw.ForeignKeyField(
+        FaceGallery, backref='events', null=True, on_delete='SET NULL'
+    )
+    person = pw.ForeignKeyField(
+        FacePerson, backref='events', null=True, on_delete='SET NULL'
+    )
+    track_id = pw.CharField(max_length=128, null=True)
+    identity_status = pw.CharField(max_length=32, index=True)
+    person_code_snapshot = pw.CharField(max_length=128, null=True)
+    person_name_snapshot = pw.CharField(null=True)
+    similarity = pw.FloatField(null=True)
+    threshold = pw.FloatField(null=True)
+    quality_json = pw.TextField(default='{}')
+    snapshot_path = pw.TextField(null=True)
+    liveness_status = pw.CharField(max_length=32, default='not_checked')
+    model_contract = pw.CharField(max_length=128, null=True)
+    inference_backend = pw.CharField(max_length=32, null=True)
+    occurred_at = pw.DateTimeField(index=True)
+    expires_at = pw.DateTimeField(null=True, index=True)
+    created_by = pw.CharField(default='system')
+
+    class Meta:
+        table_name = 'face_events'
+        indexes = (
+            (('video_source', 'occurred_at'), False),
+            (('gallery', 'occurred_at'), False),
+            (('person', 'occurred_at'), False),
+        )
+
+    @property
+    def quality(self):
+        try:
+            return json.loads(self.quality_json) if self.quality_json else {}
+        except Exception:
+            return {}
+
+
+class FaceImportJob(BaseModel):
+    gallery = pw.ForeignKeyField(FaceGallery, backref='import_jobs', on_delete='CASCADE')
+    status = pw.CharField(max_length=32, default='pending', index=True)
+    encrypted_archive_path = pw.TextField()
+    total_people = pw.IntegerField(default=0)
+    total_images = pw.IntegerField(default=0)
+    processed_people = pw.IntegerField(default=0)
+    succeeded_people = pw.IntegerField(default=0)
+    failed_people = pw.IntegerField(default=0)
+    errors_json = pw.TextField(default='[]')
+    locked_at = pw.DateTimeField(null=True, index=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    completed_at = pw.DateTimeField(null=True)
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'face_import_jobs'
+        indexes = ((('created_by', 'created_at'), False),)
+
+    @property
+    def errors(self):
+        try:
+            return json.loads(self.errors_json) if self.errors_json else []
+        except Exception:
+            return []
+
+
 class User(BaseModel):
     """用户表"""
     id = pw.AutoField()

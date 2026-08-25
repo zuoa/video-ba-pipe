@@ -81,6 +81,11 @@ from app.core.video_decode_config import (
     load_video_decode_config,
     save_video_decode_config,
 )
+from app.core.face_settings import (
+    available_face_inference_backends,
+    load_face_recognition_config,
+    save_face_recognition_config,
+)
 from app.core.storage_pressure import measure_storage_pressure
 from app.core.ops_notification_config import (
     get_ops_notification_config,
@@ -200,6 +205,9 @@ from app.web.api.auth import (
     is_admin_user,
 )
 app.register_blueprint(auth_bp)
+
+from app.web.api.faces import faces_bp
+app.register_blueprint(faces_bp)
 
 
 def serialize_algorithm(algorithm, runtime_allowed=None):
@@ -445,6 +453,44 @@ def update_system_video_decode_config():
         return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         app.logger.error(f"更新视频解码配置失败: {exc}")
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/system/face-recognition-config', methods=['GET'])
+@require_auth
+@require_admin
+def get_system_face_recognition_config():
+    config, source, _database_available = load_face_recognition_config()
+    return jsonify({
+        'success': True,
+        'config': config.to_dict(),
+        'config_source': source,
+        'available_backends': available_face_inference_backends(),
+        'apply_mode': 'dynamic_on_next_face_runtime',
+    })
+
+
+@app.route('/api/system/face-recognition-config', methods=['PUT'])
+@require_auth
+@require_admin
+def update_system_face_recognition_config():
+    try:
+        config = save_face_recognition_config(
+            request.json or {},
+            updated_by=current_username('admin'),
+        )
+        return jsonify({
+            'success': True,
+            'config': config.to_dict(),
+            'config_source': 'database',
+            'available_backends': available_face_inference_backends(),
+            'apply_mode': 'dynamic_on_next_face_runtime',
+            'message': '人脸识别配置已保存，新事件和新加载的人脸实例将自动使用',
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.error(f"更新人脸识别配置失败: {exc}")
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
@@ -1096,7 +1142,12 @@ def test_algorithm():
 
     body, status = _forward_algorithm_test(
         uploaded,
-        {'kind': 'saved_algorithm', 'algorithm_id': algorithm_id},
+        {
+            'kind': 'saved_algorithm',
+            'algorithm_id': algorithm_id,
+            'execution_owner': current_username(),
+            'execution_role': request.user.get('role', 'user'),
+        },
     )
     return jsonify(body), status
 
@@ -2425,6 +2476,14 @@ if 'pytest' not in sys.modules and os.environ.get('ALERT_EXPORT_WORKER_DISABLED'
         app.logger.info("告警导出后台任务已启动")
     except Exception as e:
         app.logger.warning(f"告警导出后台任务启动失败: {e}")
+
+if 'pytest' not in sys.modules and os.environ.get('FACE_IMPORT_WORKER_DISABLED') != '1':
+    try:
+        from app.web.api.faces import start_face_import_worker
+        start_face_import_worker()
+        app.logger.info("人脸批量录入后台任务已启动")
+    except Exception as e:
+        app.logger.warning(f"人脸批量录入后台任务启动失败: {e}")
 
 # ========== 注册离线许可证 API ==========
 from app.web.api.license import register_license_api

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, Set
 
 from app import logger
+from app import config as app_config
 from app.config import (
     ALERT_IMAGE_CLEANUP_ENABLED,
     ALERT_IMAGE_RETENTION_DAYS,
@@ -20,6 +21,15 @@ from app.config import (
     WINDOW_DETECTION_RETENTION_HOURS,
 )
 from app.core.database_models import Alert, WorkflowTestResult, db
+FACE_EVENT_PATH = getattr(
+    app_config,
+    'FACE_EVENT_PATH',
+    os.path.join(FRAME_SAVE_PATH, 'face-events'),
+)
+try:
+    from app.core.database_models import FaceEvent
+except ImportError:  # pragma: no cover - lightweight helper tests
+    FaceEvent = None
 try:
     from app.core.database_models import AlertDeliveryTask
 except ImportError:  # pragma: no cover - lightweight helper tests
@@ -313,9 +323,6 @@ class AlertMediaCleaner:
         self._last_notified_pressure_level: Optional[StoragePressureLevel] = None
 
     def start(self):
-        if not self.enabled:
-            logger.info("[AlertMediaCleaner] 未启用告警媒体自动清理")
-            return
         if self._thread and self._thread.is_alive():
             return
 
@@ -326,6 +333,11 @@ class AlertMediaCleaner:
             daemon=True,
         )
         self._thread.start()
+        if not self.enabled:
+            logger.info(
+                "[AlertMediaCleaner] 告警媒体自动清理未启用；"
+                "人脸事件留存清理仍将独立运行"
+            )
         logger.info(
             "[AlertMediaCleaner] 已启动: "
             f"image_retention_days={self.image_retention_days}, "
@@ -346,6 +358,20 @@ class AlertMediaCleaner:
             self.run_once()
 
     def run_once(self):
+        # Biometric retention is independent from alert-media cleanup.  Keep
+        # this scheduler alive even when administrators disable alert cleanup.
+        if not self.enabled:
+            try:
+                expired_face_events = self._cleanup_expired_face_events()
+                if expired_face_events:
+                    logger.info(
+                        "[AlertMediaCleaner] 人脸事件清理完成: "
+                        f"expired_face_events={expired_face_events}"
+                    )
+            except Exception as exc:
+                logger.exception(f"[AlertMediaCleaner] 人脸事件留存清理失败: {exc}")
+            return
+
         recording_config = get_recording_storage_config()
         notification_config = get_ops_notification_config()
         self._monitor_disk_pressure(recording_config, notification_config)
@@ -371,6 +397,7 @@ class AlertMediaCleaner:
                 self.window_detection_retention_seconds,
             )
             expired_records = self._cleanup_expired_alert_records()
+            expired_face_events = self._cleanup_expired_face_events()
             reconciled_records = (
                 self._reconcile_missing_media_references()
                 if filesystem_result.removed_files or expired_window_files
@@ -383,6 +410,7 @@ class AlertMediaCleaner:
                 or expired_window_files
                 or expired_records
                 or reconciled_records
+                or expired_face_events
             ):
                 logger.info(
                     "[AlertMediaCleaner] 清理完成: "
@@ -392,6 +420,7 @@ class AlertMediaCleaner:
                     f"window_detection_files={expired_window_files}, "
                     f"expired_records={expired_records}, "
                     f"reconciled_records={reconciled_records}, "
+                    f"expired_face_events={expired_face_events}, "
                     f"free_gb={self._get_free_bytes() / 1024 / 1024 / 1024:.2f}"
                 )
             self._monitor_alert_growth(notification_config)
@@ -618,6 +647,42 @@ class AlertMediaCleaner:
                 )
                 .execute()
             )
+
+    @staticmethod
+    def _cleanup_expired_face_events() -> int:
+        if FaceEvent is None:
+            return 0
+        now = datetime.now()
+        removed = 0
+        with db.connection_context():
+            query = FaceEvent.select().where(
+                FaceEvent.expires_at.is_null(False) & (FaceEvent.expires_at <= now)
+            )
+            for event in query.iterator():
+                snapshot_removed = True
+                if event.snapshot_path:
+                    path = resolve_media_path(FACE_EVENT_PATH, event.snapshot_path)
+                    if path is None:
+                        snapshot_removed = False
+                        logger.warning(
+                            "[AlertMediaCleaner] 人脸事件抓拍路径越界，保留事件记录: "
+                            f"{event.snapshot_path}"
+                        )
+                    else:
+                        try:
+                            path.unlink()
+                        except FileNotFoundError:
+                            pass
+                        except OSError as exc:
+                            snapshot_removed = False
+                            logger.warning(
+                                f"[AlertMediaCleaner] 删除人脸事件抓拍失败 {path}: {exc}"
+                            )
+                if not snapshot_removed:
+                    continue
+                event.delete_instance()
+                removed += 1
+        return removed
 
     def _reconcile_missing_media_references(self) -> int:
         reconciled = 0

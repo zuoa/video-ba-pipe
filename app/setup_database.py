@@ -9,7 +9,8 @@ from app.core.database_models import (
     db, Algorithm, VideoSource, Alert, AlertDeliveryTask, AlertExportTask,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, ApiKey, SourceHealthLog,
-    SystemSetting, ExternalApi
+    SystemSetting, ExternalApi, FaceModelBundle, FaceModelArtifact, FaceGallery,
+    FacePerson, FaceGalleryMembership, FaceTemplate, FaceEvent, FaceImportJob,
 )
 
 
@@ -33,6 +34,13 @@ _DATABASE_MODELS = (
     AlgorithmHook,
     ScriptExecutionLog,
     MLModel,
+    FaceModelBundle,
+    FaceModelArtifact,
+    FaceGallery,
+    FacePerson,
+    FaceGalleryMembership,
+    FaceTemplate,
+    FaceImportJob,
     Workflow,
     WorkflowNode,
     WorkflowConnection,
@@ -41,6 +49,7 @@ _DATABASE_MODELS = (
     ApiKey,
     SourceHealthLog,
     SystemSetting,
+    FaceEvent,
 )
 
 

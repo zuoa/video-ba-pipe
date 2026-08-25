@@ -1,6 +1,6 @@
 # Video BA Pipe
 
-离线许可证、节点绑定和永久免费单路试用规则见 [docs/license.md](docs/license.md)。
+离线许可证、节点绑定和永久免费单路试用规则见 [docs/license.md](docs/license.md)。跨平台千人级人脸识别的模型契约、录入格式和验收方法见 [docs/face_recognition.md](docs/face_recognition.md)。
 
 视频流智能分析系统，支持多路视频源接入、工作流编排、算法脚本管理、告警落库与消息发布。
 
@@ -10,6 +10,7 @@
 - 可视化工作流：基于节点连接定义分析流程
 - 脚本算法：支持 Python 脚本上传、编辑与测试
 - 组合检测：用画布连接 YOLO/ONNX/RKNN 检测数据流与 AND、OR、NOT 业务规则
+- 千人级人脸识别：同一业务契约自动适配 x86 CPU/CUDA、Jetson 与 RK3588
 - 告警闭环：保存告警图片/视频并提供检索
 - 消息集成：默认通过 MQTT 发布预警事件，也可切换到 RabbitMQ 或 HTTP API
 
@@ -35,6 +36,8 @@ docker compose -f docker-compose.yml up -d
 ```bash
 docker compose exec mqtt cat /mosquitto/secrets/initial-password
 ```
+
+人脸识别的事件保留期、默认推理后端和商用模型门禁同样在“系统设置 → 人脸识别”中管理。只有数据卷路径、生物数据密钥和可信推理插件这类启动级配置保留在部署环境中。
 当前 compose 已内置 PostgreSQL，应用默认通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。  
 如需改用外部 PostgreSQL，可在 `.env` 中覆盖 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。
 页面 Header 默认显示公司名称“码全科技”；可在 `.env` 中通过 `COMPANY_NAME` 修改。

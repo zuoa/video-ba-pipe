@@ -11,7 +11,7 @@ import {
   resolvePostLoginPath,
 } from '@/utils/auth';
 
-const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts'];
+const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts', '/face-galleries'];
 
 function getStoredUser() {
   const userStr = localStorage.getItem('user');

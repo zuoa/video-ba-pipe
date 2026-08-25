@@ -268,7 +268,12 @@ def test_workflow_loads_vl_record_as_standard_algorithm_node(monkeypatch):
         id=31,
         name="VL 人员聚集",
         script_path="",
-        config_dict={},
+        config_dict={
+            "created_by": "victim",
+            "_execution_owner": "victim",
+            "_execution_role": "admin",
+            "_preview_mode": False,
+        },
         ext_config={
             "algorithm_type": "vl",
             "interval_seconds": 2,
@@ -282,11 +287,18 @@ def test_workflow_loads_vl_record_as_standard_algorithm_node(monkeypatch):
         "app.core.workflow_executor.Algorithm.get_by_id",
         lambda algorithm_id: fake_algorithm,
     )
+    monkeypatch.setattr(
+        "app.core.workflow_executor.User.get_or_none",
+        lambda *_args, **_kwargs: SimpleNamespace(role="user"),
+    )
 
     executor = WorkflowExecutor.__new__(WorkflowExecutor)
     executor.workflow_id = 8
-    executor.workflow = SimpleNamespace(name="园区巡检")
-    executor.video_source = SimpleNamespace(id=4, name="东门", source_code="gate-east")
+    executor.workflow = SimpleNamespace(name="园区巡检", created_by="workflow-owner")
+    executor.video_source = SimpleNamespace(
+        id=4, name="东门", source_code="gate-east", created_by="source-owner"
+    )
+    executor.test_mode = True
     executor.nodes = {
         "algo-vl": AlgorithmNodeData(
             node_id="algo-vl",
@@ -323,3 +335,7 @@ def test_workflow_loads_vl_record_as_standard_algorithm_node(monkeypatch):
     assert executor.algorithm_datamap["algo-vl"]["interval_seconds"] == 3
     assert executor.algorithms["algo-vl"].config["workflow_name"] == "园区巡检"
     assert executor.algorithms["algo-vl"].config["vl_timeout_override_seconds"] == 20
+    assert executor.algorithms["algo-vl"].config["created_by"] == "source-owner"
+    assert executor.algorithms["algo-vl"].config["_execution_owner"] == "source-owner"
+    assert executor.algorithms["algo-vl"].config["_execution_role"] == "user"
+    assert executor.algorithms["algo-vl"].config["_preview_mode"] is True

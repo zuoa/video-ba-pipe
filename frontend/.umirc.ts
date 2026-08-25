@@ -95,6 +95,12 @@ export default defineConfig({
       icon: 'FunctionOutlined',
     },
     {
+      name: '人脸识别',
+      path: '/face-galleries',
+      component: './face-galleries',
+      icon: 'ScanOutlined',
+    },
+    {
       name: '脚本',
       path: '/scripts',
       component: './scripts',

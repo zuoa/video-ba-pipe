@@ -84,6 +84,12 @@ class ScriptLoaderSecurityTests(unittest.TestCase):
         with self.assertRaises(ScriptValidationError):
             loader.validate_security(script_path)
 
+    def test_builtin_face_recognizer_passes_security_validation(self):
+        loader = ScriptLoader()
+        script_path = Path(loader.builtin_scripts_root) / "templates" / "face_recognizer.py"
+
+        self.assertTrue(loader.validate_security(str(script_path)))
+
     def test_isolated_load_unload_does_not_affect_sibling_instance(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

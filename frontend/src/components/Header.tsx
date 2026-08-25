@@ -21,6 +21,7 @@ import {
   TeamOutlined,
   SettingOutlined,
   ReadOutlined,
+  ScanOutlined,
 } from '@ant-design/icons';
 
 const DEFAULT_COMPANY_NAME = '码全科技';
@@ -88,6 +89,11 @@ const Header: React.FC = () => {
 
   const menuItems = [
     ...(user?.role === 'admin' ? [{
+      key: 'face-galleries',
+      icon: <ScanOutlined />,
+      label: <Link to="/face-galleries">人脸识别</Link>,
+    }] : []),
+    ...(user?.role === 'admin' ? [{
       key: 'models',
       icon: <FunctionOutlined />,
       label: <Link to="/models">模型管理</Link>,
@@ -114,6 +120,7 @@ const Header: React.FC = () => {
   };
 
   const isAlgorithmActive = location.pathname === '/models' ||
+    location.pathname === '/face-galleries' ||
     location.pathname === '/scripts' ||
     location.pathname === '/external-apis' ||
     location.pathname === '/algorithms';

@@ -43,6 +43,8 @@ import {
   updateAlgorithm,
   getScriptConfigSchema,
   getPluginModules,
+  getFaceGalleries,
+  type FaceGallery,
 } from '@/services/api';
 import type { Script } from '@/services/api';
 import CascadeEditor, {
@@ -78,6 +80,11 @@ const DETECTOR_PRESETS: readonly DetectorPreset[] = [
     name: '目标追踪',
     path: 'templates/object_tracker.py',
     description: '为上游检测框分配跨帧 ID，并可在同一节点选择徘徊、停留或按方向穿越热区。向导间隔最低 0.1 秒',
+  },
+  {
+    name: '跨平台人脸识别',
+    path: 'templates/face_recognizer.py',
+    description: '绑定人脸库完成千人级 1:N 识别，自动适配当前设备可用的推理后端',
   },
 ];
 
@@ -194,6 +201,7 @@ export default function AlgorithmWizard() {
   const [loading, setLoading] = useState(false);
   const [scripts, setScripts] = useState<DetectorPreset[]>([]);
   const [models, setModels] = useState<any[]>([]);
+  const [faceGalleries, setFaceGalleries] = useState<FaceGallery[]>([]);
   const [selectedDetector, setSelectedDetector] = useState<SelectedDetector | null>(null);
   const [configSchema, setConfigSchema] = useState<ConfigSchema>({});
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
@@ -214,14 +222,16 @@ export default function AlgorithmWizard() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [scriptsData, modelsData, algorithmsData, pluginData] = await Promise.all([
+      const [scriptsData, modelsData, algorithmsData, pluginData, faceGalleryData] = await Promise.all([
         getScripts().catch(() => ({ scripts: [] })),
         getModels().catch(() => ({ models: [] })),
         editId ? getAlgorithms() : Promise.resolve([]),
         getPluginModules().catch(() => ({ modules: [], capabilities: {} })),
+        getFaceGalleries().catch(() => ({ galleries: [] })),
       ]);
       setScripts(getAvailableDetectorPresets(scriptsData?.scripts || []));
       setModels(modelsData?.models || []);
+      setFaceGalleries(faceGalleryData?.galleries || []);
       setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
       setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
       setOcrBackends(Array.isArray(pluginData?.capabilities?.ocr?.backends)
@@ -771,7 +781,7 @@ export default function AlgorithmWizard() {
           config[key] = value !== undefined ? parseInt(value) : (field.default !== undefined ? field.default : null);
         } else if (field.type === 'number' || field.type === 'float') {
           config[key] = value !== undefined ? parseFloat(value) : (field.default !== undefined ? field.default : null);
-        } else if (field.type === 'model_select') {
+        } else if (field.type === 'model_select' || field.type === 'face_gallery_select') {
           config[key] = value !== undefined && value !== null ? parseInt(value) : null;
         } else if (field.type === 'boolean') {
           config[key] = value !== undefined ? value : (field.default !== undefined ? field.default : false);
@@ -1372,6 +1382,17 @@ export default function AlgorithmWizard() {
               return m.enabled;
             }).map(m => (
               <Option key={m.id} value={m.id}>{m.name} ({m.model_type})</Option>
+            ))}
+          </Select>
+        );
+
+      case 'face_gallery_select':
+        return (
+          <Select placeholder="选择已启用的人脸库..." allowClear>
+            {faceGalleries.filter(gallery => gallery.enabled).map(gallery => (
+              <Option key={gallery.id} value={gallery.id}>
+                {gallery.name}（{gallery.person_count} 人 / {gallery.template_count} 模板）
+              </Option>
             ))}
           </Select>
         );
