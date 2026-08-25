@@ -27,6 +27,45 @@
 
 ## 快速开始（Docker 推荐）
 
+### 交互式生成 Compose（推荐）
+
+仓库提供了 Compose 生成脚本，可自动识别 x86 CPU、x86 CUDA、Jetson 和 RK3588，按需加入 MQTT、RabbitMQ、MediaMTX，并可选择南京大学容器镜像：
+
+```bash
+./scripts/generate_compose.sh
+docker compose -f docker-compose.generated.yml up -d
+```
+
+无需克隆仓库也可以在目标部署目录直接远程运行。下面的写法会保留终端标准输入，因此可以正常完成交互问答：
+
+```bash
+mkdir -p video-ba-pipe && cd video-ba-pipe
+curl -fsSLo generate_compose.sh \
+  https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh && \
+  bash generate_compose.sh
+```
+
+远程模式会自动下载所选平台的 Compose 模板和必需配置，最终生成 `docker-compose.generated.yml`、`.env` 以及相关配置目录。
+
+也可以在无人值守部署中显式传参：
+
+```bash
+./scripts/generate_compose.sh \
+  --non-interactive \
+  --platform auto \
+  --with-mqtt \
+  --without-rabbitmq \
+  --with-mediamtx \
+  --nju-mirror \
+  --force
+```
+
+`--platform auto` 在 x86 主机上根据 NVIDIA 驱动选择 CPU 或 CUDA，在 ARM64 主机上根据设备树识别 Jetson/Tegra 或 RK3588；也可使用 `cpu`、`cuda`、`jetson`、`rknn` 手动覆盖。启用 `--nju-mirror` 后，GHCR 地址会切换到 `ghcr.nju.edu.cn`，Docker Hub 镜像会切换到 `docker.nju.edu.cn`。
+
+生成器默认还会在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `frontend/nginx.conf` 和 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
+
+交互模式默认询问是否生成 `.env`，随后填写镜像版本、公司名、PostgreSQL 数据库名/用户名/密码、外部访问地址、节点 ID、设备型号代码等必要变量；JWT 与媒体签名密钥可直接回车自动生成。选择 MediaMTX 或 RabbitMQ 后，还会继续询问对应账号和连接参数。生成的 `.env` 权限为 `600`，已有文件默认不会覆盖。无人值守模式会使用传入的同名环境变量，并为缺失的密码和密钥生成随机值；可用 `--no-env-file` 跳过，或用 `--force-env` 重新生成。全部参数见 `./scripts/generate_compose.sh --help`。
+
 ### 1) CPU 部署
 
 ```bash
