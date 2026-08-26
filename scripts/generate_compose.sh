@@ -17,15 +17,15 @@ fi
 
 PLATFORM="auto"
 PLATFORM_SET=false
-ENABLE_MQTT=true
+ENABLE_MQTT=false
 MQTT_SET=false
 ENABLE_RABBITMQ=false
 RABBITMQ_SET=false
 ENABLE_MEDIAMTX=false
 MEDIAMTX_SET=false
-USE_NJU_MIRROR=false
+USE_NJU_MIRROR=true
 NJU_MIRROR_SET=false
-OUTPUT_FILE="${PROJECT_DIR}/docker-compose.generated.yml"
+OUTPUT_FILE="${PROJECT_DIR}/docker-compose.yml"
 FORCE=false
 INTERACTIVE_MODE="auto"
 DOWNLOAD_CONFIGS=true
@@ -44,15 +44,15 @@ usage() {
 
 选项：
   -p, --platform PLATFORM  auto、cpu、cuda、jetson 或 rknn（默认：auto）
-  -o, --output FILE        输出文件（默认：docker-compose.generated.yml；- 表示标准输出）
-      --with-mqtt          包含内置 MQTT Broker（默认）
-      --without-mqtt       不包含内置 MQTT Broker
+  -o, --output FILE        输出文件（默认：docker-compose.yml；- 表示标准输出）
+      --with-mqtt          包含内置 MQTT Broker
+      --without-mqtt       不包含内置 MQTT Broker（默认）
       --with-rabbitmq      包含内置 RabbitMQ
       --without-rabbitmq   不包含内置 RabbitMQ（默认）
       --with-mediamtx      包含 MediaMTX 实时预览中继
       --without-mediamtx   不包含 MediaMTX（默认）
-      --nju-mirror         使用南京大学容器镜像地址
-      --no-nju-mirror      使用上游容器镜像地址（默认）
+      --nju-mirror         使用南京大学容器镜像地址（默认）
+      --no-nju-mirror      使用上游容器镜像地址
       --download-configs   自动准备 Compose 引用的配置文件（默认）
       --no-download-configs
                            不下载或复制配置文件，也不创建 data 目录
@@ -388,6 +388,13 @@ validate_env_value() {
   [[ "${value}" != *$'\n'* && "${value}" != *$'\r'* ]] || die "${name} 不能包含换行"
 }
 
+validate_http_port() {
+  local value
+  value="$1"
+  [[ "${value}" =~ ^[1-9][0-9]{0,4}$ ]] || die "HTTP_PORT 必须是 1 到 65535 之间的整数"
+  ((value <= 65535)) || die "HTTP_PORT 必须是 1 到 65535 之间的整数"
+}
+
 quote_env_value() {
   local value
   value="$1"
@@ -407,6 +414,7 @@ write_env_pair() {
 initialize_env_values() {
   ENV_RELEASE="${VIDEO_BA_PIPE_RELEASE:-stable}"
   ENV_COMPANY_NAME="${COMPANY_NAME:-码全科技}"
+  ENV_HTTP_PORT="${HTTP_PORT:-8080}"
   ENV_DB_NAME="${DB_NAME:-video_ba_pipe}"
   ENV_DB_USER="${DB_USER:-video_ba_pipe}"
   ENV_DB_PASSWORD="${DB_PASSWORD:-$(random_secret)}"
@@ -426,6 +434,7 @@ initialize_env_values() {
 collect_env_answers() {
   ENV_RELEASE="$(ask_text '镜像发布版本/commit' "${ENV_RELEASE}")"
   ENV_COMPANY_NAME="$(ask_text '页面显示的公司名称' "${ENV_COMPANY_NAME}")"
+  ENV_HTTP_PORT="$(ask_text '前端 HTTP 端口' "${ENV_HTTP_PORT}")"
   ENV_DB_NAME="$(ask_text 'PostgreSQL 数据库名' "${ENV_DB_NAME}")"
   ENV_DB_USER="$(ask_text 'PostgreSQL 用户名' "${ENV_DB_USER}")"
   ENV_DB_PASSWORD="$(ask_secret 'PostgreSQL 密码' "${ENV_DB_PASSWORD}")"
@@ -450,6 +459,7 @@ collect_env_answers() {
 
 write_env_file() {
   local env_dir env_temp
+  validate_http_port "${ENV_HTTP_PORT}"
   env_dir="$(dirname -- "${ENV_FILE}")"
   [[ -d "${env_dir}" ]] || mkdir -p -- "${env_dir}"
   env_temp="$(mktemp "${env_dir}/.video-ba-env.XXXXXX")"
@@ -459,6 +469,7 @@ write_env_file() {
     printf '# 请妥善保管：此文件包含数据库和应用密钥。\n\n'
     write_env_pair VIDEO_BA_PIPE_RELEASE "${ENV_RELEASE}"
     write_env_pair COMPANY_NAME "${ENV_COMPANY_NAME}"
+    write_env_pair HTTP_PORT "${ENV_HTTP_PORT}"
     write_env_pair DB_BACKEND "postgres"
     write_env_pair DB_HOST "postgres"
     write_env_pair DB_PORT "5432"
@@ -503,6 +514,7 @@ parameterize_generated_compose() {
   input="$1"
   output="$2"
   sed \
+    -e 's#- "8080:80"#- "${HTTP_PORT:-8080}:80"#g' \
     -e 's#- RABBITMQ_DEFAULT_USER=admin#- RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}#g' \
     -e 's#- RABBITMQ_DEFAULT_PASS=admin123#- RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin123}#g' \
     "${input}" >"${output}"
@@ -713,6 +725,7 @@ if [[ "${GENERATE_ENV}" == "true" ]]; then
   if [[ "${INTERACTIVE_MODE}" == "true" ]]; then
     collect_env_answers
   fi
+  validate_http_port "${ENV_HTTP_PORT}"
 fi
 
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/video-ba-compose.XXXXXX")"
