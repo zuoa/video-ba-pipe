@@ -1469,17 +1469,23 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+// Older frontend nginx configs permanently redirected this collection URL to
+// a slash-terminated, port-less URL. Keep a versioned query parameter on the
+// collection requests so browsers bypass that cached 301 after an upgrade.
+const ALERT_EXPORT_REDIRECT_FIX_VERSION = 1;
+
 export async function createAlertExport(data?: Record<string, unknown>) {
   return request<AlertExportTask>('/api/alert-exports', {
     method: 'POST',
     data: data || {},
+    params: { redirect_fix: ALERT_EXPORT_REDIRECT_FIX_VERSION },
     skipErrorHandler: true,
   });
 }
 
 export async function getAlertExports(params?: { page?: number; per_page?: number }) {
   return request<AlertExportListResponse>('/api/alert-exports', {
-    params,
+    params: { ...params, redirect_fix: ALERT_EXPORT_REDIRECT_FIX_VERSION },
     skipErrorHandler: true,
   });
 }
