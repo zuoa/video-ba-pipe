@@ -4,6 +4,5 @@
 # scope: always | mqtt | rabbitmq | mediamtx
 # path:  repository-relative path, without spaces
 dir     always     data
-file    always     frontend/nginx.conf
 file    mqtt       deploy/mosquitto.conf
 file    mediamtx   mediamtx.yml

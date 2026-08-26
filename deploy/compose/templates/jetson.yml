@@ -266,29 +266,12 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./data:/data:ro
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        if ! grep -Eq '^[[:space:]]*client_max_body_size[[:space:]]+1g;' /etc/nginx/conf.d/default.conf; then
-          sed -i '/^[[:space:]]*client_max_body_size[[:space:]]/d' /etc/nginx/conf.d/default.conf
-          sed -i '/^[[:space:]]*server_name _;/a\    client_max_body_size 1g;' /etc/nginx/conf.d/default.conf
-        fi
-        grep -Eq '^[[:space:]]*client_max_body_size[[:space:]]+1g;' /etc/nginx/conf.d/default.conf
-        exec nginx -g 'daemon off;'
     depends_on:
       api:
         condition: service_healthy
     ports:
       - "8080:80"
-    healthcheck:
-      test: ["CMD-SHELL", "nginx -T 2>&1 | grep -Eq 'client_max_body_size[[:space:]]+1g;'"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
     networks:
       - video-ba-network
     logging: *default-logging

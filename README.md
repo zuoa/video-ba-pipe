@@ -70,7 +70,16 @@ GHProxy 属于第三方代理服务，可能存在缓存延迟或可用性变化
 
 `--platform auto` 在 x86 主机上根据 NVIDIA 驱动选择 CPU 或 CUDA，在 ARM64 主机上根据设备树识别 Jetson/Tegra 或 RK3588；也可使用 `cpu`、`cuda`、`jetson`、`rknn` 手动覆盖。启用 `--nju-mirror` 后，仅将 `ghcr.io` 切换到 `ghcr.nju.edu.cn`；PostgreSQL、RabbitMQ、Mosquitto、MediaMTX 等 Docker Hub 镜像保持上游地址。
 
-生成器默认还会根据 `deploy/compose/required-files.txt`，在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `frontend/nginx.conf` 和 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
+生成器默认还会根据 `deploy/compose/required-files.txt`，在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
+
+前端 Nginx 配置已内置在前端镜像中，标准部署不再下载或挂载 `frontend/nginx.conf`；更新前端镜像会同时更新页面资源和 Nginx 配置，避免二者版本不一致。如确需现场定制，可自行创建 `docker-compose.override.yml`，仅在该文件中挂载自定义配置：
+
+```yaml
+services:
+  frontend:
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+```
 
 交互模式默认询问是否生成 `.env`，随后填写镜像版本、公司名、前端 HTTP 端口（`HTTP_PORT`，默认 `8080`）、PostgreSQL 数据库名/用户名/密码、外部访问地址、节点 ID、设备型号代码等必要变量；JWT 与媒体签名密钥可直接回车自动生成。选择 MediaMTX 或 RabbitMQ 后，还会继续询问对应账号和连接参数。生成的 `.env` 权限为 `600`，已有文件默认不会覆盖。无人值守模式会使用传入的同名环境变量，并为缺失的密码和密钥生成随机值；可用 `--no-env-file` 跳过，或用 `--force-env` 重新生成。全部参数见 `./scripts/generate_compose.sh --help`。
 
@@ -80,7 +89,7 @@ GHProxy 属于第三方代理服务，可能存在缓存延迟或可用性变化
 curl -fsSLo generate_compose.sh https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh && bash generate_compose.sh --force
 ```
 
-如果确认没有手工修改过 `nginx.conf`、`mosquitto.conf` 或 `mediamtx.yml`，可再加 `--force-configs` 同步这些托管配置；否则先保留并对比，避免覆盖现场定制。
+如果确认没有手工修改过 `mosquitto.conf` 或 `mediamtx.yml`，可再加 `--force-configs` 同步这些托管配置；否则先保留并对比，避免覆盖现场定制。
 
 生成文件头会记录平台、可选服务、镜像源和模板来源。生产环境如需严格复现，可把脚本下载 URL 与 `VIDEO_BA_PIPE_CONFIG_BASE_URL` 中的 `main` 同时替换为同一个 tag 或完整 commit SHA。仓库中的模板、片段或必要文件清单发生变化后，GitHub Actions 会生成并校验所有平台的基础/完整组合，避免脚本与部署源不同步。
 

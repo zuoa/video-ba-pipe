@@ -21,8 +21,9 @@ fragments so one change applies to every platform.
 
 1. Change one platform template for platform-specific behavior, or one fragment
    for shared optional-service behavior.
-2. If a new bind-mounted config is introduced, add it to
-   `required-files.txt`; the generator consumes this manifest automatically.
+2. Keep application-owned defaults, such as the frontend nginx config, inside
+   their image. If a config must be bind-mounted in every deployment, add it
+   to `required-files.txt`; the generator consumes this manifest automatically.
 3. Run `scripts/verify_compose_generation.sh` to generate and validate the full
    platform/optional-service matrix.
 4. Update user-facing deployment documentation when flags or defaults change.

@@ -5,7 +5,6 @@ on:
     paths:
       - "deploy/compose/**"
       - "deploy/mosquitto.conf"
-      - "frontend/nginx.conf"
       - "mediamtx.yml"
       - "scripts/generate_compose.sh"
       - "scripts/verify_compose_generation.sh"
@@ -15,7 +14,6 @@ on:
     paths:
       - "deploy/compose/**"
       - "deploy/mosquitto.conf"
-      - "frontend/nginx.conf"
       - "mediamtx.yml"
       - "scripts/generate_compose.sh"
       - "scripts/verify_compose_generation.sh"

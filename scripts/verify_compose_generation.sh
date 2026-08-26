@@ -87,7 +87,7 @@ mkdir -p -- "${required_dir}"
   --output "${required_dir}/docker-compose.yml" >/dev/null
 
 test -d "${required_dir}/data"
-test -s "${required_dir}/frontend/nginx.conf"
+test ! -e "${required_dir}/frontend/nginx.conf"
 test -s "${required_dir}/deploy/mosquitto.conf"
 test -s "${required_dir}/mediamtx.yml"
 
