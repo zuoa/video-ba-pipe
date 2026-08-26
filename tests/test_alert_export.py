@@ -128,10 +128,23 @@ def test_parse_alert_filters_ignores_client_owner_and_invalid_time():
         'start_time': 'not-a-date',
         'end_time': '2026-08-19T12:00:00',
     })
-    assert filters['source_id'] == '12'
+    assert filters['source_id'] == 12
     assert 'owner' not in filters
     assert 'start_time' not in filters
     assert filters['end_time'] == '2026-08-19T12:00:00'
+
+
+def test_iso_z_time_filter_matches_naive_local_alerts(export_env):
+    from datetime import timezone
+
+    keep = _create_alert(export_env['source'], minutes_ago=10)
+    _create_alert(export_env['source'], minutes_ago=200)
+
+    start = (datetime.now() - timedelta(hours=1)).astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+    end = datetime.now().astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+    filters = parse_alert_filters({'start_time': start, 'end_time': end})
+    assert build_alert_query(filters).count() == 1
+    assert {alert.id for alert in build_alert_query(filters)} == {keep.id}
 
 
 def test_build_alert_query_matches_list_filters(export_env):
@@ -248,6 +261,20 @@ def test_public_export_url_helpers():
     assert export_mod.x_accel_redirect_path(None) is None
 
 
+def test_create_export_api_returns_json_on_unexpected_error(export_env, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError('disk full')
+
+    monkeypatch.setattr(export_api, 'create_export_task', boom)
+    response = export_env['client'].post(
+        '/api/alert-exports',
+        json={},
+        headers=export_env['admin_headers'],
+    )
+    assert response.status_code == 500
+    assert response.get_json()['error'] == '创建导出任务失败: disk full'
+
+
 def test_api_create_list_download_and_delete(export_env):
     source = export_env['source']
     frames_dir = export_env['frames_dir']
@@ -258,7 +285,7 @@ def test_api_create_list_download_and_delete(export_env):
     client = export_env['client']
     headers = export_env['admin_headers']
 
-    created = client.post('/api/alert-exports', json={}, headers=headers)
+    created = client.post('/api/alert-exports', json={'start_time': '2020-01-01T00:00:00.000Z'}, headers=headers)
     assert created.status_code == 201
     task_id = created.get_json()['id']
     assert created.get_json()['status'] == 'pending'
@@ -345,6 +372,18 @@ def test_download_rejects_path_traversal(export_env):
 
     public = client.get('/media/exports/../secret.zip')
     assert public.status_code == 404
+
+
+def test_stale_pending_task_does_not_block_new_export(export_env):
+    _create_alert(export_env['source'])
+    stuck = export_mod.create_export_task({}, username='admin', is_admin=True)
+    AlertExportTask.update(
+        created_at=datetime.now() - timedelta(seconds=export_mod.STALE_PENDING_SECONDS + 5)
+    ).where(AlertExportTask.id == stuck.id).execute()
+
+    replacement = export_mod.create_export_task({}, username='admin', is_admin=True)
+    assert replacement.id != stuck.id
+    assert AlertExportTask.get_by_id(stuck.id).status == 'failed'
 
 
 def test_cleanup_expired_exports(export_env):

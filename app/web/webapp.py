@@ -2487,12 +2487,9 @@ except ImportError as e:
     app.logger.warning(f"实时预览API注册失败: {e}")
 
 # ========== 注册告警导出 API ==========
-try:
-    from app.web.api.alert_exports import register_alert_exports_api
-    register_alert_exports_api(app)
-    app.logger.info("告警导出API已注册")
-except ImportError as e:
-    app.logger.warning(f"告警导出API注册失败: {e}")
+from app.web.api.alert_exports import register_alert_exports_api
+register_alert_exports_api(app)
+app.logger.info("告警导出API已注册")
 
 # ========== 注册离线许可证 API ==========
 from app.web.api.license import register_license_api

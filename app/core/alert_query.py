@@ -8,6 +8,15 @@ from typing import Any, Mapping, Optional
 from app.core.database_models import Alert, Workflow, VideoSource
 
 
+def _as_int(value: Any) -> Optional[int]:
+    if value is None or value is False:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 FILTER_KEYS = (
     'source_id',
     'workflow_id',
@@ -37,15 +46,20 @@ def _first_value(raw: Mapping[str, Any], *keys: str) -> Optional[str]:
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
-    text = value.strip()
+    text = str(value).strip()
     if not text:
         return None
     if text.endswith('Z'):
         text = text[:-1] + '+00:00'
     try:
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
+    # Alert.alert_time is stored as naive local time. Frontend toISOString()
+    # is UTC; comparing aware vs naive raises on some drivers and shifts filters.
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
 
 
 def parse_alert_filters(raw: Optional[Mapping[str, Any]]) -> dict:
@@ -56,29 +70,29 @@ def parse_alert_filters(raw: Optional[Mapping[str, Any]]) -> dict:
     raw = raw or {}
     filters: dict[str, Any] = {}
 
-    source_id = _first_value(raw, 'source_id', 'task_id')
-    if source_id:
+    source_id = _as_int(_first_value(raw, 'source_id', 'task_id'))
+    if source_id is not None:
         filters['source_id'] = source_id
 
-    workflow_id = _first_value(raw, 'workflow_id')
-    if workflow_id:
+    workflow_id = _as_int(_first_value(raw, 'workflow_id'))
+    if workflow_id is not None:
         filters['workflow_id'] = workflow_id
 
-    source_template_id = _first_value(raw, 'source_template_id')
-    if source_template_id:
+    source_template_id = _as_int(_first_value(raw, 'source_template_id'))
+    if source_template_id is not None:
         filters['source_template_id'] = source_template_id
 
     alert_type = _first_value(raw, 'alert_type')
     if alert_type:
         filters['alert_type'] = alert_type
 
-    start_time = _first_value(raw, 'start_time')
-    if start_time and parse_iso_datetime(start_time) is not None:
-        filters['start_time'] = start_time
+    start_dt = parse_iso_datetime(_first_value(raw, 'start_time'))
+    if start_dt is not None:
+        filters['start_time'] = start_dt.isoformat(timespec='seconds')
 
-    end_time = _first_value(raw, 'end_time')
-    if end_time and parse_iso_datetime(end_time) is not None:
-        filters['end_time'] = end_time
+    end_dt = parse_iso_datetime(_first_value(raw, 'end_time'))
+    if end_dt is not None:
+        filters['end_time'] = end_dt.isoformat(timespec='seconds')
 
     return filters
 
@@ -86,16 +100,16 @@ def parse_alert_filters(raw: Optional[Mapping[str, Any]]) -> dict:
 def apply_alert_filters(query, filters: Optional[Mapping[str, Any]]):
     filters = filters or {}
 
-    source_id = filters.get('source_id')
-    if source_id:
+    source_id = _as_int(filters.get('source_id'))
+    if source_id is not None:
         query = query.where(Alert.video_source == source_id)
 
-    workflow_id = filters.get('workflow_id')
-    if workflow_id:
+    workflow_id = _as_int(filters.get('workflow_id'))
+    if workflow_id is not None:
         query = query.where(Alert.workflow == workflow_id)
 
-    source_template_id = filters.get('source_template_id')
-    if source_template_id:
+    source_template_id = _as_int(filters.get('source_template_id'))
+    if source_template_id is not None:
         derived_workflow_ids = Workflow.select(Workflow.id).where(
             Workflow.source_template == source_template_id
         )

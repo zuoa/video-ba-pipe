@@ -1442,16 +1442,45 @@ export interface AlertExportListResponse {
   };
 }
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  const err = error as {
+    data?: unknown;
+    response?: { data?: unknown; status?: number };
+    message?: unknown;
+  };
+  const data = err?.data ?? err?.response?.data;
+  const candidates: unknown[] = [];
+  if (typeof data === 'string' && data.trim() && !data.trim().startsWith('<')) {
+    candidates.push(data.trim());
+  } else if (data && typeof data === 'object') {
+    const body = data as { error?: unknown; message?: unknown; errorMessage?: unknown };
+    candidates.push(body.error, body.message, body.errorMessage);
+  }
+  candidates.push(err?.message);
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  const status = err?.response?.status;
+  if (status) {
+    return `${fallback}（${status}）`;
+  }
+  return fallback;
+}
+
 export async function createAlertExport(data?: Record<string, unknown>) {
   return request<AlertExportTask>('/api/alert-exports', {
     method: 'POST',
     data: data || {},
+    skipErrorHandler: true,
   });
 }
 
 export async function getAlertExports(params?: { page?: number; per_page?: number }) {
   return request<AlertExportListResponse>('/api/alert-exports', {
     params,
+    skipErrorHandler: true,
   });
 }
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { message } from 'antd';
 import { BellOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import { createAlertExport, getAlerts, getAlertTypes, getVideoSources, getWorkflows } from '@/services/api';
+import { createAlertExport, getAlerts, getAlertTypes, getApiErrorMessage, getVideoSources, getWorkflows } from '@/services/api';
 import { isUnauthorizedError } from '@/utils/auth';
 import { PageHeader, useAppConfirm } from '@/components/common';
 import Button from '@/components/common/AppButton';
@@ -240,9 +240,10 @@ const AlertsPage: React.FC = () => {
           if (isUnauthorizedError(error)) {
             return;
           }
-          const apiMessage = error?.data?.error || error?.response?.data?.error || error?.message || '创建导出任务失败';
+          const apiMessage = getApiErrorMessage(error, '创建导出任务失败');
           message.error(apiMessage);
-          if (error?.response?.status === 409 || String(apiMessage).includes('正在进行')) {
+          const status = error?.response?.status ?? error?.status;
+          if (status === 409 || apiMessage.includes('正在进行')) {
             goToExports();
           }
         } finally {

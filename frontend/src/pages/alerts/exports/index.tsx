@@ -17,6 +17,7 @@ import {
   deleteAlertExport,
   downloadAlertExport,
   getAlertExports,
+  getApiErrorMessage,
   type AlertExportTask,
 } from '@/services/api';
 import './index.css';
@@ -79,7 +80,7 @@ const AlertExportsPage: React.FC = () => {
       }));
     } catch (error: any) {
       if (!silent) {
-        message.error(error?.data?.error || error?.message || '加载导出任务失败');
+        message.error(getApiErrorMessage(error, '加载导出任务失败'));
       }
     } finally {
       if (!silent) {
@@ -107,7 +108,7 @@ const AlertExportsPage: React.FC = () => {
     try {
       await downloadAlertExport(task.id, task.file_url);
     } catch (error: any) {
-      message.error(error?.message || '下载失败');
+      message.error(getApiErrorMessage(error, '下载失败'));
     } finally {
       setDownloadingId(null);
     }
@@ -126,7 +127,7 @@ const AlertExportsPage: React.FC = () => {
           message.success('已取消导出');
           loadTasks();
         } catch (error: any) {
-          message.error(error?.data?.error || error?.message || '取消失败');
+          message.error(getApiErrorMessage(error, '取消失败'));
         }
       },
     });
@@ -144,7 +145,7 @@ const AlertExportsPage: React.FC = () => {
           message.success('已删除');
           loadTasks();
         } catch (error: any) {
-          message.error(error?.data?.error || error?.message || '删除失败');
+          message.error(getApiErrorMessage(error, '删除失败'));
         }
       },
     });

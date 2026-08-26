@@ -73,6 +73,9 @@ def register_alert_exports_api(app):
             )
         except ExportValidationError as exc:
             return jsonify({'error': str(exc)}), exc.status_code
+        except Exception as exc:
+            app.logger.exception('Failed to create alert export')
+            return jsonify({'error': f'创建导出任务失败: {exc}'}), 500
         return jsonify({
             **serialize_export_task(task),
             'message': '导出进行中',

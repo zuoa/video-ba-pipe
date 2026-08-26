@@ -16,17 +16,28 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
 
+from peewee import JOIN
+
 from app.config import EXPORT_SAVE_PATH
 from app.core.alert_media_cleaner import resolve_frame_media_path
 from app.core.alert_query import build_alert_query, build_filter_summary, parse_alert_filters
-from app.core.database_models import Alert, AlertExportTask, db
+from app.core.database_models import Alert, AlertExportTask, VideoSource, Workflow, db
 
 
 logger = logging.getLogger(__name__)
 
-MAX_EXPORT_RECORDS = 10_000
+def _read_max_export_records() -> int:
+    raw = os.getenv('MAX_EXPORT_RECORDS', '50000').strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 50_000
+
+
+MAX_EXPORT_RECORDS = _read_max_export_records()
 EXPORT_RETENTION_DAYS = 7
 LEASE_SECONDS = 120
+STALE_PENDING_SECONDS = 60
 POLL_INTERVAL_SECONDS = 1.0
 PROGRESS_BATCH_SIZE = 20
 ACTIVE_STATUSES = ('pending', 'running')
@@ -160,6 +171,7 @@ def delete_export_files(task: AlertExportTask) -> None:
 
 
 def find_active_export(username: str) -> Optional[AlertExportTask]:
+    expire_stale_pending_tasks()
     return (
         AlertExportTask.select()
         .where(
@@ -169,6 +181,35 @@ def find_active_export(username: str) -> Optional[AlertExportTask]:
         .order_by(AlertExportTask.id.desc())
         .first()
     )
+
+
+def expire_stale_pending_tasks(now: Optional[datetime] = None) -> int:
+    """Fail pending tasks that were never claimed, so a dead jobs process cannot block retries."""
+    now = now or _now()
+    cutoff = now - timedelta(seconds=STALE_PENDING_SECONDS)
+    stale = list(
+        AlertExportTask.select().where(
+            (AlertExportTask.status == 'pending')
+            & (AlertExportTask.created_at < cutoff)
+        )
+    )
+    if not stale:
+        return 0
+    updated = (
+        AlertExportTask.update(
+            status='failed',
+            error_message='导出任务超时未开始，请确认后台 jobs 进程正在运行',
+            locked_at=None,
+            finished_at=now,
+            expires_at=now + timedelta(days=EXPORT_RETENTION_DAYS),
+        )
+        .where(
+            AlertExportTask.id.in_([task.id for task in stale])
+            & (AlertExportTask.status == 'pending')
+        )
+        .execute()
+    )
+    return int(updated or 0)
 
 
 def create_export_task(raw_filters: Optional[dict], *, username: str, is_admin: bool) -> AlertExportTask:
@@ -267,9 +308,16 @@ def _add_image(
     return zip_name, False
 
 
+def _related_or_none(alert, field_name: str):
+    try:
+        return getattr(alert, field_name, None)
+    except Exception:
+        return None
+
+
 def _write_csv_row(writer: csv.DictWriter, alert, annotated: str, original: str) -> None:
-    source = getattr(alert, 'video_source', None)
-    workflow = getattr(alert, 'workflow', None)
+    source = _related_or_none(alert, 'video_source')
+    workflow = _related_or_none(alert, 'workflow')
     writer.writerow({
         'id': alert.id,
         'alert_time': alert.alert_time.isoformat() if alert.alert_time else '',
@@ -327,7 +375,14 @@ def mark_task_running(task: AlertExportTask) -> AlertExportTask:
 def run_export_task(task: AlertExportTask) -> AlertExportTask:
     task = _ensure_running(task)
     filters = _task_filters(task)
-    query = build_alert_query(filters).order_by(Alert.alert_time.desc(), Alert.id.desc())
+    query = (
+        build_alert_query(filters)
+        .select(Alert, VideoSource, Workflow)
+        .join(VideoSource)
+        .switch(Alert)
+        .join(Workflow, join_type=JOIN.LEFT_OUTER)
+        .order_by(Alert.alert_time.desc(), Alert.id.desc())
+    )
 
     stamp = (task.created_at or _now()).strftime('%Y%m%d_%H%M%S')
     file_name = f'alerts_export_{task.id}_{stamp}.zip'
@@ -473,6 +528,7 @@ def cleanup_expired_exports(now: Optional[datetime] = None) -> int:
 
 def _recover_stale_tasks(now: Optional[datetime] = None) -> None:
     now = now or _now()
+    expire_stale_pending_tasks(now)
     cutoff = now - timedelta(seconds=LEASE_SECONDS)
     (
         AlertExportTask.update(
@@ -544,7 +600,8 @@ def _fail_task(task: AlertExportTask, exc: Exception) -> None:
 
 def process_claimed_task(task: AlertExportTask) -> AlertExportTask:
     try:
-        return run_export_task(task)
+        with db.connection_context():
+            return run_export_task(task)
     except ExportCancelled:
         current = AlertExportTask.get_by_id(task.id)
         delete_export_files(current)
