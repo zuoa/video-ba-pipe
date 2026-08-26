@@ -51,8 +51,8 @@ usage() {
       --without-rabbitmq   不包含内置 RabbitMQ（默认）
       --with-mediamtx      包含 MediaMTX 实时预览中继
       --without-mediamtx   不包含 MediaMTX（默认）
-      --nju-mirror         使用南京大学容器镜像地址（默认）
-      --no-nju-mirror      使用上游容器镜像地址
+      --nju-mirror         将 GHCR 替换为南京大学镜像（默认）
+      --no-nju-mirror      使用上游 GHCR 地址
       --download-configs   自动准备 Compose 引用的配置文件（默认）
       --no-download-configs
                            不下载或复制配置文件，也不创建 data 目录
@@ -246,14 +246,7 @@ apply_nju_mirror() {
   local input output
   input="$1"
   output="$2"
-  sed \
-    -e 's#ghcr\.io/#ghcr.nju.edu.cn/#g' \
-    -e 's#${POSTGRES_IMAGE:-postgres:#${POSTGRES_IMAGE:-docker.nju.edu.cn/postgres:#g' \
-    -e 's#image: postgres:#image: docker.nju.edu.cn/postgres:#g' \
-    -e 's#image: rabbitmq:#image: docker.nju.edu.cn/rabbitmq:#g' \
-    -e 's#image: eclipse-mosquitto:#image: docker.nju.edu.cn/eclipse-mosquitto:#g' \
-    -e 's#image: bluenviron/mediamtx:#image: docker.nju.edu.cn/bluenviron/mediamtx:#g' \
-    "${input}" >"${output}"
+  sed 's#ghcr\.io/#ghcr.nju.edu.cn/#g' "${input}" >"${output}"
 }
 
 download_file() {
@@ -675,7 +668,7 @@ if [[ "${INTERACTIVE_MODE}" == "true" ]]; then
   [[ "${MQTT_SET}" == "true" ]] || ENABLE_MQTT="$(ask_yes_no '包含内置 MQTT Broker？' "${ENABLE_MQTT}")"
   [[ "${RABBITMQ_SET}" == "true" ]] || ENABLE_RABBITMQ="$(ask_yes_no '包含内置 RabbitMQ？' "${ENABLE_RABBITMQ}")"
   [[ "${MEDIAMTX_SET}" == "true" ]] || ENABLE_MEDIAMTX="$(ask_yes_no '包含 MediaMTX 实时预览中继？' "${ENABLE_MEDIAMTX}")"
-  [[ "${NJU_MIRROR_SET}" == "true" ]] || USE_NJU_MIRROR="$(ask_yes_no '替换为南京大学容器镜像地址？' "${USE_NJU_MIRROR}")"
+  [[ "${NJU_MIRROR_SET}" == "true" ]] || USE_NJU_MIRROR="$(ask_yes_no '将 ghcr.io 替换为 ghcr.nju.edu.cn？' "${USE_NJU_MIRROR}")"
 fi
 
 if [[ "${OUTPUT_FILE}" != "-" && -e "${OUTPUT_FILE}" && "${FORCE}" != "true" ]]; then
@@ -816,7 +809,7 @@ if [[ "${ENABLE_MEDIAMTX}" == "true" ]]; then
 fi
 OPTIONAL_SERVICES="${OPTIONAL_SERVICES:-none}"
 MIRROR_NAME="upstream"
-[[ "${USE_NJU_MIRROR}" == "true" ]] && MIRROR_NAME="nju"
+[[ "${USE_NJU_MIRROR}" == "true" ]] && MIRROR_NAME="nju-ghcr"
 
 FINAL_FILE="${TEMP_DIR}/docker-compose.yml"
 awk \

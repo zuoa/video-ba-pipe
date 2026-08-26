@@ -29,7 +29,7 @@
 
 ### 交互式生成 Compose（推荐）
 
-仓库提供了 Compose 生成脚本，可自动识别 x86 CPU、x86 CUDA、Jetson 和 RK3588，按需加入 MQTT、RabbitMQ、MediaMTX，并可选择南京大学容器镜像：
+仓库提供了 Compose 生成脚本，可自动识别 x86 CPU、x86 CUDA、Jetson 和 RK3588，按需加入 MQTT、RabbitMQ、MediaMTX，并可选择南京大学 GHCR 镜像：
 
 ```bash
 ./scripts/generate_compose.sh
@@ -45,7 +45,7 @@ curl -fsSLo generate_compose.sh \
   bash generate_compose.sh
 ```
 
-远程模式会自动下载所选平台的 Compose 模板和必需配置，最终生成 `docker-compose.yml`、`.env` 以及相关配置目录。生成器默认不包含内置 MQTT Broker，并默认使用南京大学容器镜像；交互问答中可以直接修改这两个选择。
+远程模式会自动下载所选平台的 Compose 模板和必需配置，最终生成 `docker-compose.yml`、`.env` 以及相关配置目录。生成器默认不包含内置 MQTT Broker，并默认将 `ghcr.io` 替换为南京大学的 `ghcr.nju.edu.cn`；交互问答中可以直接修改这两个选择。Docker Hub 镜像不会被替换。
 
 如果目标机器无法直接访问 `raw.githubusercontent.com`，可以使用 GHProxy。下面的命令不仅通过代理下载生成器，也会让生成器后续下载 Compose 模板和配置文件时继续使用同一代理：
 
@@ -68,7 +68,7 @@ GHProxy 属于第三方代理服务，可能存在缓存延迟或可用性变化
   --force
 ```
 
-`--platform auto` 在 x86 主机上根据 NVIDIA 驱动选择 CPU 或 CUDA，在 ARM64 主机上根据设备树识别 Jetson/Tegra 或 RK3588；也可使用 `cpu`、`cuda`、`jetson`、`rknn` 手动覆盖。启用 `--nju-mirror` 后，GHCR 地址会切换到 `ghcr.nju.edu.cn`，Docker Hub 镜像会切换到 `docker.nju.edu.cn`。
+`--platform auto` 在 x86 主机上根据 NVIDIA 驱动选择 CPU 或 CUDA，在 ARM64 主机上根据设备树识别 Jetson/Tegra 或 RK3588；也可使用 `cpu`、`cuda`、`jetson`、`rknn` 手动覆盖。启用 `--nju-mirror` 后，仅将 `ghcr.io` 切换到 `ghcr.nju.edu.cn`；PostgreSQL、RabbitMQ、Mosquitto、MediaMTX 等 Docker Hub 镜像保持上游地址。
 
 生成器默认还会在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `frontend/nginx.conf` 和 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
 
