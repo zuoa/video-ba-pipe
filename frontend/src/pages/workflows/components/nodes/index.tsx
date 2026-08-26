@@ -8,11 +8,13 @@ import ExternalApiNode from './ExternalApiNode';
 import WebhookNode from './WebhookNode';
 import TimeScheduleNode from './TimeScheduleNode';
 import DetectionFilterNode from './DetectionFilterNode';
+import HttpRequestNode from './HttpRequestNode';
 
 export const nodeTypes = {
   videoSource: VideoSourceNode,
   algorithm: AlgorithmNode,
   externalApi: ExternalApiNode,
+  httpRequest: HttpRequestNode,
   condition: ConditionNode,
   roi: ROINode,
   alert: AlertNode,
@@ -35,4 +37,5 @@ export {
   WebhookNode,
   TimeScheduleNode,
   DetectionFilterNode,
+  HttpRequestNode,
 };

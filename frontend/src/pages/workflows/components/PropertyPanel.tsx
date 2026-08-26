@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Form, Input, Select, Tabs, Space, Tag, Switch, InputNumber, Typography, List } from 'antd';
+import { useParams } from 'umi';
+import { Form, Input, Select, Tabs, Space, Tag, Switch, InputNumber, Typography, List, message } from 'antd';
 import Button from '@/components/common/AppButton';
 import AppEmptyState from '@/components/common/AppEmptyState';
 import DetectionResponseContract from '@/components/external-api/DetectionResponseContract';
@@ -11,11 +12,16 @@ import {
   VideoCameraOutlined,
   EditOutlined,
   CheckCircleOutlined,
+  PlusOutlined,
+  MinusCircleOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import { getNodeTypes } from './nodes';
 import VideoSourceSelector from './VideoSourceSelector';
 import ROIDrawer, { getROIAnchorLabel, ROIRegion } from './ROIDrawer';
 import TimeScheduleEditor from './TimeScheduleEditor';
+import HttpConditionBuilder from './HttpConditionBuilder';
+import { testHttpRequest } from '@/services/api';
 import {
   createDefaultWeeklySchedule,
   normalizeWeeklySchedule,
@@ -74,6 +80,23 @@ const buildWebhookConfig = (
   config.provider_options = providerOptions;
   return config;
 };
+
+const buildHttpRequestConfig = (
+  values: Record<string, any>,
+  currentConfig: Record<string, any>,
+) => ({
+  ...currentConfig,
+  method: values.httpMethod || 'GET',
+  url: String(values.httpUrl || '').trim(),
+  query_params: values.httpQueryParams || [],
+  headers: values.httpHeaders || [],
+  json_body: values.httpMethod === 'GET'
+    ? null
+    : JSON.parse(values.httpJsonBody || 'null'),
+  timeout_seconds: values.httpTimeoutSeconds ?? 30,
+  interval_seconds: values.httpIntervalSeconds ?? 1,
+  extractors: values.httpExtractors || [],
+});
 
 export interface PropertyPanelProps {
   node: any;
@@ -189,10 +212,13 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   onUpdate,
   onDelete,
 }) => {
+  const { id: workflowIdParam } = useParams<{ id?: string }>();
   const [form] = Form.useForm();
   const [activeTab, setActiveTab] = useState('basic');
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [roiDrawerVisible, setRoiDrawerVisible] = useState(false);
+  const [httpTesting, setHttpTesting] = useState(false);
+  const [httpTestResult, setHttpTestResult] = useState<any>(null);
   const vlConfigReady = Boolean(vlConfig?.has_required_fields);
   const selectedAlgorithm = algorithms.find((item) => String(item.id) === String(node?.data?.dataId ?? node?.data?.algorithmId));
   const selectedAlgorithmType = node?.data?.algorithmType || selectedAlgorithm?.algorithm_type || 'script';
@@ -204,6 +230,15 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   // 只允许最后一次表单校验结果写入节点，避免快速输入时旧值覆盖新值。
   const updateVersionRef = useRef(0);
   const autoUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const httpTestVersionRef = useRef(0);
+  const activeNodeIdRef = useRef(node?.id);
+  activeNodeIdRef.current = node?.id;
+
+  useEffect(() => {
+    httpTestVersionRef.current += 1;
+    setHttpTesting(false);
+    setHttpTestResult(null);
+  }, [node?.id]);
 
   console.log('Available videoSources:', videoSources);
   console.log('onUpdate 函数:', onUpdate);
@@ -295,6 +330,19 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           null,
           2,
         );
+      } else if (nodeType === 'httpRequest' || nodeType === 'http_request') {
+        formValues.httpMethod = nodeConfig.method || 'GET';
+        formValues.httpUrl = nodeConfig.url || '';
+        formValues.httpQueryParams = nodeConfig.query_params || [];
+        formValues.httpHeaders = nodeConfig.headers || [];
+        formValues.httpJsonBody = JSON.stringify(nodeConfig.json_body ?? null, null, 2);
+        formValues.httpTimeoutSeconds = nodeConfig.timeout_seconds ?? 30;
+        formValues.httpIntervalSeconds = nodeConfig.interval_seconds ?? 1;
+        formValues.httpExtractors = nodeConfig.extractors || [];
+        formValues.httpTestContext = JSON.stringify({
+          frame: { timestamp: Date.now() / 1000 },
+          nodes: {},
+        }, null, 2);
       } else if (nodeType === 'webhook') {
         const providerOptions = nodeConfig.provider_options || {};
         formValues.webhookProvider = nodeConfig.provider || 'generic';
@@ -351,6 +399,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           (node.data.relativeThreshold ?? node.data.relative_threshold ?? 0.5) * 100;
         formValues.absoluteThreshold = node.data.absoluteThreshold ?? node.data.absolute_threshold ?? 3;
         formValues.confirmationCount = node.data.confirmationCount ?? node.data.confirmation_count ?? 1;
+        formValues.httpExpression = node.data.expression || {
+          logic: 'and',
+          children: [{ variable: '$success', operator: 'eq', value: true }],
+        };
       } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
         formValues.weeklySchedule = node.data.weeklySchedule
           ? normalizeWeeklySchedule(node.data.weeklySchedule)
@@ -549,6 +601,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.includeUpstreamResults;
         delete updatedData.payloadTemplate;
         delete updatedData.outputMapping;
+      } else if (nodeType === 'httpRequest' || nodeType === 'http_request') {
+        updatedData.config = buildHttpRequestConfig(values, node.data?.config || {});
+        Object.keys(updatedData)
+          .filter((key) => key.startsWith('http'))
+          .forEach((key) => delete updatedData[key]);
       } else if (nodeType === 'webhook') {
         updatedData.config = buildWebhookConfig(values, node.data?.config || {});
 
@@ -720,6 +777,10 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         updatedData.relativeThreshold = (values.relativeThresholdPercent ?? 50) / 100;
         updatedData.absoluteThreshold = values.absoluteThreshold ?? 3;
         updatedData.confirmationCount = values.confirmationCount ?? 1;
+        updatedData.expression = values.httpExpression || {
+          logic: 'and',
+          children: [{ variable: '$success', operator: 'eq', value: true }],
+        };
         delete updatedData.relativeThresholdPercent;
       } else if (nodeType === 'timeSchedule' || nodeType === 'time_schedule') {
         updatedData.weeklySchedule = normalizeWeeklySchedule(values.weeklySchedule);
@@ -734,6 +795,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
   const handleValuesChange = (changedValues: Record<string, unknown>) => {
     const changedFields = Object.keys(changedValues);
+    if (changedFields.length === 1 && changedFields[0] === 'httpTestContext') {
+      return;
+    }
     if (
       changedFields.length > 0
       && changedFields.every((fieldName) => WEBHOOK_CREDENTIAL_FORM_FIELDS.has(fieldName))
@@ -788,6 +852,43 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
       });
     } catch {
       // Form.Item 会在字段下方展示校验错误，无效值不写入节点。
+    }
+  };
+
+  const runHttpRequestTest = async () => {
+    const requestVersion = ++httpTestVersionRef.current;
+    const requestNodeId = node.id;
+    const requestIsCurrent = () => (
+      requestVersion === httpTestVersionRef.current
+      && requestNodeId === activeNodeIdRef.current
+    );
+    setHttpTesting(true);
+    setHttpTestResult(null);
+    try {
+      const values = await form.validateFields();
+      if (!requestIsCurrent()) return;
+      const config = buildHttpRequestConfig(values, node.data?.config || {});
+      const context = JSON.parse(values.httpTestContext || '{}');
+      const parsedWorkflowId = Number(workflowIdParam);
+      const result = await testHttpRequest({
+        workflow_id: workflowIdParam && Number.isInteger(parsedWorkflowId)
+          ? parsedWorkflowId
+          : undefined,
+        node_id: node.id,
+        config,
+        context,
+      });
+      if (!requestIsCurrent()) return;
+      setHttpTestResult(result);
+      message.success(result?.result?.success ? '测试请求成功' : '测试请求已完成，请查看失败详情');
+    } catch (error: any) {
+      if (requestIsCurrent() && !error?.errorFields) {
+        message.error(error?.data?.error || error?.message || '测试请求失败');
+      }
+    } finally {
+      if (requestIsCurrent()) {
+        setHttpTesting(false);
+      }
     }
   };
 
@@ -1259,6 +1360,161 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </>
         );
 
+      case 'httpRequest':
+      case 'http_request':
+        return (
+          <>
+            <div className="info-box" style={{ marginBottom: 16, background: '#f0fbfb', borderColor: '#87e8de', color: '#006d75' }}>
+              <InfoCircleOutlined />
+              <span>使用 {'{{ $.source.code }}'} 引用系统字段，或用 {'{{ $.nodes["node-id"].outputs.name }}'} 引用上游结果。</span>
+            </div>
+
+            <div className="config-section">
+              <div className="config-section-header"><span className="config-section-title">请求</span></div>
+              <Form.Item label="请求方法" name="httpMethod" rules={[{ required: true }]}>
+                <Select options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({ value, label: value }))} />
+              </Form.Item>
+              <Form.Item
+                label="URL"
+                name="httpUrl"
+                rules={[
+                  { required: true, message: '请输入 HTTP/HTTPS URL' },
+                  { pattern: /^(https?:\/\/|\s*\{\{\s*\$)/i, message: 'URL 必须以 http://、https:// 或完整 JSONPath 模板开头' },
+                ]}
+              >
+                <Input placeholder="https://api.example.com/status" />
+              </Form.Item>
+              <Space size={12} style={{ width: '100%' }}>
+                <Form.Item label="调用间隔（秒）" name="httpIntervalSeconds" rules={[{ required: true }]} style={{ flex: 1 }}>
+                  <InputNumber min={0.1} max={300} step={0.1} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item label="超时（秒）" name="httpTimeoutSeconds" rules={[{ required: true }]} style={{ flex: 1 }}>
+                  <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                </Form.Item>
+              </Space>
+            </div>
+
+            <div className="form-divider" />
+            <div className="config-section">
+              <div className="config-section-header"><span className="config-section-title">Query 参数</span></div>
+              <Form.List name="httpQueryParams">
+                {(fields, { add, remove }) => (
+                  <div className="http-config-list">
+                    {fields.map(({ key, name: fieldName, ...restField }) => (
+                      <div className="http-config-row" key={key}>
+                        <Form.Item {...restField} name={[fieldName, 'enabled']} valuePropName="checked" initialValue>
+                          <Switch size="small" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'name']} rules={[{ required: true, message: '名称不能为空' }]}>
+                          <Input placeholder="参数名" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'value']}>
+                          <Input.Password placeholder="值或模板" visibilityToggle={false} />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'sensitive']} valuePropName="checked">
+                          <Switch size="small" checkedChildren="敏感" unCheckedChildren="普通" />
+                        </Form.Item>
+                        <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(fieldName)} aria-label="删除 Query 参数" />
+                      </div>
+                    ))}
+                    <Button block type="dashed" icon={<PlusOutlined />} onClick={() => add({ enabled: true, name: '', value: '', sensitive: false })}>添加 Query 参数</Button>
+                  </div>
+                )}
+              </Form.List>
+            </div>
+
+            <div className="form-divider" />
+            <div className="config-section">
+              <div className="config-section-header"><span className="config-section-title">请求头</span></div>
+              <Form.List name="httpHeaders">
+                {(fields, { add, remove }) => (
+                  <div className="http-config-list">
+                    {fields.map(({ key, name: fieldName, ...restField }) => (
+                      <div className="http-config-row" key={key}>
+                        <Form.Item {...restField} name={[fieldName, 'enabled']} valuePropName="checked" initialValue>
+                          <Switch size="small" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'name']} rules={[{ required: true, message: '名称不能为空' }]}>
+                          <Input placeholder="Authorization" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'value']}>
+                          <Input.Password placeholder="值或模板；留空保持敏感值" visibilityToggle={false} />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'sensitive']} valuePropName="checked">
+                          <Switch size="small" checkedChildren="敏感" unCheckedChildren="普通" />
+                        </Form.Item>
+                        <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(fieldName)} aria-label="删除请求头" />
+                      </div>
+                    ))}
+                    <Button block type="dashed" icon={<PlusOutlined />} onClick={() => add({ enabled: true, name: '', value: '', sensitive: false })}>添加请求头</Button>
+                  </div>
+                )}
+              </Form.List>
+
+              <Form.Item noStyle shouldUpdate={(previous, current) => previous.httpMethod !== current.httpMethod}>
+                {({ getFieldValue }) => getFieldValue('httpMethod') === 'GET' ? null : (
+                  <Form.Item
+                    label="JSON 请求体"
+                    name="httpJsonBody"
+                    rules={[{
+                      validator: (_, value) => {
+                        try {
+                          const parsed = JSON.parse(value || 'null');
+                          return parsed === null || Array.isArray(parsed) || typeof parsed === 'object'
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('请求体必须是 JSON 对象、数组或 null'));
+                        } catch {
+                          return Promise.reject(new Error('JSON 请求体格式无效'));
+                        }
+                      },
+                    }]}
+                  >
+                    <TextArea rows={7} placeholder='{"camera":"{{ $.source.code }}"}' />
+                  </Form.Item>
+                )}
+              </Form.Item>
+            </div>
+
+            <div className="form-divider" />
+            <div className="config-section">
+              <div className="config-section-header"><span className="config-section-title">JSONPath 输出</span></div>
+              <Form.List name="httpExtractors">
+                {(fields, { add, remove }) => (
+                  <div className="http-config-list">
+                    {fields.map(({ key, name: fieldName, ...restField }) => (
+                      <div className="http-config-row extractor-row" key={key}>
+                        <Form.Item {...restField} name={[fieldName, 'name']} rules={[{ required: true }, { pattern: /^[A-Za-z_][A-Za-z0-9_]*$/, message: '仅支持字母、数字和下划线，且不能以数字开头' }]}>
+                          <Input placeholder="risk_score" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'jsonpath']} rules={[{ required: true }, { pattern: /^\$/, message: 'JSONPath 必须以 $ 开头' }]}>
+                          <Input placeholder="$.data.score" />
+                        </Form.Item>
+                        <Form.Item {...restField} name={[fieldName, 'required']} valuePropName="checked">
+                          <Switch size="small" checkedChildren="必填" unCheckedChildren="可选" />
+                        </Form.Item>
+                        <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(fieldName)} aria-label="删除提取规则" />
+                      </div>
+                    ))}
+                    <Button block type="dashed" icon={<PlusOutlined />} onClick={() => add({ name: '', jsonpath: '$.', required: false })}>添加提取变量</Button>
+                  </div>
+                )}
+              </Form.List>
+            </div>
+
+            <div className="form-divider" />
+            <div className="config-section http-test-console">
+              <div className="config-section-header"><span className="config-section-title">测试请求</span></div>
+              <Form.Item label="模拟上下文 JSON" name="httpTestContext">
+                <TextArea rows={5} />
+              </Form.Item>
+              <Button type="primary" icon={<ExperimentOutlined />} loading={httpTesting} onClick={() => void runHttpRequestTest()}>
+                发送测试请求
+              </Button>
+              {httpTestResult ? <pre className="http-test-result">{JSON.stringify(httpTestResult, null, 2)}</pre> : null}
+            </div>
+          </>
+        );
+
       case 'webhook': {
         const webhookConfig = node.data?.config || {};
         const providerOptions = webhookConfig.provider_options || {};
@@ -1460,11 +1716,18 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
               String(item.id) === String(sourceNode.data?.dataId ?? sourceNode.data?.algorithmId));
             return (sourceNode.data?.algorithmType || sourceAlgorithm?.algorithm_type) === 'ocr';
           });
+        const upstreamHttpNodes = edges
+          .filter(edge => edge.target === node.id)
+          .map(edge => nodes.find(item => item.id === edge.source))
+          .filter(sourceNode => {
+            const sourceType = sourceNode?.data?.type || sourceNode?.type;
+            return sourceType === 'httpRequest' || sourceType === 'http_request';
+          });
         return (
           <>
             <div className="info-box" style={{ marginBottom: 16 }}>
               <InfoCircleOutlined />
-              <span>条件节点根据目标数量、数量变化或 OCR 文字控制 yes/no 分支</span>
+              <span>条件节点根据检测结果、OCR 文字或 HTTP 命名变量控制 yes/no 分支</span>
             </div>
 
             <Form.Item
@@ -1476,11 +1739,58 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 <Option value="count">目标数量</Option>
                 <Option value="count_change">数量骤变</Option>
                 <Option value="ocr_text">OCR 文字</Option>
+                <Option value="http_value">API 值条件</Option>
               </Select>
             </Form.Item>
 
-            <Form.Item noStyle shouldUpdate={(previous, current) => previous.conditionKind !== current.conditionKind}>
-              {({ getFieldValue }) => getFieldValue('conditionKind') === 'ocr_text' ? (
+            <Form.Item noStyle shouldUpdate={(previous, current) => (
+              previous.conditionKind !== current.conditionKind
+              || previous.sourceNodeId !== current.sourceNodeId
+            )}>
+              {({ getFieldValue }) => getFieldValue('conditionKind') === 'http_value' ? (
+                <>
+                  <Form.Item
+                    label="HTTP 来源节点"
+                    name="sourceNodeId"
+                    rules={[{ required: true, message: '请选择已连接的 HTTP 请求节点' }]}
+                  >
+                    <Select placeholder="选择上游 HTTP 请求节点">
+                      {upstreamHttpNodes.map(sourceNode => (
+                        <Option key={sourceNode!.id} value={sourceNode!.id}>{sourceNode!.data?.label || sourceNode!.id}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  {upstreamHttpNodes.length === 0 ? (
+                    <div className="info-box" style={{ marginBottom: 16, background: '#fff7e6', borderColor: '#ffd591', color: '#ad4e00' }}>
+                      <InfoCircleOutlined />
+                      <span>请先将一个 HTTP 请求节点连接到当前条件节点。</span>
+                    </div>
+                  ) : null}
+                  <Form.Item
+                    label="AND / OR 条件组"
+                    name="httpExpression"
+                    rules={[{
+                      validator: (_, value) => value?.children?.length
+                        ? Promise.resolve()
+                        : Promise.reject(new Error('至少添加一条条件规则')),
+                    }]}
+                  >
+                    <HttpConditionBuilder
+                      variables={(() => {
+                        const source = upstreamHttpNodes.find(item => item?.id === getFieldValue('sourceNodeId'));
+                        const extractors = source?.data?.config?.extractors;
+                        return Array.isArray(extractors)
+                          ? extractors.map((item: any) => item.name).filter(Boolean)
+                          : [];
+                      })()}
+                    />
+                  </Form.Item>
+                  <div className="info-box">
+                    <InfoCircleOutlined />
+                    <span>比较值按 JSON 强类型处理：数字 1 不等于字符串 "1"。内置变量可判断请求成功、状态码和错误类型。</span>
+                  </div>
+                </>
+              ) : getFieldValue('conditionKind') === 'ocr_text' ? (
                 <>
                   <Form.Item
                     label="OCR 来源节点"

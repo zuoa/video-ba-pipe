@@ -15,6 +15,7 @@ import {
   SendOutlined,
   ClockCircleOutlined,
   ColumnHeightOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import { getAlgorithms } from '@/services/api';
 import {
@@ -218,6 +219,39 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
               <div className="component-content">
                 <div className="component-label">外部 API</div>
                 <div className="component-description">调用外部算法接口</div>
+              </div>
+              <PlusOutlined className="component-add" />
+            </div>
+          </div>
+          <div
+            className="component-item"
+            onClick={() => handleAddNode({
+              type: 'httpRequest',
+              nodeType: 'httpRequest',
+              label: 'HTTP 请求',
+              description: '调用通用 JSON 接口并提取变量',
+              icon: <GlobalOutlined />,
+              color: '#08979c',
+              config: {
+                method: 'GET',
+                url: '',
+                query_params: [],
+                headers: [],
+                json_body: null,
+                timeout_seconds: 30,
+                interval_seconds: 1,
+                extractors: [],
+              },
+            })}
+            style={{ borderColor: '#08979c' }}
+          >
+            <div className="component-item-inner">
+              <span className="component-icon" style={{ color: '#08979c' }}>
+                <GlobalOutlined />
+              </span>
+              <div className="component-content">
+                <div className="component-label">HTTP 请求</div>
+                <div className="component-description">通用请求、JSONPath 提取</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>

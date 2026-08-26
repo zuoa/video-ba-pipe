@@ -11,6 +11,13 @@ const ConditionNode = ({ data }: any) => {
 
   // 生成条件描述
   const getConditionLabel = () => {
+    if (conditionKind === 'http_value') {
+      const expression = data.expression;
+      const countRules = (group: any): number => Array.isArray(group?.children)
+        ? group.children.reduce((total: number, child: any) => total + ('children' in child ? countRules(child) : 1), 0)
+        : 0;
+      return `API 值 · ${countRules(expression)} 条规则`;
+    }
     if (conditionKind === 'ocr_text') {
       const operator = (data.textOperator || data.text_operator) === 'not_contains' ? '不包含' : '包含';
       const patternType = data.patternType || data.pattern_type || 'keywords';

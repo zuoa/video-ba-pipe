@@ -22,6 +22,7 @@ from app.core.time_schedule import validate_workflow_time_schedule_nodes
 from app.core.detection_filter import validate_workflow_detection_filter_nodes
 from app.core.video_probe import normalize_video_codec
 from app.core.webhook_workflow_config import mask_workflow_webhook_secrets
+from app.core.http_request_workflow import mask_workflow_http_request_secrets
 from app.core.workflow_runtime import (
     normalize_source_node_fields,
     validate_template_source_node,
@@ -118,7 +119,9 @@ def _serialize_workflow(workflow: Workflow):
         'id': workflow.id,
         'name': workflow.name,
         'description': workflow.description,
-        'workflow_data': mask_workflow_webhook_secrets(workflow.data_dict),
+        'workflow_data': mask_workflow_http_request_secrets(
+            mask_workflow_webhook_secrets(workflow.data_dict)
+        ),
         'is_active': workflow.is_active,
         'is_template': workflow.is_template,
         'source_template_id': workflow.source_template_id,

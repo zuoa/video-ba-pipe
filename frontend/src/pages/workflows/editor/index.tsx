@@ -127,6 +127,7 @@ export default function WorkflowEditorPage() {
             const nodeType = originalType === 'source' ? 'videoSource' :
                             originalType === 'algorithm' ? 'algorithm' :
                             originalType === 'external_api' ? 'externalApi' :
+                            originalType === 'http_request' ? 'httpRequest' :
                             originalType === 'function' ? 'function' :
                             originalType === 'detection_filter' ? 'detectionFilter' :
                             originalType === 'condition' ? 'condition' :
@@ -218,6 +219,10 @@ export default function WorkflowEditorPage() {
                 nodeData.relativeThreshold = node.data.relativeThreshold ?? node.data.relative_threshold ?? 0.5;
                 nodeData.absoluteThreshold = node.data.absoluteThreshold ?? node.data.absolute_threshold ?? 3;
                 nodeData.confirmationCount = node.data.confirmationCount ?? node.data.confirmation_count ?? 1;
+                nodeData.expression = node.data.expression || {
+                  logic: 'and',
+                  children: [{ variable: '$success', operator: 'eq', value: true }],
+                };
                 console.log('🔀 [EDITOR] Condition 节点加载配置:', {
                   id: node.id,
                   targetCount: nodeData.targetCount,
@@ -512,10 +517,14 @@ export default function WorkflowEditorPage() {
     const targetConditionKind = targetNode?.data?.conditionKind || targetNode?.data?.condition_kind;
     if (
       targetType === 'condition'
-      && targetConditionKind === 'count_change'
+      && (targetConditionKind === 'count_change' || targetConditionKind === 'http_value')
       && edges.some((edge) => edge.target === params.target)
     ) {
-      message.warning('数量骤变条件只能连接一个上游结果节点');
+      message.warning('当前条件类型只能连接一个上游结果节点');
+      return;
+    }
+    if (targetType === 'condition' && targetConditionKind === 'http_value' && sourceType !== 'httpRequest') {
+      message.warning('API 值条件只能连接 HTTP 请求节点');
       return;
     }
 
@@ -608,6 +617,8 @@ export default function WorkflowEditorPage() {
           ? 'source'
           : nodeType === 'externalApi'
             ? 'external_api'
+          : nodeType === 'httpRequest'
+            ? 'http_request'
             : nodeType === 'detectionFilter'
               ? 'detection_filter'
             : nodeType === 'timeSchedule'
@@ -671,6 +682,8 @@ export default function WorkflowEditorPage() {
           saveData.data = {
             externalApiName: selectedExternalApi?.name || node.data?.externalApiName,
           };
+        } else if (nodeType === 'httpRequest') {
+          saveData.config = node.data?.config || {};
         } else if (nodeType === 'function') {
           // 函数节点：所有配置都在 config 中，input_nodes 也在 data 中
           saveData.data = {
@@ -721,6 +734,10 @@ export default function WorkflowEditorPage() {
             relativeThreshold: node.data?.relativeThreshold ?? node.data?.relative_threshold ?? 0.5,
             absoluteThreshold: node.data?.absoluteThreshold ?? node.data?.absolute_threshold ?? 3,
             confirmationCount: node.data?.confirmationCount ?? node.data?.confirmation_count ?? 1,
+            expression: node.data?.expression || {
+              logic: 'and',
+              children: [{ variable: '$success', operator: 'eq', value: true }],
+            },
           };
           console.log('🔀 [EDITOR] Condition 节点保存数据:', {
             id: node.id,
@@ -850,6 +867,7 @@ export default function WorkflowEditorPage() {
         relativeThreshold: nodeData.relativeThreshold,
         absoluteThreshold: nodeData.absoluteThreshold,
         confirmationCount: nodeData.confirmationCount,
+        expression: nodeData.expression,
         weeklySchedule: nodeData.type === 'timeSchedule'
           ? (nodeData.weeklySchedule || createDefaultWeeklySchedule())
           : undefined,
@@ -1037,6 +1055,7 @@ export default function WorkflowEditorPage() {
                   case 'videoSource': return '#1890ff';
                   case 'algorithm': return '#52c41a';
                   case 'externalApi': return '#1677ff';
+                  case 'httpRequest': return '#08979c';
                   case 'function': return '#722ed1';
                   case 'detectionFilter': return '#531dab';
                   case 'condition': return '#faad14';

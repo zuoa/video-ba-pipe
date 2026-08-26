@@ -1230,6 +1230,13 @@ export async function deleteExternalApi(id: number) {
   });
 }
 
+export async function testHttpRequest(data: any) {
+  return request('/api/http-requests/test', {
+    method: 'POST',
+    data,
+  });
+}
+
 export async function testAlgorithm(algorithmId: number, file: File) {
   const formData = new FormData();
   formData.append('algorithm_id', algorithmId.toString());

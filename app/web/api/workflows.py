@@ -23,6 +23,11 @@ from app.core.webhook_workflow_config import (
     merge_workflow_webhook_secrets,
     validate_workflow_webhook_nodes,
 )
+from app.core.http_request_workflow import (
+    mask_workflow_http_request_secrets,
+    merge_workflow_http_request_secrets,
+    validate_http_value_conditions,
+)
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
 from app.core.detection_filter import validate_workflow_detection_filter_nodes
 from app.core.workflow_batch_config import (
@@ -345,7 +350,9 @@ def register_workflows_api(app):
             'id': workflow.id,
             'name': workflow.name,
             'description': workflow.description,
-            'workflow_data': mask_workflow_webhook_secrets(workflow.data_dict),
+            'workflow_data': mask_workflow_http_request_secrets(
+                mask_workflow_webhook_secrets(workflow.data_dict)
+            ),
             'is_active': workflow.is_active,
             'is_template': workflow.is_template,
             'source_template_id': workflow.source_template_id,
@@ -406,7 +413,9 @@ def register_workflows_api(app):
             owner_response = require_resource_owner(workflow)
             if owner_response:
                 return owner_response
-            data_dict = mask_workflow_webhook_secrets(workflow.data_dict)
+            data_dict = mask_workflow_http_request_secrets(
+                mask_workflow_webhook_secrets(workflow.data_dict)
+            )
             
             # 确保 workflow_data 包含必需的字段
             if 'nodes' not in data_dict:
@@ -473,6 +482,9 @@ def register_workflows_api(app):
             is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
+            is_valid, error_message = validate_http_value_conditions(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
             is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
@@ -531,6 +543,7 @@ def register_workflows_api(app):
                 existing_workflow_data = workflow.data_dict
                 workflow_data = deepcopy(data['workflow_data']) if isinstance(data['workflow_data'], dict) else data['workflow_data']
                 workflow_data = merge_workflow_webhook_secrets(existing_workflow_data, workflow_data)
+                workflow_data = merge_workflow_http_request_secrets(existing_workflow_data, workflow_data)
                 validator = validate_template_source_node if workflow.is_template else validate_single_source_node
                 is_valid, error_message = validator(workflow_data)
                 if not is_valid:
@@ -573,6 +586,9 @@ def register_workflows_api(app):
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+                is_valid, error_message = validate_http_value_conditions(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_detection_filter_nodes(workflow_data)
@@ -1211,6 +1227,10 @@ def register_workflows_api(app):
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue
                 is_valid, error_message = validate_workflow_webhook_nodes(workflow_data)
+                if not is_valid:
+                    failures.append({'workflow_id': workflow_id, 'error': error_message})
+                    continue
+                is_valid, error_message = validate_http_value_conditions(workflow_data)
                 if not is_valid:
                     failures.append({'workflow_id': workflow_id, 'error': error_message})
                     continue

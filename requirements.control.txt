@@ -15,6 +15,7 @@ gunicorn
 PyJWT
 cryptography>=42,<46
 requests
+jsonpath-ng>=1.7,<2
 onvif-zeep
 psutil
 pynvml

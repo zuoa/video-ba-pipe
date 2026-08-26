@@ -2425,6 +2425,8 @@ except ImportError as e:
 try:
     from app.web.api.external_apis import register_external_apis_api
     register_external_apis_api(app)
+    from app.web.api.http_requests import register_http_requests_api
+    register_http_requests_api(app)
     app.logger.info("外部 API 管理API已注册")
 except ImportError as e:
     app.logger.warning(f"外部 API 管理API注册失败: {e}")

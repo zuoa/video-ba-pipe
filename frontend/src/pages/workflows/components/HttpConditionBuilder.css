@@ -1,0 +1,61 @@
+.http-condition-group {
+  border: 1px solid #d9e7ef;
+  border-left: 3px solid #08979c;
+  border-radius: 8px;
+  background: #f8fcfd;
+  padding: 10px;
+}
+
+.http-condition-group.depth-1,
+.http-condition-group.depth-3 {
+  border-left-color: #597ef7;
+  background: #f7f9ff;
+}
+
+.http-condition-group-head,
+.http-condition-child,
+.http-condition-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.http-condition-group-head {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.http-condition-rail {
+  color: #40616d;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.http-condition-children {
+  display: grid;
+  gap: 8px;
+}
+
+.http-condition-child {
+  align-items: flex-start;
+}
+
+.http-condition-child > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.http-condition-rule {
+  flex-wrap: wrap;
+}
+
+.http-condition-actions {
+  margin-top: 10px;
+}
+
+.http-condition-empty {
+  color: #8c8c8c;
+  font-size: 12px;
+  padding: 6px 0;
+}

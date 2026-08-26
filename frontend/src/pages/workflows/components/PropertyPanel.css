@@ -404,3 +404,53 @@
   border-color: #d3adf7;
   color: #531dab;
 }
+.http-config-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.http-config-row {
+  display: grid;
+  grid-template-columns: auto minmax(92px, .8fr) minmax(130px, 1.4fr) auto auto;
+  align-items: start;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #dbe9ed;
+  border-radius: 8px;
+  background: #f8fcfd;
+}
+
+.http-config-row.extractor-row {
+  grid-template-columns: minmax(110px, .8fr) minmax(150px, 1.4fr) auto auto;
+}
+
+.http-config-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.http-test-console {
+  border-left: 3px solid #08979c;
+  padding-left: 12px;
+}
+
+.http-test-result {
+  max-height: 320px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #102a2e;
+  color: #b5f5ec;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .http-config-row,
+  .http-config-row.extractor-row {
+    grid-template-columns: 1fr;
+  }
+}

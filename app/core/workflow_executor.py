@@ -66,7 +66,8 @@ from app.core.vl_validator import get_vl_service_config, validate_frame_with_vl
 from app.core.window_detector import WindowDetector
 from app.core.numeric_window_detector import NumericWindowDetector
 from app.plugins.script_algorithm import ScriptAlgorithm
-from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, DetectionFilterNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, WebhookNodeData
+from app.core.workflow_types import create_node_data, NodeContext, SourceNodeData, AlgorithmNodeData, RoiDrawNodeData, FunctionNodeData, DetectionFilterNodeData, ConditionNodeData, TimeScheduleNodeData, OutputNodeData, AlertNodeData, ExternalApiNodeData, HttpRequestNodeData, WebhookNodeData
+from app.core.http_request_workflow import execute_http_request, evaluate_condition_expression, mask_http_test_result
 from app.core.detection_filter import filter_detections_by_size
 from app.core.time_schedule import evaluate_weekly_schedule
 from app.core.execution_log_collector import ExecutionLogCollector
@@ -354,6 +355,7 @@ class WorkflowExecutor:
             'function': self._handle_function_node,
             'detection_filter': self._handle_detection_filter_node,
             'external_api': self._handle_external_api_node,
+            'http_request': self._handle_http_request_node,
             'webhook': self._handle_webhook_node,
         }
 
@@ -1059,6 +1061,7 @@ class WorkflowExecutor:
             'roi': 1,  # 支持前后端两种类型名称
             'algorithm': 2,
             'external_api': 2,
+            'http_request': 2,
             'function': 3,
             'detection_filter': 3,
             'condition': 4,
@@ -1137,6 +1140,10 @@ class WorkflowExecutor:
 
         if isinstance(node, ExternalApiNodeData):
             logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 是外部 API 节点，interval_seconds={node.interval_seconds}（类型: {type(node.interval_seconds)}）")
+            if node.interval_seconds is not None:
+                return node.interval_seconds
+
+        if isinstance(node, HttpRequestNodeData):
             if node.interval_seconds is not None:
                 return node.interval_seconds
 
@@ -1709,6 +1716,105 @@ class WorkflowExecutor:
             'upstream_node_id': node_id,
         }
 
+    def _build_http_request_template_context(self, node_id: str, frame_timestamp: Optional[float]) -> Dict[str, Any]:
+        """Build a JSON-safe context from system data and transitive upstream results."""
+        direct_upstream = defaultdict(list)
+        for connection in self.connections:
+            source_id = connection.get('from') or connection.get('from_node_id')
+            target_id = connection.get('to') or connection.get('to_node_id')
+            if source_id and target_id:
+                direct_upstream[target_id].append(source_id)
+
+        ancestor_ids = set()
+        pending = list(direct_upstream.get(node_id, []))
+        while pending:
+            current = pending.pop()
+            if current in ancestor_ids:
+                continue
+            ancestor_ids.add(current)
+            pending.extend(direct_upstream.get(current, []))
+
+        with self._state_lock:
+            cache_snapshot = {
+                key: self._to_jsonable(value)
+                for key, value in self.node_results_cache.items()
+                if key in ancestor_ids
+            }
+
+        rendered_nodes = {}
+        for upstream_id, cached in cache_snapshot.items():
+            if not isinstance(cached, dict):
+                rendered_nodes[upstream_id] = cached
+                continue
+            entry = dict(cached)
+            inner = cached.get('result')
+            if isinstance(inner, dict):
+                for key, value in inner.items():
+                    entry.setdefault(key, value)
+            rendered_nodes[upstream_id] = entry
+
+        source = self.video_source or getattr(self.workflow, 'video_source', None)
+        return {
+            'workflow': {
+                'id': self.workflow_id,
+                'name': getattr(self.workflow, 'name', None),
+            },
+            'source': {
+                'id': getattr(source, 'id', None),
+                'name': getattr(source, 'name', None),
+                'code': getattr(source, 'source_code', None),
+            },
+            'frame': {'timestamp': frame_timestamp},
+            'nodes': rendered_nodes,
+        }
+
+    def _handle_http_request_node(self, node_id, context):
+        node = self.nodes.get(node_id)
+        if not isinstance(node, HttpRequestNodeData):
+            return None
+
+        frame_timestamp = context.get('frame_timestamp')
+        template_context = self._build_http_request_template_context(node_id, frame_timestamp)
+        request_result = execute_http_request(node.config or {}, template_context)
+        result_payload = {
+            **request_result,
+            'detections': [],
+            'metadata': {
+                'event_type': 'http_request',
+                'success': bool(request_result.get('success')),
+                'status_code': request_result.get('status_code'),
+                'duration_ms': request_result.get('duration_ms'),
+                'error': request_result.get('error'),
+            },
+        }
+        result = {
+            'node_id': node_id,
+            # Kept for the executor's legacy edge contract; generic conditions read result.success.
+            'has_detection': bool(request_result.get('success')),
+            'result': result_payload,
+            'upstream_node_id': node_id,
+        }
+        with self._state_lock:
+            self.node_results_cache[node_id] = result
+
+        log_collector = context.get('log_collector')
+        if log_collector:
+            metadata = result_payload['metadata']
+            if request_result.get('success'):
+                log_collector.add_info(
+                    node_id,
+                    f"HTTP 请求完成: {request_result.get('status_code')}，耗时 {request_result.get('duration_ms')}ms",
+                    metadata=metadata,
+                )
+            else:
+                error = request_result.get('error') or {}
+                log_collector.add_warning(
+                    node_id,
+                    f"HTTP 请求失败: {error.get('message') or '未知错误'}",
+                    metadata=metadata,
+                )
+        return result
+
     def _handle_external_api_async_submit(self, node_id: str, payload: Dict[str, Any]):
         try:
             response_payload = self._submit_external_api_request(node_id, payload)
@@ -1928,6 +2034,56 @@ class WorkflowExecutor:
                         'metadata': {**metadata, **({'error': error} if error else {})},
                     },
                 }
+            return context
+
+        if node.condition_kind == 'http_value':
+            source_node_id = node.source_node_id
+            with self._state_lock:
+                cached_source = dict(self.node_results_cache.get(source_node_id) or {})
+            source_result = cached_source.get('result')
+            error = None
+            if not source_node_id:
+                condition_passed = False
+                error = '未指定 HTTP 请求来源节点'
+            elif not isinstance(source_result, dict):
+                condition_passed = False
+                error = f'HTTP 请求节点 {source_node_id} 本帧没有结果'
+            else:
+                try:
+                    condition_passed = evaluate_condition_expression(node.expression, source_result)
+                except Exception as exc:
+                    condition_passed = False
+                    error = f'API 值条件执行失败: {exc}'
+
+            metadata = {
+                'event_type': 'condition',
+                'condition_kind': 'http_value',
+                'source_node_id': source_node_id,
+                'condition_passed': condition_passed,
+                'source_success': source_result.get('success') if isinstance(source_result, dict) else None,
+                'status_code': source_result.get('status_code') if isinstance(source_result, dict) else None,
+                **({'error': error} if error else {}),
+            }
+            context['has_detection'] = condition_passed
+            context['condition_error'] = error
+            if isinstance(source_result, dict):
+                context['result'] = source_result
+                context['upstream_node_id'] = source_node_id
+            with self._state_lock:
+                self.node_results_cache[node_id] = {
+                    'node_id': node_id,
+                    'has_detection': condition_passed,
+                    'result': {'detections': [], 'metadata': metadata},
+                }
+            if log_collector:
+                if error:
+                    log_collector.add_error(node_id, error, metadata=metadata)
+                else:
+                    log_collector.add_info(
+                        node_id,
+                        f"API 值条件{'通过' if condition_passed else '未通过'}",
+                        metadata=metadata,
+                    )
             return context
 
         context['condition_error'] = None
@@ -2744,7 +2900,7 @@ class WorkflowExecutor:
         if not isinstance(result, dict):
             return False
         node = self.nodes.get(node_id)
-        if not isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData)):
+        if not isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData, HttpRequestNodeData)):
             return False
         if result.get('skipped') is True:
             return True
@@ -2934,7 +3090,7 @@ class WorkflowExecutor:
                 if node_id in self.skipped_nodes:
                     return self._copy_cached_node_result(node_id, context)
                 # 算法节点或函数节点因间隔被跳过时，清除旧缓存结果，避免下游节点使用过期数据
-                if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, FunctionNodeData, DetectionFilterNodeData))
+                if (isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, HttpRequestNodeData, FunctionNodeData, DetectionFilterNodeData))
                     and node_id in self.node_results_cache):
                     logger.debug(f"[Workflow-{self.workflow_id}] 节点 {node_id} 因间隔被跳过，清除旧缓存结果")
                     with self._state_lock:
@@ -3137,7 +3293,7 @@ class WorkflowExecutor:
             if already_skipped:
                 return
             if not already_executed:
-                if isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData)):
+                if isinstance(node, (AlgorithmNodeData, FunctionNodeData, DetectionFilterNodeData, ExternalApiNodeData, HttpRequestNodeData)):
                     self._write_gate_skip_sentinel(node_id, context)
                     return
                 if isinstance(node, ConditionNodeData):
@@ -3187,7 +3343,7 @@ class WorkflowExecutor:
                     branch_context = context.copy()
                     branch_context['_routing_from_node_id'] = node_id
                     self._execute_branch(next_id, branch_context)
-        elif isinstance(node, (AlgorithmNodeData, ExternalApiNodeData)):
+        elif isinstance(node, (AlgorithmNodeData, ExternalApiNodeData, HttpRequestNodeData)):
             # 算法型节点：执行并继续执行下游（形成完整分支）
             self._execute_branch(node_id, context)
         else:
@@ -4589,6 +4745,31 @@ class WorkflowExecutor:
                 }
             return {'message': '外部 API 未产生结果'}
 
+        elif node_type == 'http_request':
+            with self._state_lock:
+                cached = self.node_results_cache.get(node_id)
+            if not cached:
+                return {'message': 'HTTP 请求未产生结果'}
+            request_result = cached.get('result') or {}
+            success = bool(request_result.get('success'))
+            error = request_result.get('error') or {}
+            public_result = {
+                'message': (
+                    f"HTTP 请求完成: {request_result.get('status_code')}"
+                    if success
+                    else f"HTTP 请求失败: {error.get('message') or '未知错误'}"
+                ),
+                'request_success': success,
+                'status_code': request_result.get('status_code'),
+                'duration_ms': request_result.get('duration_ms'),
+                'outputs': request_result.get('outputs') or {},
+                'extraction_meta': request_result.get('extraction_meta') or {},
+                'response': request_result.get('response') or {},
+                'error': request_result.get('error'),
+                'debug_info': request_result.get('metadata') or {},
+            }
+            return mask_http_test_result(public_result, getattr(node, 'config', {}) or {})
+
         # 函数节点
         elif node_type == 'function':
             with self._state_lock:
@@ -4630,6 +4811,19 @@ class WorkflowExecutor:
 
         # 条件节点
         elif node_type == 'condition':
+            if getattr(node, 'condition_kind', 'count') == 'http_value':
+                with self._state_lock:
+                    cached = dict(self.node_results_cache.get(node_id) or {})
+                metadata = (cached.get('result') or {}).get('metadata') or {}
+                passed = bool(cached.get('has_detection'))
+                error = metadata.get('error')
+                return {
+                    'message': error or f"API 值条件 - {'✓ 通过' if passed else '✗ 未通过'}",
+                    'condition_passed': passed,
+                    'error': error,
+                    'debug_info': metadata,
+                }
+
             if getattr(node, 'condition_kind', 'count') == 'count_change':
                 with self._state_lock:
                     metadata = dict(self.condition_diagnostics_cache.get(node_id) or {})

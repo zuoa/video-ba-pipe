@@ -65,6 +65,7 @@ class ConditionNodeData(NodeContext):
     absolute_threshold: int = 3
     confirmation_count: int = 1
     labels: List[str] = field(default_factory=list)
+    expression: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -191,6 +192,13 @@ class ExternalApiNodeData(NodeContext):
 
 
 @dataclass
+class HttpRequestNodeData(NodeContext):
+    node_type: str = "http_request"
+    interval_seconds: Optional[float] = None
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class WebhookNodeData(NodeContext):
     node_type: str = "webhook"
     config: Optional[Dict[str, Any]] = None
@@ -214,6 +222,8 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         'detection_filter': DetectionFilterNodeData,
         'detectionFilter': DetectionFilterNodeData,
         'external_api': ExternalApiNodeData,
+        'http_request': HttpRequestNodeData,
+        'httpRequest': HttpRequestNodeData,
         'webhook': WebhookNodeData,
     }
 
@@ -258,6 +268,18 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             interval_seconds=config.get('interval_seconds'),
             config=config
         )
+    elif node_type in ('http_request', 'httpRequest'):
+        config = node_dict.get('config')
+        if not isinstance(config, dict) and isinstance(data, dict):
+            config = data.get('config')
+        if not isinstance(config, dict):
+            config = {}
+        return node_class(
+            node_type='http_request',
+            node_id=node_id,
+            interval_seconds=config.get('interval_seconds'),
+            config=config,
+        )
     elif node_type == 'webhook':
         return node_class(
             node_type=node_type,
@@ -296,6 +318,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             confirmation_count=int(data.get('confirmationCount', data.get('confirmation_count', 1))),
             labels=[str(item).strip() for item in data.get('labels', []) if str(item).strip()]
             if isinstance(data.get('labels'), list) else [],
+            expression=data.get('expression') if isinstance(data.get('expression'), dict) else {},
         )
     elif node_type == 'time_schedule':
         return node_class(

@@ -43,6 +43,11 @@ from app.core.webhook_workflow_config import (
     merge_workflow_webhook_secrets,
     validate_workflow_webhook_nodes,
 )
+from app.core.http_request_workflow import (
+    mask_workflow_http_request_secrets,
+    merge_workflow_http_request_secrets,
+    validate_http_value_conditions,
+)
 from app.core.workflow_runtime import get_node_type, validate_template_source_node
 from app.version import get_app_version
 
@@ -609,7 +614,9 @@ def _portable_graph(
     models_by_id: dict[int, MLModel],
     models_by_name: dict[str, MLModel],
 ) -> dict:
-    portable = mask_workflow_webhook_secrets(deepcopy(graph))
+    portable = mask_workflow_http_request_secrets(
+        mask_workflow_webhook_secrets(deepcopy(graph))
+    )
     for node in portable.get("nodes", []):
         if not isinstance(node, dict):
             continue
@@ -1192,6 +1199,7 @@ def _validate_imported_workflow(graph: dict) -> None:
         _validate_ocr_text_conditions,
         _validate_count_change_conditions,
         validate_workflow_webhook_nodes,
+        validate_http_value_conditions,
         validate_workflow_detection_filter_nodes,
         validate_workflow_time_schedule_nodes,
     )
@@ -2072,6 +2080,7 @@ def import_package(package_path: str, resolutions: dict | None, *, username: str
 
                 graph = _restore_graph(graph, algorithm_map, external_map, model_map)
                 graph = merge_workflow_webhook_secrets({}, graph)
+                graph = merge_workflow_http_request_secrets({}, graph)
                 valid, error = validate_template_source_node(graph)
                 if not valid:
                     raise TemplateTransferError("invalid_template", error or "模板结构无效")

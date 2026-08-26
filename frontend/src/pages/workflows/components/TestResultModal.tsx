@@ -163,8 +163,14 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
 
           {/* 条件节点结果提示 */}
           {nodeType === 'condition' && testResult.data?.debug_info && (
-            <div className="node-metric" style={{ color: testResult.data.debug_info.condition_result === '通过' ? '#52c41a' : '#ff4d4f', fontSize: '11px' }}>
-              <span>{testResult.data.debug_info.condition_result}</span>
+            <div className="node-metric" style={{ color: testResult.data.condition_passed ? '#52c41a' : '#ff4d4f', fontSize: '11px' }}>
+              <span>{testResult.data.condition_passed ? '通过' : '未通过'}</span>
+            </div>
+          )}
+
+          {(nodeType === 'http_request' || nodeType === 'httpRequest') && (
+            <div className="node-metric" style={{ color: testResult.data?.request_success ? '#13c2c2' : '#ff4d4f', fontSize: '11px' }}>
+              <span>{testResult.data?.status_code || '请求失败'} · {testResult.data?.duration_ms ?? '-'}ms</span>
             </div>
           )}
 
@@ -450,7 +456,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         )}
 
                         {/* 条件节点调试信息 */}
-                        {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info && (
+                        {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info?.condition_kind !== 'http_value' && (
                           <Descriptions.Item label={<span style={{ color: '#1890ff', fontWeight: 500 }}>⚖️ 条件判断详情</span>}>
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -473,6 +479,41 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                               </div>
                             </Space>
                           </Descriptions.Item>
+                        )}
+
+                        {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info?.condition_kind === 'http_value' && (
+                          <Descriptions.Item label="API 值判断">
+                            <Space direction="vertical" size="small">
+                              <Tag color={selectedNode.data.testResult.data.condition_passed ? 'success' : 'error'}>
+                                {selectedNode.data.testResult.data.condition_passed ? '通过' : '未通过'}
+                              </Tag>
+                              <span>来源：{selectedNode.data.testResult.data.debug_info.source_node_id}</span>
+                              <span>HTTP：{selectedNode.data.testResult.data.debug_info.status_code ?? '-'}</span>
+                            </Space>
+                          </Descriptions.Item>
+                        )}
+
+                        {(selectedNode.data?.nodeType === 'http_request' || selectedNode.data?.nodeType === 'httpRequest') && (
+                          <>
+                            <Descriptions.Item label="HTTP 状态">
+                              <Tag color={selectedNode.data.testResult.data?.request_success ? 'success' : 'error'}>
+                                {selectedNode.data.testResult.data?.status_code ?? '失败'}
+                              </Tag>
+                              <span>{selectedNode.data.testResult.data?.duration_ms ?? '-'} ms</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="提取变量">
+                              <pre style={{ margin: 0, maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                                {JSON.stringify(selectedNode.data.testResult.data?.outputs || {}, null, 2)}
+                              </pre>
+                            </Descriptions.Item>
+                            {selectedNode.data.testResult.data?.error ? (
+                              <Descriptions.Item label="请求错误">
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#ff4d4f' }}>
+                                  {JSON.stringify(selectedNode.data.testResult.data.error, null, 2)}
+                                </pre>
+                              </Descriptions.Item>
+                            ) : null}
+                          </>
                         )}
 
                         {/* 告警节点调试信息 */}
