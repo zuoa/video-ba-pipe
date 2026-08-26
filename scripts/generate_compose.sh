@@ -28,9 +28,11 @@ NJU_MIRROR_SET=false
 OUTPUT_FILE="${PROJECT_DIR}/docker-compose.yml"
 FORCE=false
 INTERACTIVE_MODE="auto"
+INTERACTIVE_INPUT_FD=0
 DOWNLOAD_CONFIGS=true
 FORCE_CONFIGS=false
 CONFIG_BASE_URL="${VIDEO_BA_PIPE_CONFIG_BASE_URL:-https://raw.githubusercontent.com/zuoa/video-ba-pipe/main}"
+GH_PROXY_BASE_URL="${VIDEO_BA_PIPE_GH_PROXY_BASE_URL-https://gh-proxy.com}"
 GENERATE_ENV="auto"
 ENV_FILE=""
 FORCE_ENV=false
@@ -136,7 +138,7 @@ ask_yes_no() {
 
   while true; do
     printf '%s [%s]: ' "${prompt}" "${hint}" >&2
-    if ! IFS= read -r answer; then
+    if ! IFS= read -r -u "${INTERACTIVE_INPUT_FD}" answer; then
       die "无法读取交互输入，请使用 --non-interactive 和显式参数"
     fi
     case "${answer}" in
@@ -146,6 +148,18 @@ ask_yes_no() {
       *) printf '请输入 y 或 n。\n' >&2 ;;
     esac
   done
+}
+
+prepare_interactive_input() {
+  if [[ -t 0 ]]; then
+    INTERACTIVE_INPUT_FD=0
+    return 0
+  fi
+  if { exec 3</dev/tty; } 2>/dev/null; then
+    INTERACTIVE_INPUT_FD=3
+    return 0
+  fi
+  return 1
 }
 
 yaml_template_name_for_platform() {
@@ -215,7 +229,7 @@ apply_nju_mirror() {
   sed 's#ghcr\.io/#ghcr.nju.edu.cn/#g' "${input}" >"${output}"
 }
 
-download_file() {
+download_url() {
   local url output
   url="$1"
   output="$2"
@@ -229,6 +243,33 @@ download_file() {
   else
     die "下载配置需要 curl 或 wget"
   fi
+}
+
+github_raw_fallback_url() {
+  local url
+  url="$1"
+  [[ -n "${GH_PROXY_BASE_URL}" ]] || return 1
+  case "${url}" in
+    https://raw.githubusercontent.com/*)
+      printf '%s/%s\n' "${GH_PROXY_BASE_URL%/}" "${url}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+download_file() {
+  local url output fallback_url
+  url="$1"
+  output="$2"
+
+  if download_url "${url}" "${output}"; then
+    return 0
+  fi
+
+  fallback_url="$(github_raw_fallback_url "${url}" || true)"
+  [[ -n "${fallback_url}" ]] || return 1
+  warn "GitHub Raw 下载失败，尝试 GHProxy：${fallback_url}"
+  download_url "${fallback_url}" "${output}"
 }
 
 resolve_source_file() {
@@ -340,7 +381,7 @@ ask_text() {
   else
     printf '%s（可留空）: ' "${prompt}" >&2
   fi
-  if ! IFS= read -r answer; then
+  if ! IFS= read -r -u "${INTERACTIVE_INPUT_FD}" answer; then
     die "无法读取交互输入"
   fi
   printf '%s\n' "${answer:-${default}}"
@@ -351,7 +392,7 @@ ask_secret() {
   prompt="$1"
   default="$2"
   printf '%s（回车自动生成/沿用）: ' "${prompt}" >&2
-  if ! IFS= read -r -s answer; then
+  if ! IFS= read -r -s -u "${INTERACTIVE_INPUT_FD}" answer; then
     printf '\n' >&2
     die "无法读取交互输入"
   fi
@@ -621,9 +662,13 @@ while (($# > 0)); do
   esac
 done
 
-if [[ "${INTERACTIVE_MODE}" == "auto" ]]; then
-  if [[ -t 0 && -t 1 ]]; then
-    INTERACTIVE_MODE=true
+if [[ "${INTERACTIVE_MODE}" != "false" ]]; then
+  if prepare_interactive_input; then
+    if [[ "${INTERACTIVE_MODE}" == "auto" ]]; then
+      INTERACTIVE_MODE=true
+    fi
+  elif [[ "${INTERACTIVE_MODE}" == "true" ]]; then
+    die "交互模式需要可用的控制终端；请直接运行脚本，或使用 --non-interactive"
   else
     INTERACTIVE_MODE=false
   fi
@@ -633,7 +678,7 @@ DETECTED_PLATFORM="$(detect_platform)"
 
 if [[ "${INTERACTIVE_MODE}" == "true" && "${PLATFORM_SET}" == "false" ]]; then
   printf '部署平台 [auto=%s]（cpu/cuda/jetson/rknn，回车自动）: ' "${DETECTED_PLATFORM}" >&2
-  if ! IFS= read -r selected_platform; then
+  if ! IFS= read -r -u "${INTERACTIVE_INPUT_FD}" selected_platform; then
     die "无法读取交互输入"
   fi
   PLATFORM="${selected_platform:-auto}"

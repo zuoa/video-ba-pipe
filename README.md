@@ -36,13 +36,17 @@
 docker compose up -d
 ```
 
-无需克隆仓库也可以在目标部署目录直接远程运行。下面的写法会保留终端标准输入，因此可以正常完成交互问答：
+无需克隆仓库也可以在目标部署目录直接远程运行。生成器通过控制终端读取交互问答，因此既支持先保存再运行，也支持直接通过管道执行：
 
 ```bash
 mkdir -p video-ba-pipe && cd video-ba-pipe
 curl -fsSLo generate_compose.sh \
   https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh && \
   bash generate_compose.sh
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh | bash
 ```
 
 远程模式会自动下载所选平台的 Compose 模板和必需配置，最终生成 `docker-compose.yml`、`.env` 以及相关配置目录。生成器默认不包含内置 MQTT Broker，并默认将 `ghcr.io` 替换为南京大学的 `ghcr.nju.edu.cn`；交互问答中可以直接修改这两个选择。Docker Hub 镜像不会被替换。
@@ -53,7 +57,16 @@ curl -fsSLo generate_compose.sh \
 mkdir -p video-ba-pipe && cd video-ba-pipe && curl -fsSLo generate_compose.sh 'https://gh-proxy.com/https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh' && VIDEO_BA_PIPE_CONFIG_BASE_URL='https://gh-proxy.com/https://raw.githubusercontent.com/zuoa/video-ba-pipe/main' bash generate_compose.sh
 ```
 
-GHProxy 属于第三方代理服务，可能存在缓存延迟或可用性变化；下载后可以先检查 `generate_compose.sh` 再执行。也可将命令中的 `https://gh-proxy.com/` 替换为兼容“代理地址 + 完整 GitHub URL”格式的自建代理。
+也可以直接通过管道进入交互部署；后续 GitHub Raw 下载失败时，生成器会自动切换到 GHProxy：
+
+```bash
+mkdir -p video-ba-pipe && cd video-ba-pipe
+curl -fsSL 'https://gh-proxy.com/https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh' | sudo bash
+```
+
+GHProxy 属于第三方代理服务，可能存在缓存延迟、内容供应链或可用性风险；生产环境建议先下载并检查 `generate_compose.sh` 再执行，确认信任来源后再使用管道形式。也可将命令中的 `https://gh-proxy.com/` 替换为兼容“代理地址 + 完整 GitHub URL”格式的自建代理。
+
+如果生成器使用默认的 `raw.githubusercontent.com` 部署源且直连下载失败，会自动通过 `https://gh-proxy.com/` 重试一次；显式指定其他 `--config-base-url` 时不会改写。可通过 `VIDEO_BA_PIPE_GH_PROXY_BASE_URL` 指定兼容代理地址，或将其设为空字符串关闭自动回退。GHProxy 为第三方服务，生产环境仍建议将部署源固定到可信的 tag 或 commit，并使用受控代理。
 
 也可以在无人值守部署中显式传参：
 
