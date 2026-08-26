@@ -339,6 +339,8 @@ class WorkflowExecutor:
         self.last_frame_timestamp = None
         # _latest_algorithm_results: 各算法节点最近一次检测结果及其原始帧时间戳。
         self._latest_algorithm_results = {}
+        # ROI 配置缺失是持续状态，不应该在每帧处理时重复告警。
+        self._missing_roi_config_warned_nodes = set()
 
         self.node_handlers = {
             'source': self._handle_source_node,
@@ -2655,8 +2657,19 @@ class WorkflowExecutor:
 
         roi_regions = node.roi_regions
         if not roi_regions or len(roi_regions) == 0:
-            logger.warning(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 未配置ROI区域")
+            warned_nodes = getattr(self, '_missing_roi_config_warned_nodes', None)
+            if warned_nodes is None:
+                # 兼容绕过 __init__ 构造执行器的轻量级测试和调试用法。
+                warned_nodes = self._missing_roi_config_warned_nodes = set()
+            if node_id not in warned_nodes:
+                logger.warning(f"[Workflow-{self.workflow_id}] 热区绘制节点 {node_id} 未配置ROI区域")
+                warned_nodes.add(node_id)
             return context
+
+        # 配置恢复后清除告警状态；若之后再次变为空配置，仍会提示一次。
+        warned_nodes = getattr(self, '_missing_roi_config_warned_nodes', None)
+        if warned_nodes is not None:
+            warned_nodes.discard(node_id)
 
         # 不再写入全局context，避免污染同一层级的其他节点
         # ROI配置现在完全通过算法节点查找上游节点来获取
