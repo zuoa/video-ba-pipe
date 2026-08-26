@@ -164,9 +164,16 @@ class InferenceAdmissionController:
     def update_observed_model_pss(self, model_id: int, pss_mb: Optional[float]) -> None:
         if pss_mb is None or pss_mb <= 0:
             return
-        previous = self.observed_model_pss_mb.get(int(model_id), 0.0)
+        try:
+            normalized_model_id = int(model_id)
+        except (TypeError, ValueError):
+            # Some shared workers use logical identifiers (for example,
+            # ``face-bundle:1``).  Admission currently budgets database model
+            # IDs only, so those observations must not take down telemetry.
+            return
+        previous = self.observed_model_pss_mb.get(normalized_model_id, 0.0)
         # Retain the high-water observation; admission must not learn an unsafe average.
-        self.observed_model_pss_mb[int(model_id)] = max(previous, float(pss_mb))
+        self.observed_model_pss_mb[normalized_model_id] = max(previous, float(pss_mb))
 
     def evaluate(
         self,

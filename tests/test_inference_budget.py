@@ -155,6 +155,21 @@ def test_admission_uses_observed_high_water_pss():
     assert decision.allowed is False
 
 
+def test_admission_ignores_logical_shared_worker_model_ids():
+    controller = InferenceAdmissionController(
+        enabled=True,
+        reserve_mb=1000,
+        reserve_percent=0,
+        default_new_model_mb=500,
+        margin_percent=20,
+        memory_reader=lambda: MemorySnapshot(16000, 3000, 0),
+    )
+
+    controller.update_observed_model_pss("face-bundle:1", 1200)
+
+    assert controller.observed_model_pss_mb == {}
+
+
 def test_oom_circuit_uses_backoff_then_opens():
     clock = FakeClock()
     breaker = OomCircuitBreaker(

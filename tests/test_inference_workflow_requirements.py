@@ -184,6 +184,31 @@ def test_confirmed_shared_model_ids_include_ocr_recognition():
     assert confirmed == {11, 12}
 
 
+def test_collect_inference_stats_keeps_face_worker_without_budget_crash(monkeypatch):
+    stats = {
+        "ok": True,
+        "model_count": 1,
+        "models": [
+            {"model_id": "face-bundle:1", "pss_mb": 1200, "ready": True},
+        ],
+    }
+    monkeypatch.setattr(orchestrator_module, "request_service_stats", lambda: stats)
+    orchestrator = _orchestrator()
+    orchestrator.inference_admission = InferenceAdmissionController(
+        enabled=True,
+        reserve_mb=1000,
+        reserve_percent=0,
+        default_new_model_mb=500,
+        margin_percent=20,
+    )
+
+    collected = orchestrator._collect_inference_service_stats()
+
+    assert collected == stats
+    assert collected["models"][0]["model_id"] == "face-bundle:1"
+    assert orchestrator.inference_admission.observed_model_pss_mb == {}
+
+
 def test_ocr_models_are_local_when_shared_service_unavailable(monkeypatch):
     algorithms = {
         3: FakeAlgorithm(
