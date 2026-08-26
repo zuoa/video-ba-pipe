@@ -1,7 +1,7 @@
 # ============================================
 # Video BA Pipe - X86 + CUDA/GPU 版本
 # 适用于 X86 服务器 + NVIDIA GPU 的生产环境
-# 配套编排文件: docker-compose.yml.x86+cuda
+# 配套编排模板: deploy/compose/templates/cuda.yml（通过生成器产出 docker-compose.yml）
 # 内置 NVDEC 硬解预算(NVML 利用率闸门 + GPU 型号查表,
 # 依赖 requirements.txt 中的 pynvml)
 # ============================================

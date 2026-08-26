@@ -32,8 +32,8 @@ TensorRT 制品当前通过 ONNX Runtime TensorRT Execution Provider 执行，�
 2. 执行数据库初始化，随后启动对应架构的 Compose。
 
    ```bash
-   docker compose -f docker-compose.yml up -d
-   # 或 docker-compose.yml.x86+cuda / .jetson / .rknn
+   ./scripts/generate_compose.sh --platform auto
+   docker compose up -d
    ```
 
 3. 启动后在“系统设置 > 人脸识别”管理事件保留期、默认推理后端和商用模型门禁。这些运行策略存储在 `SystemSetting` 中，由 API、worker 和 source host 共享；数据目录、加密密钥和可信插件模块仍是启动级配置。

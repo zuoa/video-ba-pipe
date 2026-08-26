@@ -10,9 +10,9 @@
 通用 Docker 镜像构建入口、x86/RK 构建维度说明请参考：`docs/docker_build_workflows.md`
 
 数据库说明：
-- RK compose 已内置 PostgreSQL 服务。
+- RK 平台模板已内置 PostgreSQL 服务。
 - 应用容器通过 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` 连接数据库。
-- 如需迁移旧 SQLite 数据，可在 PostgreSQL 启动后执行 `docker compose -f docker-compose.yml.rknn run --rm -v ./data:/data api python /app/scripts/migrate_sqlite_to_postgres.py --sqlite-path /data/db/ba.db`。
+- 先用 `scripts/generate_compose.sh --platform rknn` 生成配置。如需迁移旧 SQLite 数据，可在 PostgreSQL 启动后执行 `docker compose run --rm -v ./data:/data api python /app/scripts/migrate_sqlite_to_postgres.py --sqlite-path /data/db/ba.db`。
 
 ## GitHub Actions 手动构建
 

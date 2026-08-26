@@ -102,15 +102,16 @@ Jetson 成功发布时可不设置它，Compose 会同时使用 `control-jetson-
 启动或更新：
 
 ```bash
-docker compose -f docker-compose.yml.jetson pull
-docker compose -f docker-compose.yml.jetson up -d --force-recreate
-docker compose -f docker-compose.yml.jetson ps
+./scripts/generate_compose.sh --non-interactive --platform jetson --force
+docker compose pull
+docker compose up -d --force-recreate
+docker compose ps
 ```
 
 确认前端大文件上传限制已经加载：
 
 ```bash
-docker compose -f docker-compose.yml.jetson exec frontend \
+docker compose exec frontend \
   nginx -T 2>&1 | grep client_max_body_size
 ```
 
@@ -197,14 +198,14 @@ worker 会保留解码器并安全重建 source host。紧急回退到本地模�
 先验证 CUDA、运行时库和插件：
 
 ```bash
-docker compose -f docker-compose.yml.jetson exec worker \
+docker compose exec worker \
   /app/scripts/verify_jetson_runtime.sh
 ```
 
 如有裸 H.264/H.265 测试码流放在 `./data` 下，可同时做真实硬解检查：
 
 ```bash
-docker compose -f docker-compose.yml.jetson exec worker \
+docker compose exec worker \
   /app/scripts/verify_jetson_runtime.sh /data/sample.h264 h264
 ```
 
@@ -218,8 +219,8 @@ docker compose -f docker-compose.yml.jetson exec worker \
 查看日志：
 
 ```bash
-docker compose -f docker-compose.yml.jetson logs -f worker
-docker compose -f docker-compose.yml.jetson logs -f api
+docker compose logs -f worker
+docker compose logs -f api
 ```
 
 ## 范围限制

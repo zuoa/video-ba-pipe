@@ -84,7 +84,7 @@ python3 -m pytest -q
 - 容器 CUDA 设备：`Orin`
 - 前端：`frontend/Dockerfile.rk` 的 linux/arm64 构建
 - 前端镜像 digest：`sha256:a9ddaec8273105bb54bec862e9753771fe3b7d3be8f0e8b47bc4951540015dbc`
-- 编排：`docker-compose.yml.jetson`
+- 编排：`deploy/compose/templates/jetson.yml`（由生成器产出 `docker-compose.yml`）
 - 默认解码器：`jetson_gst`
 - 默认帧格式：`nv12`
 

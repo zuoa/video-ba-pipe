@@ -1,0 +1,29 @@
+  # RabbitMQ 消息队列服务（可选）
+  rabbitmq:
+    image: rabbitmq:4.3-management-alpine
+    container_name: video-ba-rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin123}
+      - RABBITMQ_DEFAULT_VHOST=/
+      - TZ=Asia/Shanghai
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - video-ba-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

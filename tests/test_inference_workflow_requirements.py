@@ -251,21 +251,23 @@ def test_cascade_repeated_model_is_budgeted_per_stage_backend(monkeypatch):
 
 
 def test_cuda_compose_enables_shared_inference_only_in_worker():
-    for compose_name in (
-        "docker-compose.yml.x86+cuda",
-        "docker-compose.no-mqtt.yml.x86+cuda",
-    ):
-        compose_path = Path(__file__).resolve().parents[1] / compose_name
-        with compose_path.open(encoding="utf-8") as handle:
-            compose = yaml.safe_load(handle)
-        assert compose["services"]["app"]["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
-        assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
-            ":-true}"
-        )
+    compose_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates/cuda.yml"
+    )
+    with compose_path.open(encoding="utf-8") as handle:
+        compose = yaml.safe_load(handle)
+    assert compose["services"]["app"]["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
+    assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
+        ":-true}"
+    )
 
 
 def test_jetson_api_keeps_worker_local_shared_socket_disabled():
-    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml.jetson"
+    compose_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates/jetson.yml"
+    )
     with compose_path.open(encoding="utf-8") as handle:
         compose = yaml.safe_load(handle)
 
@@ -275,12 +277,15 @@ def test_jetson_api_keeps_worker_local_shared_socket_disabled():
     )
 
 
-def test_no_mqtt_compose_enables_shared_inference_only_in_worker():
-    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.no-mqtt.yml"
+def test_base_compose_excludes_optional_services_and_enables_worker_inference():
+    compose_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates/cpu.yml"
+    )
     with compose_path.open(encoding="utf-8") as handle:
         compose = yaml.safe_load(handle)
 
-    assert "mqtt" not in compose["services"]
+    assert {"mqtt", "rabbitmq", "mediamtx"}.isdisjoint(compose["services"])
     assert compose["services"]["api"]["environment"]["SHARED_INFERENCE_ENABLED"] == "false"
     assert compose["services"]["worker"]["environment"]["SHARED_INFERENCE_ENABLED"].endswith(
         ":-true}"
@@ -291,7 +296,10 @@ def test_no_mqtt_compose_enables_shared_inference_only_in_worker():
 
 
 def test_rknn_algorithm_preview_runtime_is_worker_only():
-    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml.rknn"
+    compose_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates/rknn.yml"
+    )
     with compose_path.open(encoding="utf-8") as handle:
         compose = yaml.safe_load(handle)
 
@@ -322,14 +330,16 @@ def test_rknn_image_pins_matching_toolkit_and_runtime_versions():
     assert "RKNN_TOOLKIT_LITE2_WHL" not in dockerfile
     assert "/opt/rknn/lib" not in dockerfile
 
-    for compose_name in ("docker-compose.yml.rknn", "docker-compose.no-mqtt.yml.rknn"):
-        compose_path = Path(__file__).resolve().parents[1] / compose_name
-        with compose_path.open(encoding="utf-8") as handle:
-            compose = yaml.safe_load(handle)
-        worker = compose["services"]["worker"]
-        assert "/opt/rknn/lib" not in worker["environment"]["LD_LIBRARY_PATH"]
-        assert "/opt/rknn:/opt/rknn:ro" not in worker["volumes"]
-        assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in worker["volumes"]
+    compose_path = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates/rknn.yml"
+    )
+    with compose_path.open(encoding="utf-8") as handle:
+        compose = yaml.safe_load(handle)
+    worker = compose["services"]["worker"]
+    assert "/opt/rknn/lib" not in worker["environment"]["LD_LIBRARY_PATH"]
+    assert "/opt/rknn:/opt/rknn:ro" not in worker["volumes"]
+    assert "/usr/lib/librknnrt.so:/usr/lib/librknnrt.so:ro" not in worker["volumes"]
 
 
 def test_runtime_policy_values_are_hot_updated():

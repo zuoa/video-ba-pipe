@@ -586,24 +586,29 @@ DEVICE_MODEL_CODE=VB-RK3588-16G-V2
 
 ## 15. 部署方式
 
-### 15.1 Docker Compose 变体
+### 15.1 生成 Docker Compose
 
-| Compose 文件 | 适用平台 | 默认解码器 | 特点 |
+仓库通过 `scripts/generate_compose.sh` 生成根目录的 `docker-compose.yml`，不再分别维护各平台和 `no-mqtt` 副本。
+
+| 生成参数 | 适用平台 | 默认解码器 | 特点 |
 |---|---|---|---|
-| `docker-compose.yml` | 通用 CPU | ffmpeg 软解 | postgres + db-init + api + jobs + worker + frontend + mosquitto + mediamtx |
-| `docker-compose.yml.x86+cuda` | x86 + NVIDIA GPU | NVDEC 硬解（按 NVML 利用率自动限并发） | 额外内置 RabbitMQ（管理台 15672，admin/admin123） |
-| `docker-compose.yml.jetson` | Jetson Orin（JetPack 6.2.1） | nvv4l2decoder 硬解 | runtime: nvidia，额外 storage-guard 服务 |
-| `docker-compose.yml.rknn` | RK3588 等瑞芯微平台 | rk_mpp 硬解 | WEB_CONCURRENCY=1 |
-| `docker-compose.no-mqtt.yml[.*]` | 上述各平台 | 同上 | 去除内置 MQTT，用于对接外部 MQTT 或改用 RabbitMQ/HTTP 通道 |
+| `--platform cpu` | 通用 CPU | ffmpeg 软解 | 通用 x86 CPU 服务 |
+| `--platform cuda` | x86 + NVIDIA GPU | NVDEC 硬解（按 NVML 利用率自动限并发） | NVIDIA runtime |
+| `--platform jetson` | Jetson Orin（JetPack 6.2.1） | nvv4l2decoder 硬解 | runtime: nvidia，额外 storage-guard 服务 |
+| `--platform rknn` | RK3588 等瑞芯微平台 | rk_mpp 硬解 | WEB_CONCURRENCY=1 |
+
+MQTT 默认关闭；可通过 `--with-mqtt`、`--with-rabbitmq`、`--with-mediamtx` 独立加入可选服务。
 
 **启动示例：**
 
 ```bash
 # CPU 版本
+./scripts/generate_compose.sh --non-interactive --platform cpu --force
 docker compose up -d
 
 # CUDA 版本
-docker compose -f docker-compose.yml.x86+cuda up -d
+./scripts/generate_compose.sh --non-interactive --platform cuda --force
+docker compose up -d
 
 # 查看日志
 docker logs video-ba-pipe-cpu -f

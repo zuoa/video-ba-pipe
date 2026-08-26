@@ -21,8 +21,8 @@
 - `jobs`：告警导出、告警投递、人脸批量录入和媒体清理（轻量 control 镜像）
 - `worker`：视频解码、算法编排与推理（对应平台的重型 worker 镜像）
 - `frontend`：前端管理界面（默认 `8080`）
-- `mqtt`：内置 Mosquitto Broker（默认主通道）
-- `rabbitmq`：兼容消息队列（CUDA compose 中内置）
+- `mqtt`：可选的内置 Mosquitto Broker
+- `rabbitmq`：可选的内置 RabbitMQ
 - `http`：直接异步投递到外部接收端 API
 
 ## 快速开始（Docker 推荐）
@@ -33,7 +33,7 @@
 
 ```bash
 ./scripts/generate_compose.sh
-docker compose -f docker-compose.yml up -d
+docker compose up -d
 ```
 
 无需克隆仓库也可以在目标部署目录直接远程运行。下面的写法会保留终端标准输入，因此可以正常完成交互问答：
@@ -70,14 +70,27 @@ GHProxy 属于第三方代理服务，可能存在缓存延迟或可用性变化
 
 `--platform auto` 在 x86 主机上根据 NVIDIA 驱动选择 CPU 或 CUDA，在 ARM64 主机上根据设备树识别 Jetson/Tegra 或 RK3588；也可使用 `cpu`、`cuda`、`jetson`、`rknn` 手动覆盖。启用 `--nju-mirror` 后，仅将 `ghcr.io` 切换到 `ghcr.nju.edu.cn`；PostgreSQL、RabbitMQ、Mosquitto、MediaMTX 等 Docker Hub 镜像保持上游地址。
 
-生成器默认还会在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `frontend/nginx.conf` 和 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
+生成器默认还会根据 `deploy/compose/required-files.txt`，在输出 Compose 文件的同级目录准备所有必需文件：始终准备 `frontend/nginx.conf` 和 `data/`，启用 MQTT 时准备 `deploy/mosquitto.conf`，启用 MediaMTX 时准备 `mediamtx.yml`。仓库内有同版本文件时优先复制，否则从 GitHub 下载；已有文件不会被覆盖。可用 `--force-configs` 强制更新、`--no-download-configs` 完全跳过，或用 `--config-base-url` 指定自建下载源。
 
 交互模式默认询问是否生成 `.env`，随后填写镜像版本、公司名、前端 HTTP 端口（`HTTP_PORT`，默认 `8080`）、PostgreSQL 数据库名/用户名/密码、外部访问地址、节点 ID、设备型号代码等必要变量；JWT 与媒体签名密钥可直接回车自动生成。选择 MediaMTX 或 RabbitMQ 后，还会继续询问对应账号和连接参数。生成的 `.env` 权限为 `600`，已有文件默认不会覆盖。无人值守模式会使用传入的同名环境变量，并为缺失的密码和密钥生成随机值；可用 `--no-env-file` 跳过，或用 `--force-env` 重新生成。全部参数见 `./scripts/generate_compose.sh --help`。
+
+以后更新部署配置时，重新下载最新版生成器并生成即可；已有 `.env` 和配置文件默认保留，只有 `docker-compose.yml` 被更新：
+
+```bash
+curl -fsSLo generate_compose.sh https://raw.githubusercontent.com/zuoa/video-ba-pipe/main/scripts/generate_compose.sh && bash generate_compose.sh --force
+```
+
+如果确认没有手工修改过 `nginx.conf`、`mosquitto.conf` 或 `mediamtx.yml`，可再加 `--force-configs` 同步这些托管配置；否则先保留并对比，避免覆盖现场定制。
+
+生成文件头会记录平台、可选服务、镜像源和模板来源。生产环境如需严格复现，可把脚本下载 URL 与 `VIDEO_BA_PIPE_CONFIG_BASE_URL` 中的 `main` 同时替换为同一个 tag 或完整 commit SHA。仓库中的模板、片段或必要文件清单发生变化后，GitHub Actions 会生成并校验所有平台的基础/完整组合，避免脚本与部署源不同步。
+
+`ghcr.nju.edu.cn` 是第三方 GHCR 缓存，出现 `502 Bad Gateway` 表示镜像站当时没有成功回源，并不是 Compose 格式错误。此时重新运行生成器并在问答中选择不使用南京大学镜像，或传入 `--no-nju-mirror` 后再执行 `docker compose pull`。
 
 ### 1) CPU 部署
 
 ```bash
-docker compose -f docker-compose.yml up -d
+./scripts/generate_compose.sh --non-interactive --platform cpu --force
+docker compose up -d
 ```
 
 消息投递默认关闭。启动后在“系统设置 → 消息投递”中启用并配置 MQTT、RabbitMQ 或 HTTP API；连接参数不使用环境变量。内置 MQTT 地址为 `mqtt:1883`、用户名为 `video-ba`，密码在每个部署首次启动时随机生成并持久化，且默认不向宿主机映射 1883 端口。使用相同 Compose 文件执行以下命令获取密码后填入页面：
@@ -94,19 +107,21 @@ docker compose exec mqtt cat /mosquitto/secrets/initial-password
 ### 2) X86 + CUDA/GPU 部署
 
 ```bash
-docker compose -f docker-compose.yml.x86+cuda up -d
+./scripts/generate_compose.sh --non-interactive --platform cuda --force
+docker compose up -d
 ```
 
 要求：宿主机已安装 NVIDIA 驱动与 Docker NVIDIA Runtime。
 
-> 注意：自 `docker-compose.yml.x86+cuda` 起，该编排默认 `VIDEO_DECODER_TYPE=ffmpeg_nvdec`（NVDEC 硬解，
-> 并发路数由硬解预算器按 NVML 解码利用率自动调节）；旧版 `docker-compose.yml.cuda` 默认为软解。
+> 注意：CUDA 模板默认 `VIDEO_DECODER_TYPE=ffmpeg_nvdec`（NVDEC 硬解，
+> 并发路数由硬解预算器按 NVML 解码利用率自动调节）。
 > 如需保持软解，在 `.env` 中设置 `VIDEO_DECODER_TYPE=ffmpeg_sw`。
 
 ### 3) RK3588/NPU 部署
 
 ```bash
-docker compose -f docker-compose.yml.rknn up -d
+./scripts/generate_compose.sh --non-interactive --platform rknn --force
+docker compose up -d
 ```
 
 说明：RK 部署默认内置 PostgreSQL，并保持 `WEB_CONCURRENCY=1` 作为稳妥默认值，避免盒子上额外放大 API 侧并发压力。
@@ -115,7 +130,8 @@ docker compose -f docker-compose.yml.rknn up -d
 ### 4) Jetson Orin NX Super 16GB 部署
 
 ```bash
-docker compose -f docker-compose.yml.jetson up -d
+./scripts/generate_compose.sh --non-interactive --platform jetson --force
+docker compose up -d
 ```
 
 要求：目标设备运行 JetPack 6.2.1 / L4T 36.4.4，并已安装 Docker NVIDIA Runtime。后端使用独立的 `:jetson-<release>` ARM64 worker 镜像，CUDA 推理由 NVIDIA PyTorch iGPU 运行时提供，H.264/H.265 默认使用 `nvv4l2decoder` 硬解；启动视频源时会用 `ffprobe` 探测并保存实际编码。前端复用通用 `:arm64` 镜像。Super 功耗模式需在宿主机刷机和 `nvpmodel` 配置中启用。
@@ -123,35 +139,25 @@ docker compose -f docker-compose.yml.jetson up -d
 所有 Compose 部署都会先运行一次性 `db-init` 服务。该服务完成事务化数据库迁移后，API、jobs 和 worker 才会启动；迁移失败时业务容器保持停止，避免在不完整 schema 上继续提供服务。API、db-init 和 jobs 共用平台对应的轻量 `:control-<platform>-<release>` 镜像，只有 worker 拉取 CPU/CUDA/Jetson/RK 推理框架。control 与 worker 由同一个工作流按同一 commit 成对发布；生产环境建议在 `.env` 中设置 `VIDEO_BA_PIPE_RELEASE=<完整 commit SHA>`。普通应用更新通常只变化轻量代码层，不再重复下载 GB 级 PyTorch、Paddle 或平台运行时层。排查部署门禁可使用：
 
 ```bash
-docker compose -f docker-compose.yml.x86+cuda ps
-docker compose -f docker-compose.yml.x86+cuda logs db-init
+docker compose ps
+docker compose logs db-init
 ```
 
-其他硬件部署将命令中的 Compose 文件替换为对应的 `.yml` 文件。
+### 可选服务
 
-### 不内置 MQTT 的部署文件
-
-如果使用外部 MQTT Broker，或改用 RabbitMQ/HTTP，可使用对应的 `no-mqtt` 文件。这些文件不创建 Mosquitto 服务，也不创建 `mqtt-data`、`mqtt-secrets` 卷；如需消息投递，请在“系统设置 → 消息投递”中选择并配置目标通道。
+不再维护成组的 `no-mqtt` 副本。MQTT 默认关闭；如果使用外部 MQTT Broker，或改用 RabbitMQ/HTTP，直接使用默认生成结果即可。如需内置服务，通过生成参数选择：
 
 ```bash
-# CPU
-docker compose -f docker-compose.no-mqtt.yml up -d
-
-# X86 + CUDA/GPU
-docker compose -f docker-compose.no-mqtt.yml.x86+cuda up -d
-
-# RK3588/NPU
-docker compose -f docker-compose.no-mqtt.yml.rknn up -d
-
-# Jetson Orin NX
-docker compose -f docker-compose.no-mqtt.yml.jetson up -d
+./scripts/generate_compose.sh --with-mqtt --with-mediamtx --force
 ```
+
+可选项为 `--with-mqtt`、`--with-rabbitmq` 和 `--with-mediamtx`，每项都可独立开启；对应的 `--without-*` 参数用于无人值守脚本中显式关闭。
 
 ## 访问地址
 
-- 前端：`http://localhost:8080`
+- 前端：`http://localhost:${HTTP_PORT}`（默认 `8080`）
 - 后端 API：`http://localhost:5002`
-- RabbitMQ 管理台（CUDA compose）：`http://localhost:15672`（`admin/admin123`）
+- RabbitMQ 管理台（启用时）：`http://localhost:15672`（账号密码见 `.env`）
 
 ## 本地开发（非 Docker）
 
@@ -248,14 +254,9 @@ python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16
 ├── app/                  # 后端服务与工作流引擎
 ├── frontend/             # 前端管理界面（UmiJS + React）
 ├── docs/                 # 部署和集成文档
-├── docker-compose.yml
-├── docker-compose.no-mqtt.yml
-├── docker-compose.yml.x86+cuda
-├── docker-compose.no-mqtt.yml.x86+cuda
-├── docker-compose.yml.jetson
-├── docker-compose.no-mqtt.yml.jetson
-├── docker-compose.yml.rknn
-├── docker-compose.no-mqtt.yml.rknn
+├── deploy/compose/       # 平台模板、可选服务片段和必要文件清单
+├── scripts/generate_compose.sh
+├── docker-compose.yml    # 本地生成产物（不提交）
 └── env.example
 ```
 

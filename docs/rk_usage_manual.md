@@ -46,19 +46,20 @@ iptables -P FORWARD ACCEPT
 
 ```bash
 cd /home/cat/video-analysis
-docker compose -p video-analysis -f docker-compose.yml.rknn down
-docker compose -p video-analysis -f docker-compose.yml.rknn up -d
-docker compose -p video-analysis -f docker-compose.yml.rknn ps
+./scripts/generate_compose.sh --non-interactive --platform rknn --force
+docker compose -p video-analysis down
+docker compose -p video-analysis up -d
+docker compose -p video-analysis ps
 ```
 
 补充说明：
-- `docker-compose.yml.rknn` 里只保留了偏离默认值或 RK 专属的关键变量。
-- `docker-compose.yml.rknn` 已内置 PostgreSQL，仅在 compose 网络内提供服务；如需执行迁移或排障，优先使用 `docker compose exec` / `docker compose run` 进入容器。
+- RK 平台模板只保留偏离默认值或 RK 专属的关键变量，生成结果统一写入 `docker-compose.yml`。
+- RK 平台模板已内置 PostgreSQL，仅在 compose 网络内提供服务；如需执行迁移或排障，优先使用 `docker compose exec` / `docker compose run` 进入容器。
 - `api` 不加载模型；已保存算法测试和组合检测预览会通过容器内网转发到 worker。
 - RKNN 默认不进入“每模型共享子进程”（`SHARED_RKNN_ENABLED=false`），并在 worker 内跨进程串行原生 Runtime 调用，避免多模型同时初始化/推理触发 `SIGSEGV(-11)`；该实验开关不要在生产环境启用。
 - `worker` 默认透传 `/dev/dri`、`/dev/mpp_service`、`/dev/rga`、`/dev/video0`、`/dev/video-dec0`、`/dev/video-enc0`，用于正式任务、页面测试中的 RKNN 推理及 `ffmpeg+rkmpp` 硬解。
 - `VIDEO_DECODER_TYPE=rk_mpp` 目前仅在 `worker` 中启用；`api` 保持默认软解，避免在未使用测试解码能力时额外占用 RK 设备。
-- RK compose 默认使用资源受限档：`ANALYSIS_TARGET_FPS=2`、`ANALYSIS_BUFFER_SECONDS=3`、`RECORDING_FPS=3`、`PRE_ALERT_DURATION=15`、`POST_ALERT_DURATION=15`、`RECORDING_BUFFER_DURATION=32`，避免多路场景下录制共享内存和 JPEG 编码持续放大。
+- RK 模板默认使用资源受限档：`ANALYSIS_TARGET_FPS=2`、`ANALYSIS_BUFFER_SECONDS=3`、`RECORDING_FPS=3`、`PRE_ALERT_DURATION=15`、`POST_ALERT_DURATION=15`、`RECORDING_BUFFER_DURATION=32`，避免多路场景下录制共享内存和 JPEG 编码持续放大。
 - 如果需要估算当前配置下的多路内存预算，可在项目目录执行：`python scripts/estimate_video_resources.py --source 1920x1080:25 --count 16`。
 - RK 镜像不包含 PaddleOCR（官方 Paddle 不支持 arm64）。OCR 算法在 RK 上走 NPU：分别上传 detection / recognition 角色的 `.rknn`（PP-OCRv4 det/rec，需用 **rknn-toolkit2 2.3.2** 转换）。CPU/CUDA 上的 PaddleOCR 压缩包不能直接当 RK 模型用。
 - OCR 与 YOLO 共用全局 RKNN native lock，建议工作流使用 `YOLO --detected--> OCR` 且 OCR 输入模式为「上游裁剪」，避免整帧多行识别堵住检测。

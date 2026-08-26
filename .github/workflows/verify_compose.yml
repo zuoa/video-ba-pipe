@@ -1,0 +1,35 @@
+name: Verify Compose generation
+
+on:
+  pull_request:
+    paths:
+      - "deploy/compose/**"
+      - "deploy/mosquitto.conf"
+      - "frontend/nginx.conf"
+      - "mediamtx.yml"
+      - "scripts/generate_compose.sh"
+      - "scripts/verify_compose_generation.sh"
+      - ".github/workflows/verify_compose.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "deploy/compose/**"
+      - "deploy/mosquitto.conf"
+      - "frontend/nginx.conf"
+      - "mediamtx.yml"
+      - "scripts/generate_compose.sh"
+      - "scripts/verify_compose_generation.sh"
+      - ".github/workflows/verify_compose.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate and validate platform matrix
+        run: scripts/verify_compose_generation.sh

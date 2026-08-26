@@ -100,7 +100,8 @@ docker-compose up
 
 # X86 + CUDA/GPU version
 docker build -f Dockerfile.cuda -t video-ba-pipe:cuda .
-docker compose -f docker-compose.yml.x86+cuda up
+./scripts/generate_compose.sh --platform cuda
+docker compose up
 
 # View logs
 docker logs video-ba-pipe-cpu -f

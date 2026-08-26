@@ -460,10 +460,10 @@ def test_compose_variants_share_worker_test_endpoint():
 
     root = Path(__file__).resolve().parents[1]
     variants = {
-        "docker-compose.yml": "api",
-        "docker-compose.yml.jetson": "api",
-        "docker-compose.yml.rknn": "api",
-        "docker-compose.yml.x86+cuda": "app",
+        "deploy/compose/templates/cpu.yml": "api",
+        "deploy/compose/templates/jetson.yml": "api",
+        "deploy/compose/templates/rknn.yml": "api",
+        "deploy/compose/templates/cuda.yml": "app",
     }
     for filename, api_service in variants.items():
         compose = yaml.safe_load((root / filename).read_text(encoding="utf-8"))

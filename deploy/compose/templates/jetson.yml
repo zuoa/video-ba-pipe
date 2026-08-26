@@ -1,3 +1,4 @@
+# video-ba-pipe source template: jetson
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -288,30 +289,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-    networks:
-      - video-ba-network
-    logging: *default-logging
-
-  # MediaMTX 实时预览中继服务（可选，默认 MEDIAMTX_ENABLED=false）
-  # WebRTC(WHEP) 按需拉流：仅当有浏览器观众时才向摄像机拉 RTSP，观众离开自动断开。
-  # 多架构镜像(amd64/arm64)，Jetson 可直接使用。
-  # ============================================
-  mediamtx:
-    image: bluenviron/mediamtx:latest
-    container_name: video-ba-mediamtx-jetson
-    restart: unless-stopped
-    environment:
-      - TZ=Asia/Shanghai
-      - MTX_AUTHINTERNALUSERS_1_USER=${MEDIAMTX_API_USER:-video-ba-api}
-      - MTX_AUTHINTERNALUSERS_1_PASS=${MEDIAMTX_API_PASSWORD:-video-ba-api-change-me}
-      - MTX_WEBRTCADDITIONALHOSTS=${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-}
-    ports:
-      - "8889:8889/tcp" # WebRTC WHEP/HTTP signaling
-      - "8189:8189/udp" # WebRTC ICE media
-      - "8189:8189/tcp" # WebRTC ICE TCP fallback
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ./mediamtx.yml:/mediamtx.yml:ro
     networks:
       - video-ba-network
     logging: *default-logging

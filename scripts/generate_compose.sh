@@ -9,8 +9,8 @@ if [[ -n "${SCRIPT_SOURCE}" ]]; then
   SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${SCRIPT_SOURCE}")" 2>/dev/null && pwd || true)"
   if [[ -n "${SCRIPT_DIR}" &&
         -f "${SCRIPT_DIR}/../scripts/generate_compose.sh" &&
-        -f "${SCRIPT_DIR}/../docker-compose.yml" &&
-        -f "${SCRIPT_DIR}/../docker-compose.yml.x86+cuda" ]]; then
+        -f "${SCRIPT_DIR}/../deploy/compose/templates/cpu.yml" &&
+        -f "${SCRIPT_DIR}/../deploy/compose/templates/cuda.yml" ]]; then
     PROJECT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
   fi
 fi
@@ -150,55 +150,21 @@ ask_yes_no() {
 
 yaml_template_name_for_platform() {
   case "$1" in
-    cpu) printf 'docker-compose.yml\n' ;;
-    cuda) printf 'docker-compose.yml.x86+cuda\n' ;;
-    jetson) printf 'docker-compose.yml.jetson\n' ;;
-    rknn) printf 'docker-compose.yml.rknn\n' ;;
+    cpu) printf 'deploy/compose/templates/cpu.yml\n' ;;
+    cuda) printf 'deploy/compose/templates/cuda.yml\n' ;;
+    jetson) printf 'deploy/compose/templates/jetson.yml\n' ;;
+    rknn) printf 'deploy/compose/templates/rknn.yml\n' ;;
     *) return 1 ;;
   esac
 }
 
-# 删除 services 或 volumes 下一个指定的二级 YAML 块。
-remove_yaml_block() {
-  local name input output
-  name="$1"
-  input="$2"
-  output="$3"
-  awk -v target="  ${name}:" '
-    $0 == target {
-      skipping = 1
-      next
-    }
-    skipping && ($0 ~ /^[^[:space:]]/ || $0 ~ /^  [[:alnum:]_-]+:[[:space:]]*$/) {
-      skipping = 0
-    }
-    !skipping { print }
-  ' "${input}" >"${output}"
-}
-
-extract_yaml_block() {
-  local name input output
-  name="$1"
-  input="$2"
-  output="$3"
-  awk -v target="  ${name}:" '
-    $0 == target {
-      printing = 1
-    }
-    printing && $0 != target && $0 ~ /^  [[:alnum:]_-]+:[[:space:]]*$/ {
-      exit
-    }
-    printing { print }
-  ' "${input}" >"${output}"
-}
-
-insert_block_before() {
-  local marker block input output
-  marker="$1"
+insert_block_before_top_level_key() {
+  local key block input output
+  key="$1"
   block="$2"
   input="$3"
   output="$4"
-  awk -v marker="  ${marker}:" '
+  awk -v marker="${key}:" '
     FNR == NR {
       block = block $0 ORS
       next
@@ -213,7 +179,7 @@ insert_block_before() {
         exit 42
       }
     }
-  ' "${block}" "${input}" >"${output}" || die "无法在模板中定位 ${marker} 服务"
+  ' "${block}" "${input}" >"${output}" || die "无法在模板中定位 ${key} 配置"
 }
 
 insert_block_after_top_level_key() {
@@ -280,10 +246,10 @@ resolve_source_file() {
   if [[ ! -s "${downloaded_path}" ]]; then
     url="${CONFIG_BASE_URL%/}/${relative_path}"
     if ! download_file "${url}" "${downloaded_path}"; then
-      die "模板下载失败：${url}"
+      die "部署源文件下载失败：${url}"
     fi
-    [[ -s "${downloaded_path}" ]] || die "下载到的模板为空：${url}"
-    printf '已下载模板：%s\n' "${relative_path}" >&2
+    [[ -s "${downloaded_path}" ]] || die "下载到的部署源文件为空：${url}"
+    printf '已下载部署源文件：%s\n' "${relative_path}" >&2
   fi
   printf '%s\n' "${downloaded_path}"
 }
@@ -331,15 +297,34 @@ sync_config_file() {
   mv -f -- "${temp_file}" "${target_path}"
 }
 
+required_file_scope_enabled() {
+  case "$1" in
+    always) return 0 ;;
+    mqtt) [[ "${ENABLE_MQTT}" == "true" ]] ;;
+    rabbitmq) [[ "${ENABLE_RABBITMQ}" == "true" ]] ;;
+    mediamtx) [[ "${ENABLE_MEDIAMTX}" == "true" ]] ;;
+    *) die "必要文件清单包含未知 scope：$1" ;;
+  esac
+}
+
 prepare_required_files() {
-  mkdir -p -- "${OUTPUT_DIR}/data"
-  sync_config_file "frontend/nginx.conf"
-  if [[ "${ENABLE_MQTT}" == "true" ]]; then
-    sync_config_file "deploy/mosquitto.conf"
-  fi
-  if [[ "${ENABLE_MEDIAMTX}" == "true" ]]; then
-    sync_config_file "mediamtx.yml"
-  fi
+  local manifest kind scope relative_path extra
+  manifest="$(resolve_source_file "deploy/compose/required-files.txt")"
+
+  while read -r kind scope relative_path extra; do
+    [[ -n "${kind}" && "${kind}" != \#* ]] || continue
+    [[ -n "${scope}" && -n "${relative_path}" && -z "${extra}" ]] || \
+      die "必要文件清单格式错误：${kind} ${scope} ${relative_path} ${extra}"
+    case "${relative_path}" in
+      /*|.|..|*../*|../*|*/..) die "必要文件清单包含不安全路径：${relative_path}" ;;
+    esac
+    required_file_scope_enabled "${scope}" || continue
+    case "${kind}" in
+      dir) mkdir -p -- "${OUTPUT_DIR}/${relative_path}" ;;
+      file) sync_config_file "${relative_path}" ;;
+      *) die "必要文件清单包含未知 kind：${kind}" ;;
+    esac
+  done <"${manifest}"
 }
 
 random_secret() {
@@ -389,10 +374,11 @@ validate_http_port() {
 }
 
 quote_env_value() {
-  local value
+  local value escaped_quote
   value="$1"
+  escaped_quote="\\'"
   value="${value//\\/\\\\}"
-  value="${value//\'/\'}"
+  value="${value//\'/${escaped_quote}}"
   printf "'%s'" "${value}"
 }
 
@@ -508,8 +494,6 @@ parameterize_generated_compose() {
   output="$2"
   sed \
     -e 's#- "8080:80"#- "${HTTP_PORT:-8080}:80"#g' \
-    -e 's#- RABBITMQ_DEFAULT_USER=admin#- RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}#g' \
-    -e 's#- RABBITMQ_DEFAULT_PASS=admin123#- RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin123}#g' \
     "${input}" >"${output}"
 }
 
@@ -741,52 +725,36 @@ set_next_file() {
   NEXT_FILE="${TEMP_DIR}/compose-${STEP}.yml"
 }
 
-if [[ "${ENABLE_RABBITMQ}" == "true" && "${PLATFORM}" != "cuda" ]]; then
-  RABBITMQ_SERVICE="${TEMP_DIR}/rabbitmq-service.yml"
-  RABBITMQ_VOLUME="${TEMP_DIR}/rabbitmq-volume.yml"
-  CUDA_TEMPLATE_FILE="$(resolve_source_file 'docker-compose.yml.x86+cuda')"
-  extract_yaml_block rabbitmq "${CUDA_TEMPLATE_FILE}" "${RABBITMQ_SERVICE}"
-  extract_yaml_block rabbitmq-data "${CUDA_TEMPLATE_FILE}" "${RABBITMQ_VOLUME}"
-
-  case "${PLATFORM}" in
-    cpu) RABBITMQ_CONTAINER_NAME="video-ba-rabbitmq" ;;
-    jetson) RABBITMQ_CONTAINER_NAME="video-ba-rabbitmq-jetson" ;;
-    rknn) RABBITMQ_CONTAINER_NAME="video-ba-rabbitmq-rk" ;;
-  esac
-  sed "s/container_name: video-ba-rabbitmq-cuda/container_name: ${RABBITMQ_CONTAINER_NAME}/" \
-    "${RABBITMQ_SERVICE}" >"${TEMP_DIR}/rabbitmq-service-named.yml"
-  RABBITMQ_SERVICE="${TEMP_DIR}/rabbitmq-service-named.yml"
-
+add_service_fragment() {
+  local name fragment
+  name="$1"
+  fragment="$(resolve_source_file "deploy/compose/fragments/${name}.service.yml")"
   set_next_file
-  insert_block_before mqtt "${RABBITMQ_SERVICE}" "${CURRENT_FILE}" "${NEXT_FILE}"
+  insert_block_before_top_level_key networks "${fragment}" "${CURRENT_FILE}" "${NEXT_FILE}"
   CURRENT_FILE="${NEXT_FILE}"
+}
 
+add_volume_fragment() {
+  local name fragment
+  name="$1"
+  fragment="$(resolve_source_file "deploy/compose/fragments/${name}.volumes.yml")"
   set_next_file
-  insert_block_after_top_level_key volumes "${RABBITMQ_VOLUME}" "${CURRENT_FILE}" "${NEXT_FILE}"
+  insert_block_after_top_level_key volumes "${fragment}" "${CURRENT_FILE}" "${NEXT_FILE}"
   CURRENT_FILE="${NEXT_FILE}"
+}
+
+if [[ "${ENABLE_MQTT}" == "true" ]]; then
+  add_service_fragment mqtt
+  add_volume_fragment mqtt
 fi
 
-if [[ "${ENABLE_RABBITMQ}" != "true" ]]; then
-  set_next_file
-  remove_yaml_block rabbitmq "${CURRENT_FILE}" "${NEXT_FILE}"
-  CURRENT_FILE="${NEXT_FILE}"
-  set_next_file
-  remove_yaml_block rabbitmq-data "${CURRENT_FILE}" "${NEXT_FILE}"
-  CURRENT_FILE="${NEXT_FILE}"
+if [[ "${ENABLE_RABBITMQ}" == "true" ]]; then
+  add_service_fragment rabbitmq
+  add_volume_fragment rabbitmq
 fi
 
-if [[ "${ENABLE_MQTT}" != "true" ]]; then
-  for block_name in mqtt mqtt-data mqtt-secrets; do
-    set_next_file
-    remove_yaml_block "${block_name}" "${CURRENT_FILE}" "${NEXT_FILE}"
-    CURRENT_FILE="${NEXT_FILE}"
-  done
-fi
-
-if [[ "${ENABLE_MEDIAMTX}" != "true" ]]; then
-  set_next_file
-  remove_yaml_block mediamtx "${CURRENT_FILE}" "${NEXT_FILE}"
-  CURRENT_FILE="${NEXT_FILE}"
+if [[ "${ENABLE_MEDIAMTX}" == "true" ]]; then
+  add_service_fragment mediamtx
 fi
 
 if [[ "${USE_NJU_MIRROR}" == "true" ]]; then
@@ -815,10 +783,12 @@ FINAL_FILE="${TEMP_DIR}/docker-compose.yml"
 awk \
   -v platform="${PLATFORM}" \
   -v services="${OPTIONAL_SERVICES}" \
-  -v mirror="${MIRROR_NAME}" '
+  -v mirror="${MIRROR_NAME}" \
+  -v source="${CONFIG_BASE_URL}" '
   BEGIN {
     print "# 由 scripts/generate_compose.sh 自动生成，请通过生成器更新。"
     print "# platform=" platform " optional_services=" services " image_source=" mirror
+    print "# compose_source=" source
     print ""
   }
   { print }

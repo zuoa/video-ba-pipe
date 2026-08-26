@@ -570,24 +570,29 @@ Full spec: `docs/openapi.yaml`; usage guide: `docs/openapi_usage.md`; also brows
 
 ## 15. Deployment
 
-### 15.1 Docker Compose Variants
+### 15.1 Generate Docker Compose
 
-| Compose file | Platform | Default decoder | Notes |
+The repository uses `scripts/generate_compose.sh` to produce the root `docker-compose.yml`; separate platform and `no-mqtt` copies are no longer maintained.
+
+| Generator option | Platform | Default decoder | Notes |
 |---|---|---|---|
-| `docker-compose.yml` | Generic CPU | ffmpeg software decode | postgres + db-init + api + jobs + worker + frontend + mosquitto + mediamtx |
-| `docker-compose.yml.x86+cuda` | x86 + NVIDIA GPU | NVDEC hardware decode (auto concurrency limit via NVML utilization) | Bundles RabbitMQ (console 15672, admin/admin123) |
-| `docker-compose.yml.jetson` | Jetson Orin (JetPack 6.2.1) | nvv4l2decoder hardware decode | runtime: nvidia, extra storage-guard service |
-| `docker-compose.yml.rknn` | RK3588 and other Rockchip platforms | rk_mpp hardware decode | WEB_CONCURRENCY=1 |
-| `docker-compose.no-mqtt.yml[.*]` | All of the above | Same as above | Drops the bundled MQTT broker — for external MQTT or the RabbitMQ/HTTP channel |
+| `--platform cpu` | Generic CPU | ffmpeg software decode | Generic x86 CPU services |
+| `--platform cuda` | x86 + NVIDIA GPU | NVDEC hardware decode (auto concurrency limit via NVML utilization) | NVIDIA runtime |
+| `--platform jetson` | Jetson Orin (JetPack 6.2.1) | nvv4l2decoder hardware decode | runtime: nvidia, extra storage-guard service |
+| `--platform rknn` | RK3588 and other Rockchip platforms | rk_mpp hardware decode | WEB_CONCURRENCY=1 |
+
+MQTT is disabled by default. Add optional services independently with `--with-mqtt`, `--with-rabbitmq`, and `--with-mediamtx`.
 
 **Startup examples:**
 
 ```bash
 # CPU build
+./scripts/generate_compose.sh --non-interactive --platform cpu --force
 docker compose up -d
 
 # CUDA build
-docker compose -f docker-compose.yml.x86+cuda up -d
+./scripts/generate_compose.sh --non-interactive --platform cuda --force
+docker compose up -d
 
 # Logs
 docker logs video-ba-pipe-cpu -f

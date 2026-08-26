@@ -61,24 +61,16 @@ def test_web_and_orchestrator_do_not_start_jobs_threads():
 
 def test_compose_roles_use_one_platform_release_and_worker_capabilities():
     variants = {
-        "docker-compose.yml": ("api", "cpu", "VIDEO_BA_PIPE_WORKER_IMAGE"),
-        "docker-compose.no-mqtt.yml": (
+        "deploy/compose/templates/cpu.yml": (
             "api", "cpu", "VIDEO_BA_PIPE_WORKER_IMAGE",
         ),
-        "docker-compose.yml.x86+cuda": (
+        "deploy/compose/templates/cuda.yml": (
             "app", "cuda", "VIDEO_BA_PIPE_CUDA_IMAGE",
         ),
-        "docker-compose.no-mqtt.yml.x86+cuda": (
-            "app", "cuda", "VIDEO_BA_PIPE_CUDA_IMAGE",
-        ),
-        "docker-compose.yml.jetson": (
+        "deploy/compose/templates/jetson.yml": (
             "api", "jetson", "VIDEO_BA_PIPE_JETSON_IMAGE",
         ),
-        "docker-compose.no-mqtt.yml.jetson": (
-            "api", "jetson", "VIDEO_BA_PIPE_JETSON_IMAGE",
-        ),
-        "docker-compose.yml.rknn": ("api", "rk", "VIDEO_BA_PIPE_RK_IMAGE"),
-        "docker-compose.no-mqtt.yml.rknn": (
+        "deploy/compose/templates/rknn.yml": (
             "api", "rk", "VIDEO_BA_PIPE_RK_IMAGE",
         ),
     }

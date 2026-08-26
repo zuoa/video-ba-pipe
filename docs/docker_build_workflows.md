@@ -236,9 +236,11 @@ docker buildx build --platform=linux/arm64 \
 
 ## 部署对应关系
 
-| 部署方式 | control（db-init/api/jobs） | worker | 前端镜像 | compose 文件 |
+| 部署方式 | control（db-init/api/jobs） | worker | 前端镜像 | 生成参数 |
 | --- | --- | --- | --- | --- |
-| x86 CPU | `ghcr.io/<owner>/<repo>:control-cpu-<release>` | `ghcr.io/<owner>/<repo>:cpu-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml` |
-| x86 CUDA | `ghcr.io/<owner>/<repo>:control-cuda-<release>` | `ghcr.io/<owner>/<repo>:cuda-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `docker-compose.yml.x86+cuda` |
-| RK3588 | `ghcr.io/<owner>/<repo>:control-rk-<release>` | `ghcr.io/<owner>/<repo>:rk-<release>` | `ghcr.io/<owner>/<repo>-frontend:rk` | `docker-compose.yml.rknn` |
-| Jetson Orin NX | `ghcr.io/<owner>/<repo>:control-jetson-<release>` | `ghcr.io/<owner>/<repo>:jetson-<release>` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `docker-compose.yml.jetson` |
+| x86 CPU | `ghcr.io/<owner>/<repo>:control-cpu-<release>` | `ghcr.io/<owner>/<repo>:cpu-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `--platform cpu` |
+| x86 CUDA | `ghcr.io/<owner>/<repo>:control-cuda-<release>` | `ghcr.io/<owner>/<repo>:cuda-<release>` | `ghcr.io/<owner>/<repo>-frontend:main` | `--platform cuda` |
+| RK3588 | `ghcr.io/<owner>/<repo>:control-rk-<release>` | `ghcr.io/<owner>/<repo>:rk-<release>` | `ghcr.io/<owner>/<repo>-frontend:rk` | `--platform rknn` |
+| Jetson Orin NX | `ghcr.io/<owner>/<repo>:control-jetson-<release>` | `ghcr.io/<owner>/<repo>:jetson-<release>` | `ghcr.io/<owner>/<repo>-frontend:arm64` | `--platform jetson` |
+
+使用 `scripts/generate_compose.sh` 生成统一的 `docker-compose.yml`；可选服务通过 `--with-mqtt`、`--with-rabbitmq`、`--with-mediamtx` 添加。
