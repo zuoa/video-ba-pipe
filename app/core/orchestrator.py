@@ -8,6 +8,7 @@ import threading
 import time
 from collections import deque
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 
 from app import logger
 from app.config import (
@@ -219,6 +220,11 @@ class Orchestrator:
         self.rotation_phase = 'IDLE'
         self.rotation_batch_launch_at = None
         self.rotation_dwell_started_at = None
+        self.rotation_source_launch_at = {}
+        self.rotation_source_ready_at = {}
+        self.rotation_startup_samples = deque(maxlen=256)
+        self.rotation_drain_samples = deque(maxlen=256)
+        self.rotation_licensed_source_ids = None
         self.last_rotation_config_refresh_at = 0.0
         self._rotation_was_enabled = self.rotation_config.enabled
         self.desired_source_ids = set()
@@ -509,6 +515,73 @@ class Orchestrator:
         })
         return environment
 
+    @staticmethod
+    def _sample_percentile(samples, percentile: float) -> float:
+        values = sorted(float(value) for value in samples)
+        if not values:
+            return 0.0
+        index = max(
+            0,
+            min(
+                len(values) - 1,
+                int(len(values) * percentile + 0.999999) - 1,
+            ),
+        )
+        return round(values[index], 1)
+
+    def _rotation_runtime_status(self) -> dict:
+        candidate_ids = (
+            self._rotation_candidate_ids()
+            if self.rotation_config.enabled
+            else []
+        )
+        selected_ids = set(self.rotation_batch_ids)
+        ready_ids = set(self.rotation_source_ready_at) & selected_ids
+        decoder_ids = set(self.running_processes)
+        queued_ids = selected_ids - decoder_ids
+        starting_ids = (selected_ids & decoder_ids) - ready_ids
+        decoder_modes = {'hw': 0, 'sw': 0, 'native': 0}
+        for source_id in decoder_ids:
+            mode = self.source_decoder_mode.get(source_id, 'native')
+            decoder_modes[mode] = decoder_modes.get(mode, 0) + 1
+        decoder_limit = self._rotation_effective_decoder_limit()
+        effective_concurrency = min(
+            decoder_limit,
+            len(candidate_ids),
+        ) if self.rotation_config.enabled else len(decoder_ids)
+        return {
+            'enabled': self.rotation_config.enabled,
+            'phase': self.rotation_phase,
+            'licensed_candidates': len(candidate_ids),
+            'queued': len(queued_ids),
+            'starting': len(starting_ids),
+            'running': len(ready_ids),
+            'draining': len(self.draining_sources),
+            'active_decoders': len(decoder_ids),
+            'effective_concurrency': effective_concurrency,
+            'strict_decoder_limit': (
+                decoder_limit
+                if self.rotation_config.enabled
+                else None
+            ),
+            'capacity_waiting': (
+                len(queued_ids)
+                if self.rotation_config.enabled
+                and len(decoder_ids) >= decoder_limit
+                else 0
+            ),
+            'decoder_modes': decoder_modes,
+            'startup_p50_seconds': self._sample_percentile(
+                self.rotation_startup_samples, 0.5
+            ),
+            'startup_p95_seconds': self._sample_percentile(
+                self.rotation_startup_samples, 0.95
+            ),
+            'drain_p95_seconds': self._sample_percentile(
+                self.rotation_drain_samples, 0.95
+            ),
+        }
+
     def _publish_inference_resource_status(self, now: float) -> None:
         if now - self.last_inference_status_publish_at < 5.0:
             return
@@ -561,6 +634,7 @@ class Orchestrator:
             "gpu_scheduler": stats.get("gpu_scheduler") or {},
             "gpus": stats.get("gpus") or [],
             "source_host_count": len(self.workflow_hosts),
+            "source_rotation": self._rotation_runtime_status(),
             "memory": collect_portable_memory_status(),
             "reconcile_error": self.inference_reconcile_error,
         }
@@ -1235,27 +1309,76 @@ class Orchestrator:
         workflow_source_ids = set(self._build_active_workflow_groups().keys())
         if not workflow_source_ids:
             return []
+        licensed_source_ids = self.rotation_licensed_source_ids
         return [
             source.id
             for source in VideoSource.select().where(VideoSource.enabled == True)
             if source.id in workflow_source_ids
+            and (
+                licensed_source_ids is None
+                or source.id in licensed_source_ids
+            )
         ]
 
     def _select_rotation_batch(self, candidate_ids):
         selectable_ids = [
             source_id
             for source_id in candidate_ids
+            if source_id not in self.rotation_batch_ids
             if source_id not in self.draining_sources
         ]
-        self.rotation_batch_ids = self.rotation_selector.select(
-            selectable_ids,
-            self.rotation_config.batch_size,
+        open_slots = max(
+            0,
+            min(self._rotation_effective_decoder_limit(), len(candidate_ids))
+            - len(self.rotation_batch_ids),
         )
-        self.rotation_phase = 'STARTING' if self.rotation_batch_ids else 'IDLE'
-        self.rotation_batch_launch_at = time.monotonic() if self.rotation_batch_ids else None
-        self.rotation_dwell_started_at = None
-        if self.rotation_batch_ids:
-            logger.info(f"视频轮转启动新批次: {self.rotation_batch_ids}")
+        if open_slots == 0:
+            self._sync_rotation_phase()
+            return []
+        selected = self.rotation_selector.select(
+            selectable_ids,
+            open_slots,
+        )
+        for source_id in selected:
+            self.rotation_batch_ids.append(source_id)
+        self._sync_rotation_phase()
+        if selected:
+            logger.info(f"视频轮转补充检测槽: {selected}")
+        return selected
+
+    def _sync_rotation_phase(self):
+        if not self.rotation_batch_ids:
+            self.rotation_phase = 'IDLE'
+            self.rotation_batch_launch_at = None
+            self.rotation_dwell_started_at = None
+            return
+
+        ready_times = [
+            self.rotation_source_ready_at.get(source_id)
+            for source_id in self.rotation_batch_ids
+            if self.rotation_source_ready_at.get(source_id) is not None
+        ]
+        self.rotation_phase = (
+            'RUNNING'
+            if len(ready_times) == len(self.rotation_batch_ids)
+            else 'STARTING'
+        )
+        launch_times = [
+            self.rotation_source_launch_at.get(source_id)
+            for source_id in self.rotation_batch_ids
+            if self.rotation_source_launch_at.get(source_id) is not None
+        ]
+        self.rotation_batch_launch_at = min(launch_times) if launch_times else None
+        self.rotation_dwell_started_at = min(ready_times) if ready_times else None
+
+    def _remove_rotation_source(self, source_id: int):
+        self.rotation_batch_ids = [
+            candidate_id
+            for candidate_id in self.rotation_batch_ids
+            if candidate_id != source_id
+        ]
+        self.rotation_source_launch_at.pop(source_id, None)
+        self.rotation_source_ready_at.pop(source_id, None)
 
     def _source_host_ready(self, source_id: int) -> bool:
         process_info = self.workflow_hosts.get(source_id)
@@ -1270,10 +1393,20 @@ class Orchestrator:
             and ready_event.is_set()
         )
 
-    def _mark_ready_sources_running(self):
+    def _mark_ready_sources_running(self, now: Optional[float] = None):
+        now = time.monotonic() if now is None else now
         for source_id in self.rotation_batch_ids:
             if not self._source_host_ready(source_id):
                 continue
+            if source_id not in self.rotation_source_ready_at:
+                self.rotation_source_ready_at[source_id] = now
+                launch_at = self.rotation_source_launch_at.get(source_id)
+                if launch_at is not None:
+                    self.rotation_startup_samples.append(max(0.0, now - launch_at))
+                logger.info(
+                    f"视频轮转源已就绪并独立开始驻留计时: source={source_id}, "
+                    f"持续 {self.rotation_config.dwell_seconds}s"
+                )
             # 轮转批次已确认首帧和工作流就绪，不再沿用解码进程启动时的宽限期。
             # 否则默认 30 秒的批次会始终落在 60 秒宽限期内，完全跳过健康检查。
             self.source_start_times.pop(source_id, None)
@@ -1296,9 +1429,8 @@ class Orchestrator:
         if not self.rotation_config.enabled or source_id not in self.rotation_batch_ids:
             return
 
-        was_running = self.rotation_phase == 'RUNNING'
-        self.rotation_phase = 'STARTING'
-        self.rotation_dwell_started_at = None
+        was_running = source_id in self.rotation_source_ready_at
+        self.rotation_source_ready_at.pop(source_id, None)
         try:
             source = VideoSource.get_by_id(source_id)
             if getattr(source, 'status', None) == 'RUNNING':
@@ -1306,14 +1438,11 @@ class Orchestrator:
                 self._save_source(source, f'保存视频源重新就绪状态:{source_id}')
         except VideoSource.DoesNotExist:
             pass
-        if (
-            restart_deadline
-            or was_running
-            or self.rotation_batch_launch_at is None
-        ):
-            self.rotation_batch_launch_at = (
+        if restart_deadline or was_running or source_id not in self.rotation_source_launch_at:
+            self.rotation_source_launch_at[source_id] = (
                 time.monotonic() if now is None else now
             )
+        self._sync_rotation_phase()
 
     def _begin_rotation_drain(self, source: VideoSource, reason: str):
         if source.id in self.draining_sources:
@@ -1332,6 +1461,7 @@ class Orchestrator:
         self._save_source(source, f'保存视频源排空状态:{source.id}')
         self.draining_sources[source.id] = {
             'host_info': process_info,
+            'started_at': time.monotonic(),
             'deadline': time.monotonic()
             + float(self.recording_config.post_alert_seconds)
             + float(SOURCE_ROTATION_DRAIN_GRACE_SECONDS),
@@ -1358,6 +1488,7 @@ class Orchestrator:
             except VideoSource.DoesNotExist:
                 if host_info:
                     self._stop_process(host_info, wait_timeout=0.1)
+                self._release_source_runtime(source_id)
                 del self.draining_sources[source_id]
                 continue
 
@@ -1372,6 +1503,9 @@ class Orchestrator:
             if host_info:
                 self._stop_process(host_info, wait_timeout=0.1)
             self._finalize_source_stop(source)
+            started_at = drain_info.get('started_at')
+            if started_at is not None:
+                self.rotation_drain_samples.append(max(0.0, now - started_at))
             del self.draining_sources[source_id]
 
     def _update_rotation_schedule(self, now: float):
@@ -1386,6 +1520,8 @@ class Orchestrator:
                 self.rotation_phase = 'IDLE'
                 self.rotation_batch_launch_at = None
                 self.rotation_dwell_started_at = None
+                self.rotation_source_launch_at.clear()
+                self.rotation_source_ready_at.clear()
             self._rotation_was_enabled = False
             return {
                 source.id
@@ -1409,118 +1545,80 @@ class Orchestrator:
                 )
             except VideoSource.DoesNotExist:
                 pass
-        if removed_ids:
-            self.rotation_batch_ids = [
+        for source_id in removed_ids:
+            self._remove_rotation_source(source_id)
+
+        self._mark_ready_sources_running(now)
+
+        # 宿主丢失只重置该源的驻留计时，不再冻结同批其他健康源。
+        for source_id in list(self.rotation_batch_ids):
+            if (
+                source_id in self.rotation_source_ready_at
+                and not self._source_host_ready(source_id)
+            ):
+                self._mark_rotation_batch_starting(source_id, now=now)
+
+        # 配置降低并发时，优先保留已就绪且已运行最久的槽。
+        effective_decoder_limit = self._rotation_effective_decoder_limit()
+        target_size = min(effective_decoder_limit, len(candidate_ids))
+        if len(self.rotation_batch_ids) > target_size:
+            selection_order = {
+                source_id: index
+                for index, source_id in enumerate(self.rotation_batch_ids)
+            }
+            retention_order = sorted(
+                self.rotation_batch_ids,
+                key=lambda source_id: (
+                    source_id not in self.rotation_source_ready_at,
+                    self.rotation_source_ready_at.get(source_id, float('inf')),
+                    selection_order[source_id],
+                ),
+            )
+            retained_ids = set(retention_order[:target_size])
+            overflow_ids = [
                 source_id
                 for source_id in self.rotation_batch_ids
-                if source_id in candidate_set
+                if source_id not in retained_ids
             ]
-
-        if not self.rotation_batch_ids:
-            self._select_rotation_batch(candidate_ids)
-            return set(self.rotation_batch_ids)
-
-        target_batch_size = min(config.batch_size, len(candidate_ids))
-        if (
-            len(candidate_ids) <= config.batch_size
-            and len(self.rotation_batch_ids) < target_batch_size
-        ):
-            remaining_ids = [
-                source_id
-                for source_id in candidate_ids
-                if source_id not in self.rotation_batch_ids
-                and source_id not in self.draining_sources
-            ]
-            additions = self.rotation_selector.select(
-                remaining_ids,
-                target_batch_size - len(self.rotation_batch_ids),
-            )
-            if additions:
-                self.rotation_batch_ids.extend(additions)
-                self.rotation_phase = 'STARTING'
-                self.rotation_batch_launch_at = now
-                self.rotation_dwell_started_at = None
-                logger.info(f"视频轮转批次补位: {additions}")
-
-        self._mark_ready_sources_running()
-        all_ready = all(
-            self._source_host_ready(source_id)
-            for source_id in self.rotation_batch_ids
-        )
-        if self.rotation_phase == 'RUNNING' and not all_ready:
-            missing_source_id = next(
-                source_id
-                for source_id in self.rotation_batch_ids
-                if not self._source_host_ready(source_id)
-            )
-            self._mark_rotation_batch_starting(missing_source_id, now=now)
-
-        if self.rotation_phase == 'STARTING' and all_ready:
-            self.rotation_phase = 'RUNNING'
-            self.rotation_dwell_started_at = now
-            logger.info(
-                f"视频轮转批次已就绪，开始计时: {self.rotation_batch_ids}, "
-                f"持续 {config.dwell_seconds}s"
-            )
-
-        if (
-            self.rotation_phase == 'STARTING'
-            and self.rotation_batch_launch_at is not None
-            and now - self.rotation_batch_launch_at
-            >= SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS
-        ):
-            failed_ids = [
-                source_id
-                for source_id in self.rotation_batch_ids
-                if not self._source_host_ready(source_id)
-            ]
-            for source_id in failed_ids:
+            for source_id in overflow_ids:
                 try:
                     self._begin_rotation_drain(
                         VideoSource.get_by_id(source_id),
-                        '轮转批次启动超时',
+                        '轮转并发配置降低',
                     )
                 except VideoSource.DoesNotExist:
                     pass
-            self.rotation_batch_ids = [
+                self._remove_rotation_source(source_id)
+
+        # 只有真正获得解码资源并发起启动的源才计算启动超时；排队时间不计入。
+        failed_ids = [
+            source_id
+            for source_id in self.rotation_batch_ids
+            if source_id not in self.rotation_source_ready_at
+            and self.rotation_source_launch_at.get(source_id) is not None
+            and now - self.rotation_source_launch_at[source_id]
+            >= SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS
+        ]
+        for source_id in failed_ids:
+            try:
+                self._begin_rotation_drain(
+                    VideoSource.get_by_id(source_id),
+                    '轮转源启动超时',
+                )
+            except VideoSource.DoesNotExist:
+                pass
+            self._remove_rotation_source(source_id)
+
+        # 每个槽独立驻留，慢流或重启中的流不影响其他槽按时轮转。
+        if len(candidate_ids) > effective_decoder_limit:
+            expired_ids = [
                 source_id
                 for source_id in self.rotation_batch_ids
-                if source_id not in failed_ids
+                if self.rotation_source_ready_at.get(source_id) is not None
+                and now - self.rotation_source_ready_at[source_id]
+                >= config.dwell_seconds
             ]
-            replacement_ids = self.rotation_selector.select(
-                [
-                    source_id
-                    for source_id in candidate_ids
-                    if source_id not in self.rotation_batch_ids
-                    and source_id not in self.draining_sources
-                ],
-                config.batch_size - len(self.rotation_batch_ids),
-            ) if len(self.rotation_batch_ids) < config.batch_size else []
-            if replacement_ids:
-                self.rotation_batch_ids.extend(replacement_ids)
-                self.rotation_phase = 'STARTING'
-                self.rotation_batch_launch_at = now
-                self.rotation_dwell_started_at = None
-                logger.info(f"轮转启动超时后补位: {replacement_ids}")
-            elif self.rotation_batch_ids and all(
-                self._source_host_ready(source_id)
-                for source_id in self.rotation_batch_ids
-            ):
-                self.rotation_phase = 'RUNNING'
-                self.rotation_dwell_started_at = now
-            else:
-                self.rotation_batch_ids = []
-                self._select_rotation_batch(candidate_ids)
-
-        should_rotate = (
-            self.rotation_phase == 'RUNNING'
-            and self.rotation_dwell_started_at is not None
-            and len(candidate_ids) > config.batch_size
-            and now - self.rotation_dwell_started_at >= config.dwell_seconds
-        )
-        if should_rotate:
-            old_batch = list(self.rotation_batch_ids)
-            for source_id in old_batch:
+            for source_id in expired_ids:
                 try:
                     self._begin_rotation_drain(
                         VideoSource.get_by_id(source_id),
@@ -1528,16 +1626,29 @@ class Orchestrator:
                     )
                 except VideoSource.DoesNotExist:
                     pass
-            self.rotation_batch_ids = []
-            self._select_rotation_batch(candidate_ids)
+                self._remove_rotation_source(source_id)
 
+        self._select_rotation_batch(candidate_ids)
+        self._sync_rotation_phase()
         return set(self.rotation_batch_ids)
+
+    @staticmethod
+    def _analysis_stream_url(source: VideoSource) -> str:
+        """Use the shared relay only for source schemes it can pull correctly."""
+        source_url = str(source.source_url or '')
+        if urlsplit(source_url).scheme.lower() not in {'rtsp', 'rtsps'}:
+            return source_url
+        return (
+            mediamtx_client.rtsp_read_url(source.source_code)
+            or source_url
+        )
 
     def _start_source(self, source: VideoSource, starting: bool = False):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
+        stream_url = self._analysis_stream_url(source)
         try:
-            input_format = self._resolve_source_codec(source)
+            input_format = self._resolve_source_codec(source, stream_url=stream_url)
             if (
                 VIDEO_DECODER_TYPE in {'jetson_gst', 'jetson', 'nvv4l2'}
                 and input_format not in {'h264', 'h265'}
@@ -1635,6 +1746,7 @@ class Orchestrator:
         # 启动解码器进程
         decoder_args = self._build_decoder_args(
             source,
+            stream_url=stream_url,
             analysis_fps=analysis_fps,
             input_format=input_format,
             decoder_type=decoder_type,
@@ -1686,13 +1798,18 @@ class Orchestrator:
         logger.debug(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
         return True
 
-    def _resolve_source_codec(self, source: VideoSource) -> str:
+    def _resolve_source_codec(
+        self,
+        source: VideoSource,
+        *,
+        stream_url: Optional[str] = None,
+    ) -> str:
         cached_codec = normalize_video_codec(
             getattr(source, 'source_codec', 'unknown'),
             allow_unknown=True,
         )
         try:
-            detected_codec = probe_video_codec(source.source_url)
+            detected_codec = probe_video_codec(stream_url or source.source_url)
         except VideoCodecProbeError:
             if cached_codec != 'unknown':
                 logger.warning(
@@ -1785,6 +1902,7 @@ class Orchestrator:
     def _build_decoder_args(
         source: VideoSource,
         *,
+        stream_url: Optional[str] = None,
         analysis_fps: int,
         input_format: str,
         decoder_type: str = None,
@@ -1801,7 +1919,7 @@ class Orchestrator:
         decoder_entry = os.path.join(APP_DIR, 'decoder_worker.py')
         return [
             sys.executable, '-u', decoder_entry,
-            '--url', source.source_url,
+            '--url', stream_url or source.source_url,
             '--source-id', str(source.id),
             '--decoder-type', decoder_type or VIDEO_DECODER_TYPE,
             '--input-format', input_format,
@@ -1817,30 +1935,33 @@ class Orchestrator:
             '--output-format', VIDEO_FRAME_PIXEL_FORMAT,
         ]
 
-    def _finalize_source_stop(self, source: VideoSource):
-        if source.id in self.running_processes:
-            process_info = self.running_processes[source.id]
+    def _release_source_runtime(self, source_id: int):
+        if source_id in self.running_processes:
+            process_info = self.running_processes[source_id]
             self._stop_process(process_info, wait_timeout=5.0)
             process = process_info.get('process')
             if process is not None:
                 self.externally_reaped.pop(process.pid, None)
-            del self.running_processes[source.id]
+            del self.running_processes[source_id]
 
-        if source.id in self.buffers:
-            self.buffers[source.id].close()
-            self.buffers[source.id].unlink()
-            del self.buffers[source.id]
+        if source_id in self.buffers:
+            self.buffers[source_id].close()
+            self.buffers[source_id].unlink()
+            del self.buffers[source_id]
 
-        if source.id in self.recording_buffers:
-            self.recording_buffers[source.id].close()
-            self.recording_buffers[source.id].unlink()
-            del self.recording_buffers[source.id]
+        if source_id in self.recording_buffers:
+            self.recording_buffers[source_id].close()
+            self.recording_buffers[source_id].unlink()
+            del self.recording_buffers[source_id]
 
-        self.hw_budget.release(source.id)
-        self.source_decoder_mode.pop(source.id, None)
-        self.source_stderr_tail.pop(source.id, None)
-        self.source_start_times.pop(source.id, None)
-        self.last_health_log_times.pop(source.id, None)
+        self.hw_budget.release(source_id)
+        self.source_decoder_mode.pop(source_id, None)
+        self.source_stderr_tail.pop(source_id, None)
+        self.source_start_times.pop(source_id, None)
+        self.last_health_log_times.pop(source_id, None)
+
+    def _finalize_source_stop(self, source: VideoSource):
+        self._release_source_runtime(source.id)
         source.status = 'STOPPED'
         source.decoder_pid = None
         self._save_source(source, f'保存视频源停止状态:{source.id}')
@@ -1851,6 +1972,29 @@ class Orchestrator:
         self._stop_source_host(source.id)
 
         self._finalize_source_stop(source)
+
+    def _rotation_has_decoder_capacity(self) -> bool:
+        return (
+            not self.rotation_config.enabled
+            or len(self.running_processes)
+            < self._rotation_effective_decoder_limit()
+        )
+
+    def _rotation_effective_decoder_limit(self) -> int:
+        requested = max(1, int(self.rotation_config.batch_size))
+        hw_budget = getattr(self, 'hw_budget', None)
+        if hw_budget is None or not getattr(hw_budget, 'enabled', False):
+            return requested
+
+        hardware_slots = max(0, int(getattr(hw_budget, 'effective_slots', 0)))
+        software_slots = 0
+        if getattr(hw_budget, 'sw_fallback_enabled', False):
+            configured_fallback = max(
+                0,
+                int(getattr(hw_budget, 'sw_fallback_max', 0)),
+            )
+            software_slots = configured_fallback or requested
+        return max(1, min(requested, hardware_slots + software_slots))
 
     def _maybe_sync_mediamtx_paths(self, now: float):
         """周期性（约 60s）把 DB 中所有启用视频源同步到 MediaMTX，保证其重启后状态自愈。
@@ -1895,9 +2039,10 @@ class Orchestrator:
         self._refresh_recording_config(now)
         self._refresh_video_decode_config(now)
         self._maybe_sync_mediamtx_paths(now)
-        self.desired_source_ids = self._update_rotation_schedule(now)
         self.license_entitlements = runtime_entitlements()
         licensed_source_ids = self.license_entitlements['source_ids']
+        self.rotation_licensed_source_ids = licensed_source_ids
+        self.desired_source_ids = self._update_rotation_schedule(now)
         if licensed_source_ids is not None:
             self.desired_source_ids &= licensed_source_ids
 
@@ -1907,10 +2052,16 @@ class Orchestrator:
         for source in VideoSource.select().where(VideoSource.status == 'STOPPED'):
             if started_this_tick >= SOURCE_MAX_CONCURRENT_STARTS:
                 break
+            if not self._rotation_has_decoder_capacity():
+                # DRAINING 源仍保留解码器以完成告警后录；严格模式下等待其释放，
+                # 不通过额外软解制造切批峰值。
+                break
             if source.id not in self.desired_source_ids:
                 continue
             if source.id in self.draining_sources:
                 continue
+            if self.rotation_config.enabled:
+                self.rotation_source_launch_at.setdefault(source.id, now)
             if self._start_source(source, starting=self.rotation_config.enabled):
                 started_this_tick += 1
 

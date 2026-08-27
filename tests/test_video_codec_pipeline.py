@@ -237,6 +237,67 @@ def test_orchestrator_decoder_args_propagate_detected_codec(monkeypatch):
     assert arguments[arguments.index("--decoder-type") + 1] == "jetson_gst"
 
 
+def test_orchestrator_decoder_args_can_use_shared_mediamtx_relay():
+    source = SimpleNamespace(
+        id=9,
+        source_url="rtsp://camera/direct",
+        source_decode_width=854,
+        source_decode_height=480,
+    )
+
+    arguments = Orchestrator._build_decoder_args(
+        source,
+        stream_url="rtsp://mediamtx:8554/camera-9",
+        analysis_fps=3,
+        input_format="h264",
+    )
+
+    assert arguments[arguments.index("--url") + 1] == (
+        "rtsp://mediamtx:8554/camera-9"
+    )
+
+
+@pytest.mark.parametrize("scheme", ["rtsp", "rtsps", "RTSP"])
+def test_orchestrator_analysis_stream_uses_relay_for_rtsp(monkeypatch, scheme):
+    source = SimpleNamespace(
+        source_code="camera-9",
+        source_url=f"{scheme}://camera/direct",
+    )
+    monkeypatch.setattr(
+        orchestrator_module.mediamtx_client,
+        "rtsp_read_url",
+        lambda source_code: f"rtsp://mediamtx:8554/{source_code}",
+    )
+
+    assert Orchestrator._analysis_stream_url(source) == (
+        "rtsp://mediamtx:8554/camera-9"
+    )
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        "http://camera/live.flv",
+        "https://camera/playlist.m3u8",
+        "/data/video.mp4",
+    ],
+)
+def test_orchestrator_analysis_stream_bypasses_relay_for_unsupported_sources(
+    monkeypatch,
+    source_url,
+):
+    source = SimpleNamespace(source_code="camera-9", source_url=source_url)
+    relay_calls = []
+    monkeypatch.setattr(
+        orchestrator_module.mediamtx_client,
+        "rtsp_read_url",
+        lambda source_code: relay_calls.append(source_code),
+    )
+
+    assert Orchestrator._analysis_stream_url(source) == source_url
+    assert relay_calls == []
+
+
 def test_orchestrator_decoder_args_can_select_full_frame_software_decode():
     source = SimpleNamespace(
         id=9,

@@ -1,10 +1,10 @@
-"""MediaMTX REST 客户端：用于「按需拉流」实时预览的路径注册/注销。
+"""MediaMTX REST 客户端：管理预览与分析共用的按需拉流路径。
 
 设计要点
 --------
-- MediaMTX 仅作为 WebRTC 实时预览的「按需中继」，**不参与检测流水线**。
+- MediaMTX 作为 WebRTC 预览与分析解码器的「按需中继」，避免重复连接摄像机。
 - 通过 REST API 注册路径时配置 ``sourceOnDemand: true``：只有当有 WebRTC
-  观众连入时，MediaMTX 才向摄像机拉 RTSP；观众全部离开后自动断开，避免常驻占资源。
+  存在预览或分析 reader 时才向摄像机拉流；全部离开后自动断开，避免常驻占资源。
 - 本客户端**绝不向调用方抛异常**：MediaMTX 未启用或不可达时，所有方法安全降级
   （返回 False / no-op），确保视频源增删改与编排主循环不受影响。
 """
@@ -32,6 +32,7 @@ class MediaMTXClient:
         # 探活缓存：避免在编排主循环里高频探测 MediaMTX。
         self._available: Optional[bool] = None
         self._available_checked_at: float = 0.0
+        self._registered_paths: set[str] = set()
 
     # ------------------------------------------------------------------ #
     # 基础
@@ -65,6 +66,21 @@ class MediaMTXClient:
         # source_code 作为 MediaMTX path 名；去除首尾斜杠避免拼出空段。
         return (source_code or "").strip().strip("/")
 
+    def rtsp_read_url(self, source_code: str) -> Optional[str]:
+        """Return the container-local relay URL when MediaMTX is available."""
+        if not self.enabled:
+            return None
+        name = self._path_name(source_code)
+        if not name or not self.is_available():
+            return None
+        # REST-added paths disappear when MediaMTX restarts. Always verify the
+        # current server configuration instead of trusting the process cache.
+        if name not in self.list_path_names():
+            return None
+        host = getattr(cfg, "MEDIAMTX_API_HOST", "mediamtx")
+        port = int(getattr(cfg, "MEDIAMTX_RTSP_PORT", 8554))
+        return f"rtsp://{host}:{port}/{quote(name, safe='')}"
+
     # ------------------------------------------------------------------ #
     # 探活
     # ------------------------------------------------------------------ #
@@ -86,6 +102,11 @@ class MediaMTXClient:
         except Exception as exc:  # noqa: BLE001 - 探活吞掉所有异常
             logger.debug(f"[MediaMTX] 探活失败（忽略）: {exc}")
         with self._lock:
+            if not ok or (
+                self._available is not None
+                and self._available != ok
+            ):
+                self._registered_paths.clear()
             self._available = ok
             self._available_checked_at = now
         return ok
@@ -131,6 +152,8 @@ class MediaMTXClient:
                     json=payload,
                 )
             if resp.status_code < 300:
+                with self._lock:
+                    self._registered_paths.add(name)
                 logger.info(f"[MediaMTX] 已注册按需拉流路径 '{name}' -> {rtsp_url}")
                 return True
             logger.warning(
@@ -155,6 +178,8 @@ class MediaMTXClient:
             resp = self._request("DELETE", f"/v3/config/paths/delete/{escaped_name}")
             # 404 视为成功（本来就不存在）
             if resp.status_code < 300 or resp.status_code == 404:
+                with self._lock:
+                    self._registered_paths.discard(name)
                 logger.info(f"[MediaMTX] 已注销路径 '{name}'")
                 return True
             logger.warning(
@@ -171,20 +196,32 @@ class MediaMTXClient:
         try:
             resp = self._request("GET", "/v3/config/paths/list")
             if resp.status_code != 200:
+                with self._lock:
+                    self._registered_paths.clear()
                 return []
             data = resp.json()
             items = data.get("items", []) if isinstance(data, dict) else []
             if isinstance(items, list):
-                return [
+                names = [
                     str(item["name"])
                     for item in items
                     if isinstance(item, dict) and item.get("name")
                 ]
+                with self._lock:
+                    self._registered_paths = set(names)
+                return names
             # 兼容较早 v3 响应中的 name -> config 映射。
             if isinstance(items, dict):
-                return [str(name) for name in items]
+                names = [str(name) for name in items]
+                with self._lock:
+                    self._registered_paths = set(names)
+                return names
+            with self._lock:
+                self._registered_paths.clear()
             return []
         except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                self._registered_paths.clear()
             logger.debug(f"[MediaMTX] 读取路径列表失败（忽略）: {exc}")
             return []
 

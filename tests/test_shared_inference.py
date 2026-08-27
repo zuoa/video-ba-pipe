@@ -138,6 +138,35 @@ def test_paddle_resource_exhausted_error_is_cuda_oom():
     assert shared_inference_module._is_cuda_oom(error) is True
 
 
+def test_idle_model_reaper_uses_lru_when_gpu_drops_below_reserve():
+    registry = _ModelRegistry.__new__(_ModelRegistry)
+    registry.idle_seconds = 120
+    oldest = SimpleNamespace(
+        key='oldest', references=0, idle_since=10.0,
+        gpu_assignment=SimpleNamespace(gpu_uuid='GPU-0'),
+    )
+    newer = SimpleNamespace(
+        key='newer', references=0, idle_since=20.0,
+        gpu_assignment=SimpleNamespace(gpu_uuid='GPU-0'),
+    )
+    expired = SimpleNamespace(
+        key='expired', references=0, idle_since=0.0,
+        gpu_assignment=None,
+    )
+    registry.slots = {
+        slot.key: slot for slot in (oldest, newer, expired)
+    }
+    registry.gpu_broker = SimpleNamespace(status=lambda: {
+        'metrics_stale': False,
+        'reserve_mb': 1024,
+        'gpus': [{'uuid': 'GPU-0', 'free_mb': 900}],
+    })
+
+    selected = registry._idle_slots_to_reap(now=125.0)
+
+    assert [slot.key for slot in selected] == ['expired', 'oldest']
+
+
 def test_model_spec_selects_rknn_and_keys_runtime_configuration(tmp_path):
     model = tmp_path / "model.rknn"
     model.write_bytes(b"weights")

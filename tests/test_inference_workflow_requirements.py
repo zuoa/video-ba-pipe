@@ -288,6 +288,20 @@ def test_cuda_compose_enables_shared_inference_only_in_worker():
     )
 
 
+def test_hardware_compose_templates_default_to_two_software_fallbacks():
+    templates_dir = (
+        Path(__file__).resolve().parents[1]
+        / "deploy/compose/templates"
+    )
+
+    for platform in ("cuda", "rknn"):
+        with (templates_dir / f"{platform}.yml").open(encoding="utf-8") as handle:
+            compose = yaml.safe_load(handle)
+        assert compose["x-hw-decode-environment"][
+            "HW_DECODE_SW_FALLBACK_MAX"
+        ].endswith(":-2}")
+
+
 def test_jetson_api_keeps_worker_local_shared_socket_disabled():
     compose_path = (
         Path(__file__).resolve().parents[1]

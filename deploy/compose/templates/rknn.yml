@@ -14,7 +14,7 @@ x-hw-decode-environment: &hw-decode-environment
   HW_DECODE_CMA_PER_INSTANCE_MB: ${HW_DECODE_CMA_PER_INSTANCE_MB:-16}
   HW_DECODE_CMA_RESERVE_MB: ${HW_DECODE_CMA_RESERVE_MB:-160}
   HW_DECODE_SW_FALLBACK_ENABLED: ${HW_DECODE_SW_FALLBACK_ENABLED:-true}
-  HW_DECODE_SW_FALLBACK_MAX: ${HW_DECODE_SW_FALLBACK_MAX:-0}
+  HW_DECODE_SW_FALLBACK_MAX: ${HW_DECODE_SW_FALLBACK_MAX:-2}
 
 # api 与 worker 共享的应用环境变量（消息队列连接参数由系统设置页面管理）
 x-app-environment: &app-environment

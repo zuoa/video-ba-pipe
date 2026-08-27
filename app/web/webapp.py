@@ -7,7 +7,6 @@ import subprocess
 import json
 import threading
 import time
-import math
 
 from flask import Flask, jsonify, request, render_template, send_file, abort, Response
 from flask_cors import CORS
@@ -31,6 +30,8 @@ from app.config import (
     MODEL_SAVE_PATH,
     VIDEO_SOURCE_PATH,
     DEVICE_MODEL_CODE,
+    SOURCE_ROTATION_DRAIN_GRACE_SECONDS,
+    SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS,
 )
 from app.core.message_queue_publisher import (
     reload_message_queue_publishers,
@@ -68,6 +69,7 @@ from app.core.rabbitmq_config import (
 )
 from app.core.vl_validator import get_vl_service_config, save_vl_service_config
 from app.core.source_rotation import (
+    estimate_rotation_revisit_seconds,
     get_source_rotation_config,
     save_source_rotation_config,
 )
@@ -395,20 +397,61 @@ def get_system_source_rotation_config():
         )
     }
     active_source_ids.discard(None)
-    eligible_source_count = VideoSource.select().where(
-        (VideoSource.enabled == True)
-        & (VideoSource.id.in_(active_source_ids))
-    ).count() if active_source_ids else 0
-    batch_count = (
-        math.ceil(eligible_source_count / config['batch_size'])
-        if eligible_source_count
-        else 0
+    configured_candidate_ids = {
+        source.id
+        for source in VideoSource.select().where(
+            (VideoSource.enabled == True)
+            & (VideoSource.id.in_(active_source_ids))
+        )
+    } if active_source_ids else set()
+    licensed_source_ids = runtime_entitlements().get('source_ids')
+    licensed_candidate_ids = (
+        configured_candidate_ids
+        if licensed_source_ids is None
+        else configured_candidate_ids & set(licensed_source_ids)
+    )
+    eligible_source_count = len(licensed_candidate_ids)
+    worker_status = get_inference_resource_status()
+    runtime_status = worker_status.get('source_rotation') or {}
+    runtime_current = bool(worker_status.get('worker_online'))
+    effective_concurrency = max(
+        1,
+        int(
+            runtime_status.get('effective_concurrency')
+            if runtime_current and runtime_status.get('enabled')
+            else min(config['batch_size'], eligible_source_count or 1)
+        ),
+    )
+    startup_p95 = float(runtime_status.get('startup_p95_seconds') or 0.0)
+    drain_p95 = float(runtime_status.get('drain_p95_seconds') or 0.0)
+    recording_config = get_recording_storage_config()
+    revisit_estimate = estimate_rotation_revisit_seconds(
+        candidate_count=eligible_source_count,
+        effective_concurrency=effective_concurrency,
+        dwell_seconds=config['dwell_seconds'],
+        startup_p95_seconds=startup_p95,
+        drain_p95_seconds=drain_p95,
+        startup_timeout_seconds=SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS,
+        drain_timeout_seconds=(
+            recording_config.post_alert_seconds
+            + SOURCE_ROTATION_DRAIN_GRACE_SECONDS
+        ),
     )
     return jsonify({
         'success': True,
         'config': config,
+        'configured_candidate_count': len(configured_candidate_ids),
         'eligible_source_count': eligible_source_count,
-        'estimated_cycle_seconds': batch_count * config['dwell_seconds'],
+        'estimated_cycle_seconds': revisit_estimate['p95'],
+        'estimated_revisit_seconds': {
+            key: revisit_estimate[key]
+            for key in ('best', 'p95', 'worst')
+        },
+        'runtime_status': runtime_status if runtime_current else {
+            'enabled': config['enabled'],
+            'worker_online': False,
+            'effective_concurrency': effective_concurrency,
+        },
     })
 
 

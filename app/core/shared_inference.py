@@ -1060,18 +1060,51 @@ class _ModelRegistry:
                 pending.response = response
                 pending.event.set()
 
+    def _idle_slots_to_reap(self, now: float) -> list[_ModelSlot]:
+        idle_slots = [
+            slot for slot in self.slots.values()
+            if slot.references == 0 and slot.idle_since is not None
+        ]
+        selected = {
+            slot.key: slot
+            for slot in idle_slots
+            if now - slot.idle_since >= self.idle_seconds
+        }
+
+        # 空闲时间是正常热缓存策略；GPU 已跌破安全预留时则按 LRU 提前回收。
+        # 每张受压 GPU 每轮只回收一个，下一秒重新读取 NVML，避免一次抖动清空缓存。
+        try:
+            gpu_status = self.gpu_broker.status()
+        except Exception:
+            gpu_status = {}
+        if not gpu_status.get('metrics_stale'):
+            reserve_mb = float(gpu_status.get('reserve_mb') or 0.0)
+            pressured_gpu_uuids = {
+                gpu.get('uuid')
+                for gpu in gpu_status.get('gpus', [])
+                if gpu.get('uuid')
+                and float(gpu.get('free_mb') or 0.0) < reserve_mb
+            }
+            for gpu_uuid in pressured_gpu_uuids:
+                candidates = sorted(
+                    (
+                        slot for slot in idle_slots
+                        if slot.gpu_assignment is not None
+                        and slot.gpu_assignment.gpu_uuid == gpu_uuid
+                    ),
+                    key=lambda slot: slot.idle_since,
+                )
+                if candidates:
+                    selected[candidates[0].key] = candidates[0]
+
+        return sorted(selected.values(), key=lambda slot: slot.idle_since)
+
     def _reap_idle(self) -> None:
         while self.running:
             time.sleep(1.0)
             now = time.monotonic()
             with self.lock:
-                expired = [
-                    slot for slot in self.slots.values()
-                    if slot.references == 0
-                    and slot.idle_since is not None
-                    and now - slot.idle_since >= self.idle_seconds
-                ]
-                for slot in expired:
+                for slot in self._idle_slots_to_reap(now):
                     self._stop_slot(slot)
                     self.slots.pop(slot.key, None)
 

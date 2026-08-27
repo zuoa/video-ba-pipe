@@ -539,9 +539,12 @@ DingTalk bot alerts for **operations** events (distinct from per-workflow Webhoo
 
 When you have more sources than decode capacity, analyze them in rotating batches:
 
-- `batch_size`: channels analyzed simultaneously per batch
-- `dwell_seconds`: how long each batch stays active
-- The page shows the number of eligible sources and the estimated full rotation cycle
+- `batch_size`: maximum channels analyzed simultaneously
+- `dwell_seconds`: how long each source stays active after it becomes ready
+- Each source now has an independent dwell timer, so a slow stream does not pause healthy rotation slots.
+- Strict decoder admission counts draining alert recordings against the concurrency limit; queued sources wait instead of creating a CPU/CMA/VRAM spike.
+- The page reports licensed candidates, running/starting/queued/draining counts, and best/P95/protection-bound revisit estimates.
+- Software decode fallback defaults to two streams. Do not set `HW_DECODE_SW_FALLBACK_MAX=0` when predictable capacity is required.
 
 ### 13.9 API Keys
 

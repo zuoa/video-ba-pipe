@@ -90,3 +90,30 @@ def test_unregister_uses_v3_delete_route(monkeypatch):
     assert client.unregister_path("camera-1") is True
     assert calls[-1][0] == "DELETE"
     assert calls[-1][1].endswith("/v3/config/paths/delete/camera-1")
+
+
+def test_rtsp_read_url_uses_internal_relay_and_escapes_path(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setattr(mediamtx_module.cfg, "MEDIAMTX_RTSP_PORT", 8554, raising=False)
+    client = MediaMTXClient()
+    monkeypatch.setattr(client, "is_available", lambda: True)
+    monkeypatch.setattr(client, "list_path_names", lambda: ["camera floor/1"])
+
+    assert client.rtsp_read_url("camera floor/1") == (
+        "rtsp://mediamtx:8554/camera%20floor%2F1"
+    )
+
+
+def test_rtsp_read_url_rejects_stale_cached_path_after_restart(monkeypatch):
+    _configure(monkeypatch)
+    client = MediaMTXClient()
+    client._registered_paths.add("camera-1")
+    monkeypatch.setattr(client, "is_available", lambda: True)
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *_args, **_kwargs: _Response(200, {"items": []}),
+    )
+
+    assert client.rtsp_read_url("camera-1") is None
+    assert client._registered_paths == set()

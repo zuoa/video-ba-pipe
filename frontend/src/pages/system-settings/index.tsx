@@ -40,6 +40,7 @@ import {
   FaceRecognitionConfigResponse,
   PublicMediaConfig,
   AlertDeliveryStats,
+  SourceRotationRuntimeStatus,
   SystemInfo,
   testOpsNotificationConfig,
   testObjectStorageConfig,
@@ -213,6 +214,9 @@ const SystemSettingsPage: React.FC = () => {
   const [retryingDeliveries, setRetryingDeliveries] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState('inference');
   const [eligibleSourceCount, setEligibleSourceCount] = useState(0);
+  const [configuredCandidateCount, setConfiguredCandidateCount] = useState(0);
+  const [rotationFallbackRuntime, setRotationFallbackRuntime] = useState<SourceRotationRuntimeStatus | null>(null);
+  const [rotationWorstRevisitSeconds, setRotationWorstRevisitSeconds] = useState(0);
   const [storageUsage, setStorageUsage] = useState<RecordingStorageUsage | null>(null);
   const [inferenceResource, setInferenceResource] = useState<InferenceResourceResponse | null>(null);
   const [faceRecognition, setFaceRecognition] = useState<FaceRecognitionConfigResponse | null>(null);
@@ -239,14 +243,27 @@ const SystemSettingsPage: React.FC = () => {
   const httpCustomHeaders = Form.useWatch(['http', 'custom_headers'], messageQueueForm) ?? EMPTY_HTTP_HEADERS;
   const batchSize = Form.useWatch('batch_size', rotationForm) ?? 20;
   const dwellSeconds = Form.useWatch('dwell_seconds', rotationForm) ?? 30;
-  const estimatedBatches = eligibleSourceCount > 0
-    ? Math.ceil(eligibleSourceCount / Math.max(1, batchSize))
-    : 0;
-  const estimatedCycleSeconds = estimatedBatches * dwellSeconds;
   const inferenceStatus = inferenceResource?.status;
+  const workerOnline = inferenceStatus?.worker_online ?? false;
+  const rotationRuntime = (
+    workerOnline ? inferenceStatus?.source_rotation : rotationFallbackRuntime
+  ) || rotationFallbackRuntime;
+  const effectiveRotationConcurrency = Math.min(
+    batchSize,
+    eligibleSourceCount,
+    rotationRuntime?.effective_concurrency ?? batchSize,
+  );
+  const estimatedBatches = eligibleSourceCount > 0
+    ? Math.ceil(eligibleSourceCount / Math.max(1, effectiveRotationConcurrency))
+    : 0;
+  const estimatedBestRevisitSeconds = estimatedBatches * dwellSeconds;
+  const estimatedP95RevisitSeconds = Math.ceil(estimatedBatches * (
+    dwellSeconds
+    + (rotationRuntime?.startup_p95_seconds || 0)
+    + (rotationRuntime?.drain_p95_seconds || 0)
+  ));
   const inferenceCapabilities = inferenceResource?.capabilities || {};
   const effectiveInference = inferenceStatus?.effective_config || inferenceResource?.effective_config;
-  const workerOnline = inferenceStatus?.worker_online ?? false;
   const sharedServiceRunning = inferenceStatus?.service_running ?? false;
   const inferenceMemory = inferenceStatus?.memory;
   const inferenceModels = inferenceStatus?.models || [];
@@ -293,6 +310,9 @@ const SystemSettingsPage: React.FC = () => {
         dwell_seconds: rotationResponse?.config?.dwell_seconds || 30,
       });
       setEligibleSourceCount(rotationResponse?.eligible_source_count || 0);
+      setConfiguredCandidateCount(rotationResponse?.configured_candidate_count || 0);
+      setRotationFallbackRuntime(rotationResponse?.runtime_status || null);
+      setRotationWorstRevisitSeconds(rotationResponse?.estimated_revisit_seconds?.worst || 0);
       videoDecodeForm.setFieldsValue(videoDecodeResponse.config);
       setVideoDecodeConfigSource(videoDecodeResponse.config_source);
       recordingForm.setFieldsValue(recordingResponse.config);
@@ -1451,9 +1471,30 @@ const SystemSettingsPage: React.FC = () => {
                     </Form.Item>
 
                     <div className="rotation-estimate">
-                      <span>当前符合条件：{eligibleSourceCount} 路</span>
-                      <span>预计批次数：{estimatedBatches} 批</span>
-                      <strong>完整轮转约 {estimatedCycleSeconds} 秒</strong>
+                      <span>授权后候选：{eligibleSourceCount} 路</span>
+                      <span>有效并发：{effectiveRotationConcurrency} 路</span>
+                      {configuredCandidateCount > eligibleSourceCount ? (
+                        <span className="rotation-estimate-wide">
+                          已配置候选 {configuredCandidateCount} 路，其中 {configuredCandidateCount - eligibleSourceCount} 路不在当前授权运行范围
+                        </span>
+                      ) : null}
+                      <span>预计轮巡批次：{estimatedBatches} 批</span>
+                      <span>理论最短复访：{estimatedBestRevisitSeconds} 秒</span>
+                      <strong>
+                        实测 P95 复访约 {estimatedP95RevisitSeconds} 秒
+                        {rotationWorstRevisitSeconds > 0 ? ` · 保护上界 ${rotationWorstRevisitSeconds} 秒` : ''}
+                      </strong>
+                      {rotationEnabled && workerOnline ? (
+                        <div className="rotation-runtime-row">
+                          <Tag color="green">检测 {rotationRuntime?.running || 0}</Tag>
+                          <Tag color="blue">启动 {rotationRuntime?.starting || 0}</Tag>
+                          <Tag>排队 {rotationRuntime?.queued || 0}</Tag>
+                          <Tag color="orange">排空 {rotationRuntime?.draining || 0}</Tag>
+                          {(rotationRuntime?.capacity_waiting || 0) > 0 ? (
+                            <Tag color="gold">容量等待 {rotationRuntime?.capacity_waiting}</Tag>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </Form>
                 </Card>

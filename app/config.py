@@ -200,9 +200,9 @@ HW_DECODE_CMA_RESERVE_MB = max(0, int(os.getenv('HW_DECODE_CMA_RESERVE_MB', '160
 HW_DECODE_MIN_SLOTS = max(1, int(os.getenv('HW_DECODE_MIN_SLOTS', '1')))
 HW_DECODE_MAX_SLOTS = max(HW_DECODE_MIN_SLOTS, int(os.getenv('HW_DECODE_MAX_SLOTS', '32')))
 
-# 硬解槽位不足时是否自动回退 ffmpeg 软解；HW_DECODE_SW_FALLBACK_MAX 限制软解兜底路数（0=不限）。
+# 硬解槽位不足时是否自动回退 ffmpeg 软解；默认最多 2 路，避免 CPU 峰值失控。
 HW_DECODE_SW_FALLBACK_ENABLED = os.getenv('HW_DECODE_SW_FALLBACK_ENABLED', 'true').lower() in ('true', '1', 'yes')
-HW_DECODE_SW_FALLBACK_MAX = max(0, int(os.getenv('HW_DECODE_SW_FALLBACK_MAX', '0')))
+HW_DECODE_SW_FALLBACK_MAX = max(0, int(os.getenv('HW_DECODE_SW_FALLBACK_MAX', '2')))
 
 # 软解兜底源自动升级回硬解的检查间隔（秒）。
 HW_DECODE_UPGRADE_INTERVAL_SECONDS = max(10, int(os.getenv('HW_DECODE_UPGRADE_INTERVAL_SECONDS', '60')))
@@ -446,11 +446,10 @@ NODE_ID_FILE = _resolve_data_path('NODE_ID_FILE', 'node_id.json')
 # physical box, while this code identifies a compatible model family.
 DEVICE_MODEL_CODE = (os.getenv('DEVICE_MODEL_CODE') or '').strip()
 
-# ============ MediaMTX / WebRTC 实时预览 ============
-# 通过部署 MediaMTX 作为「按需拉流」中继，前端用 WebRTC(WHEP) 直接看实时画面。
+# ============ MediaMTX / WebRTC 实时预览与分析接流复用 ============
+# 通过部署 MediaMTX 作为「按需拉流」中继，前端预览和分析解码器复用一个上游连接。
 # 仅当 MEDIAMTX_ENABLED=true 且 MediaMTX 服务可达时生效；其余情况所有调用安全降级为 no-op。
-# 注意：MediaMTX 不参与检测流水线，worker/decoder 仍直连摄像机拉流；
-#       MediaMTX 只在有 WebRTC 观众时另起一路拉流(sourceOnDemand)，观众离开自动断开。
+# 预览和分析 reader 都离开后，MediaMTX 按 sourceOnDemand 自动断开摄像机。
 MEDIAMTX_ENABLED = os.getenv('MEDIAMTX_ENABLED', 'false').lower() in ('true', '1', 'yes')
 # 后端容器内访问 MediaMTX REST API 的地址（docker 网络内通常为服务名 mediamtx）
 MEDIAMTX_API_HOST = os.getenv('MEDIAMTX_API_HOST', 'mediamtx')

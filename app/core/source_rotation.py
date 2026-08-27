@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
@@ -23,6 +24,36 @@ class SourceRotationConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def estimate_rotation_revisit_seconds(
+    *,
+    candidate_count: int,
+    effective_concurrency: int,
+    dwell_seconds: int,
+    startup_p95_seconds: float = 0.0,
+    drain_p95_seconds: float = 0.0,
+    startup_timeout_seconds: int = 0,
+    drain_timeout_seconds: int = 0,
+) -> Dict[str, int]:
+    """Return transparent best/P95/protection-bound revisit estimates."""
+    if candidate_count <= 0:
+        return {'best': 0, 'p95': 0, 'worst': 0, 'batches': 0}
+    batches = math.ceil(candidate_count / max(1, effective_concurrency))
+    best = batches * max(0, int(dwell_seconds))
+    p95 = math.ceil(
+        batches * (
+            max(0, int(dwell_seconds))
+            + max(0.0, float(startup_p95_seconds))
+            + max(0.0, float(drain_p95_seconds))
+        )
+    )
+    worst = batches * (
+        max(0, int(dwell_seconds))
+        + max(0, int(startup_timeout_seconds))
+        + max(0, int(drain_timeout_seconds))
+    )
+    return {'best': best, 'p95': p95, 'worst': worst, 'batches': batches}
 
 
 def _positive_int(value: Any, default: int, minimum: int = 1) -> int:
@@ -94,7 +125,7 @@ def save_source_rotation_config(
 
 
 class RoundRobinBatchSelector:
-    """按 source id 稳定轮转；候选集变化时从上次游标之后继续。"""
+    """按 source id 稳定轮转，并在尾部环回补满批次。"""
 
     def __init__(self):
         self.last_selected_id: Optional[int] = None
@@ -117,7 +148,9 @@ class RoundRobinBatchSelector:
             else:
                 start_index = 0
 
-        size = min(requested_size, len(candidates) - start_index)
-        selected = candidates[start_index:start_index + size]
+        selected = [
+            candidates[(start_index + offset) % len(candidates)]
+            for offset in range(requested_size)
+        ]
         self.last_selected_id = selected[-1]
         return selected

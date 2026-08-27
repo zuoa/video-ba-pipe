@@ -443,8 +443,37 @@ export async function updateVlConfig(data: any) {
   });
 }
 
+export interface SourceRotationRuntimeStatus {
+  enabled: boolean;
+  worker_online?: boolean;
+  phase?: 'IDLE' | 'STARTING' | 'RUNNING';
+  licensed_candidates?: number;
+  queued?: number;
+  starting?: number;
+  running?: number;
+  draining?: number;
+  active_decoders?: number;
+  effective_concurrency?: number;
+  strict_decoder_limit?: number | null;
+  capacity_waiting?: number;
+  decoder_modes?: Record<string, number>;
+  startup_p50_seconds?: number;
+  startup_p95_seconds?: number;
+  drain_p95_seconds?: number;
+}
+
+export interface SourceRotationConfigResponse {
+  success: boolean;
+  config: { enabled: boolean; batch_size: number; dwell_seconds: number };
+  configured_candidate_count: number;
+  eligible_source_count: number;
+  estimated_cycle_seconds: number;
+  estimated_revisit_seconds: { best: number; p95: number; worst: number };
+  runtime_status: SourceRotationRuntimeStatus;
+}
+
 export async function getSourceRotationConfig() {
-  return request('/api/system/source-rotation-config');
+  return request<SourceRotationConfigResponse>('/api/system/source-rotation-config');
 }
 
 export async function updateSourceRotationConfig(data: any) {
@@ -536,6 +565,7 @@ export interface InferenceResourceStatus {
   };
   gpus?: InferenceGpuStatus[];
   source_host_count?: number;
+  source_rotation?: SourceRotationRuntimeStatus;
   memory?: {
     total_mb: number;
     available_mb: number;

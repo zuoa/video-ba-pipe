@@ -537,6 +537,18 @@
   color: var(--app-text, #1d2939);
 }
 
+.rotation-estimate-wide,
+.rotation-runtime-row {
+  grid-column: 1 / -1;
+}
+
+.rotation-runtime-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+
 .system-settings-alert {
   margin-bottom: 20px;
 }
