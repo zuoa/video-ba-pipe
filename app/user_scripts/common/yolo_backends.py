@@ -1356,6 +1356,12 @@ class UltralyticsBackend(BaseYoloBackend):
             kwargs["classes"] = class_filter
         return kwargs
 
+    def _runtime_predict_kwargs(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            **self._predict_kwargs(config),
+            "imgsz": [int(self.input_height), int(self.input_width)],
+        }
+
     @staticmethod
     def _parse_result(result, config: Dict[str, Any]):
         detections = []
@@ -1386,7 +1392,7 @@ class UltralyticsBackend(BaseYoloBackend):
     def infer(self, frame: np.ndarray):
         results = self.model.predict(
             _rgb_frame_to_bgr(frame),
-            **self._predict_kwargs(self.config),
+            **self._runtime_predict_kwargs(self.config),
         )
         result = results[0] if results and len(results) > 0 else None
         return self._parse_result(result, self.config)
@@ -1398,7 +1404,7 @@ class UltralyticsBackend(BaseYoloBackend):
             raise ValueError("frames/configs batch length mismatch")
         results = self.model.predict(
             [_rgb_frame_to_bgr(frame) for frame in frames],
-            **self._predict_kwargs(configs[0]),
+            **self._runtime_predict_kwargs(configs[0]),
         )
         parsed = []
         for index, config in enumerate(configs):

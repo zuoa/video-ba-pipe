@@ -108,7 +108,11 @@ def test_cascade_config_normalizes_linear_stages(cascade_models):
     assert config["version"] == 1
     assert config["stages"][0]["input"] == {"type": "frame"}
     assert config["stages"][1]["input"]["parent_stage_id"] == "person"
-    assert config["stages"][1]["inference"] == {"backend": "auto", "nms_iou": 0.45}
+    assert config["stages"][1]["inference"] == {
+        "backend": "auto",
+        "inference_mode": "letterbox",
+        "nms_iou": 0.45,
+    }
     assert config["output"] == {
         "label": "吸烟",
         "color": "#ff4d4f",
@@ -144,6 +148,40 @@ def test_combination_config_normalizes_graph_and_model_ids(cascade_models):
     assert config["evaluation"] == {"scope": "per_anchor", "anchor_node_id": "head"}
     assert cascade_model_ids(config) == (1, 2)
     assert next(node for node in config["nodes"] if node["id"] == "helmet")["model_name"] == "smoke"
+
+
+def test_combination_config_normalizes_inference_mode_and_input_size(cascade_models):
+    config = _combination_config()
+    head = next(node for node in config["nodes"] if node["id"] == "head")
+    head["inference"] = {
+        "backend": "auto",
+        "inference_mode": "sliced",
+        "input_width": "960",
+        "input_height": 544,
+        "nms_iou": 0.45,
+    }
+
+    normalized = normalize_cascade_algorithm_config(config)
+    inference = next(
+        node for node in normalized["nodes"] if node["id"] == "head"
+    )["inference"]
+
+    assert inference == {
+        "backend": "auto",
+        "inference_mode": "sahi",
+        "input_width": 960,
+        "input_height": 544,
+        "nms_iou": 0.45,
+    }
+
+
+def test_combination_config_rejects_unknown_inference_mode(cascade_models):
+    config = _combination_config()
+    head = next(node for node in config["nodes"] if node["id"] == "head")
+    head["inference"]["inference_mode"] = "stretch"
+
+    with pytest.raises(ValueError, match="推理模式不受支持"):
+        normalize_cascade_algorithm_config(config)
 
 
 def test_combination_config_rejects_data_cycle(cascade_models):

@@ -31,7 +31,13 @@
       "confidence": 0.6,
       "max_candidates": 20,
       "expand_ratio": 0.1,
-      "inference": {"backend": "auto", "nms_iou": 0.45}
+      "inference": {
+        "backend": "auto",
+        "inference_mode": "letterbox",
+        "input_width": 640,
+        "input_height": 640,
+        "nms_iou": 0.45
+      }
     },
     {
       "id": "helmet",
@@ -42,7 +48,13 @@
       "confidence": 0.55,
       "max_candidates": 20,
       "expand_ratio": 0.1,
-      "inference": {"backend": "auto", "nms_iou": 0.45}
+      "inference": {
+        "backend": "auto",
+        "inference_mode": "sahi",
+        "input_width": 640,
+        "input_height": 640,
+        "nms_iou": 0.45
+      }
     },
     {"id": "head_exists", "type": "predicate", "name": "检测到头部", "operator": "exists"},
     {"id": "helmet_missing", "type": "predicate", "name": "没有安全帽", "operator": "not_exists"},
@@ -79,6 +91,8 @@
 - `evaluation.scope`：`per_anchor` 表示逐主体判断，`frame` 表示整帧汇总判断。
 
 数据流和规则流都必须无环，所有判定节点必须最终连接到输出节点。
+
+检测节点的高级推理设置支持 `letterbox` 标准推理和 `sahi` 切片推理。`input_width`、`input_height` 用于覆盖模型输入尺寸；省略时优先使用模型元数据，元数据也未配置时使用 `640 × 640`。在 SAHI 模式下，这两个值同时作为默认切片尺寸。
 
 ## 管理与测试
 

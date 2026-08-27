@@ -18,11 +18,19 @@ _STAGE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 _COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _SUPPORTED_MODEL_TYPES = {"YOLO", "ONNX", "RKNN"}
 _SUPPORTED_BACKENDS = {"auto", "ultralytics", "onnxruntime", "onnx", "rknn", "rknnlite"}
+_INFERENCE_MODE_ALIASES = {
+    "letterbox": "letterbox",
+    "standard": "letterbox",
+    "sahi": "sahi",
+    "slice": "sahi",
+    "sliced": "sahi",
+}
 _NODE_TYPES = {"frame", "detector", "predicate", "logic", "output"}
 _PREDICATE_OPERATORS = {"exists", "not_exists", "eq", "ne", "gt", "gte", "lt", "lte"}
 _LOGIC_OPERATORS = {"and", "or", "not"}
 _INFERENCE_KEYS = {
     "backend",
+    "inference_mode",
     "nms_iou",
     "input_width",
     "input_height",
@@ -125,6 +133,14 @@ def _normalize_inference(value: Any, stage_index: int) -> Dict[str, Any]:
     if backend not in _SUPPORTED_BACKENDS:
         raise ValueError(f"阶段 {stage_index} 的推理后端不受支持: {backend}")
     inference["backend"] = backend
+    inference_mode = str(
+        inference.get("inference_mode") or "letterbox"
+    ).strip().lower()
+    if inference_mode not in _INFERENCE_MODE_ALIASES:
+        raise ValueError(
+            f"阶段 {stage_index} 的推理模式不受支持: {inference_mode}"
+        )
+    inference["inference_mode"] = _INFERENCE_MODE_ALIASES[inference_mode]
     inference["nms_iou"] = _number(
         inference.get("nms_iou", 0.45),
         f"阶段 {stage_index} NMS IOU",

@@ -63,7 +63,10 @@ type LogicOperator = 'and' | 'or' | 'not';
 
 interface InferenceConfig {
   backend: string;
+  inference_mode?: 'letterbox' | 'sahi';
   nms_iou: number;
+  input_width?: number;
+  input_height?: number;
   [key: string]: unknown;
 }
 
@@ -209,6 +212,11 @@ interface CanvasNodeData {
 const SUPPORTED_MODEL_TYPES = new Set(['YOLO', 'ONNX', 'RKNN']);
 const DATA_EDGE_COLOR = '#2563eb';
 const RULE_EDGE_COLOR = '#d97706';
+const DEFAULT_INFERENCE_CONFIG: InferenceConfig = {
+  backend: 'auto',
+  inference_mode: 'letterbox',
+  nms_iou: 0.45,
+};
 
 const DEFAULT_POSITIONS: Record<NodeKind, { x: number; y: number }> = {
   frame: { x: 40, y: 140 },
@@ -229,7 +237,7 @@ const detectorNode = (id: string, name: string): CascadeGraphNode => ({
   confidence: 0.6,
   max_candidates: 20,
   expand_ratio: 0.1,
-  inference: { backend: 'auto', nms_iou: 0.45 },
+  inference: { ...DEFAULT_INFERENCE_CONFIG },
 });
 
 export const createEmptyCascadeConfig = (): CascadeConfig => ({
@@ -344,7 +352,7 @@ export const normalizeCascadeForEditor = (raw: CascadeConfig | LegacyCascadeConf
       confidence: stage.confidence ?? 0.6,
       max_candidates: stage.max_candidates ?? 20,
       expand_ratio: stage.input?.expand_ratio ?? 0.1,
-      inference: stage.inference || { backend: 'auto', nms_iou: 0.45 },
+      inference: stage.inference || { ...DEFAULT_INFERENCE_CONFIG },
     });
     const predicateId = `${stage.id}_exists`;
     nodes.push({ id: predicateId, type: 'predicate', name: `${stage.name}存在`, operator: 'exists' });
@@ -773,6 +781,18 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
   };
 
   const selectedNode = value.nodes.find(node => node.id === selectedNodeId) || null;
+  const updateSelectedInference = (patch: Partial<InferenceConfig>) => {
+    if (!selectedNode || selectedNode.type !== 'detector') return;
+    const inference: InferenceConfig = {
+      ...DEFAULT_INFERENCE_CONFIG,
+      ...selectedNode.inference,
+      ...patch,
+    };
+    Object.entries(patch).forEach(([key, nextValue]) => {
+      if (nextValue === undefined) delete inference[key];
+    });
+    updateNode(selectedNode.id, { inference });
+  };
   const detectorOptions = value.nodes.filter(node => node.type === 'detector').map(node => ({ value: node.id, label: node.name }));
   const selectedModel = selectedNode?.model_id ? modelById.get(selectedNode.model_id) : undefined;
   const classOptions = Object.entries(selectedModel?.classes || {}).map(([classId, name]) => ({
@@ -959,16 +979,63 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                           <>
                             <Form.Item label="推理后端">
                               <Select
+                                aria-label="推理后端"
                                 value={selectedNode.inference?.backend || 'auto'}
                                 options={[
                                   { value: 'auto', label: '自动选择' }, { value: 'ultralytics', label: 'Ultralytics' },
                                   { value: 'onnxruntime', label: 'ONNX Runtime' }, { value: 'rknn', label: 'RKNNLite' },
                                 ]}
-                                onChange={backend => updateNode(selectedNode.id, { inference: { ...(selectedNode.inference || { nms_iou: 0.45 }), backend } })}
+                                onChange={backend => updateSelectedInference({ backend })}
                               />
                             </Form.Item>
+                            <Form.Item
+                              label="推理模式"
+                              extra={selectedNode.inference?.inference_mode === 'sahi'
+                                ? '将大图切片后分别推理，适合小目标检测；输入尺寸同时作为默认切片尺寸。'
+                                : '保持画面比例并补边到模型输入尺寸，适合常规检测。'}
+                            >
+                              <Select
+                                aria-label="推理模式"
+                                value={selectedNode.inference?.inference_mode || 'letterbox'}
+                                options={[
+                                  { value: 'letterbox', label: '标准推理（Letterbox）' },
+                                  { value: 'sahi', label: '切片推理（SAHI）' },
+                                ]}
+                                onChange={inferenceMode => updateSelectedInference({ inference_mode: inferenceMode })}
+                              />
+                            </Form.Item>
+                            <Form.Item label="输入尺寸" extra="留空时使用模型元数据中的尺寸；未配置时默认为 640 × 640。">
+                              <Row gutter={12}>
+                                <Col span={12}>
+                                  <InputNumber
+                                    aria-label="输入宽度"
+                                    min={32}
+                                    max={8192}
+                                    step={32}
+                                    precision={0}
+                                    placeholder="宽度"
+                                    value={selectedNode.inference?.input_width}
+                                    style={{ width: '100%' }}
+                                    onChange={number => updateSelectedInference({ input_width: number ?? undefined })}
+                                  />
+                                </Col>
+                                <Col span={12}>
+                                  <InputNumber
+                                    aria-label="输入高度"
+                                    min={32}
+                                    max={8192}
+                                    step={32}
+                                    precision={0}
+                                    placeholder="高度"
+                                    value={selectedNode.inference?.input_height}
+                                    style={{ width: '100%' }}
+                                    onChange={number => updateSelectedInference({ input_height: number ?? undefined })}
+                                  />
+                                </Col>
+                              </Row>
+                            </Form.Item>
                             <Row gutter={12}>
-                              <Col span={12}><Form.Item label="NMS IOU"><InputNumber min={0} max={1} step={0.05} value={selectedNode.inference?.nms_iou ?? 0.45} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { inference: { ...(selectedNode.inference || { backend: 'auto' }), nms_iou: Number(number ?? 0.45) } })} /></Form.Item></Col>
+                              <Col span={12}><Form.Item label="NMS IOU"><InputNumber aria-label="NMS IOU" min={0} max={1} step={0.05} value={selectedNode.inference?.nms_iou ?? 0.45} style={{ width: '100%' }} onChange={number => updateSelectedInference({ nms_iou: Number(number ?? 0.45) })} /></Form.Item></Col>
                               <Col span={12}><Form.Item label="最大候选"><InputNumber min={1} max={200} value={selectedNode.max_candidates || 20} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { max_candidates: Number(number ?? 20) })} /></Form.Item></Col>
                             </Row>
                           </>

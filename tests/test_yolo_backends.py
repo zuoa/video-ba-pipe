@@ -138,6 +138,8 @@ class BackendConfigTests(unittest.TestCase):
                 YOLO_BACKENDS.normalize_backend_config({
                     "confidence": 0.3,
                     "nms_iou": 0.5,
+                    "input_width": 960,
+                    "input_height": 544,
                 }),
             )
             rgb = np.zeros((8, 8, 3), dtype=np.uint8)
@@ -150,6 +152,7 @@ class BackendConfigTests(unittest.TestCase):
         self.assertEqual(captured["source"][0, 0].tolist(), [200, 0, 10])
         self.assertEqual(captured["kwargs"]["conf"], 0.3)
         self.assertEqual(captured["kwargs"]["iou"], 0.5)
+        self.assertEqual(captured["kwargs"]["imgsz"], [544, 960])
         self.assertEqual(rgb[0, 0].tolist(), [10, 0, 200])
 
     def test_normalize_backend_config_handles_string_values(self):
