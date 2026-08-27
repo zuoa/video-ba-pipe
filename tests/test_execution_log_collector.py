@@ -34,7 +34,11 @@ def test_detection_summary_includes_track_id_and_dwell():
                 "label_name": "person",
                 "confidence": 0.77,
                 "track_id": 3,
-                "attributes": {"dwell_seconds": 8.2},
+                "attributes": {
+                    "event": "loiter",
+                    "event_label": "徘徊",
+                    "dwell_seconds": 8.2,
+                },
             }
         ],
         node_name="徘徊",
@@ -43,7 +47,7 @@ def test_detection_summary_includes_track_id_and_dwell():
     message = collector.build_alert_message(format_type="detailed")
 
     assert "徘徊：命中 1 个目标" in message
-    assert "目标：person#3 停留 8s" in message
+    assert "目标：person#3 徘徊 8s" in message
     assert "类别：" not in message
     assert "77.0%" in message
 

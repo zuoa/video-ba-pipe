@@ -155,6 +155,20 @@ def test_format_detection_caption_includes_track_id_and_dwell():
     assert caption == "person#3 停留 8s: 0.77"
 
 
+def test_format_detection_caption_uses_loiter_event_label():
+    caption = BaseAlgorithm._format_detection_caption({
+        "label_name": "person",
+        "confidence": 0.77,
+        "track_id": 3,
+        "attributes": {
+            "event": "loiter",
+            "event_label": "徘徊",
+            "dwell_seconds": 8.2,
+        },
+    })
+    assert caption == "person#3 徘徊 8s: 0.77"
+
+
 def test_visualize_draws_track_id_caption(monkeypatch):
     frame_rgb = np.full((80, 120, 3), 255, dtype=np.uint8)
     rendered_labels = []
@@ -173,12 +187,16 @@ def test_visualize_draws_track_id_caption(monkeypatch):
             "confidence": 0.77,
             "label_name": "person",
             "track_id": 3,
-            "attributes": {"dwell_seconds": 8},
+            "attributes": {
+                "event": "loiter",
+                "event_label": "徘徊",
+                "dwell_seconds": 8,
+            },
         }],
         label_color="#00FF00",
     )
 
-    assert rendered_labels == ["person#3 停留 8s: 0.77"]
+    assert rendered_labels == ["person#3 徘徊 8s: 0.77"]
 
 
 def test_visualize_draws_track_history_polyline():

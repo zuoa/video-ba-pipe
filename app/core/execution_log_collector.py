@@ -9,6 +9,8 @@ from typing import Any, Collection, List, Dict, Optional
 import time
 import threading
 
+from app.core.detection_event import get_detection_event_label
+
 
 class ExecutionLogCollector:
     """
@@ -108,7 +110,8 @@ class ExecutionLogCollector:
         text = f"{label}#{track_id}" if track_id is not None else label
         dwell = cls._detection_dwell_seconds(detection)
         if dwell is not None and dwell >= 1:
-            text = f"{text} 停留 {int(round(dwell))}s"
+            event_label = get_detection_event_label(detection)
+            text = f"{text} {event_label} {int(round(dwell))}s"
         return text
 
     def add_detection_result(

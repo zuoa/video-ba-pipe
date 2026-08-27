@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app import logger
 from app.core.cv2_compat import cv2, require_cv2
+from app.core.detection_event import get_detection_event_label
 
 
 class BaseAlgorithm(ABC):
@@ -294,14 +295,15 @@ class BaseAlgorithm(ABC):
 
     @staticmethod
     def _format_detection_caption(det, default='Object'):
-        """框上文字：person#3 停留 8s: 0.77"""
+        """框上文字：person#3 徘徊 8s: 0.77"""
         label = BaseAlgorithm._get_detection_label(det, default)
         track_id = BaseAlgorithm._get_detection_track_id(det)
         dwell = BaseAlgorithm._get_detection_dwell_seconds(det)
         conf = BaseAlgorithm._get_detection_confidence(det, 1.0)
         identity = f"{label}#{track_id}" if track_id is not None else str(label)
         if dwell is not None and dwell >= 1:
-            identity = f"{identity} 停留 {int(round(dwell))}s"
+            event_label = get_detection_event_label(det)
+            identity = f"{identity} {event_label} {int(round(dwell))}s"
         try:
             conf_value = float(conf)
         except (TypeError, ValueError):
