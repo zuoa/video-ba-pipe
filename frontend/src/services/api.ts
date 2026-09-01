@@ -84,6 +84,61 @@ export interface FaceGallery {
   updated_at: string;
 }
 
+export interface ReIdModelArtifact {
+  id: number;
+  runtime: 'onnxruntime' | 'onnxruntime-cuda' | 'tensorrt' | 'torchscript' | 'rknn';
+  architecture: string;
+  device: string;
+  filename: string;
+  file_size: number;
+  artifact_sha256: string;
+  metadata: Record<string, any>;
+  enabled: boolean;
+}
+
+export interface ReIdModelBundle {
+  id: number;
+  name: string;
+  version: string;
+  contract_id: string;
+  target_type: 'person';
+  embedding_dimension: number;
+  input_size: string;
+  distance_metric: 'cosine';
+  default_similarity_threshold: number;
+  license_name?: string | null;
+  license_url?: string | null;
+  commercial_use_allowed: boolean;
+  enabled: boolean;
+  artifacts: ReIdModelArtifact[];
+}
+
+export async function getReIdModelBundles() {
+  return request<{ success: boolean; bundles: ReIdModelBundle[] }>('/api/reid/model-bundles');
+}
+
+export async function createReIdModelBundle(data: Record<string, any>) {
+  return request<{ success: boolean; bundle: ReIdModelBundle }>('/api/reid/model-bundles', {
+    method: 'POST', data,
+  });
+}
+
+export async function deleteReIdModelBundle(id: number) {
+  return request<{ success: boolean }>(`/api/reid/model-bundles/${id}`, { method: 'DELETE' });
+}
+
+export async function uploadReIdModelArtifact(bundleId: number, data: FormData) {
+  return request(`/api/reid/model-bundles/${bundleId}/artifacts`, { method: 'POST', data });
+}
+
+export async function importReIdModelArtifact(bundleId: number, data: Record<string, any>) {
+  return request(`/api/reid/model-bundles/${bundleId}/imports`, { method: 'POST', data });
+}
+
+export async function getReIdRuntime() {
+  return request('/api/reid/runtime');
+}
+
 export interface FaceTemplate {
   id: number;
   image_mime: string;

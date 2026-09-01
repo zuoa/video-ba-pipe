@@ -203,6 +203,39 @@ def build_face_model_spec(bundle, requested_backend: str = 'auto') -> Dict[str, 
     }
 
 
+def build_reid_model_spec(bundle, requested_backend: str = 'auto') -> Dict[str, Any]:
+    """Build a stable worker key for a logical ReID embedding bundle."""
+    from app.core.reid_inference import select_reid_artifact
+
+    selected_backend, artifact, _capabilities = select_reid_artifact(
+        bundle, requested_backend
+    )
+    metadata = dict(artifact.metadata or {})
+    requires_cuda = selected_backend in {'onnxruntime-cuda', 'tensorrt'}
+    if selected_backend == 'torchscript':
+        declared_device = str(
+            artifact.device or metadata.get('device') or 'auto'
+        ).strip().lower()
+        requires_cuda = declared_device != 'cpu'
+    return {
+        'model_id': f'reid-bundle:{bundle.id}',
+        'bundle_id': int(bundle.id),
+        'bundle_version': bundle.version,
+        'contract_id': bundle.contract_id,
+        'backend': 'reid_embedding',
+        'reid_runtime': selected_backend,
+        'requires_cuda': requires_cuda or metadata.get('requires_cuda') is True,
+        'model_path': artifact.file_path,
+        'file_size': int(artifact.file_size or 0),
+        'artifact_sha256': artifact.artifact_sha256,
+        'framework': 'reid_embedding',
+        'model_type': 'REID',
+        'input_width': int(metadata.get('input_width') or 128),
+        'input_height': int(metadata.get('input_height') or 256),
+        'backend_config': {},
+    }
+
+
 def model_key(spec: Dict[str, Any]) -> str:
     payload = json.dumps(spec, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
@@ -284,6 +317,16 @@ def _create_model_worker_backend(
             backend=spec.get("face_runtime") or "auto",
             config=base_config,
         )
+    if backend_name == "reid_embedding":
+        from app.core.database_models import ReIdModelBundle
+        from app.core.reid_inference import ReIdWorkerBackend
+
+        bundle = ReIdModelBundle.get_by_id(int(spec["bundle_id"]))
+        return ReIdWorkerBackend(
+            bundle,
+            backend=spec.get("reid_runtime") or "auto",
+            config=base_config,
+        )
     if backend_name == "paddleocr":
         from app.core.ocr_backend import PaddleOCRBackend
 
@@ -349,8 +392,12 @@ def _model_worker_main(
         # inference timeout.
         warmup_height = max(1, int(spec.get("input_height") or 640))
         warmup_width = max(1, int(spec.get("input_width") or 640))
-        warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)
-        backend.infer(warmup_frame)
+        warmup = getattr(backend, "warmup", None)
+        if callable(warmup):
+            warmup()
+        else:
+            warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)
+            backend.infer(warmup_frame)
         result_queue.put({
             "kind": "worker_ready",
             "key": model_key(spec),
@@ -1313,6 +1360,15 @@ class SharedInferenceServer:
 def _client_request_config(spec: Dict[str, Any], config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if spec.get("backend") in {"paddleocr", "rknn_ocr"}:
         return {}
+    if spec.get("backend") == "reid_embedding":
+        source = config or {}
+        return {
+            key: source.get(key)
+            for key in (
+                "reid_boxes", "reid_min_box_height", "reid_crop_expansion",
+            )
+            if source.get(key) is not None
+        }
     return _inference_config(config or {})
 
 

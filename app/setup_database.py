@@ -11,6 +11,7 @@ from app.core.database_models import (
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, ApiKey, SourceHealthLog,
     SystemSetting, ExternalApi, FaceModelBundle, FaceModelArtifact, FaceGallery,
     FacePerson, FaceGalleryMembership, FaceTemplate, FaceEvent, FaceImportJob,
+    ReIdModelBundle, ReIdModelArtifact, ReIdModelImportJob,
 )
 
 
@@ -36,6 +37,9 @@ _DATABASE_MODELS = (
     MLModel,
     FaceModelBundle,
     FaceModelArtifact,
+    ReIdModelBundle,
+    ReIdModelArtifact,
+    ReIdModelImportJob,
     FaceGallery,
     FacePerson,
     FaceGalleryMembership,

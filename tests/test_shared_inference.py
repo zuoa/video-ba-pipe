@@ -13,6 +13,7 @@ from app.core.shared_inference import (
     _ModelRegistry,
     build_face_model_spec,
     build_model_spec,
+    build_reid_model_spec,
     model_key,
 )
 
@@ -35,6 +36,22 @@ def _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment=
             "details": [],
             "metadata": {"fake": True},
         })
+
+
+def test_torchscript_reid_cpu_artifact_does_not_require_cuda(monkeypatch):
+    artifact = SimpleNamespace(
+        metadata={}, device='cpu', file_path='/tmp/reid.pt', file_size=1,
+        artifact_sha256='a' * 64,
+    )
+    bundle = SimpleNamespace(id=7, version='v1', contract_id='reid-v1')
+    monkeypatch.setattr(
+        'app.core.reid_inference.select_reid_artifact',
+        lambda *_args, **_kwargs: ('torchscript', artifact, {}),
+    )
+
+    spec = build_reid_model_spec(bundle)
+
+    assert spec['requires_cuda'] is False
 
 
 def _slow_start_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):

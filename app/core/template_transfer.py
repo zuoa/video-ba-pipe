@@ -521,6 +521,14 @@ def _portable_model_refs(
                     "face_gallery_transfer_unsupported",
                     "引用人脸库的算法不能直接迁移；请在目标设备重新创建并绑定人脸识别算法",
                 )
+            elif normalized == "reid_model_bundle_id":
+                # ReID bundles are not packaged as generic MLModel artifacts.
+                # Refuse the transfer instead of preserving a database-local
+                # integer that can resolve to an unrelated bundle remotely.
+                raise TemplateTransferError(
+                    "reid_bundle_transfer_unsupported",
+                    "引用 ReID 模型包的算法暂不能直接迁移；请在目标设备重新创建并绑定 ReID 模型包",
+                )
             elif normalized == "model_id" or normalized.endswith("_model_id"):
                 try:
                     model = models_by_id[int(item)]
@@ -586,6 +594,13 @@ def _portable_models_container(
 
 def _restore_model_refs(value: Any, model_map: dict[str, MLModel]) -> Any:
     if isinstance(value, dict):
+        if any(str(key).lower() == "reid_model_bundle_id" for key in value):
+            # Also reject packages produced before this guard was introduced;
+            # they may contain an unsafe destination-local numeric bundle ID.
+            raise TemplateTransferError(
+                "reid_bundle_transfer_unsupported",
+                "导入包包含不可移植的 ReID 模型包引用；请在目标设备重新创建并绑定 ReID 模型包",
+            )
         portable_id = value.get("$model")
         if portable_id and portable_id in model_map:
             model = model_map[portable_id]

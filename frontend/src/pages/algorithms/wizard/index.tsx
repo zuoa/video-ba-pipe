@@ -44,7 +44,9 @@ import {
   getScriptConfigSchema,
   getPluginModules,
   getFaceGalleries,
+  getReIdModelBundles,
   type FaceGallery,
+  type ReIdModelBundle,
 } from '@/services/api';
 import type { Script } from '@/services/api';
 import CascadeEditor, {
@@ -204,6 +206,7 @@ export default function AlgorithmWizard() {
   const [scripts, setScripts] = useState<DetectorPreset[]>([]);
   const [models, setModels] = useState<any[]>([]);
   const [faceGalleries, setFaceGalleries] = useState<FaceGallery[]>([]);
+  const [reidModelBundles, setReIdModelBundles] = useState<ReIdModelBundle[]>([]);
   const [selectedDetector, setSelectedDetector] = useState<SelectedDetector | null>(null);
   const [configSchema, setConfigSchema] = useState<ConfigSchema>({});
   const [modelItems, setModelItems] = useState<{ [key: string]: string[] }>({});
@@ -224,18 +227,20 @@ export default function AlgorithmWizard() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [scriptsData, modelsData, algorithmsData, pluginData, faceGalleryData] = await Promise.all([
+      const [scriptsData, modelsData, algorithmsData, pluginData, faceGalleryData, reidData] = await Promise.all([
         getScripts().catch(() => ({ scripts: [] })),
         getModels().catch(() => ({ models: [] })),
         editId ? getAlgorithms() : Promise.resolve([]),
         getPluginModules().catch(() => ({ modules: [], capabilities: {} })),
         getFaceGalleries().catch(() => ({ galleries: [] })),
+        getReIdModelBundles().catch(() => ({ bundles: [] })),
       ]);
       const availableScripts = getAvailableDetectorPresets(scriptsData?.scripts || []);
       setScripts(availableScripts);
       setModels(modelsData?.models || []);
       const availableFaceGalleries = faceGalleryData?.galleries || [];
       setFaceGalleries(availableFaceGalleries);
+      setReIdModelBundles(reidData?.bundles || []);
       setOcrRuntimeAvailable(pluginData?.capabilities?.ocr?.available === true);
       setOcrRuntimeError(pluginData?.capabilities?.ocr?.error || '');
       setOcrBackends(Array.isArray(pluginData?.capabilities?.ocr?.backends)
@@ -809,7 +814,7 @@ export default function AlgorithmWizard() {
           config[key] = value !== undefined ? parseInt(value) : (field.default !== undefined ? field.default : null);
         } else if (field.type === 'number' || field.type === 'float') {
           config[key] = value !== undefined ? parseFloat(value) : (field.default !== undefined ? field.default : null);
-        } else if (field.type === 'model_select' || field.type === 'face_gallery_select') {
+        } else if (field.type === 'model_select' || field.type === 'face_gallery_select' || field.type === 'reid_model_select') {
           config[key] = value !== undefined && value !== null ? parseInt(value) : null;
         } else if (field.type === 'boolean') {
           config[key] = value !== undefined ? value : (field.default !== undefined ? field.default : false);
@@ -1420,6 +1425,17 @@ export default function AlgorithmWizard() {
             {faceGalleries.filter(gallery => gallery.enabled).map(gallery => (
               <Option key={gallery.id} value={gallery.id}>
                 {gallery.name}（{gallery.person_count} 人 / {gallery.template_count} 模板）
+              </Option>
+            ))}
+          </Select>
+        );
+
+      case 'reid_model_select':
+        return (
+          <Select placeholder="选择已启用且含平台制品的 ReID 模型包..." allowClear>
+            {reidModelBundles.filter(bundle => bundle.enabled).map(bundle => (
+              <Option key={bundle.id} value={bundle.id}>
+                {bundle.name}（{bundle.embedding_dimension}D / {bundle.artifacts.length} 个制品）
               </Option>
             ))}
           </Select>

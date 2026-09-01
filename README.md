@@ -241,6 +241,7 @@ cp env.example .env
 - `DB_SSLMODE`：PostgreSQL SSL 模式
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
 - `HF_USE_MIRROR` / `HF_MIRROR_ENDPOINT`：Hugging Face 模型拉取的默认镜像开关和镜像地址；模型导入弹窗也可逐次选择官方源或国内镜像
+- `REID_MODEL_PATH` / `REID_MODEL_CATALOG_PATH`：行人 ReID 多架构制品目录与可选精选下载目录；详见 [单摄像头行人 ReID 跟踪](docs/person_reid_tracking.md)
 - `HF_DOWNLOAD_TIMEOUT_SECONDS` / `WEB_REQUEST_TIMEOUT_SECONDS` / `HF_TOKEN`：Hugging Face 下载超时、Web 请求超时及私有仓库访问 Token
 - `RECORDING_ENABLED`：是否录制预警视频（默认关闭；运行后优先使用“系统设置”中的配置）
 - `ALERT_VIDEO_MAX_STORAGE_GB`：本地告警录像容量上限，默认 20 GB

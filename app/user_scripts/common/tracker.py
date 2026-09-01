@@ -21,7 +21,8 @@ except Exception:  # pragma: no cover - optional
 
 BACKEND_IOU = "iou"
 BACKEND_BYTETRACK = "bytetrack"
-SUPPORTED_BACKENDS = (BACKEND_IOU, BACKEND_BYTETRACK)
+BACKEND_BOTSORT_REID = "botsort_reid"
+SUPPORTED_BACKENDS = (BACKEND_IOU, BACKEND_BYTETRACK, BACKEND_BOTSORT_REID)
 
 DEFAULTS = {
     BACKEND_IOU: {
@@ -40,6 +41,20 @@ DEFAULTS = {
         "track_low_thresh": 0.1,
         "new_track_thresh": 0.6,
         "match_thresh": 0.8,
+    },
+    BACKEND_BOTSORT_REID: {
+        "max_misses": 30,
+        "min_hits": 1,
+        "max_tracks": 256,
+        "history_size": 32,
+        "track_high_thresh": 0.5,
+        "track_low_thresh": 0.1,
+        "new_track_thresh": 0.6,
+        "match_thresh": 0.8,
+        "appearance_threshold": 0.75,
+        "proximity_threshold": 0.2,
+        "reid_memory_seconds": 300.0,
+        "feature_ema_alpha": 0.9,
     },
 }
 
@@ -464,5 +479,24 @@ def create_tracker(backend: str = BACKEND_IOU, **kwargs) -> BaseTracker:
             track_low_thresh=kwargs.get("track_low_thresh", defaults["track_low_thresh"]),
             new_track_thresh=kwargs.get("new_track_thresh", defaults["new_track_thresh"]),
             match_thresh=kwargs.get("match_thresh", defaults["match_thresh"]),
+        )
+    if normalized in {BACKEND_BOTSORT_REID, "botsort", "reid"}:
+        from app.user_scripts.common.bot_sort_reid_tracker import BoTSortReIdTracker
+
+        defaults = DEFAULTS[BACKEND_BOTSORT_REID]
+        return BoTSortReIdTracker(
+            max_misses=kwargs.get("max_misses", defaults["max_misses"]),
+            min_hits=kwargs.get("min_hits", defaults["min_hits"]),
+            max_tracks=kwargs.get("max_tracks", defaults["max_tracks"]),
+            history_size=kwargs.get("history_size", defaults["history_size"]),
+            label_filter=normalize_label_filter(kwargs.get("label_filter") or ["person"]),
+            track_high_thresh=kwargs.get("track_high_thresh", defaults["track_high_thresh"]),
+            track_low_thresh=kwargs.get("track_low_thresh", defaults["track_low_thresh"]),
+            new_track_thresh=kwargs.get("new_track_thresh", defaults["new_track_thresh"]),
+            match_thresh=kwargs.get("match_thresh", defaults["match_thresh"]),
+            appearance_threshold=kwargs.get("appearance_threshold", defaults["appearance_threshold"]),
+            proximity_threshold=kwargs.get("proximity_threshold", defaults["proximity_threshold"]),
+            reid_memory_seconds=kwargs.get("reid_memory_seconds", defaults["reid_memory_seconds"]),
+            feature_ema_alpha=kwargs.get("feature_ema_alpha", defaults["feature_ema_alpha"]),
         )
     raise ValueError(f"未知跟踪后端: {backend}，可选 {SUPPORTED_BACKENDS}")

@@ -5,6 +5,7 @@ filters by a built-in event (loiter / stay / region cross).
 """
 
 from typing import Any, Dict, List, Optional
+import uuid
 
 import numpy as np
 
@@ -14,11 +15,11 @@ from app.user_scripts.common.tracker import create_tracker
 
 SCRIPT_METADATA = {
     "name": "目标追踪",
-    "version": "v1.1",
-    "description": "为上游检测框分配跨帧 track_id，并可在同一节点判定徘徊、停留或按方向穿越热区。向导间隔最低 0.1 秒。",
+    "version": "v2.0",
+    "description": "为上游检测框分配跨帧 track_id，支持 IoU、ByteTrack 与多架构行人 ReID，并可判定徘徊、停留或按方向穿越热区。",
     "author": "system",
     "category": "tracking",
-    "tags": ["tracking", "iou", "bytetrack", "identity", "loiter", "stay", "crossing"],
+    "tags": ["tracking", "iou", "bytetrack", "botsort", "reid", "identity", "loiter", "stay", "crossing"],
     "config_schema": {
         "backend": {
             "type": "select",
@@ -28,8 +29,63 @@ SCRIPT_METADATA = {
             "options": [
                 {"value": "iou", "label": "贪心 IoU（静止/慢动）"},
                 {"value": "bytetrack", "label": "ByteTrack（移动/遮挡）"},
+                {"value": "botsort_reid", "label": "BoT-SORT ReID（行人遮挡/再进入）"},
             ],
             "description": "违停、占道用 IoU；人员徘徊、短暂遮挡用 ByteTrack",
+        },
+        "reid_model_bundle_id": {
+            "type": "reid_model_select",
+            "label": "ReID 模型包 ID",
+            "min": 1,
+            "visible_when": {"backend": "botsort_reid"},
+            "description": "在 ReID 模型管理中创建的逻辑模型包；不可用时自动降级为运动跟踪",
+        },
+        "reid_backend": {
+            "type": "select",
+            "label": "ReID 推理后端",
+            "default": "auto",
+            "options": [
+                {"value": "auto", "label": "自动选择"},
+                {"value": "onnxruntime", "label": "ONNX Runtime CPU"},
+                {"value": "onnxruntime-cuda", "label": "ONNX Runtime CUDA"},
+                {"value": "tensorrt", "label": "TensorRT EP"},
+                {"value": "torchscript", "label": "TorchScript"},
+                {"value": "rknn", "label": "RKNNLite"},
+            ],
+            "visible_when": {"backend": "botsort_reid"},
+        },
+        "reid_memory_seconds": {
+            "type": "float",
+            "label": "离场重识别窗口（秒）",
+            "default": 300,
+            "min": 5,
+            "max": 3600,
+            "step": 5,
+            "visible_when": {"backend": "botsort_reid"},
+        },
+        "appearance_threshold": {
+            "type": "float",
+            "label": "外观相似度阈值",
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01,
+            "visible_when": {"backend": "botsort_reid"},
+            "description": "留空使用模型包校准阈值",
+        },
+        "reid_min_box_height": {
+            "type": "int",
+            "label": "最小行人框高度",
+            "default": 48,
+            "min": 16,
+            "max": 512,
+            "visible_when": {"backend": "botsort_reid"},
+        },
+        "camera_motion_compensation": {
+            "type": "boolean",
+            "label": "相机运动补偿",
+            "default": False,
+            "visible_when": {"backend": "botsort_reid"},
+            "description": "固定机位默认关闭；机架抖动或少量转动时可启用，镜头突变会重置运动状态",
         },
         "event": {
             "type": "select",
@@ -254,6 +310,10 @@ def _tracker_kwargs(config: dict) -> Dict[str, Any]:
         ("track_low_thresh", float),
         ("new_track_thresh", float),
         ("match_thresh", float),
+        ("appearance_threshold", float),
+        ("proximity_threshold", float),
+        ("reid_memory_seconds", float),
+        ("feature_ema_alpha", float),
     ):
         value = _optional_number(config, key, cast)
         if value is not None:
@@ -269,14 +329,66 @@ def _identity_key(config: dict, frame_width: Optional[int], frame_height: Option
     )
 
 
+def _estimate_camera_motion(frame_rgb: np.ndarray, state: dict):
+    """Estimate global translation on a small grayscale frame."""
+    from app.core.cv2_compat import cv2
+
+    if frame_rgb is None or getattr(frame_rgb, "ndim", 0) != 3:
+        return (0.0, 0.0), False
+    height, width = frame_rgb.shape[:2]
+    target_width = min(320, width)
+    scale = target_width / max(1, width)
+    target_height = max(1, int(round(height * scale)))
+    small = cv2.resize(frame_rgb, (target_width, target_height), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    previous = state.get("camera_motion_frame")
+    state["camera_motion_frame"] = gray
+    if previous is None or previous.shape != gray.shape:
+        return (0.0, 0.0), False
+    (dx, dy), response = cv2.phaseCorrelate(previous, gray)
+    scene_cut = (
+        not np.isfinite(dx) or not np.isfinite(dy) or response < 0.05
+        or abs(dx) > target_width * 0.25 or abs(dy) > target_height * 0.25
+    )
+    if scene_cut:
+        return (0.0, 0.0), True
+    return (float(dx / scale), float(dy / scale)), False
+
+
 def init(config: dict) -> Dict[str, Any]:
     backend = str(config.get("backend") or "iou")
-    tracker = create_tracker(backend, **_tracker_kwargs(config))
+    kwargs = _tracker_kwargs(config)
+    reid_backend = None
+    reid_error = None
+    reid_contract = None
+    if backend.strip().lower() in {"botsort_reid", "botsort", "reid"}:
+        try:
+            from app.core.database_models import ReIdModelBundle
+            from app.core.reid_inference import create_reid_backend
+
+            bundle_id = int(config.get("reid_model_bundle_id"))
+            bundle = ReIdModelBundle.get_by_id(bundle_id)
+            if "appearance_threshold" not in kwargs:
+                kwargs["appearance_threshold"] = float(bundle.default_similarity_threshold)
+            reid_backend = create_reid_backend(
+                bundle,
+                str(config.get("reid_backend") or "auto"),
+                config,
+            )
+            reid_contract = bundle.contract_id
+        except Exception as exc:
+            reid_error = f"runtime_unavailable:{type(exc).__name__}:{exc}"
+    tracker = create_tracker(backend, **kwargs)
     return {
         "tracker": tracker,
         "backend": tracker.backend,
         "identity_key": None,
         "event": init_event_state(config),
+        "reid_backend": reid_backend,
+        "reid_error": reid_error,
+        "reid_contract": reid_contract,
+        "tracking_session_id": uuid.uuid4().hex,
+        "camera_motion_frame": None,
     }
 
 
@@ -290,6 +402,7 @@ def process(
     frame_height: Optional[int] = None,
     frame_timestamp: Optional[float] = None,
     pixel_format: str = "nv12",
+    frame_rgb: Optional[np.ndarray] = None,
 ) -> dict:
     if not isinstance(state, dict):
         return build_result([], metadata={"error": "tracker_state_missing"})
@@ -300,14 +413,79 @@ def process(
     if state.get("identity_key") not in (None, identity_key):
         state["tracker"].reset()
         state["event"] = init_event_state(config)
+        state["tracking_session_id"] = uuid.uuid4().hex
+        state["camera_motion_frame"] = None
     state["identity_key"] = identity_key
     if "event" not in state or not isinstance(state.get("event"), dict):
         state["event"] = init_event_state(config)
 
     detections = collect_upstream_detections(upstream_results)
-    tracks = state["tracker"].update(detections, timestamp=frame_timestamp)
     backend = state.get("backend") or getattr(state["tracker"], "backend", "iou")
+    degraded_reason = None
+    if backend == "botsort_reid":
+        reid_backend = state.get("reid_backend")
+        degraded_reason = state.get("reid_error")
+        candidates = [
+            (index, det) for index, det in enumerate(detections)
+            if str(det.get("label") or det.get("label_name") or "").lower() == "person"
+            and isinstance(det.get("box") or det.get("bbox"), (list, tuple))
+        ]
+        if reid_backend is not None and candidates:
+            try:
+                inference_frame = frame_rgb if frame_rgb is not None else frame
+                response = reid_backend.infer(
+                    inference_frame,
+                    [(det.get("box") or det.get("bbox")) for _, det in candidates],
+                )
+                by_candidate = {
+                    int(item["index"]): item.get("embedding")
+                    for item in response.get("details") or []
+                    if item.get("embedding") is not None
+                }
+                rejected_by_candidate = {
+                    int(item["index"]): item.get("reason") or "crop_not_eligible"
+                    for item in (response.get("metadata") or {}).get("rejected") or []
+                    if item.get("index") is not None
+                }
+                for candidate_index, (detection_index, _det) in enumerate(candidates):
+                    detections[detection_index] = dict(detections[detection_index])
+                    if candidate_index in by_candidate:
+                        detections[detection_index]["_reid_embedding"] = by_candidate[candidate_index]
+                    elif candidate_index in rejected_by_candidate:
+                        detections[detection_index]["_reid_rejected_reason"] = rejected_by_candidate[candidate_index]
+                state["reid_contract"] = (
+                    response.get("metadata") or {}
+                ).get("model_contract") or state.get("reid_contract")
+                degraded_reason = None
+            except Exception as exc:
+                try:
+                    from app.core.shared_inference import SharedInferenceOverloaded
+                    reason = "queue_overloaded" if isinstance(exc, SharedInferenceOverloaded) else "runtime_unavailable"
+                except Exception:
+                    reason = "runtime_unavailable"
+                degraded_reason = f"{reason}:{type(exc).__name__}"
+        elif reid_backend is None:
+            degraded_reason = degraded_reason or "runtime_unavailable"
+        camera_motion = (0.0, 0.0)
+        scene_cut = False
+        if bool(config.get("camera_motion_compensation", False)):
+            camera_motion, scene_cut = _estimate_camera_motion(
+                frame_rgb if frame_rgb is not None else frame, state
+            )
+            if scene_cut and hasattr(state["tracker"], "handle_scene_cut"):
+                state["tracker"].handle_scene_cut(frame_timestamp or 0.0)
+        tracks = state["tracker"].update(
+            detections, timestamp=frame_timestamp, degraded_reason=degraded_reason,
+            camera_motion=camera_motion,
+        )
+    else:
+        tracks = state["tracker"].update(detections, timestamp=frame_timestamp)
     tracked = [track.to_detection(backend) for track in tracks]
+    if backend == "botsort_reid":
+        for detection in tracked:
+            attributes = dict(detection.get("attributes") or {})
+            attributes["reid_model_contract"] = state.get("reid_contract")
+            detection["attributes"] = attributes
     height = int(frame_height or 0)
     width = int(frame_width or 0)
     if (height <= 0 or width <= 0) and frame is not None and getattr(frame, "ndim", 0) == 3 and frame.shape[-1] in (3, 4):
@@ -326,6 +504,10 @@ def process(
         emitted,
         metadata={
             "backend": backend,
+            "tracking_session_id": state.get("tracking_session_id"),
+            "reid_model_contract": state.get("reid_contract"),
+            "reid_degraded_reason": degraded_reason,
+            "camera_motion_compensation": bool(config.get("camera_motion_compensation", False)),
             "track_count": len(tracks),
             **event_meta,
             "upstream_count": len(detections),
@@ -338,4 +520,7 @@ def cleanup(state: Optional[dict] = None) -> None:
         return
     if state.get("tracker") is not None:
         state["tracker"].reset()
+    if state.get("reid_backend") is not None:
+        state["reid_backend"].cleanup()
+        state["reid_backend"] = None
     state["event"] = init_event_state({})

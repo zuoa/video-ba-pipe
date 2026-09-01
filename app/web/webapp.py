@@ -213,6 +213,8 @@ app.register_blueprint(auth_bp)
 
 from app.web.api.faces import faces_bp
 app.register_blueprint(faces_bp)
+from app.web.api.reid import reid_bp
+app.register_blueprint(reid_bp)
 
 
 def serialize_algorithm(algorithm, runtime_allowed=None):

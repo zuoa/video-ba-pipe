@@ -101,6 +101,12 @@ export default defineConfig({
       icon: 'ScanOutlined',
     },
     {
+      name: '行人 ReID',
+      path: '/reid-models',
+      component: './reid-models',
+      icon: 'IdcardOutlined',
+    },
+    {
       name: '脚本',
       path: '/scripts',
       component: './scripts',

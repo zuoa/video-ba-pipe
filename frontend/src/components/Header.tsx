@@ -22,6 +22,7 @@ import {
   SettingOutlined,
   ReadOutlined,
   ScanOutlined,
+  IdcardOutlined,
 } from '@ant-design/icons';
 
 const DEFAULT_COMPANY_NAME = '码全科技';
@@ -99,6 +100,11 @@ const Header: React.FC = () => {
       label: <Link to="/models">模型管理</Link>,
     }] : []),
     ...(user?.role === 'admin' ? [{
+      key: 'reid-models',
+      icon: <IdcardOutlined />,
+      label: <Link to="/reid-models">行人 ReID</Link>,
+    }] : []),
+    ...(user?.role === 'admin' ? [{
       key: 'scripts',
       icon: <CodeOutlined />,
       label: <Link to="/scripts">脚本管理</Link>,
@@ -121,6 +127,7 @@ const Header: React.FC = () => {
 
   const isAlgorithmActive = location.pathname === '/models' ||
     location.pathname === '/face-galleries' ||
+    location.pathname === '/reid-models' ||
     location.pathname === '/scripts' ||
     location.pathname === '/external-apis' ||
     location.pathname === '/algorithms';

@@ -74,8 +74,10 @@ os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
 FACE_DATA_PATH = _resolve_data_path('FACE_DATA_PATH', 'face')
 FACE_MODEL_PATH = os.path.join(FACE_DATA_PATH, 'models')
 FACE_EVENT_PATH = os.path.join(FACE_DATA_PATH, 'events')
+REID_MODEL_PATH = _resolve_data_path('REID_MODEL_PATH', 'reid_models')
 os.makedirs(FACE_MODEL_PATH, exist_ok=True)
 os.makedirs(FACE_EVENT_PATH, exist_ok=True)
+os.makedirs(REID_MODEL_PATH, exist_ok=True)
 FACE_DATA_ENCRYPTION_KEY_FILE = (
     os.getenv('FACE_DATA_ENCRYPTION_KEY_FILE', '').strip()
 )
@@ -88,6 +90,7 @@ HF_MIRROR_ENDPOINT = (
     or 'https://hf-mirror.com'
 )
 HF_DOWNLOAD_TIMEOUT_SECONDS = max(1, int(os.getenv('HF_DOWNLOAD_TIMEOUT_SECONDS', '120')))
+REID_MODEL_CATALOG_PATH = os.getenv('REID_MODEL_CATALOG_PATH', '').strip()
 
 USER_SCRIPTS_ROOT = _resolve_data_path('USER_SCRIPTS_ROOT', 'user_scripts')
 os.makedirs(USER_SCRIPTS_ROOT, exist_ok=True)

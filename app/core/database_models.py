@@ -605,6 +605,94 @@ class FaceModelArtifact(BaseModel):
             return {}
 
 
+# ==================== 行人 ReID 模型相关表 ====================
+
+class ReIdModelBundle(BaseModel):
+    """Backend-neutral person ReID embedding contract."""
+
+    portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
+    name = pw.CharField()
+    version = pw.CharField(default='v1.0')
+    contract_id = pw.CharField(max_length=128, unique=True)
+    target_type = pw.CharField(max_length=32, default='person')
+    embedding_dimension = pw.IntegerField(default=512)
+    input_size = pw.CharField(default='256x128')
+    preprocess_json = pw.TextField(default='{}')
+    distance_metric = pw.CharField(max_length=32, default='cosine')
+    default_similarity_threshold = pw.FloatField(default=0.75)
+    license_name = pw.CharField(null=True)
+    license_url = pw.TextField(null=True)
+    commercial_use_allowed = pw.BooleanField(default=False)
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'reid_model_bundles'
+        indexes = ((('name', 'version'), True),)
+
+    @property
+    def preprocess(self):
+        try:
+            return json.loads(self.preprocess_json) if self.preprocess_json else {}
+        except Exception:
+            return {}
+
+
+class ReIdModelArtifact(BaseModel):
+    """One platform-specific executable for a ReID contract."""
+
+    bundle = pw.ForeignKeyField(ReIdModelBundle, backref='artifacts', on_delete='CASCADE')
+    runtime = pw.CharField(max_length=32)
+    architecture = pw.CharField(max_length=32, default='any')
+    device = pw.CharField(max_length=32, default='any')
+    filename = pw.CharField()
+    file_path = pw.TextField()
+    file_size = pw.IntegerField(default=0)
+    artifact_sha256 = pw.CharField(max_length=64, index=True)
+    metadata_json = pw.TextField(default='{}')
+    enabled = pw.BooleanField(default=True)
+    created_at = pw.DateTimeField()
+
+    class Meta:
+        table_name = 'reid_model_artifacts'
+        indexes = (
+            (('bundle', 'runtime', 'architecture', 'device'), True),
+        )
+
+    @property
+    def metadata(self):
+        try:
+            return json.loads(self.metadata_json) if self.metadata_json else {}
+        except Exception:
+            return {}
+
+
+class ReIdModelImportJob(BaseModel):
+    bundle = pw.ForeignKeyField(ReIdModelBundle, backref='import_jobs', on_delete='CASCADE')
+    status = pw.CharField(default='pending')
+    source_json = pw.TextField(default='{}')
+    progress = pw.IntegerField(default=0)
+    error_message = pw.TextField(null=True)
+    artifact = pw.ForeignKeyField(
+        ReIdModelArtifact, backref='import_job', null=True, on_delete='SET NULL'
+    )
+    created_at = pw.DateTimeField()
+    updated_at = pw.DateTimeField()
+    created_by = pw.CharField(default='admin')
+
+    class Meta:
+        table_name = 'reid_model_import_jobs'
+
+    @property
+    def source(self):
+        try:
+            return json.loads(self.source_json) if self.source_json else {}
+        except Exception:
+            return {}
+
+
 class FaceGallery(BaseModel):
     portable_id = pw.CharField(max_length=36, null=True, unique=True, default=_new_portable_id)
     name = pw.CharField()
