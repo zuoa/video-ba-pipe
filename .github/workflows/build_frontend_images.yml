@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "frontend/**"
+      - "scripts/generate_docker_build_info.py"
       - ".github/workflows/build_frontend_images.yml"
   workflow_dispatch:
     inputs:
@@ -34,6 +35,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Generate image build information
+        id: build_info
+        run: python3 scripts/generate_docker_build_info.py >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -52,6 +57,8 @@ jobs:
           platforms: linux/amd64
           pull: true
           push: true
+          build-args: |
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}
@@ -69,6 +76,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Generate image build information
+        id: build_info
+        run: python3 scripts/generate_docker_build_info.py >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -96,6 +107,7 @@ jobs:
           build-args: |
             BUILDPLATFORM=linux/amd64
             TARGETPLATFORM=linux/arm64
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64-${{ github.sha }}

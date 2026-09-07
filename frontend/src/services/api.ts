@@ -23,6 +23,10 @@ export async function getCurrentUser() {
 export interface SystemInfo {
   success: boolean;
   version: string;
+  service_versions?: {
+    api: ServiceVersion;
+    worker: ServiceVersion;
+  };
   company_name: string;
   node_id: string;
   node_id_source: string;
@@ -31,6 +35,11 @@ export interface SystemInfo {
   machine?: string;
   device_model?: string;
   hostname: string;
+}
+
+export interface ServiceVersion {
+  version: string | null;
+  status: 'ready' | 'unknown' | 'unavailable';
 }
 
 export async function getSystemInfo() {

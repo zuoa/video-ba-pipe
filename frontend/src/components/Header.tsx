@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, history } from '@umijs/max';
-import { Dropdown, message } from 'antd';
-import { getSystemInfo } from '@/services/api';
+import { Dropdown, message, Tooltip } from 'antd';
+import { getSystemInfo, SystemInfo } from '@/services/api';
 import { SYSTEM_NAME_EN, SYSTEM_NAME_ZH } from '@/constants/branding';
 import { LOGIN_PATH, clearAuthStorage } from '@/utils/auth';
 import './Header.css';
@@ -26,12 +26,18 @@ import {
 } from '@ant-design/icons';
 
 const DEFAULT_COMPANY_NAME = '码全科技';
+const FRONTEND_VERSION = process.env.UMI_APP_VERSION || '';
+
+const knownVersion = (version?: string | null) => {
+  const normalized = String(version || '').trim();
+  return normalized && normalized !== 'unknown' ? normalized : '';
+};
 
 const Header: React.FC = () => {
   const location = useLocation();
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
-  const [appVersion, setAppVersion] = useState<string>('');
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [companyName, setCompanyName] = useState(DEFAULT_COMPANY_NAME);
 
   useEffect(() => {
@@ -40,14 +46,14 @@ const Header: React.FC = () => {
     const loadVersion = async () => {
       try {
         const response = await getSystemInfo();
-        if (mounted && response?.version) {
-          setAppVersion(response.version);
-        }
-        if (mounted && response?.company_name) {
-          setCompanyName(response.company_name);
+        if (mounted) {
+          setSystemInfo(response);
+          if (response?.company_name) {
+            setCompanyName(response.company_name);
+          }
         }
       } catch (error) {
-        // Silently keep the version tag hidden when the endpoint is unavailable.
+        // Keep the frontend build visible and mark the other versions as unknown.
       }
     };
 
@@ -132,6 +138,47 @@ const Header: React.FC = () => {
     location.pathname === '/external-apis' ||
     location.pathname === '/algorithms';
 
+  const frontendVersion = knownVersion(FRONTEND_VERSION);
+  const apiVersion = knownVersion(
+    systemInfo?.service_versions?.api?.version || systemInfo?.version,
+  );
+  const workerVersion = knownVersion(systemInfo?.service_versions?.worker?.version);
+  const workerStatus = systemInfo?.service_versions?.worker?.status;
+  const workerReady = workerStatus === 'ready';
+  const comparableVersions = [frontendVersion, apiVersion, workerVersion].filter(Boolean);
+  const versionsMismatch = new Set(comparableVersions).size > 1;
+  const versionsComplete = Boolean(frontendVersion && apiVersion && workerVersion && workerReady);
+  const versionState = versionsMismatch ? 'mismatch' : versionsComplete ? 'aligned' : 'unknown';
+  const versionLabel = versionsMismatch
+    ? '版本不一致'
+    : apiVersion
+      ? `v${apiVersion}`
+      : '版本未知';
+  const versionSummary = versionsMismatch
+    ? '检测到服务版本不一致，可能存在接口兼容问题'
+    : versionsComplete
+      ? '前端、API 与推理 Worker 版本一致'
+      : '部分服务版本无法确认';
+  const versionDetails = (
+    <div className="service-version-details">
+      <div className={`service-version-details__summary service-version-details__summary--${versionState}`}>
+        {versionSummary}
+      </div>
+      <div className="service-version-details__row">
+        <span>前端</span>
+        <code>{frontendVersion || '未注入'}</code>
+      </div>
+      <div className="service-version-details__row">
+        <span>API / Control</span>
+        <code>{apiVersion || '未知'}</code>
+      </div>
+      <div className="service-version-details__row">
+        <span>推理 Worker</span>
+        <code>{workerVersion || (workerStatus === 'unavailable' ? '不可用' : '版本未知')}</code>
+      </div>
+    </div>
+  );
+
   return (
     <header className="site-header">
       <div className="site-header__inner">
@@ -147,7 +194,15 @@ const Header: React.FC = () => {
             <span>{SYSTEM_NAME_EN}</span>
           </div>
           <span className="site-brand__company" title={companyName}>{companyName}</span>
-          {appVersion ? <span className="site-brand__version">v{appVersion}</span> : null}
+          <Tooltip title={versionDetails} placement="bottomLeft">
+            <span
+              className={`site-brand__version site-brand__version--${versionState}`}
+              aria-label={`${versionLabel}，${versionSummary}`}
+            >
+              <span className="site-brand__version-dot" aria-hidden="true" />
+              {versionLabel}
+            </span>
+          </Tooltip>
         </Link>
 
         <nav className="site-nav">

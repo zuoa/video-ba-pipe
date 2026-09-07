@@ -5,6 +5,9 @@ const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://10.0.4.147:5002';
 
 export default defineConfig({
   title: SYSTEM_NAME_ZH,
+  define: {
+    'process.env.UMI_APP_VERSION': JSON.stringify(process.env.UMI_APP_VERSION || ''),
+  },
   antd: {
     configProvider: {
       theme: {

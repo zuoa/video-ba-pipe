@@ -85,6 +85,7 @@
 .site-brand__version {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   padding: 3px 7px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
@@ -92,6 +93,82 @@
   background: rgba(255, 255, 255, 0.045);
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 9px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.site-brand__version-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #8c9aa0;
+  box-shadow: 0 0 6px rgba(140, 154, 160, 0.35);
+}
+
+.site-brand__version--aligned {
+  border-color: rgba(98, 212, 187, 0.26);
+  color: rgba(206, 246, 237, 0.78);
+  background: rgba(98, 212, 187, 0.08);
+}
+
+.site-brand__version--aligned .site-brand__version-dot {
+  background: var(--app-signal-bright);
+  box-shadow: 0 0 7px rgba(98, 212, 187, 0.55);
+}
+
+.site-brand__version--mismatch {
+  border-color: rgba(255, 176, 32, 0.4);
+  color: #ffd591;
+  background: rgba(250, 173, 20, 0.12);
+}
+
+.site-brand__version--mismatch .site-brand__version-dot {
+  background: #faad14;
+  box-shadow: 0 0 7px rgba(250, 173, 20, 0.55);
+}
+
+.service-version-details {
+  display: grid;
+  min-width: 286px;
+  gap: 8px;
+  padding: 2px;
+}
+
+.service-version-details__summary {
+  margin-bottom: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+}
+
+.service-version-details__summary--aligned {
+  color: #b7eb8f;
+}
+
+.service-version-details__summary--mismatch {
+  color: #ffd591;
+}
+
+.service-version-details__row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.service-version-details__row span {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.service-version-details__row code {
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  text-align: right;
 }
 
 .site-brand__company {

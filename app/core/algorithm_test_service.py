@@ -291,7 +291,16 @@ class _AlgorithmTestRequestHandler(BaseHTTPRequestHandler):
         if self.path != "/health":
             self._write_json(404, {"success": False, "error": "接口不存在"})
             return
-        self._write_json(200, {"success": True, "status": "ready"})
+        from app.version import get_app_version
+
+        self._write_json(
+            200,
+            {
+                "success": True,
+                "status": "ready",
+                "app_version": get_app_version(),
+            },
+        )
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         if not self._authorized():
@@ -412,6 +421,11 @@ def fetch_runtime_capabilities() -> Tuple[Dict[str, Any], int]:
     with _runtime_capability_cache_lock:
         _runtime_capability_cache = (time.monotonic(), dict(body), status)
     return body, status
+
+
+def fetch_worker_health() -> Tuple[Dict[str, Any], int]:
+    """Fetch the worker version without starting a runtime capability probe."""
+    return _fetch_worker_json("/health", 1)
 
 
 def fetch_face_runtime_capabilities() -> Tuple[Dict[str, Any], int]:

@@ -26,6 +26,19 @@ def test_dynamic_build_metadata_only_affects_application_stages():
         assert "ARG BUILD_TIME" in application_content
 
 
+def test_frontend_images_embed_the_git_application_version():
+    for filename in ("frontend/Dockerfile", "frontend/Dockerfile.rk"):
+        content = (ROOT / filename).read_text(encoding="utf-8")
+        assert "ARG APP_VERSION=unknown" in content
+        assert "ENV UMI_APP_VERSION=${APP_VERSION}" in content
+
+    workflow_root = ROOT / ".github" / "workflows"
+    for filename in ("build_frontend_images.yml", "build_jetson_image.yml"):
+        content = (workflow_root / filename).read_text(encoding="utf-8")
+        assert "python3 scripts/generate_docker_build_info.py" in content
+        assert "APP_VERSION=${{ steps.build_info.outputs.app_version }}" in content
+
+
 def test_control_dependencies_exclude_inference_frameworks():
     requirements = {
         line.strip().split(";", 1)[0].lower()

@@ -158,6 +158,10 @@ jobs:
       - name: Check out selected revision
         uses: actions/checkout@v4
 
+      - name: Generate image build information
+        id: build_info
+        run: python3 scripts/generate_docker_build_info.py >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -184,6 +188,7 @@ jobs:
           build-args: |
             BUILDPLATFORM=linux/amd64
             TARGETPLATFORM=linux/arm64
+            APP_VERSION=${{ steps.build_info.outputs.app_version }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:arm64
             ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:arm64-${{ github.sha }}

@@ -141,6 +141,7 @@ from app.core.workflow_runtime import (
 from app.core.algorithm_test_service import (
     fetch_accelerator_metrics,
     fetch_face_runtime_capabilities,
+    fetch_worker_health,
     submit_algorithm_test,
 )
 from app.core.window_detector import get_window_detector
@@ -319,9 +320,35 @@ def list_plugin_modules():
 def get_system_info():
     node_identity = get_node_identity()
     capabilities = detect_inference_capabilities()
+    api_version = get_app_version()
+    worker_payload, worker_status = fetch_worker_health()
+    worker_version = (
+        worker_payload.get('app_version')
+        if worker_status == 200 and worker_payload.get('success')
+        else None
+    )
+    if worker_version:
+        worker_version_status = 'ready'
+    elif worker_status == 200 and worker_payload.get('success'):
+        # Supports rolling upgrades from workers whose health response did not
+        # expose a version yet.
+        worker_version_status = 'unknown'
+    else:
+        worker_version_status = 'unavailable'
     return jsonify({
         'success': True,
-        'version': get_app_version(),
+        # Keep the legacy field for older frontends.
+        'version': api_version,
+        'service_versions': {
+            'api': {
+                'version': api_version,
+                'status': 'ready',
+            },
+            'worker': {
+                'version': worker_version,
+                'status': worker_version_status,
+            },
+        },
         'company_name': get_company_name(),
         'node_id': node_identity['node_id'],
         'node_id_source': node_identity['source'],

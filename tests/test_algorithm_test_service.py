@@ -276,6 +276,46 @@ def test_worker_client_maps_unavailable_service_to_503(monkeypatch):
     assert body == {"success": False, "error": "推理 Worker 不可用"}
 
 
+def test_internal_http_service_health_reports_worker_version(monkeypatch):
+    monkeypatch.setenv("APP_VERSION", "20260907-de19d3d")
+    server = service._AlgorithmTestHttpServer(("127.0.0.1", 0), object())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/health"
+    try:
+        response = requests.get(
+            url,
+            headers={"X-Algorithm-Test-Token": service.ALGORITHM_TEST_WORKER_TOKEN},
+            timeout=2,
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "success": True,
+            "status": "ready",
+            "app_version": "20260907-de19d3d",
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_worker_health_client_uses_lightweight_probe(monkeypatch):
+    calls = []
+
+    def fetch(path, timeout):
+        calls.append((path, timeout))
+        return {"success": True, "app_version": "test-version"}, 200
+
+    monkeypatch.setattr(service, "_fetch_worker_json", fetch)
+
+    body, status = service.fetch_worker_health()
+
+    assert status == 200
+    assert body["app_version"] == "test-version"
+    assert calls == [("/health", 1)]
+
+
 def test_internal_http_service_reports_runtime_capabilities():
     class FakeRunner:
         def runtime_capabilities(self):
