@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from peewee import SqliteDatabase
 import yaml
 
 import app.core.orchestrator as orchestrator_module
+from app.core.database_models import VideoSource
 from app.core.inference_budget import InferenceAdmissionController, OomCircuitBreaker
 from app.core.inference_resource_config import InferenceResourceConfig
 from app.core.orchestrator import Orchestrator
@@ -182,6 +184,54 @@ def test_confirmed_shared_model_ids_include_ocr_recognition():
         ]
     })
     assert confirmed == {11, 12}
+
+
+def test_manage_workflows_defers_stopped_sources_before_inference_admission():
+    database = SqliteDatabase(":memory:")
+    with database.bind_ctx([VideoSource]):
+        database.create_tables([VideoSource])
+        stopped = VideoSource.create(
+            name="queued",
+            source_code="queued",
+            source_url="rtsp://queued",
+            status="STOPPED",
+        )
+        running = VideoSource.create(
+            name="running",
+            source_code="running",
+            source_url="rtsp://running",
+            status="RUNNING",
+        )
+        workflows = {
+            stopped.id: [FakeWorkflow([])],
+            running.id: [FakeWorkflow([])],
+        }
+        admission_calls = []
+        start_calls = []
+
+        orchestrator = Orchestrator.__new__(Orchestrator)
+        orchestrator.desired_source_ids = set(workflows)
+        orchestrator.license_entitlements = {"algorithm_ids": None}
+        orchestrator.workflow_hosts = {}
+        orchestrator.workflow_host_signatures = {}
+        orchestrator._build_active_workflow_groups = lambda: workflows
+        orchestrator._mark_rotation_batch_starting = lambda _source_id, **_kwargs: None
+
+        def workflow_start_allowed(source_id, _workflows):
+            admission_calls.append(source_id)
+            return True, set(), ()
+
+        def start_source_host(source_id, _workflows, **_kwargs):
+            start_calls.append(source_id)
+            return True
+
+        orchestrator._workflow_start_allowed = workflow_start_allowed
+        orchestrator._start_source_host = start_source_host
+
+        orchestrator.manage_workflows()
+
+    assert admission_calls == [running.id]
+    assert start_calls == [running.id]
 
 
 def test_collect_inference_stats_keeps_face_worker_without_budget_crash(monkeypatch):

@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Frontend Design Requirements
+
+All frontend page design, implementation, and visual refactoring **must follow [`DESIGN.md`](./DESIGN.md)**.
+
+- Read `DESIGN.md` before changing any page, layout, shared UI component, theme token, or page-level CSS.
+- Treat it as the source of truth for visual direction, design tokens, typography, layout, shared components, responsive behavior, accessibility, motion, UI copy, and acceptance criteria.
+- Reuse the shared components under `frontend/src/components/common/` and the `--app-*` tokens before adding page-specific alternatives.
+- The login page, alert wall, workflow editor, and workflow-node colors are controlled exceptions described in `DESIGN.md`; do not copy their special visual language into standard management pages.
+- When an existing implementation conflicts with `DESIGN.md`, new work must follow `DESIGN.md` and touched legacy UI should be moved toward it when that stays within task scope.
+- If a product requirement genuinely needs a new pattern, update `DESIGN.md` together with the implementation so future pages remain consistent.
+
 ## Project Overview
 
 Video BA Pipe is a video stream analysis system that processes RTSP/video streams, applies AI detection algorithms (YOLO-based), and generates alerts with video recording capabilities. The system uses a **node-based workflow architecture** with multi-process execution and shared memory buffers for efficient video frame processing.

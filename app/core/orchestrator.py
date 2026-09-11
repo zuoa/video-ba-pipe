@@ -2049,7 +2049,14 @@ class Orchestrator:
         # 启动限流:每个周期最多启动 SOURCE_MAX_CONCURRENT_STARTS 个源，
         # 防止批量启动时 ffprobe/硬解通道惊群
         started_this_tick = 0
-        for source in VideoSource.select().where(VideoSource.status == 'STOPPED'):
+        # 显式排序保证启动队列稳定；大批 STOPPED 源每轮只能启动少量时，
+        # 不能依赖数据库未承诺的默认返回顺序，否则可能出现个别源长期排不到。
+        stopped_sources = (
+            VideoSource.select()
+            .where(VideoSource.status == 'STOPPED')
+            .order_by(VideoSource.id)
+        )
+        for source in stopped_sources:
             if started_this_tick >= SOURCE_MAX_CONCURRENT_STARTS:
                 break
             if not self._rotation_has_decoder_capacity():
@@ -2398,6 +2405,26 @@ class Orchestrator:
             source_id: workflows
             for source_id, workflows in active_groups.items()
             if source_id in self.desired_source_ids
+        }
+
+        # source host 消费解码器创建的分析帧环形缓冲区，因此必须等
+        # manage_sources() 将源推进到 STARTING/RUNNING 后再启动。这里要在
+        # 推理准入之前过滤：否则大规模部署中，每个 STOPPED 源每轮都会执行
+        # 模型/数据库查询和共享推理 stats RPC，最后才被 _start_source_host()
+        # 拒绝，导致整个编排主循环长时间阻塞。
+        #
+        # 这不会把源从解码调度中移除。STOPPED 仍由 manage_sources() 管理，
+        # 解码器启动后的下一轮会自动进入这里。
+        runnable_source_ids = {
+            source.id
+            for source in VideoSource.select(VideoSource.id).where(
+                VideoSource.status.in_(['STARTING', 'RUNNING'])
+            )
+        }
+        active_groups = {
+            source_id: workflows
+            for source_id, workflows in active_groups.items()
+            if source_id in runnable_source_ids
         }
         logger.debug(
             f"检测到 {sum(len(workflows) for workflows in active_groups.values())} 个激活工作流，"
