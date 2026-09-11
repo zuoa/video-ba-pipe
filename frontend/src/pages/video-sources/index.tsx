@@ -154,10 +154,18 @@ export default function VideoSources() {
       // 探测同时顺手刷新列表里的 DB status
       loadSources();
     } catch (error) {
-      message.error('探测状态失败');
+      const detail = (error as any)?.response?.data?.error;
+      message.error(detail || '探测状态失败');
     } finally {
       setRefreshingId(null);
     }
+  };
+
+  const handleRetryHealth = () => {
+    const sourceId = healthDetail?.source_id;
+    if (!sourceId) return;
+    const source = sources.find((item) => item.id === sourceId) || healthDetail;
+    handleRefreshStatus(source);
   };
 
   return (
@@ -249,6 +257,8 @@ export default function VideoSources() {
         open={healthModalVisible}
         detail={healthDetail}
         onClose={() => setHealthModalVisible(false)}
+        onRetry={handleRetryHealth}
+        retrying={refreshingId === healthDetail?.source_id}
       />
     </div>
   );

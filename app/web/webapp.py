@@ -17,11 +17,8 @@ from app.core.alert_stats import build_alert_trend, get_alert_period_spec
 from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, Workflow
 from app.core.database_models import db
 from app.config import (
-    ANALYSIS_BUFFER_SECONDS,
-    ANALYSIS_TARGET_FPS,
     ALGORITHM_TEST_MAX_IMAGE_BYTES,
     FRAME_SAVE_PATH,
-    VIDEO_FRAME_PIXEL_FORMAT,
     SNAPSHOT_SAVE_PATH,
     DETECTION_SNAPSHOT_SAVE_PATH,
     DEFAULT_DECODE_HEIGHT,
@@ -141,6 +138,7 @@ from app.core.workflow_runtime import (
 from app.core.algorithm_test_service import (
     fetch_accelerator_metrics,
     fetch_face_runtime_capabilities,
+    fetch_source_health,
     fetch_worker_health,
     submit_algorithm_test,
 )
@@ -1394,63 +1392,26 @@ def get_source_health(source_id):
         if owner_response:
             return owner_response
 
-        # 尝试获取 ring buffer 的健康状态
-        from app.core.ringbuffer import VideoRingBuffer
-
-        buffer_name = source.analysis_buffer_name
-        analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
-        if not buffer_name:
-            return jsonify({
-                'source_id': source_id,
-                'status': source.status,
-                'error': 'No buffer configured'
-            }), 404
-
-        try:
-            # 连接到现有的 buffer
-            buffer = VideoRingBuffer(
-                name=buffer_name,
-                create=False,
-                width=source.source_decode_width,
-                height=source.source_decode_height,
-                pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
-                fps=analysis_fps,
-                duration_seconds=ANALYSIS_BUFFER_SECONDS
+        # 共享内存属于 worker 容器，必须在 worker 内采样；API 容器直接连接
+        # 必然会把正常运行的视频源误报为 Buffer not found。
+        health, status_code = fetch_source_health(source_id)
+        if status_code != 200:
+            app.logger.warning(
+                "视频源 %s 实时状态探测失败，worker_status=%s: %s",
+                source_id,
+                status_code,
+                health.get('error'),
             )
-            health_status = buffer.get_health_status()
-            buffer.close()
-
             return jsonify({
                 'source_id': source_id,
                 'name': source.name,
                 'status': source.status,
                 'enabled': source.enabled,
-                'last_write_time': health_status['last_write_time'],
-                'time_since_last_frame': health_status['time_since_last_frame'],
-                'consecutive_errors': health_status['consecutive_errors'],
-                'frame_count': health_status['frame_count'],
-                'is_healthy': health_status['is_healthy']
-            })
-        except FileNotFoundError:
-            # buffer 不存在
-            return jsonify({
-                'source_id': source_id,
-                'name': source.name,
-                'status': source.status,
-                'enabled': source.enabled,
-                'error': 'Buffer not found',
-                'is_healthy': False
-            })
-        except Exception as e:
-            app.logger.error(f"获取 buffer 健康状态失败: {e}")
-            return jsonify({
-                'source_id': source_id,
-                'name': source.name,
-                'status': source.status,
-                'enabled': source.enabled,
-                'error': str(e),
-                'is_healthy': False
-            })
+                'is_healthy': None,
+                'health_state': 'unavailable',
+                'error': health.get('error') or 'Worker 实时探测服务不可用',
+            }), status_code
+        return jsonify(health)
 
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404

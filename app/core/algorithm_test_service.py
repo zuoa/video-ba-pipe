@@ -7,6 +7,7 @@ import json
 import multiprocessing
 import os
 import queue
+import re
 import signal
 import subprocess
 import sys
@@ -26,8 +27,100 @@ from app.config import (
     ALGORITHM_TEST_WORKER_PORT,
     ALGORITHM_TEST_WORKER_TOKEN,
     ALGORITHM_TEST_WORKER_URL,
+    ANALYSIS_BUFFER_SECONDS,
+    ANALYSIS_TARGET_FPS,
     APP_DIR,
+    VIDEO_FRAME_PIXEL_FORMAT,
 )
+
+
+_SOURCE_HEALTH_PATH = re.compile(r"^/v1/video-sources/([1-9][0-9]*)/health$")
+
+
+def _untrack_attached_shared_memory(buffer) -> None:
+    """Prevent this observer process from unlinking worker-owned shared memory."""
+    try:
+        from multiprocessing import resource_tracker
+
+        name = buffer.shm.name if os.name == "nt" else f"/{buffer.shm.name}"
+        resource_tracker.unregister(name, "shared_memory")
+    except Exception:
+        # The tracker is an implementation detail and differs across Python
+        # versions. Failure to unregister must not make a health probe fail.
+        pass
+
+
+def collect_source_health(source_id: int) -> Tuple[Dict[str, Any], int]:
+    """Read a source's live ring-buffer health inside the worker container."""
+    from app.core.database_models import VideoSource
+    from app.core.ringbuffer import VideoRingBuffer
+
+    try:
+        source = VideoSource.get_by_id(source_id)
+    except VideoSource.DoesNotExist:
+        return {"success": False, "error": "视频源不存在"}, 404
+
+    payload = {
+        "success": True,
+        "source_id": source.id,
+        "name": source.name,
+        "status": source.status,
+        "enabled": source.enabled,
+        "probed_at": time.time(),
+    }
+    analysis_fps = max(1, min(int(source.source_fps), int(ANALYSIS_TARGET_FPS)))
+    buffer = None
+    try:
+        buffer = VideoRingBuffer(
+            name=source.analysis_buffer_name,
+            create=False,
+            width=source.source_decode_width,
+            height=source.source_decode_height,
+            pixel_format=VIDEO_FRAME_PIXEL_FORMAT,
+            fps=analysis_fps,
+            duration_seconds=ANALYSIS_BUFFER_SECONDS,
+        )
+        _untrack_attached_shared_memory(buffer)
+        payload.update(buffer.get_health_status())
+        payload["health_state"] = (
+            "healthy" if payload.get("is_healthy") else "unhealthy"
+        )
+        return payload, 200
+    except FileNotFoundError:
+        # A missing buffer is expected while a source is stopped or still being
+        # admitted. Only claim an actual fault for a source that says it is
+        # already running (or is explicitly in ERROR).
+        status = str(source.status or "UNKNOWN").upper()
+        if status in {"STOPPED", "STARTING", "DRAINING"}:
+            payload.update(
+                {
+                    "is_healthy": None,
+                    "health_state": "inactive" if status == "STOPPED" else "pending",
+                    "error": None,
+                }
+            )
+        else:
+            payload.update(
+                {
+                    "is_healthy": False,
+                    "health_state": "unhealthy",
+                    "error": "运行缓冲区不存在",
+                }
+            )
+        return payload, 200
+    except Exception as exc:
+        logger.warning("读取视频源 %s 实时健康状态失败: %s", source_id, exc)
+        payload.update(
+            {
+                "is_healthy": False,
+                "health_state": "unavailable",
+                "error": f"健康状态读取失败: {exc}",
+            }
+        )
+        return payload, 200
+    finally:
+        if buffer is not None:
+            buffer.close()
 
 
 def _job_process_main(job: Dict[str, Any], result_queue) -> None:
@@ -273,6 +366,11 @@ class _AlgorithmTestRequestHandler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._write_json(401, {"success": False, "error": "内部鉴权失败"})
             return
+        source_health_match = _SOURCE_HEALTH_PATH.fullmatch(self.path)
+        if source_health_match:
+            body, status = collect_source_health(int(source_health_match.group(1)))
+            self._write_json(status, body)
+            return
         if self.path == "/v1/capabilities/runtime":
             body, status = self.server.runner.runtime_capabilities()
             self._write_json(status, body)
@@ -426,6 +524,11 @@ def fetch_runtime_capabilities() -> Tuple[Dict[str, Any], int]:
 def fetch_worker_health() -> Tuple[Dict[str, Any], int]:
     """Fetch the worker version without starting a runtime capability probe."""
     return _fetch_worker_json("/health", 1)
+
+
+def fetch_source_health(source_id: int) -> Tuple[Dict[str, Any], int]:
+    """Request a fresh source health sample from the worker container."""
+    return _fetch_worker_json(f"/v1/video-sources/{int(source_id)}/health", 3)
 
 
 def fetch_face_runtime_capabilities() -> Tuple[Dict[str, Any], int]:

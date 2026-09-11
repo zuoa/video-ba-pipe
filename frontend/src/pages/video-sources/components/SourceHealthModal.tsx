@@ -1,7 +1,10 @@
 import React from 'react';
-import { Descriptions } from 'antd';
+import { Descriptions, Space } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import AppModal from '@/components/common/AppModal';
+import Button from '@/components/common/AppButton';
 import { StatusBadge } from '@/components/common';
+import type { SemanticTone } from '@/components/common/AppButton';
 
 // 与后端 NO_FRAME_WARNING_THRESHOLD / NO_FRAME_CRITICAL_THRESHOLD 对齐（app/config.py）
 const NO_FRAME_WARNING = 15;
@@ -16,8 +19,10 @@ export interface SourceHealthDetail {
   time_since_last_frame?: number | null;
   consecutive_errors?: number;
   frame_count?: number;
-  is_healthy?: boolean;
-  error?: string;
+  is_healthy?: boolean | null;
+  health_state?: string;
+  error?: string | null;
+  probed_at?: number;
   _name?: string;
 }
 
@@ -25,6 +30,8 @@ interface SourceHealthModalProps {
   open: boolean;
   detail: SourceHealthDetail | null;
   onClose: () => void;
+  onRetry: () => void;
+  retrying: boolean;
 }
 
 function frameColor(t: number | null | undefined): string {
@@ -34,13 +41,27 @@ function frameColor(t: number | null | undefined): string {
   return '#389e0d';
 }
 
+function healthBadge(detail: SourceHealthDetail): {
+  tone: SemanticTone | 'muted';
+  text: string;
+} {
+  if (detail.is_healthy === true) return { tone: 'success', text: '健康' };
+  if (detail.is_healthy === false) return { tone: 'danger', text: '异常' };
+  if (detail.health_state === 'pending') return { tone: 'info', text: '启动中' };
+  if (detail.health_state === 'inactive') return { tone: 'muted', text: '未运行' };
+  return { tone: 'muted', text: '暂无数据' };
+}
+
 const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
   open,
   detail,
   onClose,
+  onRetry,
+  retrying,
 }) => {
   const t = detail?.time_since_last_frame;
   const color = frameColor(t);
+  const health = detail ? healthBadge(detail) : null;
 
   return (
     <AppModal
@@ -50,15 +71,27 @@ const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
       description={detail?._name || detail?.name}
       open={open}
       onCancel={onClose}
-      footer={null}
+      footer={(
+        <Space>
+          <Button onClick={onClose}>关闭</Button>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={retrying}
+            onClick={onRetry}
+          >
+            重新探测
+          </Button>
+        </Space>
+      )}
       maskClosable
     >
       {detail && (
         <Descriptions column={2} size="small" bordered colon={false}>
           <Descriptions.Item label="综合健康">
             <StatusBadge
-              tone={detail.is_healthy ? 'success' : 'danger'}
-              text={detail.is_healthy ? '健康' : '异常'}
+              tone={health?.tone}
+              text={health?.text}
             />
           </Descriptions.Item>
           <Descriptions.Item label="运行状态">
@@ -81,6 +114,11 @@ const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
           <Descriptions.Item label="启用" span={2}>
             {detail.enabled ? '启用' : '禁用'}
           </Descriptions.Item>
+          {detail.probed_at && (
+            <Descriptions.Item label="探测时间" span={2}>
+              {new Date(detail.probed_at * 1000).toLocaleString()}
+            </Descriptions.Item>
+          )}
           {detail.error && (
             <Descriptions.Item label="异常信息" span={2}>
               <span style={{ color: '#cf1322' }}>{detail.error}</span>
