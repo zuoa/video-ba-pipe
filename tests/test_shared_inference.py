@@ -54,6 +54,23 @@ def test_torchscript_reid_cpu_artifact_does_not_require_cuda(monkeypatch):
     assert spec['requires_cuda'] is False
 
 
+def test_torchscript_reid_generic_artifact_follows_host_cuda(monkeypatch):
+    artifact = SimpleNamespace(
+        metadata={}, device='any', file_path='/tmp/reid.pt', file_size=1,
+        artifact_sha256='a' * 64,
+    )
+    bundle = SimpleNamespace(id=7, version='v1', contract_id='reid-v1')
+    capabilities = {'torch_cuda_available': False}
+    monkeypatch.setattr(
+        'app.core.reid_inference.select_reid_artifact',
+        lambda *_args, **_kwargs: ('torchscript', artifact, capabilities),
+    )
+
+    assert build_reid_model_spec(bundle)['requires_cuda'] is False
+    capabilities['torch_cuda_available'] = True
+    assert build_reid_model_spec(bundle)['requires_cuda'] is True
+
+
 def _slow_start_worker(spec, base_config, request_queue, result_queue, gpu_assignment=None):
     time.sleep(0.35)
     _fake_worker(spec, base_config, request_queue, result_queue, gpu_assignment)

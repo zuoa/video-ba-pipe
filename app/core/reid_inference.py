@@ -70,7 +70,20 @@ def _artifact_score(artifact, runtime_name: str, capabilities: Dict[str, Any]) -
         wanted = {'cpu'}
     if device not in wanted | generic:
         return -1
-    return (4 if architecture not in generic else 0) + (2 if device not in generic else 0)
+    if (
+        runtime_name == 'torchscript'
+        and device in {'cuda', 'nvidia', 'gpu', 'jetson', 'orin', 'orin-nx'}
+        and not capabilities.get('torch_cuda_available')
+    ):
+        return -1
+    score = (4 if architecture not in generic else 0) + (2 if device not in generic else 0)
+    if (
+        runtime_name == 'torchscript'
+        and capabilities.get('torch_cuda_available')
+        and device in {'cuda', 'nvidia', 'gpu', 'jetson', 'orin', 'orin-nx'}
+    ):
+        score += 1
+    return score
 
 
 def select_reid_artifact(
@@ -82,7 +95,7 @@ def select_reid_artifact(
         raise ReIdInferenceError('ReID 模型包已禁用')
     capabilities = dict(capabilities or runtime_capabilities())
     available = set(capabilities.get('available_runtimes') or ())
-    if not available:
+    if 'available_runtimes' not in capabilities:
         available = {'onnxruntime'}
         if capabilities.get('rknn_available'):
             available.add('rknn')
@@ -102,9 +115,13 @@ def select_reid_artifact(
             'onnxruntime-cuda', 'torchscript', 'onnxruntime',
         ]
         order = [item for item in dict.fromkeys(order) if item and item in available]
+        if not order:
+            raise ReIdInferenceError('当前平台没有可用的 ReID 推理运行时')
     else:
         if requested not in SUPPORTED_REID_RUNTIMES:
             raise ReIdInferenceError(f'不支持的 ReID 运行时: {requested}')
+        if requested not in available:
+            raise ReIdInferenceError(f'当前平台未安装或无法使用 ReID 运行时: {requested}')
         order = [requested]
     stored_alias = {'onnxruntime-cuda': 'onnxruntime'}
     enabled = [item for item in bundle.artifacts if item.enabled]
@@ -137,7 +154,13 @@ def verified_reid_artifact(bundle, artifact, selected_backend: str):
     metadata.setdefault('embedding_dimension', int(bundle.embedding_dimension))
     # The normalized artifact column is the authoritative placement contract;
     # do not allow free-form metadata to silently contradict it.
-    metadata['device'] = artifact.device
+    device = str(artifact.device or 'any').lower()
+    if selected_backend == 'torchscript':
+        if device in {'cuda', 'nvidia', 'gpu', 'jetson', 'orin', 'orin-nx'}:
+            device = 'cuda'
+        elif device in {'any', 'all', '*'}:
+            device = 'auto'
+    metadata['device'] = device
     if 'providers' not in metadata:
         if selected_backend == 'onnxruntime':
             metadata['providers'] = ['CPUExecutionProvider']

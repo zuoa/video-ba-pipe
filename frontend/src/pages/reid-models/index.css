@@ -1,0 +1,163 @@
+.reid-page__steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.reid-page__steps li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 17px;
+  border: 1px solid var(--app-line-soft);
+  border-radius: var(--app-radius-s);
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.reid-page__steps li > span {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--app-success);
+  background: var(--app-signal-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reid-page__steps li > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.reid-page__steps strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.reid-page__steps small {
+  color: var(--app-text-muted);
+  font-size: 11px;
+}
+
+.reid-page__empty {
+  margin-bottom: 16px;
+  border-color: var(--app-line-soft);
+}
+
+.reid-page__empty .ant-empty {
+  margin-block: 28px;
+}
+
+.reid-model-card {
+  height: 100%;
+  border-color: var(--app-line-soft);
+}
+
+.reid-model-card .ant-card-head {
+  min-height: 63px;
+  padding-block: 10px;
+}
+
+.reid-model-card .ant-card-head-title,
+.reid-model-card .ant-card-extra {
+  white-space: normal;
+}
+
+.reid-model-card .ant-list-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.reid-modal__intro {
+  margin: 0 0 20px;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.reid-source-fields {
+  margin-bottom: 13px;
+}
+
+.reid-source-fields .ant-segmented {
+  padding: 4px;
+  background: var(--app-bg-soft);
+}
+
+.reid-source-fields__upload,
+.reid-source-fields__remote {
+  margin-top: 16px;
+}
+
+.reid-source-fields__upload .ant-upload-wrapper .ant-upload-drag {
+  min-height: 151px;
+  background: #f8fbfa;
+}
+
+.reid-source-fields__upload .ant-upload-wrapper .ant-upload-drag:hover,
+.reid-source-fields__upload .ant-upload-wrapper .ant-upload-drag:focus-within {
+  border-color: var(--app-signal);
+  background: #f1f9f6;
+}
+
+.reid-source-fields__upload .ant-upload-drag-icon {
+  margin-bottom: 5px !important;
+}
+
+.reid-source-fields__upload .ant-upload-drag-icon .anticon {
+  color: var(--app-success) !important;
+}
+
+.reid-source-fields__upload .ant-upload-text {
+  margin-bottom: 2px !important;
+  color: var(--app-text) !important;
+  font-size: 13px !important;
+}
+
+.reid-source-fields__upload .ant-upload-hint {
+  color: var(--app-text-muted) !important;
+  font-size: 11px !important;
+}
+
+.reid-source-fields__remote .ant-form-item {
+  margin-bottom: 14px;
+}
+
+.reid-source-fields > .ant-alert {
+  margin-top: 12px;
+}
+
+.reid-modal__advanced {
+  margin-top: 8px;
+  border-top: 1px solid var(--app-line-soft);
+}
+
+.reid-modal__advanced > .ant-collapse-item > .ant-collapse-header {
+  padding-inline: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.reid-modal__advanced > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 8px 0 0;
+}
+
+@media (max-width: 760px) {
+  .reid-page__steps {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .reid-page__steps li {
+    padding: 10px 13px;
+  }
+}

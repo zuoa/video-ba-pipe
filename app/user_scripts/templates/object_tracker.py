@@ -36,6 +36,7 @@ SCRIPT_METADATA = {
         "reid_model_bundle_id": {
             "type": "reid_model_select",
             "label": "ReID 模型包 ID",
+            "required": True,
             "min": 1,
             "visible_when": {"backend": "botsort_reid"},
             "description": "在 ReID 模型管理中创建的逻辑模型包；不可用时自动降级为运动跟踪",

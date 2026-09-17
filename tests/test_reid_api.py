@@ -12,6 +12,10 @@ from app.core.database_models import (
     ReIdModelImportJob,
     User,
 )
+from app.core.algorithm_test_execution import (
+    AlgorithmTestInputError,
+    execute_algorithm_test_job,
+)
 from app.web.api import reid
 from app.web.api.auth import generate_token
 
@@ -60,6 +64,27 @@ def test_bundle_api_requires_auth_and_creates_contract(reid_api):
     assert bundle['target_type'] == 'person'
     assert bundle['distance_metric'] == 'cosine'
     assert bundle['default_similarity_threshold'] == 0.76
+
+
+def test_bundle_allows_zero_similarity_threshold(reid_api):
+    client, headers = reid_api
+    response = client.post('/api/reid/model-bundles', headers=headers, json={
+        'name': 'zero-threshold', 'contract_id': 'zero-threshold-v1',
+        'default_similarity_threshold': 0,
+    })
+    assert response.status_code == 201
+    assert response.get_json()['bundle']['default_similarity_threshold'] == 0
+
+
+def test_bundle_generates_internal_contract_when_not_supplied(reid_api):
+    client, headers = reid_api
+    first = client.post('/api/reid/model-bundles', headers=headers, json={'name': 'entrance-v1'})
+    second = client.post('/api/reid/model-bundles', headers=headers, json={'name': 'entrance-v2'})
+    assert first.status_code == second.status_code == 201
+    first_contract = first.get_json()['bundle']['contract_id']
+    second_contract = second.get_json()['bundle']['contract_id']
+    assert first_contract.startswith('reid-')
+    assert first_contract != second_contract
 
 
 def test_upload_artifact_hashes_and_publishes_atomically(reid_api):
@@ -163,9 +188,122 @@ def test_polling_recovers_stale_running_import(reid_api, monkeypatch):
     assert started == [job.id]
 
 
+def test_bundle_list_exposes_recent_import_status(reid_api):
+    client, headers = reid_api
+    bundle = _create_bundle(client, headers)
+    ReIdModelImportJob.create(
+        bundle=bundle['id'], status='failed', source_json='{}', progress=37,
+        error_message='SHA-256 校验失败', created_at=datetime.now(),
+        updated_at=datetime.now(), created_by='admin',
+    )
+    response = client.get('/api/reid/model-bundles', headers=headers)
+    job = response.get_json()['bundles'][0]['import_jobs'][0]
+    assert job['status'] == 'failed'
+    assert job['progress'] == 37
+    assert 'SHA-256' in job['error']
+
+
 def test_deleting_bundle_removes_artifacts(reid_api):
     client, headers = reid_api
     bundle = _create_bundle(client, headers)
     response = client.delete(f"/api/reid/model-bundles/{bundle['id']}", headers=headers)
     assert response.status_code == 200
     assert ReIdModelBundle.select().count() == 0
+
+
+def test_validate_routes_inference_to_worker(reid_api, monkeypatch):
+    client, headers = reid_api
+    bundle = _create_bundle(client, headers)
+    submitted = []
+
+    def submit(job):
+        submitted.append(job)
+        return {'success': True, 'ready': True, 'runtime': 'onnxruntime'}, 200
+
+    monkeypatch.setattr(reid, 'submit_algorithm_test', submit)
+    response = client.post(
+        f"/api/reid/model-bundles/{bundle['id']}/validate",
+        headers=headers, json={'runtime': 'onnxruntime'},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()['ready'] is True
+    assert submitted == [{
+        'kind': 'reid_model_validate', 'bundle_id': bundle['id'],
+        'runtime': 'onnxruntime',
+    }]
+
+
+def test_worker_validation_loads_and_closes_model(reid_api, monkeypatch):
+    client, headers = reid_api
+    bundle = _create_bundle(client, headers)
+    closed = []
+
+    class FakeBackend:
+        startup_time_ms = 12.0
+
+        def __init__(self, selected_bundle, runtime, config):
+            assert selected_bundle.id == bundle['id']
+            assert runtime == 'auto'
+            assert len(config['reid_boxes']) == 1
+
+        def infer(self, frame):
+            assert frame.shape == (256, 128, 3)
+            return [], [{'embedding': [0.0] * 512}], {
+                'backend': 'onnxruntime', 'model_contract': bundle['contract_id'],
+                'artifact_hash': 'a' * 64, 'inference_time_ms': 5.0,
+            }
+
+        def cleanup(self):
+            closed.append(True)
+
+    monkeypatch.setattr('app.core.reid_inference.ReIdWorkerBackend', FakeBackend)
+    result = execute_algorithm_test_job({
+        'kind': 'reid_model_validate', 'bundle_id': bundle['id'],
+    })
+
+    assert result['ready'] is True
+    assert result['embedding_dimension'] == 512
+    assert result['model_contract'] == bundle['contract_id']
+    assert closed == [True]
+
+    with pytest.raises(AlgorithmTestInputError, match='不存在'):
+        execute_algorithm_test_job({
+            'kind': 'reid_model_validate', 'bundle_id': bundle['id'] + 1,
+        })
+
+
+def test_runtime_uses_worker_capabilities(reid_api, monkeypatch):
+    client, headers = reid_api
+    bundle = _create_bundle(client, headers)
+    upload = client.post(
+        f"/api/reid/model-bundles/{bundle['id']}/artifacts",
+        headers=headers,
+        data={'runtime': 'onnxruntime', 'device': 'cpu',
+              'file': (io.BytesIO(b'fake-onnx-model'), 'osnet.onnx')},
+        content_type='multipart/form-data',
+    )
+    assert upload.status_code == 201
+    monkeypatch.setattr(
+        reid, 'fetch_runtime_capabilities',
+        lambda: ({'success': True, 'face': {
+            'machine': 'x86_64', 'available_runtimes': ['onnxruntime'],
+        }}, 200),
+    )
+    response = client.get('/api/reid/runtime', headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()['capabilities']['available_runtimes'] == ['onnxruntime']
+    assert response.get_json()['bundles'] == [
+        {'bundle_id': bundle['id'], 'runtime': 'onnxruntime'}
+    ]
+
+
+def test_runtime_explains_unavailable_worker(reid_api, monkeypatch):
+    client, headers = reid_api
+    monkeypatch.setattr(
+        reid, 'fetch_runtime_capabilities',
+        lambda: ({'success': False, 'error': '推理 Worker 不可用'}, 503),
+    )
+    response = client.get('/api/reid/runtime', headers=headers)
+    assert response.status_code == 503
+    assert response.get_json()['error'] == '推理 Worker 不可用'

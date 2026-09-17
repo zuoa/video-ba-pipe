@@ -11,7 +11,7 @@ import numpy as np
 from app import logger
 from app.core.algorithm import BaseAlgorithm
 from app.core.cascade_algorithm_config import normalize_cascade_algorithm_config
-from app.core.database_models import Algorithm, FaceModelBundle
+from app.core.database_models import Algorithm, FaceModelBundle, ReIdModelBundle
 
 
 class AlgorithmTestInputError(ValueError):
@@ -392,6 +392,53 @@ def execute_face_enrollment_batch(
 
 def execute_algorithm_test_job(job: Dict[str, Any]) -> Dict[str, Any]:
     kind = job.get("kind")
+    if kind == 'reid_model_validate':
+        try:
+            bundle_id = int(job.get('bundle_id'))
+        except (TypeError, ValueError) as exc:
+            raise AlgorithmTestInputError('无效的 ReID 模型包 ID') from exc
+        try:
+            bundle = ReIdModelBundle.get_by_id(bundle_id)
+        except ReIdModelBundle.DoesNotExist as exc:
+            raise AlgorithmTestInputError('ReID 模型包不存在', status_code=404) from exc
+
+        from app.core.reid_inference import ReIdWorkerBackend
+
+        backend = None
+        try:
+            backend = ReIdWorkerBackend(
+                bundle, str(job.get('runtime') or 'auto'),
+                {'reid_boxes': [[8, 4, 120, 252]], 'reid_min_box_height': 16},
+            )
+            probe = np.empty((256, 128, 3), dtype=np.uint8)
+            rows = np.arange(256, dtype=np.uint8)[:, None]
+            columns = np.arange(128, dtype=np.uint8)[None, :]
+            probe[:, :, 0] = columns * 2
+            probe[:, :, 1] = rows
+            probe[:, :, 2] = rows + columns
+            _detections, details, metadata = backend.infer(probe)
+            if len(details) != 1:
+                raise ValueError('ReID 试运行未返回单个 embedding')
+            dimension = len(details[0].get('embedding') or [])
+            if dimension != int(bundle.embedding_dimension):
+                raise ValueError(
+                    f'ReID 输出维度不匹配: expected={bundle.embedding_dimension}, actual={dimension}'
+                )
+            return {
+                'success': True,
+                'ready': True,
+                'runtime': metadata.get('backend'),
+                'model_contract': metadata.get('model_contract'),
+                'embedding_dimension': dimension,
+                'artifact_hash': metadata.get('artifact_hash'),
+                'startup_time_ms': backend.startup_time_ms,
+                'inference_time_ms': metadata.get('inference_time_ms'),
+            }
+        except Exception as exc:
+            raise AlgorithmTestInputError(f'{type(exc).__name__}: {exc}') from exc
+        finally:
+            if backend is not None:
+                backend.cleanup()
     if kind == 'face_enrollment_batch':
         encoded_images = job.get('images_base64')
         if not isinstance(encoded_images, list) or not encoded_images:

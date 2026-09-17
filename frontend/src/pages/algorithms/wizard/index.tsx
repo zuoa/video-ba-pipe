@@ -1433,7 +1433,7 @@ export default function AlgorithmWizard() {
       case 'reid_model_select':
         return (
           <Select placeholder="选择已启用且含平台制品的 ReID 模型包..." allowClear>
-            {reidModelBundles.filter(bundle => bundle.enabled).map(bundle => (
+            {reidModelBundles.filter(bundle => bundle.enabled && bundle.artifacts.length > 0).map(bundle => (
               <Option key={bundle.id} value={bundle.id}>
                 {bundle.name}（{bundle.embedding_dimension}D / {bundle.artifacts.length} 个制品）
               </Option>

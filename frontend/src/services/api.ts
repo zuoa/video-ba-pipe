@@ -105,6 +105,14 @@ export interface ReIdModelArtifact {
   enabled: boolean;
 }
 
+export interface ReIdImportJob {
+  id: number;
+  bundle_id: number;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  error?: string | null;
+}
+
 export interface ReIdModelBundle {
   id: number;
   name: string;
@@ -120,6 +128,25 @@ export interface ReIdModelBundle {
   commercial_use_allowed: boolean;
   enabled: boolean;
   artifacts: ReIdModelArtifact[];
+  import_jobs: ReIdImportJob[];
+}
+
+export interface ReIdRuntimeStatus {
+  success: boolean;
+  capabilities: {
+    machine: string;
+    available_runtimes: string[];
+  };
+  bundles: Array<{ bundle_id: number; runtime?: string; error?: string }>;
+}
+
+export interface ReIdValidationResult {
+  success: boolean;
+  ready: boolean;
+  runtime: string;
+  embedding_dimension: number;
+  startup_time_ms: number;
+  inference_time_ms: number;
 }
 
 export async function getReIdModelBundles() {
@@ -137,15 +164,27 @@ export async function deleteReIdModelBundle(id: number) {
 }
 
 export async function uploadReIdModelArtifact(bundleId: number, data: FormData) {
-  return request(`/api/reid/model-bundles/${bundleId}/artifacts`, { method: 'POST', data });
+  return request(`/api/reid/model-bundles/${bundleId}/artifacts`, {
+    method: 'POST', data, timeout: 600000,
+  });
 }
 
 export async function importReIdModelArtifact(bundleId: number, data: Record<string, any>) {
-  return request(`/api/reid/model-bundles/${bundleId}/imports`, { method: 'POST', data });
+  return request<{ success: boolean; job: ReIdImportJob }>(`/api/reid/model-bundles/${bundleId}/imports`, { method: 'POST', data });
+}
+
+export async function getReIdImportJob(id: number) {
+  return request<{ success: boolean; job: ReIdImportJob }>(`/api/reid/imports/${id}`);
 }
 
 export async function getReIdRuntime() {
-  return request('/api/reid/runtime');
+  return request<ReIdRuntimeStatus>('/api/reid/runtime', { timeout: 70000 });
+}
+
+export async function validateReIdModelBundle(id: number) {
+  return request<ReIdValidationResult>(`/api/reid/model-bundles/${id}/validate`, {
+    method: 'POST', data: { runtime: 'auto' }, timeout: 185000,
+  });
 }
 
 export interface FaceTemplate {

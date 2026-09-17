@@ -55,6 +55,45 @@ def test_wrong_architecture_is_rejected():
         )
 
 
+def test_unavailable_runtime_is_not_assumed_to_exist():
+    with pytest.raises(ReIdInferenceError, match='没有可用的 ReID 推理运行时'):
+        select_reid_artifact(
+            _bundle(_artifact('onnxruntime')), 'auto',
+            {'machine': 'x86_64', 'available_runtimes': []},
+        )
+    with pytest.raises(ReIdInferenceError, match='无法使用'):
+        select_reid_artifact(
+            _bundle(_artifact('onnxruntime', device='cuda')),
+            'onnxruntime-cuda',
+            {'machine': 'x86_64', 'available_runtimes': ['onnxruntime']},
+        )
+
+
+def test_cpu_torch_does_not_select_cuda_only_artifact():
+    with pytest.raises(ReIdInferenceError, match='缺少当前平台'):
+        select_reid_artifact(
+            _bundle(_artifact('torchscript', device='cuda')), 'torchscript',
+            {
+                'machine': 'x86_64', 'available_runtimes': ['torchscript'],
+                'torch_cuda_available': False,
+            },
+        )
+
+
+def test_cuda_torch_prefers_cuda_artifact():
+    cuda_artifact = _artifact('torchscript', device='cuda')
+    runtime, selected, _ = select_reid_artifact(
+        _bundle(_artifact('torchscript', device='cpu'), cuda_artifact),
+        'torchscript',
+        {
+            'machine': 'x86_64', 'available_runtimes': ['torchscript'],
+            'torch_cuda_available': True,
+        },
+    )
+    assert runtime == 'torchscript'
+    assert selected is cuda_artifact
+
+
 def test_worker_batch_combines_crops_across_frames():
     class FakeEmbedder:
         def __init__(self):
@@ -150,6 +189,22 @@ def test_verified_artifact_carries_declared_device(tmp_path):
     _path, metadata = verified_reid_artifact(bundle, artifact, 'torchscript')
 
     assert metadata['device'] == 'cpu'
+
+
+@pytest.mark.parametrize('device, expected', [
+    ('any', 'auto'), ('jetson', 'cuda'), ('cpu', 'cpu'),
+])
+def test_torchscript_platform_tag_resolves_to_torch_device(tmp_path, device, expected):
+    model = tmp_path / 'reid.pt'
+    model.write_bytes(b'torchscript')
+    artifact = SimpleNamespace(
+        file_path=str(model), artifact_sha256='', metadata={}, device=device,
+    )
+    bundle = SimpleNamespace(
+        preprocess={}, input_size='256x128', embedding_dimension=2,
+    )
+    _path, metadata = verified_reid_artifact(bundle, artifact, 'torchscript')
+    assert metadata['device'] == expected
 
 
 def test_reid_worker_warmup_exercises_embedder():

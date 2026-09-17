@@ -14,7 +14,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
-import numpy as np
 from flask import Blueprint, jsonify, request
 from peewee import IntegrityError
 from werkzeug.utils import secure_filename
@@ -32,12 +31,14 @@ from app.core.database_models import (
     ReIdModelImportJob,
     db,
 )
+from app.core.algorithm_test_service import (
+    fetch_runtime_capabilities,
+    submit_algorithm_test,
+)
 from app.core.reid_inference import (
     SUPPORTED_REID_RUNTIMES,
-    runtime_capabilities,
     select_reid_artifact,
     verified_reid_artifact,
-    ReIdWorkerBackend,
 )
 from app.web.api.auth import current_username, require_admin, require_auth
 
@@ -102,6 +103,12 @@ def _serialize_bundle(bundle):
                 'enabled': artifact.enabled,
             }
             for artifact in bundle.artifacts.order_by(ReIdModelArtifact.runtime)
+        ],
+        'import_jobs': [
+            _serialize_job(job)
+            for job in bundle.import_jobs.order_by(
+                ReIdModelImportJob.created_at.desc()
+            ).limit(3)
         ],
     }
 
@@ -358,12 +365,17 @@ def model_bundles():
         return guard
     data = request.get_json(silent=True) or {}
     name = str(data.get('name') or '').strip()
-    contract_id = str(data.get('contract_id') or '').strip()
-    if not name or not contract_id:
-        return jsonify({'success': False, 'error': '名称和模型契约不能为空'}), 400
+    if not name:
+        return jsonify({'success': False, 'error': '模型名称不能为空'}), 400
+    contract_id = str(data.get('contract_id') or '').strip() or f'reid-{uuid.uuid4().hex}'
     try:
-        dimension = int(data.get('embedding_dimension') or 512)
-        threshold = float(data.get('default_similarity_threshold') or 0.75)
+        dimension = int(
+            data['embedding_dimension'] if data.get('embedding_dimension') is not None else 512
+        )
+        threshold = float(
+            data['default_similarity_threshold']
+            if data.get('default_similarity_threshold') is not None else 0.75
+        )
         preprocess = _json_object(data.get('preprocess'), 'preprocess')
         if not 32 <= dimension <= 4096 or not 0 <= threshold <= 1:
             raise ValueError('特征维度或阈值超出范围')
@@ -481,7 +493,7 @@ def create_import(bundle_id):
 
 @reid_bp.post('/model-bundles/<int:bundle_id>/validate')
 def validate_bundle(bundle_id):
-    """Load, warm up, and verify the embedding contract on this host."""
+    """Validate the embedding contract in the inference worker container."""
     guard = _admin_guard()
     if guard is not None:
         return guard
@@ -489,38 +501,12 @@ def validate_bundle(bundle_id):
     if bundle is None:
         return jsonify({'success': False, 'error': 'ReID 模型包不存在'}), 404
     data = request.get_json(silent=True) or {}
-    backend = None
-    try:
-        backend = ReIdWorkerBackend(
-            bundle, str(data.get('runtime') or 'auto'),
-            {'reid_boxes': [[8, 4, 120, 252]], 'reid_min_box_height': 16},
-        )
-        _detections, details, metadata = backend.infer(
-            np.zeros((256, 128, 3), dtype=np.uint8)
-        )
-        if len(details) != 1:
-            raise ValueError('ReID 试运行未返回单个 embedding')
-        dimension = len(details[0].get('embedding') or [])
-        if dimension != int(bundle.embedding_dimension):
-            raise ValueError(
-                f'ReID 输出维度不匹配: expected={bundle.embedding_dimension}, actual={dimension}'
-            )
-        return jsonify({
-            'success': True, 'ready': True, 'runtime': metadata.get('backend'),
-            'model_contract': metadata.get('model_contract'),
-            'embedding_dimension': dimension,
-            'artifact_hash': metadata.get('artifact_hash'),
-            'startup_time_ms': backend.startup_time_ms,
-            'inference_time_ms': metadata.get('inference_time_ms'),
-        })
-    except Exception as exc:
-        return jsonify({
-            'success': False, 'ready': False,
-            'error': f'{type(exc).__name__}: {exc}',
-        }), 400
-    finally:
-        if backend is not None:
-            backend.cleanup()
+    body, status = submit_algorithm_test({
+        'kind': 'reid_model_validate',
+        'bundle_id': bundle.id,
+        'runtime': str(data.get('runtime') or 'auto'),
+    })
+    return jsonify(body), status
 
 
 @reid_bp.get('/imports/<int:job_id>')
@@ -536,7 +522,13 @@ def get_import(job_id):
 
 @reid_bp.get('/runtime')
 def runtime_info():
-    capabilities = runtime_capabilities()
+    worker_payload, worker_status = fetch_runtime_capabilities()
+    capabilities = worker_payload.get('face')
+    if worker_status != 200 or not isinstance(capabilities, dict):
+        return jsonify({
+            'success': False,
+            'error': worker_payload.get('error') or '推理 Worker 运行时信息不可用',
+        }), worker_status if worker_status != 200 else 502
     available = []
     for bundle in ReIdModelBundle.select().where(ReIdModelBundle.enabled):
         try:

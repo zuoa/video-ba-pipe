@@ -13,7 +13,11 @@
 | Jetson | TensorRT EP `.onnx` 或 TorchScript CUDA `.pt` |
 | RK3588 | RKNNLite INT8 `.rknn` |
 
-在“行人 ReID”管理页创建逻辑模型包，再上传各平台制品。也可以从 Hugging Face 下载；生产下载必须填写固定 revision 和 SHA-256，可通过 `HF_USE_MIRROR`、`HF_MIRROR_ENDPOINT` 使用国内镜像。精选目录由 `REID_MODEL_CATALOG_PATH` 指向的 JSON 数组提供，条目与自定义下载使用相同字段。
+在“行人 ReID”管理页点击“添加模型”，填写名称并上传行人 ReID 特征模型文件。支持 `.onnx`、TorchScript `.pt`/`.pth` 和 `.rknn`，文件格式决定默认推理方式；普通目标检测模型以及未导出为 TorchScript 的 `.pth` 权重不能直接使用。模型契约编号由系统生成。页面默认按 256×128 输入、512 维输出和 ImageNet 标准化配置；若模型说明不同，在“高级设置”中填写实际输入尺寸、输出维度和预处理方式。上传后系统会在推理 Worker 中试运行，检查结果显示在模型卡片中。
+
+也可以从 Hugging Face 下载；生产下载必须填写固定 revision 和 SHA-256，可通过 `HF_USE_MIRROR`、`HF_MIRROR_ENDPOINT` 使用国内镜像。精选目录由 `REID_MODEL_CATALOG_PATH` 指向的 JSON 数组提供，条目与自定义下载使用相同字段。同一模型包如需添加其他设备的文件，点击卡片上的“添加设备版本”，并确保所有文件由同一个源模型导出，输入、输出与预处理相同。
+
+管理页会显示各模型包的平台匹配情况和后台下载状态。上传后会自动检查；也可以在卡片上点击“检查模型”重试，由推理 Worker 加载文件并校验 embedding 维度。只有检查通过才能确认模型实际可推理。Hugging Face 下载完成后需要手动点击“检查模型”。若页面显示 Worker 不可用，先检查 worker 服务及其推理依赖。模型包列表仍可管理，但无法试运行。
 
 建议从 `OSNet-x0.25 / 256×128 / 512D` 开始做便携性验证，但第三方权重必须先完成许可证审核。ONNX 为参考输出；FP16 制品与参考 embedding 的余弦一致度应不低于 0.995，RKNN INT8 不低于 0.98，黄金集 Top-1 排名一致率不低于 99%。
 

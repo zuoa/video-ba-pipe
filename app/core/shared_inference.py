@@ -207,7 +207,7 @@ def build_reid_model_spec(bundle, requested_backend: str = 'auto') -> Dict[str, 
     """Build a stable worker key for a logical ReID embedding bundle."""
     from app.core.reid_inference import select_reid_artifact
 
-    selected_backend, artifact, _capabilities = select_reid_artifact(
+    selected_backend, artifact, capabilities = select_reid_artifact(
         bundle, requested_backend
     )
     metadata = dict(artifact.metadata or {})
@@ -216,7 +216,12 @@ def build_reid_model_spec(bundle, requested_backend: str = 'auto') -> Dict[str, 
         declared_device = str(
             artifact.device or metadata.get('device') or 'auto'
         ).strip().lower()
-        requires_cuda = declared_device != 'cpu'
+        requires_cuda = declared_device in {
+            'cuda', 'nvidia', 'gpu', 'jetson', 'orin', 'orin-nx'
+        } or (
+            declared_device in {'any', 'all', '*', 'auto'}
+            and bool(capabilities.get('torch_cuda_available'))
+        )
     return {
         'model_id': f'reid-bundle:{bundle.id}',
         'bundle_id': int(bundle.id),
