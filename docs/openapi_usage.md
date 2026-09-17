@@ -176,8 +176,15 @@ PUT /openapi/v1/video-sources/{source_code}/source-url
 **请求体**
 
 ```json
-{ "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101" }
+{
+  "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101",
+  "switch_stream_immediately": false
+}
 ```
+
+- `switch_stream_immediately` 可选，默认为 `false`，当前流有效时不会重复启停。
+- 设为 `false` 时，运行中的解码器继续使用旧地址；旧流发生断流、持续无帧或接流失败后，系统再启用新地址。
+- 视频源未运行时无需等待，下一次启动会直接使用新地址。
 
 **示例**
 
@@ -185,13 +192,13 @@ PUT /openapi/v1/video-sources/{source_code}/source-url
 curl -X PUT http://<服务器地址>:5002/openapi/v1/video-sources/cam-gate-01/source-url \
   -H "X-API-Key: vbp_xxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
-  -d '{ "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101" }'
+  -d '{ "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101", "switch_stream_immediately": false }'
 ```
 
 **响应**
 
 - `200`:地址未变化,或视频源未运行,已直接更新。
-- `202`:地址已更新,运行中的视频源将异步重启解码器读取新地址。
+- `202`:地址已更新；运行中的视频源已安排立即重载或失效后切换，具体见响应字段。
 
 ```json
 {
@@ -200,7 +207,10 @@ curl -X PUT http://<服务器地址>:5002/openapi/v1/video-sources/cam-gate-01/s
     "source_code": "cam-gate-01",
     "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101",
     "changed": true,
-    "reload_scheduled": true
+    "switch_stream_immediately": false,
+    "stream_switch": "deferred",
+    "reload_scheduled": false,
+    "switch_deferred": true
   }
 }
 ```

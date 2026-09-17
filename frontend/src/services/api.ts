@@ -1439,6 +1439,10 @@ export async function getSourceHealth(id: number) {
   return request(`/api/video-sources/${id}/health`);
 }
 
+export async function startVideoSourceNow(id: number) {
+  return request(`/api/video-sources/${id}/start`, { method: 'POST' });
+}
+
 // ===== 实时预览（WebRTC / MediaMTX + 最新检测帧）=====
 export async function getPreviewConfig() {
   return request('/api/preview/config');

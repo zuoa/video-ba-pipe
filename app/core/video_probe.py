@@ -80,8 +80,14 @@ def probe_video_codec(
         ) from exc
 
     if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        if source:
+            stderr = stderr.replace(source, "<redacted-source-url>")
+        if len(stderr) > 4000:
+            stderr = stderr[-4000:]
         raise VideoCodecProbeError(
-            f"ffprobe failed while detecting the video codec (exit={result.returncode})"
+            f"ffprobe failed while detecting the video codec "
+            f"(exit={result.returncode}, stderr={stderr or 'empty'})"
         )
 
     try:

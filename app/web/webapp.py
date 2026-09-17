@@ -70,6 +70,11 @@ from app.core.source_rotation import (
     get_source_rotation_config,
     save_source_rotation_config,
 )
+from app.core.source_start_request import queue_source_start
+from app.core.source_stream_switch import (
+    clear_deferred_stream_switch,
+    defer_stream_switch,
+)
 from app.core.alert_media_cleaner import directory_usage_bytes
 from app.core.recording_storage_config import (
     get_recording_storage_config,
@@ -1297,6 +1302,62 @@ def get_video_source(id):
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
 
+
+@app.route('/api/video-sources/<int:id>/start', methods=['POST'])
+@require_auth
+def start_video_source_now(id):
+    """Queue a durable, high-priority decoder start request for one source."""
+    try:
+        source = VideoSource.get_by_id(id)
+        owner_response = require_resource_owner(source)
+        if owner_response:
+            return owner_response
+        if not source.enabled:
+            return jsonify({'error': '视频源未启用，无法启动'}), 409
+        if source.status in {'STARTING', 'RUNNING'}:
+            return jsonify({
+                'success': True,
+                'status': source.status,
+                'message': '视频源已经在启动或运行中',
+            })
+
+        has_active_workflow = any(
+            (
+                workflow.video_source_id
+                or extract_source_id_from_workflow_data(workflow.data_dict)
+            ) == source.id
+            for workflow in Workflow.select().where(
+                Workflow.is_active & ~Workflow.is_template
+            )
+        )
+        if not has_active_workflow:
+            return jsonify({'error': '视频源没有绑定已激活的普通工作流'}), 409
+
+        allowed_ids = runtime_entitlements().get('source_ids')
+        if allowed_ids is not None and source.id not in allowed_ids:
+            return jsonify({'error': '视频源不在当前授权运行范围'}), 403
+
+        start_request = queue_source_start(
+            source.id,
+            requested_by=current_username('admin'),
+        )
+        worker_online = bool(
+            get_inference_resource_status().get('worker_online')
+        )
+        return jsonify({
+            'success': True,
+            'status': 'pending',
+            'request_id': start_request['request_id'],
+            'worker_online': worker_online,
+            'message': (
+                '已加入优先启动队列'
+                if worker_online
+                else '启动请求已保存，等待 worker 恢复后执行'
+            ),
+        }), 202
+    except VideoSource.DoesNotExist:
+        return jsonify({'error': '视频源不存在'}), 404
+
 @app.route('/api/video-sources', methods=['POST'])
 @require_auth
 def create_video_source():
@@ -1337,30 +1398,88 @@ def update_video_source(id):
         owner_response = require_resource_owner(source)
         if owner_response:
             return owner_response
-        data = request.json
-        source.name = data.get('name', source.name)
-        source.enabled = data.get('enabled', source.enabled)
-        source.source_code = data.get('source_code', source.source_code)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '请求体必须是 JSON 对象'}), 400
+        switch_immediately = data.get('switch_stream_immediately', False)
+        if not isinstance(switch_immediately, bool):
+            return jsonify({
+                'error': 'switch_stream_immediately 必须是布尔值',
+            }), 400
         previous_source_url = source.source_url
-        source.source_url = data.get('source_url', source.source_url)
-        source.source_decode_width = data.get('source_decode_width', source.source_decode_width)
-        source.source_decode_height = data.get('source_decode_height', source.source_decode_height)
-        source.source_fps = data.get('source_fps', source.source_fps)
-        if 'decode_keyframes_only' in data:
-            value = data['decode_keyframes_only']
-            if value is not None and not isinstance(value, bool):
-                return jsonify({'error': 'decode_keyframes_only 必须是布尔值或 null'}), 400
-            source.decode_keyframes_only = value
-        if 'source_codec' in data:
-            source.source_codec = normalize_video_codec(
-                data.get('source_codec'),
-                allow_unknown=True,
+        previous_source_codec = getattr(source, 'source_codec', 'unknown')
+        source_url = data.get('source_url', source.source_url)
+        stream_url_changed = source_url != previous_source_url
+        running = (
+            source.status in {'STARTING', 'RUNNING', 'DRAINING'}
+            and data.get('enabled', source.enabled)
+        )
+
+        decode_keyframes_only = data.get(
+            'decode_keyframes_only',
+            getattr(source, 'decode_keyframes_only', None),
+        )
+        if (
+            'decode_keyframes_only' in data
+            and decode_keyframes_only is not None
+            and not isinstance(decode_keyframes_only, bool)
+        ):
+            return jsonify({
+                'error': 'decode_keyframes_only 必须是布尔值或 null',
+            }), 400
+
+        with db.atomic():
+            source.name = data.get('name', source.name)
+            source.enabled = data.get('enabled', source.enabled)
+            source.source_code = data.get('source_code', source.source_code)
+            source.source_url = source_url
+            source.source_decode_width = data.get(
+                'source_decode_width', source.source_decode_width
             )
-        elif source.source_url != previous_source_url:
-            source.source_codec = 'unknown'
-        source.save()
-        
-        return jsonify({'message': '视频源更新成功'})
+            source.source_decode_height = data.get(
+                'source_decode_height', source.source_decode_height
+            )
+            source.source_fps = data.get('source_fps', source.source_fps)
+            source.decode_keyframes_only = decode_keyframes_only
+            if 'source_codec' in data:
+                source.source_codec = normalize_video_codec(
+                    data.get('source_codec'),
+                    allow_unknown=True,
+                )
+            elif stream_url_changed:
+                source.source_codec = 'unknown'
+            source.save()
+
+            if not source.enabled:
+                clear_deferred_stream_switch(source.id)
+                stream_switch = (
+                    'next_start' if stream_url_changed else 'unchanged'
+                )
+            elif stream_url_changed and running and not switch_immediately:
+                defer_stream_switch(
+                    source.id,
+                    active_url=previous_source_url,
+                    active_codec=previous_source_codec,
+                    pending_url=source.source_url,
+                    requested_by=current_username('admin'),
+                )
+                stream_switch = 'deferred'
+            elif stream_url_changed:
+                clear_deferred_stream_switch(source.id)
+                stream_switch = 'immediate' if running else 'next_start'
+            else:
+                stream_switch = 'unchanged'
+
+        return jsonify({
+            'message': (
+                '视频源已更新，当前流失效后将切换到新地址'
+                if stream_switch == 'deferred'
+                else '视频源更新成功'
+            ),
+            'stream_url_changed': stream_url_changed,
+            'switch_stream_immediately': switch_immediately,
+            'stream_switch': stream_switch,
+        })
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
 
@@ -1372,7 +1491,9 @@ def delete_video_source(id):
         owner_response = require_resource_owner(source)
         if owner_response:
             return owner_response
-        source.delete_instance(recursive=True)
+        with db.atomic():
+            clear_deferred_stream_switch(source.id)
+            source.delete_instance(recursive=True)
         return jsonify({'message': '视频源删除成功'})
     except VideoSource.DoesNotExist:
         return jsonify({'error': '视频源不存在'}), 404
@@ -1480,6 +1601,7 @@ def get_health_event_types():
     event_types = [
         {'value': 'no_frame_warning', 'label': '无帧警告'},
         {'value': 'no_frame_critical', 'label': '无帧严重'},
+        {'value': 'no_initial_frame', 'label': '启动后无首帧'},
         {'value': 'process_exit', 'label': '进程退出'},
         {'value': 'rotation_drain_timeout', 'label': '轮转排空超时'},
         {'value': 'low_fps', 'label': '低帧率'},

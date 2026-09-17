@@ -17,6 +17,10 @@ from peewee import IntegrityError
 from app.config import DEFAULT_DECODE_HEIGHT, DEFAULT_DECODE_WIDTH
 from app.core.database_models import ApiKey, VideoSource, Workflow, db
 from app.core.mediamtx_client import mediamtx_client
+from app.core.source_stream_switch import (
+    clear_deferred_stream_switch,
+    defer_stream_switch,
+)
 from app.core.license_service import LicenseError, quota_capacity
 from app.core.time_schedule import validate_workflow_time_schedule_nodes
 from app.core.detection_filter import validate_workflow_detection_filter_nodes
@@ -138,9 +142,12 @@ def _get_source_by_code(source_code: str):
     return VideoSource.get_or_none(VideoSource.source_code == source_code)
 
 
-def _sync_mediamtx_path(app, source: VideoSource):
+def _sync_mediamtx_path(app, source: VideoSource, source_url: str | None = None):
     try:
-        mediamtx_client.register_path(source.source_code, source.source_url)
+        mediamtx_client.register_path(
+            source.source_code,
+            source_url or source.source_url,
+        )
     except Exception as exc:
         app.logger.warning(
             'MediaMTX 路径同步失败（忽略）source=%s: %s',
@@ -425,7 +432,9 @@ def register_public_api(app):
         source_url = str(data.get('source_url') or '').strip()
         if not source_url:
             return _error('invalid_field', 'source_url 不能为空', 400)
-        unknown = sorted(set(data) - {'source_url'})
+        unknown = sorted(
+            set(data) - {'source_url', 'switch_stream_immediately'}
+        )
         if unknown:
             return _error(
                 'unknown_field',
@@ -433,20 +442,57 @@ def register_public_api(app):
                 400,
             )
 
-        changed = source.source_url != source_url
-        running = source.status in {'STARTING', 'RUNNING', 'DRAINING'}
+        switch_immediately = data.get('switch_stream_immediately', False)
+        if not isinstance(switch_immediately, bool):
+            return _error(
+                'invalid_field',
+                'switch_stream_immediately 必须是布尔值',
+                400,
+            )
+
+        previous_source_url = source.source_url
+        previous_source_codec = getattr(source, 'source_codec', 'unknown')
+        changed = previous_source_url != source_url
+        running = (
+            source.enabled
+            and source.status in {'STARTING', 'RUNNING', 'DRAINING'}
+        )
         if changed:
             with db.atomic():
                 source.source_url = source_url
                 source.source_codec = 'unknown'
                 source.save(only=[VideoSource.source_url, VideoSource.source_codec])
-            _sync_mediamtx_path(app, source)
+                if running and not switch_immediately:
+                    defer_stream_switch(
+                        source.id,
+                        active_url=previous_source_url,
+                        active_codec=previous_source_codec,
+                        pending_url=source.source_url,
+                        requested_by=(
+                            f"api-key:{request.api_key['id']}"
+                        ),
+                    )
+                    stream_switch = 'deferred'
+                else:
+                    clear_deferred_stream_switch(source.id)
+                    stream_switch = 'immediate' if running else 'next_start'
+            if stream_switch != 'deferred':
+                _sync_mediamtx_path(app, source)
+        else:
+            stream_switch = 'unchanged'
 
         payload = {
             'source_code': source.source_code,
             'source_url': source.source_url,
             'changed': changed,
-            'reload_scheduled': bool(changed and running),
+            'switch_stream_immediately': switch_immediately,
+            'stream_switch': stream_switch,
+            'reload_scheduled': bool(
+                changed and running and switch_immediately
+            ),
+            'switch_deferred': bool(
+                changed and running and not switch_immediately
+            ),
         }
         return _success(payload, 202 if changed and running else 200)
 

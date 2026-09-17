@@ -4,6 +4,7 @@ import sys
 from app.config import (
     DEBUG_LOG_PATH,
     DECODER_DEBUG_LOG_PATH,
+    DECODER_FAILURE_LOG_PATH,
     DECODER_LOG_PATH,
     LOG_BACKUP_COUNT,
     LOG_MAX_BYTES,
@@ -81,7 +82,16 @@ LOG_CONF = {
             'filename': DECODER_DEBUG_LOG_PATH,
             'formatter': 'verbose',
             'delay': True,
-        }
+        },
+        'decoder_failure_file': {
+            'level': logging.WARNING,
+            'class': 'app.core.ajlog.SafeRotatingFileHandler',
+            'maxBytes': LOG_MAX_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
+            'filename': DECODER_FAILURE_LOG_PATH,
+            'formatter': 'verbose',
+            'delay': True,
+        },
     },
     'root': {
         'handlers': ['console'],
@@ -103,7 +113,12 @@ LOG_CONF = {
             'handlers': ['decoder_file', 'decoder_debug'],
             'level': logging.DEBUG,
             # 传播到 root console，docker logs 中保留 INFO 以上
-        }
+        },
+        'decoder_failure': {
+            'handlers': ['decoder_failure_file'],
+            'level': logging.WARNING,
+            'propagate': False,
+        },
     }
 }
 

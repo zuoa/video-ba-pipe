@@ -8,6 +8,7 @@ from peewee import SqliteDatabase
 from app.core.database_models import ApiKey, SystemSetting, User, VideoSource, Workflow
 from app.core import license_service
 from app.core.orchestrator import Orchestrator
+from app.core.source_stream_switch import get_deferred_stream_switch
 from app.core.workflow_runtime import build_template_workflow_data
 from app.web.api.auth import generate_token
 from app.web.api import public_api
@@ -120,7 +121,10 @@ def test_disabled_api_key_is_rejected(public_api_client):
     assert rejected.get_json()['code'] == 'invalid_api_key'
 
 
-def test_video_source_create_edit_and_url_update(public_api_client):
+def test_video_source_create_edit_and_url_update(
+    public_api_client,
+    monkeypatch,
+):
     client, admin_headers = public_api_client
     created_key = _create_managed_key(client, admin_headers)
     headers = {'X-API-Key': created_key['key']}
@@ -162,7 +166,10 @@ def test_video_source_create_edit_and_url_update(public_api_client):
     source.save()
     updated = client.put(
         '/openapi/v1/video-sources/camera-001/source-url',
-        json={'source_url': 'rtsp://camera/new'},
+        json={
+            'source_url': 'rtsp://camera/new',
+            'switch_stream_immediately': True,
+        },
         headers=headers,
     )
     assert updated.status_code == 202
@@ -178,6 +185,101 @@ def test_video_source_create_edit_and_url_update(public_api_client):
     )
     assert unchanged.status_code == 200
     assert unchanged.get_json()['data']['changed'] is False
+
+    source = VideoSource.get_by_id(source.id)
+    source.source_codec = 'h265'
+    source.save()
+    synced_paths = []
+    monkeypatch.setattr(
+        public_api.mediamtx_client,
+        'register_path',
+        lambda source_code, source_url:
+        synced_paths.append((source_code, source_url)),
+    )
+    deferred = client.put(
+        '/openapi/v1/video-sources/camera-001/source-url',
+        json={
+            'source_url': 'rtsp://camera/pending',
+            'switch_stream_immediately': False,
+        },
+        headers=headers,
+    )
+    assert deferred.status_code == 202
+    deferred_data = deferred.get_json()['data']
+    assert deferred_data['stream_switch'] == 'deferred'
+    assert deferred_data['reload_scheduled'] is False
+    assert deferred_data['switch_deferred'] is True
+    marker = get_deferred_stream_switch(source.id)
+    assert marker['active_url'] == 'rtsp://camera/new'
+    assert marker['active_codec'] == 'h265'
+    assert marker['pending_url'] == 'rtsp://camera/pending'
+    assert synced_paths == []
+
+    invalid_strategy = client.put(
+        '/openapi/v1/video-sources/camera-001/source-url',
+        json={
+            'source_url': 'rtsp://camera/another',
+            'switch_stream_immediately': 'false',
+        },
+        headers=headers,
+    )
+    assert invalid_strategy.status_code == 400
+    assert invalid_strategy.get_json()['code'] == 'invalid_field'
+
+    immediate = client.put(
+        '/openapi/v1/video-sources/camera-001/source-url',
+        json={
+            'source_url': 'rtsp://camera/another',
+            'switch_stream_immediately': True,
+        },
+        headers=headers,
+    )
+    assert immediate.status_code == 202
+    assert immediate.get_json()['data']['stream_switch'] == 'immediate'
+    assert get_deferred_stream_switch(source.id) is None
+    assert synced_paths == [('camera-001', 'rtsp://camera/another')]
+
+
+def test_source_url_update_defaults_to_deferred(public_api_client):
+    client, admin_headers = public_api_client
+    created_key = _create_managed_key(
+        client,
+        admin_headers,
+        name='延迟切换默认值',
+    )
+    headers = {'X-API-Key': created_key['key']}
+    created = client.post(
+        '/openapi/v1/video-sources',
+        json={
+            'source_code': 'camera-deferred-default',
+            'name': '默认延迟切换摄像头',
+            'source_url': 'rtsp://camera/original',
+            'source_codec': 'h264',
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201
+    source = VideoSource.get(
+        VideoSource.source_code == 'camera-deferred-default'
+    )
+    source.status = 'RUNNING'
+    source.save()
+
+    response = client.put(
+        '/openapi/v1/video-sources/camera-deferred-default/source-url',
+        json={'source_url': 'rtsp://camera/pending'},
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+    data = response.get_json()['data']
+    assert data['switch_stream_immediately'] is False
+    assert data['stream_switch'] == 'deferred'
+    assert data['reload_scheduled'] is False
+    assert data['switch_deferred'] is True
+    marker = get_deferred_stream_switch(source.id)
+    assert marker['active_url'] == 'rtsp://camera/original'
+    assert marker['pending_url'] == 'rtsp://camera/pending'
 
 
 def test_video_source_create_uses_low_resource_decode_defaults(public_api_client):

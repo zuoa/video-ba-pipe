@@ -130,6 +130,8 @@ Video BA Pipe 是一套视频流智能分析系统，支持接入 RTSP / HTTP-FL
 - **实时预览**：点击「预览」通过 WebRTC 查看实时画面（需 MediaMTX 服务运行）
 - **最新检测帧**：查看该源最近一帧的检测标注图
 - **健康状态**：查看解码健康指标（帧计数、距最近一帧的时间、连续错误数）及健康事件日志（无帧警告、进程退出、低帧率、硬解资源等待、软解兜底等 10 类事件）
+- **立即启动**：将单个已启用且绑定活动工作流的视频源放到启动队列最前面；该操作仍受许可证和硬件解码容量保护
+- **修改流地址**：保存时可选择“立即切换”或“当前流失效后切换”。后者会保存新地址，但继续使用当前有效流，等断流、持续无帧或接流失败后再切换，避免定时更新地址造成重复启停
 - **编辑 / 删除**：修改参数或移除视频源
 
 > **许可证限制**：免费试用版仅允许 1 路视频源，超额源会自动停跑。
@@ -667,4 +669,5 @@ python app/web/webapp.py        # 启动 Web API（另开终端）
 ```bash
 docker logs video-ba-pipe-cpu -f                              # 全量日志
 docker logs video-ba-pipe-cpu 2>&1 | grep -E "(WorkflowWorker|Orchestrator)"  # 按组件过滤
+docker compose exec -T worker tail -f /data/logs/decoder_failures.log          # 解码失败详情
 ```

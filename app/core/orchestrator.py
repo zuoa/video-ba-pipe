@@ -1,11 +1,14 @@
 import random
+import re
 import signal
 import logging
+import json
 import os
 import subprocess
 import sys
 import threading
 import time
+import traceback
 from collections import deque
 from typing import Callable, Optional
 from urllib.parse import urlsplit
@@ -104,6 +107,14 @@ from app.core.source_rotation import (
     get_source_rotation_config,
     normalize_source_rotation_config,
 )
+from app.core.source_start_request import (
+    finish_source_start,
+    pending_source_starts,
+)
+from app.core.source_stream_switch import (
+    clear_deferred_stream_switch,
+    get_matching_deferred_stream_switch,
+)
 from app.core.mediamtx_client import mediamtx_client
 from app.core.video_probe import (
     VideoCodecProbeError,
@@ -137,6 +148,7 @@ _DECODER_STREAM_PATTERNS = (
 _CRASH_EXIT_CODES = (-4, -6, -11)
 # 存活超过该时长后的退出视为一次全新失败（退避计数清零）
 _STABLE_UPTIME_RESET_SECONDS = 300.0
+decoder_failure_logger = logging.getLogger('decoder_failure')
 
 
 def classify_decoder_failure(exit_code, stderr_tail, uptime_seconds: float) -> str:
@@ -1194,9 +1206,38 @@ class Orchestrator:
 
         need_reboot = False
 
-        # 如果从未写入过帧，跳过检查（可能在初始化）
+        # 启动宽限期结束后仍从未写入帧，说明解码链路没有真正就绪。
         if frame_count == 0:
-            return True
+            last_log_time = self.last_health_log_times.get(source.id, 0)
+            if time.time() - last_log_time >= self.health_log_interval:
+                details = {
+                    'frame_count': 0,
+                    'grace_period_seconds': self.start_grace_period,
+                    'decoder_type': self.running_processes.get(
+                        source.id, {}
+                    ).get('decoder_type', VIDEO_DECODER_TYPE),
+                }
+                logger.error(
+                    "视频源 %s (%s) 启动宽限期结束后仍未解码出首帧",
+                    source.id,
+                    source.name,
+                )
+                self._log_decoder_failure(
+                    source,
+                    'no_initial_frame',
+                    **details,
+                    stderr_tail=list(
+                        getattr(self, 'source_stderr_tail', {}).get(source.id, ())
+                    ),
+                )
+                self._log_health_event(
+                    source,
+                    'no_initial_frame',
+                    details,
+                    severity='error',
+                )
+                self.last_health_log_times[source.id] = time.time()
+            return False
 
         # 检查1: 长时间无帧
         if time_since_last_frame > NO_FRAME_CRITICAL_THRESHOLD:
@@ -1215,6 +1256,18 @@ class Orchestrator:
                         'last_write_time': health_status['last_write_time']
                     },
                     severity='critical'
+                )
+                self._log_decoder_failure(
+                    source,
+                    'no_frame_critical',
+                    no_frame_duration=time_since_last_frame,
+                    last_write_time=health_status['last_write_time'],
+                    decoder_type=self.running_processes.get(
+                        source.id, {}
+                    ).get('decoder_type', VIDEO_DECODER_TYPE),
+                    stderr_tail=list(
+                        getattr(self, 'source_stderr_tail', {}).get(source.id, ())
+                    ),
                 )
                 self.last_health_log_times[source.id] = time.time()
             need_reboot = True
@@ -1283,6 +1336,58 @@ class Orchestrator:
             )
         except Exception as e:
             logger.error(f"记录健康事件到数据库失败: {e}")
+
+    @staticmethod
+    def _redact_decoder_failure_text(source: VideoSource, value) -> str:
+        text = str(value or '')
+        source_urls = {str(getattr(source, 'source_url', '') or '')}
+        try:
+            marker = get_matching_deferred_stream_switch(source)
+        except Exception:
+            marker = None
+        if marker:
+            source_urls.add(str(marker.get('active_url') or ''))
+        for source_url in source_urls:
+            if source_url:
+                text = text.replace(source_url, '<redacted-source-url>')
+        text = re.sub(
+            r'((?:rtsp|rtsps|http|https)://)([^\s/@:]+):([^\s/@]+)@',
+            r'\1\2:<redacted>@',
+            text,
+            flags=re.IGNORECASE,
+        )
+        return text
+
+    @classmethod
+    def _sanitize_decoder_failure_value(cls, source: VideoSource, value):
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, dict):
+            return {
+                str(key): cls._sanitize_decoder_failure_value(source, item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [
+                cls._sanitize_decoder_failure_value(source, item)
+                for item in value
+            ]
+        return cls._redact_decoder_failure_text(source, value)
+
+    def _log_decoder_failure(self, source: VideoSource, phase: str, **details):
+        """Write one structured record to logs/decoder_failures.log."""
+        safe_details = {
+            key: self._sanitize_decoder_failure_value(source, value)
+            for key, value in details.items()
+        }
+        record = {
+            'source_id': source.id,
+            'source_name': source.name,
+            'source_code': source.source_code,
+            'phase': phase,
+            **safe_details,
+        }
+        decoder_failure_logger.error(json.dumps(record, ensure_ascii=False))
 
     def _save_source(self, source: VideoSource, operation_name: str):
         source.save()
@@ -1633,22 +1738,91 @@ class Orchestrator:
         return set(self.rotation_batch_ids)
 
     @staticmethod
-    def _analysis_stream_url(source: VideoSource) -> str:
+    def _analysis_stream_url(
+        source: VideoSource,
+        source_url: Optional[str] = None,
+    ) -> str:
         """Use the shared relay only for source schemes it can pull correctly."""
-        source_url = str(source.source_url or '')
-        if urlsplit(source_url).scheme.lower() not in {'rtsp', 'rtsps'}:
-            return source_url
+        effective_url = str(source_url or source.source_url or '')
+        if urlsplit(effective_url).scheme.lower() not in {'rtsp', 'rtsps'}:
+            return effective_url
         return (
             mediamtx_client.rtsp_read_url(source.source_code)
-            or source_url
+            or effective_url
         )
+
+    @staticmethod
+    def _effective_source_input(source: VideoSource) -> tuple[str, str, bool]:
+        marker = get_matching_deferred_stream_switch(source)
+        if marker is None:
+            return (
+                source.source_url,
+                normalize_video_codec(
+                    getattr(source, 'source_codec', 'unknown'),
+                    allow_unknown=True,
+                ),
+                True,
+            )
+        return (
+            marker['active_url'],
+            normalize_video_codec(
+                marker.get('active_codec'),
+                allow_unknown=True,
+            ),
+            False,
+        )
+
+    @staticmethod
+    def _sync_source_relay_path(source: VideoSource, source_url: str) -> None:
+        if urlsplit(str(source_url or '')).scheme.lower() not in {'rtsp', 'rtsps'}:
+            return
+        try:
+            mediamtx_client.register_path(source.source_code, source_url)
+        except Exception as exc:
+            logger.warning(
+                '[Orchestrator] MediaMTX 路径同步失败 source=%s: %s',
+                source.source_code,
+                exc,
+            )
+
+    def _activate_deferred_stream_switch(
+        self,
+        source: VideoSource,
+        reason: str,
+    ) -> bool:
+        marker = get_matching_deferred_stream_switch(source)
+        if marker is None:
+            return False
+        clear_deferred_stream_switch(source.id)
+        self._sync_source_relay_path(source, source.source_url)
+        logger.info(
+            '视频源 ID %s 当前流失效，启用待切换的新地址（原因: %s）',
+            source.id,
+            reason,
+        )
+        self._log_health_event(
+            source,
+            'deferred_stream_switch_activated',
+            {'reason': reason},
+            severity='warning',
+        )
+        return True
 
     def _start_source(self, source: VideoSource, starting: bool = False):
         print(f"  -> 正在启动视频源 ID {source.id}: {source.name}")
 
-        stream_url = self._analysis_stream_url(source)
+        input_source_url, cached_codec, persist_detected_codec = (
+            self._effective_source_input(source)
+        )
+        self._sync_source_relay_path(source, input_source_url)
+        stream_url = self._analysis_stream_url(source, input_source_url)
         try:
-            input_format = self._resolve_source_codec(source, stream_url=stream_url)
+            input_format = self._resolve_source_codec(
+                source,
+                stream_url=stream_url,
+                cached_codec=cached_codec,
+                persist_detected_codec=persist_detected_codec,
+            )
             if (
                 VIDEO_DECODER_TYPE in {'jetson_gst', 'jetson', 'nvv4l2'}
                 and input_format not in {'h264', 'h265'}
@@ -1658,8 +1832,20 @@ class Orchestrator:
                 )
         except (VideoCodecProbeError, ValueError) as exc:
             # 编码探测失败属于上游流问题，走 stream 类指数退避
-            logger.error(f"视频源 {source.id} 编码探测失败: {exc}")
-            self._schedule_source_retry(source, 'stream', detail=str(exc))
+            error_detail = self._redact_decoder_failure_text(source, exc)
+            logger.error(f"视频源 {source.id} 编码探测失败: {error_detail}")
+            self._log_decoder_failure(
+                source,
+                'codec_probe',
+                error=error_detail,
+                decoder_type=VIDEO_DECODER_TYPE,
+            )
+            if not persist_detected_codec:
+                self._activate_deferred_stream_switch(
+                    source,
+                    '当前地址编码探测失败',
+                )
+            self._schedule_source_retry(source, 'stream', detail=error_detail)
             return False
 
         # 硬解资源准入:拿不到槽位时自动软解兜底或进入 resource 等待
@@ -1683,6 +1869,13 @@ class Orchestrator:
                 )
             else:
                 logger.warning(f"视频源 {source.id} 硬解槽位不足且软解兜底不可用，等待资源")
+                self._log_decoder_failure(
+                    source,
+                    'decoder_admission',
+                    error='硬解槽位不足且软解兜底不可用',
+                    decoder_type=VIDEO_DECODER_TYPE,
+                    budget=self.hw_budget.get_stats(),
+                )
                 self._schedule_source_retry(
                     source, 'resource', detail='硬解槽位不足',
                     record_hw_failure=False,
@@ -1780,45 +1973,90 @@ class Orchestrator:
         stdout_reader.start()
         stderr_reader.start()
 
-        source.status = 'STARTING' if starting else 'RUNNING'
-        source.decoder_pid = decoder_p.pid
-        self._save_source(source, f'保存视频源启动状态:{source.id}')
-
+        # Register the process before persisting state so the outer failure
+        # guard can terminate it if the database write itself fails.
         self.running_processes[source.id] = {
             'process': decoder_p,
             'decoder': decoder_p,
             'decoder_type': decoder_type,
             'stdout_reader': stdout_reader,
             'stderr_reader': stderr_reader,
-            'source_config_signature': self._runtime_source_config_signature(source),
+            'source_config_signature': self._runtime_source_config_signature(
+                source,
+                source_url=input_source_url,
+                source_codec=input_format,
+            ),
         }
+
+        source.status = 'STARTING' if starting else 'RUNNING'
+        source.decoder_pid = decoder_p.pid
+        self._save_source(source, f'保存视频源启动状态:{source.id}')
 
         # 记录启动时间（用于健康检查宽限期）
         self.source_start_times[source.id] = time.time()
         logger.debug(f"视频源 {source.id} 已记录启动时间，宽限期 {self.start_grace_period} 秒")
         return True
 
+    def _attempt_source_start(
+        self,
+        source: VideoSource,
+        *,
+        starting: bool,
+        trigger: str,
+    ) -> bool:
+        """Start one decoder without allowing an unexpected exception to kill the loop."""
+        try:
+            return self._start_source(source, starting=starting)
+        except Exception as exc:
+            stack = traceback.format_exc()
+            error_detail = self._redact_decoder_failure_text(source, exc)
+            logger.error(
+                "视频源 %s 解码启动发生未处理异常: %s",
+                source.id,
+                error_detail,
+            )
+            self._log_decoder_failure(
+                source,
+                'decoder_start',
+                trigger=trigger,
+                error=error_detail,
+                traceback=stack,
+                decoder_type=VIDEO_DECODER_TYPE,
+            )
+            self._release_source_runtime(source.id)
+            self._schedule_source_retry(
+                source,
+                'clean',
+                detail=f'解码启动异常: {error_detail}',
+            )
+            return False
+
     def _resolve_source_codec(
         self,
         source: VideoSource,
         *,
         stream_url: Optional[str] = None,
+        cached_codec: Optional[str] = None,
+        persist_detected_codec: bool = True,
     ) -> str:
-        cached_codec = normalize_video_codec(
-            getattr(source, 'source_codec', 'unknown'),
+        normalized_cached_codec = normalize_video_codec(
+            cached_codec
+            if cached_codec is not None
+            else getattr(source, 'source_codec', 'unknown'),
             allow_unknown=True,
         )
         try:
             detected_codec = probe_video_codec(stream_url or source.source_url)
         except VideoCodecProbeError:
-            if cached_codec != 'unknown':
+            if normalized_cached_codec != 'unknown':
                 logger.warning(
-                    f"视频源 {source.id} 编码重新探测失败，使用上次结果: {cached_codec}"
+                    f"视频源 {source.id} 编码重新探测失败，"
+                    f"使用上次结果: {normalized_cached_codec}"
                 )
-                return cached_codec
+                return normalized_cached_codec
             raise
 
-        if detected_codec != cached_codec:
+        if persist_detected_codec and detected_codec != normalized_cached_codec:
             source.source_codec = detected_codec
             self._save_source(source, f'保存视频源编码探测结果:{source.id}')
         logger.info(f"视频源 {source.id} 编码格式: {detected_codec}")
@@ -1888,15 +2126,41 @@ class Orchestrator:
         process_info = self.running_processes.get(source.id)
         if process_info is None:
             return True
-        return process_info.get(
-            'source_config_signature'
-        ) != self._runtime_source_config_signature(source)
+        process_signature = process_info.get('source_config_signature')
+        current_signature = self._runtime_source_config_signature(source)
+        if process_signature == current_signature:
+            return False
 
-    def _runtime_source_config_signature(self, source: VideoSource):
-        return (
+        marker = get_matching_deferred_stream_switch(source)
+        if marker is None or not process_signature:
+            return True
+        deferred_signature = list(current_signature)
+        deferred_signature[1] = marker['active_url']
+        # The active URL may have been probed after the marker was created.
+        # Its runtime codec belongs to the old stream and must not trigger a
+        # reload merely because the pending URL reset the DB codec to unknown.
+        deferred_signature[5] = process_signature[5]
+        return process_signature != tuple(deferred_signature)
+
+    def _runtime_source_config_signature(
+        self,
+        source: VideoSource,
+        *,
+        source_url: Optional[str] = None,
+        source_codec: Optional[str] = None,
+    ):
+        signature = list((
             *self._source_config_signature(source),
             self._configured_decode_keyframes_only(source),
-        )
+        ))
+        if source_url is not None:
+            signature[1] = source_url
+        if source_codec is not None:
+            signature[5] = normalize_video_codec(
+                source_codec,
+                allow_unknown=True,
+            )
+        return tuple(signature)
 
     @staticmethod
     def _build_decoder_args(
@@ -2008,13 +2272,16 @@ class Orchestrator:
         if not mediamtx_client.enabled or not mediamtx_client.is_available():
             return
         try:
-            desired = {
-                s.source_code: s.source_url
-                for s in VideoSource.select().where(
-                    (VideoSource.enabled == True) & (VideoSource.source_code.is_null(False))
-                )
-                if s.source_code
-            }
+            desired = {}
+            sources = VideoSource.select().where(
+                (VideoSource.enabled == True)
+                & (VideoSource.source_code.is_null(False))
+            )
+            for source in sources:
+                if not source.source_code:
+                    continue
+                source_url, _, _ = self._effective_source_input(source)
+                desired[source.source_code] = source_url
         except Exception as exc:
             logger.warning(f"[Orchestrator] 读取视频源列表用于 MediaMTX 同步失败: {exc}")
             return
@@ -2033,6 +2300,110 @@ class Orchestrator:
                 continue
             mediamtx_client.unregister_path(code)
 
+    def _prioritize_rotation_source(self, source: VideoSource) -> None:
+        """Move a manually requested source into the active rotation set."""
+        if not self.rotation_config.enabled:
+            return
+        if source.id in self.rotation_batch_ids:
+            self.desired_source_ids.add(source.id)
+            return
+
+        target_size = min(
+            self._rotation_effective_decoder_limit(),
+            len(self._rotation_candidate_ids()),
+        )
+        if len(self.rotation_batch_ids) >= target_size and self.rotation_batch_ids:
+            # Prefer replacing the source that has already dwelled the longest.
+            victim_id = min(
+                self.rotation_batch_ids,
+                key=lambda source_id: self.rotation_source_ready_at.get(
+                    source_id, float('inf')
+                ),
+            )
+            try:
+                self._begin_rotation_drain(
+                    VideoSource.get_by_id(victim_id),
+                    f'手动优先启动视频源 {source.id}',
+                )
+            except VideoSource.DoesNotExist:
+                pass
+            self._remove_rotation_source(victim_id)
+            self.desired_source_ids.discard(victim_id)
+
+        self.rotation_batch_ids.append(source.id)
+        self.desired_source_ids.add(source.id)
+        self._sync_rotation_phase()
+
+    def _process_manual_source_starts(self, licensed_source_ids) -> None:
+        """Run durable manual requests before the normal throttled start queue."""
+        for request in pending_source_starts():
+            source_id = int(request.get('source_id') or 0)
+            try:
+                source = VideoSource.get_by_id(source_id)
+            except VideoSource.DoesNotExist:
+                finish_source_start(request, 'failed', '视频源不存在')
+                continue
+
+            if not source.enabled:
+                finish_source_start(request, 'failed', '视频源未启用')
+                continue
+            if licensed_source_ids is not None and source.id not in licensed_source_ids:
+                finish_source_start(
+                    request,
+                    'failed',
+                    '视频源没有活动工作流或不在当前授权运行范围',
+                )
+                continue
+
+            self._prioritize_rotation_source(source)
+            if source.id not in self.desired_source_ids:
+                finish_source_start(
+                    request,
+                    'failed',
+                    '视频源当前不在可运行集合',
+                )
+                continue
+
+            if source.status in {'STARTING', 'RUNNING'}:
+                finish_source_start(request, 'started')
+                continue
+            if source.status == 'DRAINING' or not self._rotation_has_decoder_capacity():
+                # Keep the request pending; it remains first in line after drain.
+                continue
+            if source.status == 'ERROR':
+                self.source_backoff.pop(source.id, None)
+                self._stop_source(source)
+                source = VideoSource.get_by_id(source.id)
+            if source.status != 'STOPPED':
+                finish_source_start(
+                    request,
+                    'failed',
+                    f'视频源当前状态不允许启动: {source.status}',
+                )
+                continue
+
+            started = self._attempt_source_start(
+                source,
+                starting=self.rotation_config.enabled,
+                trigger='manual',
+            )
+            if started:
+                finish_source_start(request, 'started')
+                self._log_health_event(
+                    source,
+                    'manual_start',
+                    {
+                        'request_id': request.get('request_id'),
+                        'requested_by': request.get('requested_by'),
+                    },
+                )
+            else:
+                finish_source_start(
+                    request,
+                    'failed',
+                    '解码器启动失败，请查看 decoder_failures.log 和视频源健康日志',
+                )
+
     def manage_sources(self):
         self._poll_draining_sources()
         now = time.monotonic()
@@ -2045,6 +2416,9 @@ class Orchestrator:
         self.desired_source_ids = self._update_rotation_schedule(now)
         if licensed_source_ids is not None:
             self.desired_source_ids &= licensed_source_ids
+
+        # 手动请求优先于普通启动队列，并且不占用每轮自动启动数量。
+        self._process_manual_source_starts(licensed_source_ids)
 
         # 启动限流:每个周期最多启动 SOURCE_MAX_CONCURRENT_STARTS 个源，
         # 防止批量启动时 ffprobe/硬解通道惊群
@@ -2069,7 +2443,11 @@ class Orchestrator:
                 continue
             if self.rotation_config.enabled:
                 self.rotation_source_launch_at.setdefault(source.id, now)
-            if self._start_source(source, starting=self.rotation_config.enabled):
+            if self._attempt_source_start(
+                source,
+                starting=self.rotation_config.enabled,
+                trigger='scheduler',
+            ):
                 started_this_tick += 1
 
         for source in VideoSource.select().where(
@@ -2130,12 +2508,27 @@ class Orchestrator:
                         )
                         continue
                     stderr_tail = list(self.source_stderr_tail.get(source.id, ()))
+                    safe_stderr_tail = [
+                        self._redact_decoder_failure_text(source, line)
+                        for line in stderr_tail
+                    ]
                     reboot_class = classify_decoder_failure(
                         exit_code, stderr_tail, uptime
                     )
                     logger.warning(
                         f"🚨 视频源 ID {source.id} 的解码器进程已退出 "
                         f"(退出码:{exit_code}, 分类:{reboot_class}, 存活:{uptime:.0f}s)，准备自动重启"
+                    )
+                    self._log_decoder_failure(
+                        source,
+                        'decoder_process_exit',
+                        exit_code=exit_code,
+                        fail_class=reboot_class,
+                        uptime_seconds=round(uptime, 1),
+                        decoder_type=self.running_processes[source.id].get(
+                            'decoder_type', VIDEO_DECODER_TYPE
+                        ),
+                        stderr_tail=safe_stderr_tail,
                     )
                     self._log_health_event(
                         source=source,
@@ -2144,12 +2537,20 @@ class Orchestrator:
                             'exit_code': exit_code,
                             'fail_class': reboot_class,
                             'uptime_seconds': round(uptime, 1),
+                            'stderr_tail': safe_stderr_tail[-20:],
                         },
                         severity='error'
                     )
                     # 长时间稳定运行后的退出视为一次全新失败，退避计数清零
                     if uptime > _STABLE_UPTIME_RESET_SECONDS:
                         self.source_backoff.pop(source.id, None)
+                    if reboot_class == 'stream' or (
+                        reboot_class == 'clean' and exit_code == 0
+                    ):
+                        self._activate_deferred_stream_switch(
+                            source,
+                            f'解码进程退出（{reboot_class}, code={exit_code}）',
+                        )
                     need_reboot = True
 
                 # 检查2: 健康状态检查（仅在启用且进程正常运行时）
@@ -2160,6 +2561,10 @@ class Orchestrator:
                     source = VideoSource.get_by_id(source.id)
 
                     if not is_healthy or source.status == 'ERROR':
+                        self._activate_deferred_stream_switch(
+                            source,
+                            '视频流健康检查失败',
+                        )
                         need_reboot = True
 
                 if need_reboot:

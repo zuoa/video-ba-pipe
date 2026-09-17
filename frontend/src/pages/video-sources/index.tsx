@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { message, Space } from 'antd';
 import Button from '@/components/common/AppButton';
 import {
@@ -15,8 +15,9 @@ import {
   getSourceHealth,
   getPreviewConfig,
   ensurePreviewPath,
+  startVideoSourceNow,
 } from '@/services/api';
-import { PageHeader, useAppConfirm } from '@/components/common';
+import { AppModal, PageHeader, useAppConfirm } from '@/components/common';
 import SourceForm from './components/SourceForm';
 import ImportSourcesModal from './components/ImportSourcesModal';
 import OnvifScanModal from './components/OnvifScanModal';
@@ -39,9 +40,34 @@ export default function VideoSources() {
   const [livePreviewSource, setLivePreviewSource] = useState<any>(null);
   const [previewConfig, setPreviewConfig] = useState<any>({ webrtc_enabled: false });
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [startingId, setStartingId] = useState<number | null>(null);
   const [healthModalVisible, setHealthModalVisible] = useState(false);
   const [healthDetail, setHealthDetail] = useState<any>(null);
+  const [switchDecisionVisible, setSwitchDecisionVisible] = useState(false);
+  const switchDecisionRef = useRef<{
+    resolve: (value: boolean) => void;
+    reject: (reason: symbol) => void;
+  } | null>(null);
   const confirmAction = useAppConfirm();
+
+  const streamSwitchCancelled = useRef(Symbol('stream-switch-cancelled'));
+
+  const requestStreamSwitchDecision = () => new Promise<boolean>((resolve, reject) => {
+    switchDecisionRef.current = { resolve, reject };
+    setSwitchDecisionVisible(true);
+  });
+
+  const finishStreamSwitchDecision = (switchImmediately?: boolean) => {
+    const decision = switchDecisionRef.current;
+    switchDecisionRef.current = null;
+    setSwitchDecisionVisible(false);
+    if (!decision) return;
+    if (switchImmediately === undefined) {
+      decision.reject(streamSwitchCancelled.current);
+    } else {
+      decision.resolve(switchImmediately);
+    }
+  };
 
   const loadPreviewConfig = useCallback(async () => {
     try {
@@ -110,8 +136,19 @@ export default function VideoSources() {
   const handleSubmit = async (values: any) => {
     try {
       if (editingSource) {
-        await updateVideoSource(editingSource.id, values);
-        message.success('视频源更新成功');
+        const streamUrlChanged = String(values.source_url || '') !== String(
+          editingSource.source_url || '',
+        );
+        const switchImmediately = streamUrlChanged
+          ? await requestStreamSwitchDecision()
+          : undefined;
+        const result: any = await updateVideoSource(editingSource.id, {
+          ...values,
+          ...(streamUrlChanged
+            ? { switch_stream_immediately: switchImmediately }
+            : {}),
+        });
+        message.success(result?.message || '视频源更新成功');
       } else {
         await createVideoSource(values);
         message.success('视频源创建成功');
@@ -119,6 +156,9 @@ export default function VideoSources() {
       setModalVisible(false);
       loadSources();
     } catch (error) {
+      if (error === streamSwitchCancelled.current) {
+        throw error;
+      }
       message.error(editingSource ? '更新失败' : '创建失败');
       throw error;
     }
@@ -166,6 +206,20 @@ export default function VideoSources() {
     if (!sourceId) return;
     const source = sources.find((item) => item.id === sourceId) || healthDetail;
     handleRefreshStatus(source);
+  };
+
+  const handleStartNow = async (source: any) => {
+    setStartingId(source.id);
+    try {
+      const result = await startVideoSourceNow(source.id);
+      message.success(result?.message || '已加入优先启动队列');
+      await loadSources();
+    } catch (error) {
+      const detail = (error as any)?.response?.data?.error;
+      message.error(detail || '启动请求失败');
+    } finally {
+      setStartingId(null);
+    }
   };
 
   return (
@@ -218,6 +272,8 @@ export default function VideoSources() {
         webrtcEnabled={!!previewConfig?.webrtc_enabled}
         onRefreshStatus={handleRefreshStatus}
         refreshingId={refreshingId}
+        onStartNow={handleStartNow}
+        startingId={startingId}
       />
 
       <SourceForm
@@ -226,6 +282,43 @@ export default function VideoSources() {
         onCancel={() => setModalVisible(false)}
         onSubmit={handleSubmit}
       />
+
+      <AppModal
+        open={switchDecisionVisible}
+        title="流地址已变化"
+        description="请选择视频源何时使用新地址"
+        size="sm"
+        onCancel={() => finishStreamSwitchDecision()}
+        maskClosable={false}
+        footer={[
+          <Button
+            key="back"
+            onClick={() => finishStreamSwitchDecision()}
+          >
+            返回修改
+          </Button>,
+          <Button
+            key="deferred"
+            onClick={() => finishStreamSwitchDecision(false)}
+          >
+            当前流失效后切换
+          </Button>,
+          <Button
+            key="immediate"
+            type="primary"
+            onClick={() => finishStreamSwitchDecision(true)}
+          >
+            立即切换
+          </Button>,
+        ]}
+      >
+        <p style={{ marginBottom: 8 }}>
+          立即切换会让运行中的解码进程重启并读取新地址；视频源未运行时，下次启动会直接使用新地址。
+        </p>
+        <p style={{ marginBottom: 0, color: 'var(--text-secondary, #667085)' }}>
+          选择“当前流失效后切换”后，当前地址有效时继续使用；发生断流、无帧或接流失败时再启用新地址。
+        </p>
+      </AppModal>
 
       <ImportSourcesModal
         visible={importVisible}

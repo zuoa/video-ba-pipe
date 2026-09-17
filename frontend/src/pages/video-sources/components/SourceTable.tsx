@@ -7,6 +7,7 @@ import {
   CameraOutlined,
   VideoCameraOutlined,
   ReloadOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons';
 import { StatusBadge, SwitchBadge } from '@/components/common';
 import './SourceTable.css';
@@ -21,6 +22,8 @@ export interface SourceTableProps {
   webrtcEnabled: boolean;
   onRefreshStatus: (source: any) => void;
   refreshingId: number | null;
+  onStartNow: (source: any) => void;
+  startingId: number | null;
 }
 
 const SourceTable: React.FC<SourceTableProps> = ({
@@ -33,6 +36,8 @@ const SourceTable: React.FC<SourceTableProps> = ({
   webrtcEnabled,
   onRefreshStatus,
   refreshingId,
+  onStartNow,
+  startingId,
 }) => {
   const columns = [
     {
@@ -148,9 +153,34 @@ const SourceTable: React.FC<SourceTableProps> = ({
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 300,
       render: (_: any, record: any) => (
         <Space size="small">
+          <Tooltip
+            title={
+              record.license_runtime_allowed === false
+                ? '该视频源不在当前授权运行范围'
+                : !record.enabled
+                  ? '请先启用视频源'
+                  : '优先处理该视频源，不等待普通启动队列'
+            }
+          >
+            <Button
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => onStartNow(record)}
+              loading={startingId === record.id}
+              disabled={
+                !record.enabled
+                || record.license_runtime_allowed === false
+                || record.status === 'STARTING'
+                || record.status === 'RUNNING'
+              }
+              className="action-btn"
+            >
+              立即启动
+            </Button>
+          </Tooltip>
           <Button
             size="small"
             icon={<EditOutlined />}

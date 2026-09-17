@@ -146,22 +146,26 @@ const ENDPOINTS: EndpointDoc[] = [
     method: 'PUT',
     path: '/video-sources/{source_code}/source-url',
     summary: '更新视频源地址',
-    description: '运行中的视频源将异步重启解码器并读取新地址。',
+    description: '可立即重启切换，也可让当前流继续运行，失效后再启用新地址。',
     bodyParams: [
       { name: 'source_url', type: 'string', required: true, description: '新的流地址' },
+      { name: 'switch_stream_immediately', type: 'boolean', required: false, description: '是否立即切换，默认 false；false 表示当前流失效后切换' },
     ],
     curl: `curl -X PUT ${BASE_URL_PLACEHOLDER}/video-sources/cam-gate-01/source-url \\
   -H "X-API-Key: ${API_KEY_PLACEHOLDER}" \\
   -H "Content-Type: application/json" \\
-  -d '{ "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101" }'`,
-    responseNote: '200 地址未变化或源未运行;202 已更新并安排运行时重载',
+  -d '{ "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101", "switch_stream_immediately": false }'`,
+    responseNote: '200 地址未变化或源未运行；202 已安排立即重载或失效后切换',
     response: `{
   "success": true,
   "data": {
     "source_code": "cam-gate-01",
     "source_url": "rtsp://admin:password@192.168.1.101:554/Streaming/Channels/101",
     "changed": true,
-    "reload_scheduled": true
+    "switch_stream_immediately": false,
+    "stream_switch": "deferred",
+    "reload_scheduled": false,
+    "switch_deferred": true
   }
 }`,
   },
