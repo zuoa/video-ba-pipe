@@ -67,6 +67,7 @@ def alert_media_cleaner_module(monkeypatch):
             __exit__=lambda self, exc_type, exc, tb: None,
         )
     )
+    fake_db_models.close_database_connection = lambda _database: False
     fake_recording_config = types.ModuleType("app.core.recording_storage_config")
     fake_recording_config.RecordingStorageConfig = object
     fake_recording_config.get_recording_storage_config = lambda: types.SimpleNamespace(

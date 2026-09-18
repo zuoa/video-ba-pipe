@@ -60,6 +60,15 @@ db_config = DatabaseConfig()
 db = db_config.get_database()
 
 
+def close_database_connection(database=None) -> bool:
+    """Close the current thread's connection without opening a new one."""
+    target = database if database is not None else db
+    if target.is_closed():
+        return False
+    target.close()
+    return True
+
+
 def _new_portable_id():
     return str(uuid.uuid4())
 

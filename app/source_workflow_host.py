@@ -25,7 +25,12 @@ from app.config import (
     SOURCE_ROTATION_STARTUP_TIMEOUT_SECONDS,
     DETECTION_SNAPSHOT_SAVE_PATH,
 )
-from app.core.database_models import VideoSource, Workflow
+from app.core.database_models import (
+    VideoSource,
+    Workflow,
+    close_database_connection,
+    db,
+)
 from app.core.ringbuffer import VideoRingBuffer
 from app.core.workflow_executor import WorkflowExecutor
 from app.core.workflow_runtime import extract_source_id_from_workflow_data
@@ -149,13 +154,22 @@ class WorkflowRunner:
                     self._running = False
                 self.executor.stop()
                 return
+            finally:
+                # Peewee stores one connection per thread. Runner threads live
+                # for the lifetime of a workflow, so leaving an on-demand
+                # connection attached here eventually exhausts PostgreSQL as
+                # more workflows reach a database-backed node.
+                close_database_connection(db)
 
 
 class SourceWorkflowHost:
     def __init__(self, source_id: int):
         self.source_id = int(source_id)
         self.running = True
-        self.source = VideoSource.get_by_id(self.source_id)
+        try:
+            self.source = VideoSource.get_by_id(self.source_id)
+        finally:
+            close_database_connection(db)
         self.buffer = None
         self.runners = {}
         self.workflows = {}
@@ -171,13 +185,16 @@ class SourceWorkflowHost:
 
     def _load_workflows(self):
         workflows = []
-        for workflow in Workflow.select().where(
-            (Workflow.is_active == True) & (Workflow.is_template == False)
-        ):
-            workflow_data = workflow.data_dict
-            if extract_source_id_from_workflow_data(workflow_data) != self.source_id:
-                continue
-            workflows.append(workflow)
+        try:
+            for workflow in Workflow.select().where(
+                (Workflow.is_active == True) & (Workflow.is_template == False)
+            ):
+                workflow_data = workflow.data_dict
+                if extract_source_id_from_workflow_data(workflow_data) != self.source_id:
+                    continue
+                workflows.append(workflow)
+        finally:
+            close_database_connection(db)
 
         return workflows
 
@@ -200,6 +217,8 @@ class SourceWorkflowHost:
         except Exception as exc:
             self._schedule_workflow_retry(workflow, exc)
             return False
+        finally:
+            close_database_connection(db)
 
         runner = WorkflowRunner(
             workflow,
@@ -444,7 +463,10 @@ def main(args):
         host.setup()
         host.run()
     finally:
-        host.cleanup()
+        try:
+            host.cleanup()
+        finally:
+            close_database_connection(db)
 
 
 if __name__ == '__main__':

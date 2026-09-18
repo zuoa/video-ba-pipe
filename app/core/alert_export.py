@@ -21,7 +21,14 @@ from peewee import JOIN
 from app.config import EXPORT_SAVE_PATH
 from app.core.alert_media_cleaner import resolve_frame_media_path
 from app.core.alert_query import build_alert_query, build_filter_summary, parse_alert_filters
-from app.core.database_models import Alert, AlertExportTask, VideoSource, Workflow, db
+from app.core.database_models import (
+    Alert,
+    AlertExportTask,
+    VideoSource,
+    Workflow,
+    close_database_connection,
+    db,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -676,6 +683,8 @@ class AlertExportWorker:
             except Exception:
                 logger.exception('Alert export worker loop failed')
                 self._stop_event.wait(self.poll_interval_seconds)
+            finally:
+                close_database_connection(db)
 
 
 def start_alert_export_worker() -> AlertExportWorker:

@@ -110,6 +110,16 @@ def test_compose_roles_use_one_platform_release_and_worker_capabilities():
         ] == "worker"
 
 
+def test_cuda_postgres_connection_budget_is_tunable():
+    for filename in ("deploy/compose/templates/cuda.yml", "docker-compose.yml"):
+        compose = yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
+        assert compose["services"]["postgres"]["command"] == [
+            "postgres",
+            "-c",
+            "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}",
+        ]
+
+
 def test_release_workflows_promote_only_matching_commit_images():
     workflows = {
         "cpu": ("build_backend_images.yml", "cpu"),

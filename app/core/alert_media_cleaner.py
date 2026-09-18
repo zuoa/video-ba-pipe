@@ -20,7 +20,13 @@ from app.config import (
     VIDEO_SAVE_PATH,
     WINDOW_DETECTION_RETENTION_HOURS,
 )
-from app.core.database_models import Alert, WorkflowTestResult, db
+from app.core.database_models import (
+    Alert,
+    WorkflowTestResult,
+    close_database_connection,
+    db,
+)
+
 FACE_EVENT_PATH = getattr(
     app_config,
     'FACE_EVENT_PATH',
@@ -353,9 +359,15 @@ class AlertMediaCleaner:
             self._thread.join(timeout=2)
 
     def _run_loop(self):
-        self.run_once()
-        while not self._stop_event.wait(self.interval_seconds):
+        try:
             self.run_once()
+        finally:
+            close_database_connection(db)
+        while not self._stop_event.wait(self.interval_seconds):
+            try:
+                self.run_once()
+            finally:
+                close_database_connection(db)
 
     def run_once(self):
         # Biometric retention is independent from alert-media cleanup.  Keep

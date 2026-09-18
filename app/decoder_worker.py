@@ -39,7 +39,7 @@ from app.config import (
     HW_DECODE_NV_GPU_INDEX,
 )
 from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
-from app.core.database_models import VideoSource
+from app.core.database_models import VideoSource, close_database_connection, db
 from app.core.decoder import DecoderFactory
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
 from app.core.decoder.base import DecoderStatus
@@ -871,9 +871,17 @@ def main(args):
 
     source_id = args.source_id
 
-    source = VideoSource.get_by_id(source_id)
-    source_code = source.source_code
-    source_name = source.name
+    try:
+        source = VideoSource.get_by_id(source_id)
+        source_code = source.source_code
+        source_name = source.name
+        analysis_buffer_name = source.analysis_buffer_name
+        recording_buffer_name = source.recording_buffer_name
+    finally:
+        # The decoder does no database work after loading its source. Keeping
+        # one idle PostgreSQL session per stream wastes most of the server's
+        # default connection budget.
+        close_database_connection(db)
 
     source_info = {
         'code': source_code,
@@ -922,9 +930,9 @@ def main(args):
     # 创建工作进程
     worker = DecoderWorker(
         stream_url=args.url,
-        analysis_buffer_name=source.analysis_buffer_name,
+        analysis_buffer_name=analysis_buffer_name,
         recording_buffer_name=(
-            source.recording_buffer_name if args.recording_enabled else None
+            recording_buffer_name if args.recording_enabled else None
         ),
         source_info=source_info,
         stream_config=stream_config,

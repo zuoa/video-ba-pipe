@@ -81,7 +81,16 @@ from app.core.webhook_notifier import (
 from app.core.public_media_config import build_public_media_url
 
 try:
-    from app.core.database_models import Workflow, VideoSource, Algorithm, Alert, ExternalApi, User, db
+    from app.core.database_models import (
+        Workflow,
+        VideoSource,
+        Algorithm,
+        Alert,
+        ExternalApi,
+        User,
+        close_database_connection,
+        db,
+    )
 except ImportError as exc:  # pragma: no cover - optional in lightweight test envs
     _WORKFLOW_EXECUTOR_IMPORT_ERROR = exc
 
@@ -95,6 +104,8 @@ except ImportError as exc:  # pragma: no cover - optional in lightweight test en
             raise ImportError("WorkflowExecutor requires peewee/database dependencies") from _WORKFLOW_EXECUTOR_IMPORT_ERROR
 
     Workflow = VideoSource = Algorithm = Alert = ExternalApi = User = _MissingDatabaseModel
+    close_database_connection = None
+    db = None
 
 DETECTION_JSONL_LOG_LOCK = threading.Lock()
 DETECTION_SNAPSHOT_COORDINATOR_LOCK = threading.Lock()
@@ -3253,7 +3264,11 @@ class WorkflowExecutor:
             # 并行执行当前层级的节点
             logger.debug(f"[Workflow-{self.workflow_id}] 并行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             future_to_node = {
-                executor.submit(self._execute_level_node, nid, context.copy()): nid
+                executor.submit(
+                    self._execute_level_node_in_worker,
+                    nid,
+                    context.copy(),
+                ): nid
                 for nid in level_nodes
             }
 
@@ -3268,6 +3283,14 @@ class WorkflowExecutor:
             logger.debug(f"[Workflow-{self.workflow_id}] 串行执行层级节点: {[f'{nid}({self.nodes[nid].node_type})' for nid in level_nodes]}")
             for node_id in level_nodes:
                 self._execute_level_node(node_id, context.copy())
+
+    def _execute_level_node_in_worker(self, node_id, context):
+        """Run a pooled node and release the worker thread's DB connection."""
+        try:
+            return self._execute_level_node(node_id, context)
+        finally:
+            if close_database_connection is not None and db is not None:
+                close_database_connection(db)
 
     def _execute_level_node(self, node_id, context):
         """

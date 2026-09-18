@@ -41,11 +41,13 @@ class _FakeDelivery:
 class _FakeDatabase:
     def __init__(self, calls):
         self.calls = calls
+        self.closed = False
 
     def is_closed(self):
-        return False
+        return self.closed
 
     def close(self):
+        self.closed = True
         self.calls.append("db-close")
 
 
@@ -78,6 +80,7 @@ def test_jobs_process_owns_background_worker_lifecycle(monkeypatch):
     assert calls == [
         "verify",
         "cleanup-once",
+        "db-close",
         "export-start",
         "face-start",
         "delivery-start",
@@ -86,5 +89,4 @@ def test_jobs_process_owns_background_worker_lifecycle(monkeypatch):
         "delivery-stop",
         "face-stop",
         "export-stop",
-        "db-close",
     ]

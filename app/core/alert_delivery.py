@@ -14,7 +14,12 @@ from PIL import Image
 from peewee import fn
 
 from app.config import FRAME_SAVE_PATH
-from app.core.database_models import Alert, AlertDeliveryTask, db
+from app.core.database_models import (
+    Alert,
+    AlertDeliveryTask,
+    close_database_connection,
+    db,
+)
 from app.core.message_queue_config import get_message_queue_config
 from app.core.message_queue_publisher import publish_alert_to_mq
 from app.core.node_identity import get_node_id
@@ -234,7 +239,10 @@ class AlertDeliveryWorker:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._recover_stale_tasks(force=True)
+        try:
+            self._recover_stale_tasks(force=True)
+        finally:
+            close_database_connection(db)
         self._thread = threading.Thread(target=self._run, name="alert-delivery", daemon=True)
         self._thread.start()
 
@@ -361,6 +369,8 @@ class AlertDeliveryWorker:
                     continue
             except Exception as exc:  # pragma: no cover - defensive worker boundary
                 logger.exception("告警异步投递 worker 异常: %s", exc)
+            finally:
+                close_database_connection(db)
             self._stop_event.wait(self.poll_interval_seconds)
 
 

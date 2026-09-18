@@ -389,7 +389,15 @@ def _model_worker_main(
             **base_config,
             "backend": spec.get("backend") or base_config.get("backend"),
         }
-        backend = _create_model_worker_backend(spec, model_info, worker_config)
+        try:
+            backend = _create_model_worker_backend(spec, model_info, worker_config)
+        finally:
+            # Face/ReID worker startup resolves bundle metadata through
+            # Peewee. The model process remains alive for inference, but it
+            # never needs that startup connection again.
+            from app.core.database_models import close_database_connection, db
+
+            close_database_connection(db)
 
         # YOLO(model_path) does not necessarily initialize CUDA or move all
         # weights to the target device.  Complete one warm-up before announcing

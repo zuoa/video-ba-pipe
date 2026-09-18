@@ -239,6 +239,7 @@ cp env.example .env
 
 - `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`：PostgreSQL 连接配置
 - `DB_SSLMODE`：PostgreSQL SSL 模式
+- `POSTGRES_MAX_CONNECTIONS`：CUDA Compose 内置 PostgreSQL 的连接上限，默认 200
 - `FRAME_SAVE_PATH` / `VIDEO_SAVE_PATH` / `VIDEO_SOURCE_PATH`：媒体存储目录
 - `HF_USE_MIRROR` / `HF_MIRROR_ENDPOINT`：Hugging Face 模型拉取的默认镜像开关和镜像地址；模型导入弹窗也可逐次选择官方源或国内镜像
 - `REID_MODEL_PATH` / `REID_MODEL_CATALOG_PATH`：行人 ReID 多架构制品目录与可选精选下载目录；详见 [单摄像头行人 ReID 跟踪](docs/person_reid_tracking.md)

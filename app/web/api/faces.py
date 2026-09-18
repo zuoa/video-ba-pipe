@@ -37,6 +37,7 @@ from app.core.database_models import (
     FaceModelBundle,
     FacePerson,
     FaceTemplate,
+    close_database_connection,
     db,
 )
 from app.core.face_crypto import (
@@ -1975,6 +1976,7 @@ class FaceImportWorker:
                 if lock_handle is not None:
                     fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
                     lock_handle.close()
+                close_database_connection(db)
 
 
 def start_face_import_worker():

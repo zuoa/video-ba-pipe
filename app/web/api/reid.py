@@ -29,6 +29,7 @@ from app.core.database_models import (
     ReIdModelArtifact,
     ReIdModelBundle,
     ReIdModelImportJob,
+    close_database_connection,
     db,
 )
 from app.core.algorithm_test_service import (
@@ -320,6 +321,7 @@ def _run_import(job_id):
                 pass
         with _IMPORT_LOCK:
             _IMPORT_THREADS.pop(job_id, None)
+        close_database_connection(db)
 
 
 def _ensure_import_worker(job_id):

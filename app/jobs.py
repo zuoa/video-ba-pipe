@@ -9,7 +9,7 @@ from app import logger
 from app.core.alert_delivery import alert_delivery_worker
 from app.core.alert_export import start_alert_export_worker, stop_alert_export_worker
 from app.core.alert_media_cleaner import AlertMediaCleaner
-from app.core.database_models import db
+from app.core.database_models import close_database_connection, db
 from app.setup_database import verify_database_schema
 from app.web.api.faces import start_face_import_worker, stop_face_import_worker
 
@@ -29,7 +29,10 @@ def run_jobs() -> None:
     media_cleaner = AlertMediaCleaner()
     # Prefer persisted storage settings; the cleaner falls back to environment
     # defaults only when the database is unavailable.
-    media_cleaner.run_startup_filesystem_cleanup()
+    try:
+        media_cleaner.run_startup_filesystem_cleanup()
+    finally:
+        close_database_connection(db)
 
     started = []
     try:
@@ -49,8 +52,7 @@ def run_jobs() -> None:
                 stop_worker()
             except Exception:
                 logger.exception("Failed to stop background worker")
-        if not db.is_closed():
-            db.close()
+        close_database_connection(db)
         logger.info("Dedicated jobs process stopped")
 
 
