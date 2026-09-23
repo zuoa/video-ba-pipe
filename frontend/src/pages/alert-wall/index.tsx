@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Image } from 'antd';
 import { getAlerts, getTodayAlertsCount, getVideoSources, getWorkflows, getAlertTrend } from '@/services/api';
@@ -31,16 +33,17 @@ import {
 } from '@ant-design/icons';
 import AppButton from '@/components/common/AppButton';
 import AppModal from '@/components/common/AppModal';
+import LanguageSwitch from '@/components/LanguageSwitch';
 import './index.css';
 
 /* ---------- 主题 ---------- */
 
 const AW_THEMES = [
-  { key: 'blue', name: '科技蓝', color: '#3b82f6' },
-  { key: 'emerald', name: '翡翠绿', color: '#10b981' },
-  { key: 'violet', name: '暗夜紫', color: '#8b5cf6' },
-  { key: 'amber', name: '琥珀金', color: '#f59e0b' },
-  { key: 'cyan', name: '深青', color: '#22d3ee' },
+  { key: 'blue', name: tr("科技蓝"), color: '#3b82f6' },
+  { key: 'emerald', name: tr("翡翠绿"), color: '#10b981' },
+  { key: 'violet', name: tr("暗夜紫"), color: '#8b5cf6' },
+  { key: 'amber', name: tr("琥珀金"), color: '#f59e0b' },
+  { key: 'cyan', name: tr("深青"), color: '#22d3ee' },
 ] as const;
 
 type AwThemeKey = (typeof AW_THEMES)[number]['key'];
@@ -65,7 +68,7 @@ const ThemeSwitcher: React.FC<{ theme: AwThemeKey; onChange: (theme: AwThemeKey)
         className={`aw-theme-dot ${t.key === theme ? 'active' : ''}`}
         style={{ background: t.color }}
         title={t.name}
-        aria-label={`切换到${t.name}主题`}
+        aria-label={trf("切换到__VAR0__主题", [t.name])}
         onClick={() => onChange(t.key)}
       />
     ))}
@@ -119,7 +122,7 @@ const buildMediaItems = (alert: Alert): WallMediaItem[] => {
   if (alert.alert_image_url || alert.alert_image) {
     items.push({
       key: 'alert-image',
-      label: '告警截图',
+      label: tr("告警截图"),
       type: 'image',
       src: alert.alert_image_url || `/api/image/frames/${alert.alert_image}`,
     });
@@ -127,7 +130,7 @@ const buildMediaItems = (alert: Alert): WallMediaItem[] => {
   if (alert.alert_video_url || alert.alert_video) {
     items.push({
       key: 'alert-video',
-      label: '告警视频',
+      label: tr("告警视频"),
       type: 'video',
       candidates: alert.alert_video_url ? [alert.alert_video_url] : buildAlertVideoUrls(alert.alert_video),
       rawPath: alert.alert_video || '',
@@ -136,7 +139,7 @@ const buildMediaItems = (alert: Alert): WallMediaItem[] => {
   if (alert.alert_image_ori_url || alert.alert_image_ori) {
     items.push({
       key: 'origin-image',
-      label: '原始画面',
+      label: tr("原始画面"),
       type: 'image',
       src: alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`,
     });
@@ -162,8 +165,8 @@ const WallVideoPreview: React.FC<{ candidates: string[]; rawPath: string }> = ({
     return (
       <div className="aw-video-fallback">
         <VideoCameraOutlined />
-        <strong>{failed ? '视频无法播放' : '视频暂不可用'}</strong>
-        <span>{failed ? '浏览器无法解码该编码,告警录像需要 H.264' : '未生成可播放的视频地址'}</span>
+        <strong>{failed ? tr("视频无法播放") : tr("视频暂不可用")}</strong>
+        <span>{failed ? tr("浏览器无法解码该编码,告警录像需要 H.264") : tr("未生成可播放的视频地址")}</span>
         {failed && (
           <div className="aw-video-fallback-actions">
             <button
@@ -171,11 +174,11 @@ const WallVideoPreview: React.FC<{ candidates: string[]; rawPath: string }> = ({
               className="aw-nav-button"
               onClick={() => { setActiveIndex(0); setFailed(false); }}
             >
-              <ReloadOutlined /> 重试
+              <ReloadOutlined /> {tr("重试")}
             </button>
             {candidates[0] && (
               <a className="aw-nav-button" href={candidates[0]} target="_blank" rel="noopener noreferrer">
-                新窗口打开
+                {tr("新窗口打开")}
               </a>
             )}
           </div>
@@ -243,7 +246,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
   const modalTitle = (
     <div className="aw-modal-toolbar">
-      <span className="aw-modal-title">告警详情</span>
+      <span className="aw-modal-title">{tr("告警详情")}</span>
       <div className="aw-modal-nav">
         <span className="aw-modal-position">{currentIndex + 1} / {total}</span>
         <button
@@ -252,7 +255,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           disabled={currentIndex <= 0}
           onClick={() => onNavigate('prev')}
         >
-          <LeftOutlined /> 上一条
+          <LeftOutlined /> {tr("上一条")}
         </button>
         <button
           type="button"
@@ -260,7 +263,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           disabled={currentIndex >= total - 1}
           onClick={() => onNavigate('next')}
         >
-          下一条 <RightOutlined />
+          {tr("下一条")} <RightOutlined />
         </button>
       </div>
     </div>
@@ -272,7 +275,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
       onCancel={onClose}
       footer={null}
       title={modalTitle}
-      description={task?.name || `任务 #${alert.task_id}`}
+      description={task?.name || trf("任务 #__VAR0__", [alert.task_id])}
       kind="detail"
       size="xl"
       className="alert-wall-detail-modal"
@@ -282,23 +285,23 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           <div className="detail-section">
             <h3 className="section-title">
               <TagOutlined />
-              基本信息
+              {tr("基本信息")}
             </h3>
             <div className="info-grid">
               <div className="info-row">
-                <span className="info-label">视频源</span>
-                <span className="info-value">{task?.name || `任务 #${alert.task_id}`}</span>
+                <span className="info-label">{tr("视频源")}</span>
+                <span className="info-value">{task?.name || trf("任务 #__VAR0__", [alert.task_id])}</span>
               </div>
               {alert.workflow_name && (
                 <div className="info-row">
-                  <span className="info-label">算法编排</span>
+                  <span className="info-label">{tr("算法编排")}</span>
                   <span className="info-value workflow-value">{alert.workflow_name}</span>
                 </div>
               )}
               <div className="info-row">
-                <span className="info-label">告警时间</span>
+                <span className="info-label">{tr("告警时间")}</span>
                 <span className="info-value">
-                  {new Date(alert.alert_time).toLocaleString('zh-CN', {
+                  {new Date(alert.alert_time).toLocaleString(getDateLocale(), {
                     year: 'numeric',
                     month: '2-digit',
                     day: '2-digit',
@@ -310,18 +313,18 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                 </span>
               </div>
               <div className="info-row">
-                <span className="info-label">告警类型</span>
+                <span className="info-label">{tr("告警类型")}</span>
                 <span className="info-value">
                   <AlertTypeBadge type={alert.alert_type} showIcon />
                 </span>
               </div>
               <div className="info-row">
-                <span className="info-label">检测帧数</span>
-                <span className="info-value">{alert.detection_count} 帧</span>
+                <span className="info-label">{tr("检测帧数")}</span>
+                <span className="info-value">{alert.detection_count} {tr("帧")}</span>
               </div>
               {alert.alert_message && (
                 <div className="info-row full-width">
-                  <span className="info-label">告警消息</span>
+                  <span className="info-label">{tr("告警消息")}</span>
                   <span className="info-value" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' as const }}>{alert.alert_message}</span>
                 </div>
               )}
@@ -333,7 +336,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="detail-section">
               <h3 className="section-title">
                 <PlayCircleOutlined />
-                现场画面
+                {tr("现场画面")}
               </h3>
               <div className="aw-media-layout">
                 <div className="aw-media-stage">
@@ -379,20 +382,20 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="detail-section">
               <h3 className="section-title">
                 <FileImageOutlined />
-                检测序列 ({detectionImages.length})
+                {tr("检测序列 (")}{detectionImages.length})
               </h3>
               <div className="detection-images-grid">
                 {detectionImages.map((img, idx) => (
                   <div key={`${img.image_path}-${idx}`} className="detection-image-item">
                     <Image
                       src={img.image_url || `/api/image/frames/${img.image_path}`}
-                      alt={`检测图片 ${idx + 1}`}
+                      alt={trf("检测图片 __VAR0__", [idx + 1])}
                       className="detection-image"
-                      preview={{ title: `第 ${idx + 1} 次检测` }}
+                      preview={{ title: trf("第 __VAR0__ 次检测", [idx + 1]) }}
                     />
                     {img.detection_time && (
                       <div className="detection-image-time">
-                        #{idx + 1} {new Date(img.detection_time).toLocaleTimeString('zh-CN', { hour12: false })}
+                        #{idx + 1} {new Date(img.detection_time).toLocaleTimeString(getDateLocale(), { hour12: false })}
                       </div>
                     )}
                   </div>
@@ -406,23 +409,23 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="detail-section">
               <h3 className="section-title">
                 <LineChartOutlined />
-                窗口统计
+                {tr("窗口统计")}
               </h3>
               <div className="window-stats">
                 <div className="stat-box">
-                  <div className="stat-box-label">检测帧数</div>
+                  <div className="stat-box-label">{tr("检测帧数")}</div>
                   <div className="stat-box-value">{windowStats.detection_count || 0}</div>
                 </div>
                 <div className="stat-box">
-                  <div className="stat-box-label">总帧数</div>
+                  <div className="stat-box-label">{tr("总帧数")}</div>
                   <div className="stat-box-value">{windowStats.total_count || 0}</div>
                 </div>
                 <div className="stat-box">
-                  <div className="stat-box-label">检测比例</div>
+                  <div className="stat-box-label">{tr("检测比例")}</div>
                   <div className="stat-box-value">{ratioPercent.toFixed(1)}%</div>
                 </div>
                 <div className="stat-box">
-                  <div className="stat-box-label">最大连续</div>
+                  <div className="stat-box-label">{tr("最大连续")}</div>
                   <div className="stat-box-value">{windowStats.max_consecutive || 0}</div>
                 </div>
               </div>
@@ -446,10 +449,10 @@ const WallClock: React.FC = () => {
   return (
     <div className="time-display">
       <div className="time-value digital-font">
-        {now.toLocaleTimeString('zh-CN', { hour12: false })}
+        {now.toLocaleTimeString(getDateLocale(), { hour12: false })}
       </div>
       <div className="date-value">
-        {now.toLocaleDateString('zh-CN', {
+        {now.toLocaleDateString(getDateLocale(), {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
@@ -674,7 +677,7 @@ const AlertWallPage: React.FC = () => {
               <SafetyOutlined />
             </div>
             <div>
-              <h1 className="header-title">智能监控告警中心</h1>
+              <h1 className="header-title">{tr("智能监控告警中心")}</h1>
               <p className="header-subtitle">Intelligent Monitoring Alert Center</p>
             </div>
           </div>
@@ -686,7 +689,7 @@ const AlertWallPage: React.FC = () => {
               </div>
               <div className="stat-content">
                 <div className="stat-value digital-font" id="todayCount">{todayCount}</div>
-                <div className="stat-label">今日告警</div>
+                <div className="stat-label">{tr("今日告警")}</div>
               </div>
             </div>
             <div className="stat-item">
@@ -695,7 +698,7 @@ const AlertWallPage: React.FC = () => {
               </div>
               <div className="stat-content">
                 <div className="stat-value digital-font" id="totalCount">{totalCount}</div>
-                <div className="stat-label">总计告警</div>
+                <div className="stat-label">{tr("总计告警")}</div>
               </div>
             </div>
             <div className="stat-item">
@@ -704,7 +707,7 @@ const AlertWallPage: React.FC = () => {
               </div>
               <div className="stat-content">
                 <div className="stat-value digital-font" id="videoSourceCount">{videoSourceCount}</div>
-                <div className="stat-label">视频源</div>
+                <div className="stat-label">{tr("视频源")}</div>
               </div>
             </div>
             <div className="stat-item">
@@ -713,18 +716,19 @@ const AlertWallPage: React.FC = () => {
               </div>
               <div className="stat-content">
                 <div className="stat-value digital-font" id="activeWorkflowCount">{activeWorkflowCount}</div>
-                <div className="stat-label">算法编排</div>
+                <div className="stat-label">{tr("算法编排")}</div>
               </div>
             </div>
             <div className="stat-item trend-item">
               <div className="trend-content">
-                <div className="trend-label">近7日趋势</div>
+                <div className="trend-label">{tr("近7日趋势")}</div>
                 <TrendChart data={alertTrend} />
               </div>
             </div>
           </div>
 
           <div className="header-right">
+            <LanguageSwitch className="wall-language-switch" />
             <div className="live-badge">
               <div className="status-dot" />
               <span>LIVE</span>
@@ -746,7 +750,7 @@ const AlertWallPage: React.FC = () => {
             <div className="main-display-header">
               <div className="main-display-title">
                 <ExclamationCircleOutlined />
-                <span>最新告警</span>
+                <span>{tr("最新告警")}</span>
               </div>
               <div className="main-display-info">
                 <div className="info-item">
@@ -762,7 +766,7 @@ const AlertWallPage: React.FC = () => {
                 <div className="info-item">
                   <ClockCircleOutlined />
                   <span>
-                    {mainAlert ? new Date(mainAlert.alert_time).toLocaleString('zh-CN', {
+                    {mainAlert ? new Date(mainAlert.alert_time).toLocaleString(getDateLocale(), {
                       month: '2-digit',
                       day: '2-digit',
                       hour: '2-digit',
@@ -797,8 +801,8 @@ const AlertWallPage: React.FC = () => {
               ) : (
                 <div className="no-alert">
                   <CheckCircleOutlined />
-                  <p>系统运行正常</p>
-                  <p>暂无告警信息</p>
+                  <p>{tr("系统运行正常")}</p>
+                  <p>{tr("暂无告警信息")}</p>
                 </div>
               )}
             </div>
@@ -808,7 +812,7 @@ const AlertWallPage: React.FC = () => {
               <div className="main-display-footer">
                 <div className="footer-left">
                   <AlertTypeBadge type={mainAlert.alert_type} showIcon />
-                  <span className="detection-count">检测 {mainAlert.detection_count} 帧</span>
+                  <span className="detection-count">{tr("检测")} {mainAlert.detection_count} {tr("帧")}</span>
                 </div>
                 {mainAlert.alert_message && (
                   <div className="footer-message" title={mainAlert.alert_message}>
@@ -824,10 +828,10 @@ const AlertWallPage: React.FC = () => {
             <div className="list-header">
               <div className="list-title">
                 <AppstoreOutlined />
-                <span>实时告警列表</span>
+                <span>{tr("实时告警列表")}</span>
               </div>
               <div className="list-count">
-                最近 <span className="count-number">50</span> 条
+                {tr("最近")} <span className="count-number">50</span> {tr("条")}
               </div>
             </div>
 
@@ -836,7 +840,7 @@ const AlertWallPage: React.FC = () => {
               {alerts.length === 0 ? (
                 <div className="list-empty">
                   <CheckCircleOutlined />
-                  <p>暂无告警记录</p>
+                  <p>{tr("暂无告警记录")}</p>
                 </div>
               ) : (
                 alerts.map((alert, index) => {
@@ -871,18 +875,18 @@ const AlertWallPage: React.FC = () => {
                         </div>
                         <div className="alert-item-info">
                           <div className="alert-item-header">
-                            <span className="alert-task-name">{task?.name || `任务 #${alert.task_id}`}</span>
+                            <span className="alert-task-name">{task?.name || trf("任务 #__VAR0__", [alert.task_id])}</span>
                             <AppButton
                               size="small"
                               tone="info"
                               variant="text"
                               className="detail-button"
-                              aria-label={`查看 ${task?.name || `任务 #${alert.task_id}`} 的告警详情`}
+                              aria-label={trf("查看 __VAR0__ 的告警详情", [task?.name || trf('任务 #__VAR0__', [alert.task_id])])}
                               onClick={(e) => viewAlertDetail(alert, e)}
-                              title="查看详情"
+                              title={tr("查看详情")}
                             >
                               <TagOutlined />
-                              <span>详情</span>
+                              <span>{tr("详情")}</span>
                             </AppButton>
                           </div>
                           {alert.workflow_name && (
@@ -900,7 +904,7 @@ const AlertWallPage: React.FC = () => {
                           {alert.detection_count > 1 && (
                             <div className="alert-detection-count">
                               <AppstoreOutlined />
-                              检测{alert.detection_count}帧
+                              {tr("检测")}{alert.detection_count}{tr("帧")}
                             </div>
                           )}
                         </div>
@@ -914,7 +918,7 @@ const AlertWallPage: React.FC = () => {
             {/* 底部刷新指示 */}
             <div className="list-footer">
               <SyncOutlined spin />
-              每 <span>5</span> 秒自动刷新
+              {tr("每")} <span>5</span> {tr("秒自动刷新")}
             </div>
           </div>
         </div>
@@ -948,7 +952,7 @@ const TrendChart: React.FC<{ data: Array<{ date: string; count: number }> }> = (
     return (
       <div className="trend-chart-placeholder">
         <LineChartOutlined />
-        <span>暂无数据</span>
+        <span>{tr("暂无数据")}</span>
       </div>
     );
   }

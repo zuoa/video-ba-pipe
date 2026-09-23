@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { message, Space, Spin } from 'antd';
 import { useModel } from '@umijs/max';
@@ -55,7 +56,7 @@ export default function Workflows() {
       const data = await getWorkflows();
       setWorkflows(data || []);
     } catch (error) {
-      message.error('加载工作流失败');
+      message.error(tr("加载工作流失败"));
     } finally {
       setLoading(false);
     }
@@ -88,18 +89,18 @@ export default function Workflows() {
   const handleDelete = (id: number) => {
     const workflow = workflows.find((item) => item.id === id);
     confirmAction({
-      title: workflow?.is_template ? '删除编排模板' : '删除运行编排',
-      objectName: workflow?.name || `工作流 #${id}`,
+      title: workflow?.is_template ? tr("删除编排模板") : tr("删除运行编排"),
+      objectName: workflow?.name || trf("工作流 #__VAR0__", [id]),
       description: workflow?.is_template
-        ? '删除后，模板结构将无法恢复；已由该模板生成运行编排时，系统会阻止删除。'
-        : '删除后，当前编排和节点配置将无法恢复。',
+        ? tr("删除后，模板结构将无法恢复；已由该模板生成运行编排时，系统会阻止删除。")
+        : tr("删除后，当前编排和节点配置将无法恢复。"),
       onConfirm: async () => {
         try {
           await deleteWorkflow(id);
-          message.success('工作流删除成功');
+          message.success(tr("工作流删除成功"));
           loadWorkflows();
         } catch (error: any) {
-          message.error(error?.data?.error || error?.message || '删除失败');
+          message.error(error?.data?.error || error?.message || tr("删除失败"));
         }
       },
     });
@@ -108,20 +109,20 @@ export default function Workflows() {
   const handleActivate = async (id: number) => {
     try {
       await activateWorkflow(id);
-      message.success('激活成功');
+      message.success(tr("激活成功"));
       loadWorkflows();
     } catch (error) {
-      message.error('激活失败');
+      message.error(tr("激活失败"));
     }
   };
 
   const handleDeactivate = async (id: number) => {
     try {
       await deactivateWorkflow(id);
-      message.success('停用成功');
+      message.success(tr("停用成功"));
       loadWorkflows();
     } catch (error) {
-      message.error('停用失败');
+      message.error(tr("停用失败"));
     }
   };
 
@@ -129,17 +130,17 @@ export default function Workflows() {
     try {
       if (editingWorkflow) {
         await updateWorkflow(editingWorkflow.id, values);
-        message.success('工作流更新成功');
+        message.success(tr("工作流更新成功"));
         setFormVisible(false);
         await loadWorkflows();
       } else {
         const created = await createWorkflow(values);
-        message.success('工作流创建成功');
+        message.success(tr("工作流创建成功"));
         setFormVisible(false);
         navigate(`/workflows/editor/${created.id}`);
       }
     } catch (error) {
-      message.error(editingWorkflow ? '更新失败' : '创建失败');
+      message.error(editingWorkflow ? tr("更新失败") : tr("创建失败"));
       throw error;
     }
   };
@@ -153,10 +154,10 @@ export default function Workflows() {
     try {
       const result: any = await batchActivateWorkflows(ids);
       const failedCount = result?.failed?.length || 0;
-      message.success(`已激活 ${result?.activated || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+      message.success(trf("已激活 __VAR0__ 个编排__VAR1__", [result?.activated || 0, failedCount ? trf('，__VAR0__ 个失败', [failedCount]) : '']));
       await loadWorkflows();
     } catch (error: any) {
-      message.error(error?.data?.error || error?.message || '批量激活失败');
+      message.error(error?.data?.error || error?.message || tr("批量激活失败"));
     }
   };
 
@@ -164,26 +165,26 @@ export default function Workflows() {
     try {
       const result: any = await batchDeactivateWorkflows(ids);
       const failedCount = result?.failed?.length || 0;
-      message.success(`已停用 ${result?.deactivated || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+      message.success(trf("已停用 __VAR0__ 个编排__VAR1__", [result?.deactivated || 0, failedCount ? trf('，__VAR0__ 个失败', [failedCount]) : '']));
       await loadWorkflows();
     } catch (error: any) {
-      message.error(error?.data?.error || error?.message || '批量停用失败');
+      message.error(error?.data?.error || error?.message || tr("批量停用失败"));
     }
   };
 
   const handleBatchDelete = (ids: number[]) => {
     confirmAction({
-      title: '批量删除编排',
-      objectName: `${ids.length} 个算法编排`,
-      description: '删除后，所选编排和节点配置将无法恢复。',
+      title: tr("批量删除编排"),
+      objectName: trf("__VAR0__ 个算法编排", [ids.length]),
+      description: tr("删除后，所选编排和节点配置将无法恢复。"),
       onConfirm: async () => {
         try {
           const result: any = await batchDeleteWorkflows(ids);
           const failedCount = result?.failed?.length || 0;
-          message.success(`已删除 ${result?.deleted || 0} 个编排${failedCount ? `，${failedCount} 个失败` : ''}`);
+          message.success(trf("已删除 __VAR0__ 个编排__VAR1__", [result?.deleted || 0, failedCount ? trf('，__VAR0__ 个失败', [failedCount]) : '']));
           await loadWorkflows();
         } catch (error: any) {
-          message.error(error?.data?.error || error?.message || '批量删除失败');
+          message.error(error?.data?.error || error?.message || tr("批量删除失败"));
           throw error;
         }
       },
@@ -203,7 +204,7 @@ export default function Workflows() {
 
       if (summary && summary.success > 0) {
         message.success(
-          `成功创建${activateAfterCreation ? '并激活' : ''} ${summary.success} 个编排${summary.failed > 0 ? `，${summary.failed} 个失败` : ''}`
+          trf("成功创建__VAR0__ __VAR1__ 个编排__VAR2__", [activateAfterCreation ? tr("并激活") : '', summary.success, summary.failed > 0 ? trf('，__VAR0__ 个失败', [summary.failed]) : ''])
         );
         loadWorkflows();
       }
@@ -215,7 +216,7 @@ export default function Workflows() {
       setCopyModalVisible(false);
       setCopyingWorkflow(null);
     } catch (error: any) {
-      message.error(error?.data?.error || error?.message || '复制失败');
+      message.error(error?.data?.error || error?.message || tr("复制失败"));
       throw error;
     }
   };
@@ -225,10 +226,10 @@ export default function Workflows() {
       <PageHeader
         icon={<ApartmentOutlined />}
         eyebrow="PIPELINE ORCHESTRATION"
-        title="算法编排管理"
-        subtitle="分别管理可复用模板与绑定视频源的运行编排"
+        title={tr("算法编排管理")}
+        subtitle={tr("分别管理可复用模板与绑定视频源的运行编排")}
         count={workflows.length}
-        countLabel="个算法编排"
+        countLabel={tr("个算法编排")}
         extra={(
           <Space wrap>
             {isAdmin ? (
@@ -237,7 +238,7 @@ export default function Workflows() {
                 onClick={() => setTemplateTransfer({ mode: 'import' })}
                 size="large"
               >
-                导入模板
+                {tr("导入模板")}
               </Button>
             ) : null}
             <Button
@@ -247,7 +248,7 @@ export default function Workflows() {
               size="large"
               className="app-primary-button create-btn"
             >
-              新建算法编排
+              {tr("新建算法编排")}
             </Button>
           </Space>
         )}

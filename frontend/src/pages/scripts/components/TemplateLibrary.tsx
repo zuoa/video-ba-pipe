@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { message, Spin, Space, Tooltip } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -46,10 +47,10 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
       if (data.success) {
         setTemplates(data.templates || []);
       } else {
-        message.error('加载模板失败: ' + data.error);
+        message.error(tr("加载模板失败: ") + data.error);
       }
     } catch (error) {
-      message.error('加载失败，请检查网络连接');
+      message.error(tr("加载失败，请检查网络连接"));
     } finally {
       setLoading(false);
     }
@@ -87,18 +88,18 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
   return (
     <>
       <AppModal
-        title="脚本模板库"
-        description="浏览、下载或克隆内置算法脚本模板"
+        title={tr("脚本模板库")}
+        description={tr("浏览、下载或克隆内置算法脚本模板")}
         size="xl"
         open={visible}
         onCancel={onClose}
         footer={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={loadTemplates} loading={loading}>
-              刷新
+              {tr("刷新")}
             </Button>
             <Button type="primary" onClick={onClose}>
-              关闭
+              {tr("关闭")}
             </Button>
           </Space>
         }
@@ -111,7 +112,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
               <AppEmptyState
                 compact
                 image={<FileTextOutlined className="empty-templates__icon" />}
-                title="暂无可用模板"
+                title={tr("暂无可用模板")}
               />
             ) : (
               templates.map((template, index) => (
@@ -129,37 +130,37 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
                   </div>
                   <div className="template-actions">
                     <Space size="small">
-                      <Tooltip title="查看模板代码">
+                      <Tooltip title={tr("查看模板代码")}>
                         <Button
                           size="small"
                           icon={<EyeOutlined />}
                           onClick={() => handleViewTemplate(template)}
                           className="action-btn action-btn-view"
                         >
-                          查看
+                          {tr("查看")}
                         </Button>
                       </Tooltip>
-                      <Tooltip title="下载到本地">
+                      <Tooltip title={tr("下载到本地")}>
                         <Button
                           size="small"
                           icon={<DownloadOutlined />}
                           onClick={() => handleDownloadTemplate(template)}
                           className="action-btn action-btn-download"
                         >
-                          下载
+                          {tr("下载")}
                         </Button>
                       </Tooltip>
-                      <Tooltip title="在线编辑此模板">
+                      <Tooltip title={tr("在线编辑此模板")}>
                         <Button
                           size="small"
                           icon={<CopyOutlined />}
                           onClick={() => handleUseTemplate(template)}
                           className="action-btn action-btn-use"
                         >
-                          使用
+                          {tr("使用")}
                         </Button>
                       </Tooltip>
-                      <Tooltip title="克隆为新脚本">
+                      <Tooltip title={tr("克隆为新脚本")}>
                         <Button
                           size="small"
                           type="primary"
@@ -167,7 +168,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
                           onClick={() => handleCloneTemplate(template)}
                           className="action-btn action-btn-clone"
                         >
-                          克隆
+                          {tr("克隆")}
                         </Button>
                       </Tooltip>
                     </Space>
@@ -181,7 +182,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
 
       {/* 查看模板模态框 */}
       <AppModal
-        title={viewingTemplate?.name || '模板详情'}
+        title={viewingTemplate?.name || tr("模板详情")}
         description={viewingTemplate?.path}
         kind="detail"
         size="xl"
@@ -197,9 +198,9 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
                 }
               }}
             >
-              下载模板
+              {tr("下载模板")}
             </Button>
-            <Button onClick={() => setViewModalVisible(false)}>关闭</Button>
+            <Button onClick={() => setViewModalVisible(false)}>{tr("关闭")}</Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -210,7 +211,7 @@ const TemplateLibrary: React.FC<TemplateLibraryProps> = ({
                 }
               }}
             >
-              克隆为新脚本
+              {tr("克隆为新脚本")}
             </Button>
           </Space>
         }

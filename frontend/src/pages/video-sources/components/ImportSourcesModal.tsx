@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -83,7 +84,7 @@ export default function ImportSourcesModal({
     getSourceImportProviders()
       .then((result) => setProviders(result?.providers || []))
       .catch(() => {
-        setProviders([{ type: DEFAULT_PROVIDER, label: '海康 NVR' }]);
+        setProviders([{ type: DEFAULT_PROVIDER, label: tr("海康 NVR") }]);
       });
   }, [visible, form]);
 
@@ -118,9 +119,9 @@ export default function ImportSourcesModal({
       setDeviceName(result?.device_name || values.host);
       setChannels(nextChannels);
       setSelectedKeys(nextChannels.filter((item: DiscoveredChannel) => item.online).map((item: DiscoveredChannel) => item.key));
-      message.success(`发现 ${nextChannels.length} 个通道`);
+      message.success(trf("发现 __VAR0__ 个通道", [nextChannels.length]));
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '通道发现失败');
+      message.error(error?.response?.data?.error || error?.message || tr("通道发现失败"));
     } finally {
       setDiscovering(false);
     }
@@ -130,7 +131,7 @@ export default function ImportSourcesModal({
     try {
       const values = await form.validateFields();
       if (!selectedChannels.length) {
-        message.warning('请至少选择一个通道');
+        message.warning(tr("请至少选择一个通道"));
         return;
       }
 
@@ -151,16 +152,16 @@ export default function ImportSourcesModal({
       const errorCount = result?.errors?.length || 0;
 
       if (createdCount > 0) {
-        message.success(`成功导入 ${createdCount} 个通道`);
+        message.success(trf("成功导入 __VAR0__ 个通道", [createdCount]));
       }
       if (errorCount > 0) {
-        message.warning(`${errorCount} 个通道导入失败`);
+        message.warning(trf("__VAR0__ 个通道导入失败", [errorCount]));
       }
 
       await onImported();
       onCancel();
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '批量导入失败');
+      message.error(error?.response?.data?.error || error?.message || tr("批量导入失败"));
     } finally {
       setImporting(false);
     }
@@ -168,13 +169,13 @@ export default function ImportSourcesModal({
 
   const columns = [
     {
-      title: '通道',
+      title: tr("通道"),
       dataIndex: 'channel_no',
       width: 90,
       render: (value: number) => <span className="import-channel-no">CH {value}</span>,
     },
     {
-      title: '名称',
+      title: tr("名称"),
       dataIndex: 'channel_name',
       width: 180,
       render: (_: string, record: DiscoveredChannel) => (
@@ -186,38 +187,38 @@ export default function ImportSourcesModal({
       ),
     },
     {
-      title: '编码',
+      title: tr("编码"),
       dataIndex: 'source_code',
       width: 210,
       render: (_: string, record: DiscoveredChannel) => (
         <Input
           value={record.source_code}
           onChange={(event) => updateChannel(record.key, { source_code: event.target.value })}
-          placeholder="唯一编码"
+          placeholder={tr("唯一编码")}
         />
       ),
     },
     {
-      title: '码流',
+      title: tr("码流"),
       dataIndex: 'stream',
       width: 120,
       render: (_: string, record: DiscoveredChannel) => (
         <Select
           value={record.stream}
           options={[
-            { value: 'main', label: '主码流' },
-            { value: 'sub', label: '子码流' },
+            { value: 'main', label: tr("主码流") },
+            { value: 'sub', label: tr("子码流") },
           ]}
           onChange={(value) => updateChannel(record.key, { stream: value })}
         />
       ),
     },
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'online',
       width: 100,
       render: (value: boolean) =>
-        value ? <Tag color="success">在线</Tag> : <Tag color="default">离线</Tag>,
+        value ? <Tag color="success">{tr("在线")}</Tag> : <Tag color="default">{tr("离线")}</Tag>,
     },
   ];
 
@@ -226,21 +227,21 @@ export default function ImportSourcesModal({
       open={visible}
       size="xl"
       onCancel={onCancel}
-      title="批量导入视频源"
-      description="发现设备通道，校对名称后批量添加到视频源列表"
+      title={tr("批量导入视频源")}
+      description={tr("发现设备通道，校对名称后批量添加到视频源列表")}
       className="import-sources-modal"
       closable={!importing}
       keyboard={!importing}
       footer={
         <Space>
-          <Button onClick={onCancel} disabled={importing}>取消</Button>
+          <Button onClick={onCancel} disabled={importing}>{tr("取消")}</Button>
           <Button
             icon={<ReloadOutlined />}
             loading={discovering}
             disabled={importing}
             onClick={handleDiscover}
           >
-            发现通道
+            {tr("发现通道")}
           </Button>
           <Button
             type="primary"
@@ -249,7 +250,7 @@ export default function ImportSourcesModal({
             disabled={discovering || selectedKeys.length === 0}
             onClick={handleImport}
           >
-            导入已选通道
+            {tr("导入已选通道")}
           </Button>
         </Space>
       }
@@ -260,9 +261,9 @@ export default function ImportSourcesModal({
             <ApiOutlined />
           </div>
           <div>
-            <div className="import-hero-title">从设备 API 批量发现并导入通道</div>
+            <div className="import-hero-title">{tr("从设备 API 批量发现并导入通道")}</div>
             <div className="import-hero-subtitle">
-              当前支持海康 NVR。后续扩展其他 NVR 或平台时复用同一入口。
+              {tr("当前支持海康 NVR。后续扩展其他 NVR 或平台时复用同一入口。")}
             </div>
           </div>
         </div>
@@ -270,9 +271,9 @@ export default function ImportSourcesModal({
         <Form form={form} layout="vertical" className="import-config-form">
           <div className="import-grid">
             <Form.Item
-              label="导入类型"
+              label={tr("导入类型")}
               name="provider_type"
-              rules={[{ required: true, message: '请选择导入类型' }]}
+              rules={[{ required: true, message: tr("请选择导入类型") }]}
             >
               <Select
                 options={providers.map((provider) => ({
@@ -283,9 +284,9 @@ export default function ImportSourcesModal({
             </Form.Item>
 
             <Form.Item
-              label="协议"
+              label={tr("协议")}
               name="scheme"
-              rules={[{ required: true, message: '请选择协议' }]}
+              rules={[{ required: true, message: tr("请选择协议") }]}
             >
               <Select
                 options={[
@@ -296,54 +297,54 @@ export default function ImportSourcesModal({
             </Form.Item>
 
             <Form.Item
-              label="设备地址"
+              label={tr("设备地址")}
               name="host"
-              rules={[{ required: true, message: '请输入设备地址' }]}
+              rules={[{ required: true, message: tr("请输入设备地址") }]}
             >
               <Input placeholder="192.168.1.100" />
             </Form.Item>
 
             <Form.Item
-              label="API 端口"
+              label={tr("API 端口")}
               name="port"
-              rules={[{ required: true, message: '请输入 API 端口' }]}
+              rules={[{ required: true, message: tr("请输入 API 端口") }]}
             >
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
 
             <Form.Item
-              label="用户名"
+              label={tr("用户名")}
               name="username"
-              rules={[{ required: true, message: '请输入用户名' }]}
+              rules={[{ required: true, message: tr("请输入用户名") }]}
             >
               <Input placeholder="admin" />
             </Form.Item>
 
             <Form.Item
-              label="密码"
+              label={tr("密码")}
               name="password"
-              rules={[{ required: true, message: '请输入密码' }]}
+              rules={[{ required: true, message: tr("请输入密码") }]}
             >
-              <Input.Password placeholder="设备密码" />
+              <Input.Password placeholder={tr("设备密码")} />
             </Form.Item>
 
             <Form.Item
-              label="RTSP 端口"
+              label={tr("RTSP 端口")}
               name="rtsp_port"
-              rules={[{ required: true, message: '请输入 RTSP 端口' }]}
+              rules={[{ required: true, message: tr("请输入 RTSP 端口") }]}
             >
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
 
             <Form.Item
-              label="默认码流"
+              label={tr("默认码流")}
               name="stream_preference"
-              rules={[{ required: true, message: '请选择默认码流' }]}
+              rules={[{ required: true, message: tr("请选择默认码流") }]}
             >
               <Select
                 options={[
-                  { value: 'sub', label: '子码流' },
-                  { value: 'main', label: '主码流' },
+                  { value: 'sub', label: tr("子码流") },
+                  { value: 'main', label: tr("主码流") },
                 ]}
               />
             </Form.Item>
@@ -354,9 +355,9 @@ export default function ImportSourcesModal({
           <div className="import-results">
             <div className="import-results-header">
               <div>
-                <div className="import-results-title">{deviceName || '设备'} 通道列表</div>
+                <div className="import-results-title">{deviceName || tr("设备")} {tr("通道列表")}</div>
                 <div className="import-results-subtitle">
-                  已发现 {channels.length} 个通道，当前选择 {selectedChannels.length} 个
+                  {tr("已发现")} {channels.length} {tr("个通道，当前选择")} {selectedChannels.length} {tr("个")}
                 </div>
               </div>
             </div>
@@ -364,7 +365,7 @@ export default function ImportSourcesModal({
             <Alert
               type="info"
               showIcon
-              message="每个通道会创建成一条独立视频源，保留现有手工添加模式。"
+              message={tr("每个通道会创建成一条独立视频源，保留现有手工添加模式。")}
               className="import-results-alert"
             />
 

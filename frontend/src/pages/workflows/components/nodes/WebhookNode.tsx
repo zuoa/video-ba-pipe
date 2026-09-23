@@ -1,11 +1,12 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { SendOutlined } from '@ant-design/icons';
 import './BaseNode.css';
 
 const PROVIDER_LABELS: Record<string, string> = {
-  generic: '通用 JSON',
-  dingtalk: '钉钉',
+  generic: tr("通用 JSON"),
+  dingtalk: tr("钉钉"),
   bark: 'Bark',
 };
 
@@ -22,12 +23,12 @@ const WebhookNode = ({ data }: any) => {
       </div>
       {data.description ? <div className="node-description">{data.description}</div> : null}
       <div className="node-meta">
-        <span className="meta-label">协议:</span>
+        <span className="meta-label">{tr("协议:")}</span>
         <span className="meta-value">{PROVIDER_LABELS[config.provider || 'generic'] || config.provider}</span>
       </div>
       <div className="node-meta">
-        <span className="meta-label">端点:</span>
-        <span className="meta-value">{configured ? '已配置' : '未配置'}</span>
+        <span className="meta-label">{tr("端点:")}</span>
+        <span className="meta-value">{configured ? tr("已配置") : tr("未配置")}</span>
       </div>
     </div>
   );

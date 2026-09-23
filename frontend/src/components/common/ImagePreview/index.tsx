@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { Image } from 'antd';
 import { CloseOutlined, WarningOutlined } from '@ant-design/icons';
@@ -15,7 +16,7 @@ export interface ImagePreviewProps {
 const ImagePreview: React.FC<ImagePreviewProps> = ({
   visible,
   src,
-  alt = '预览图片',
+  alt = tr("预览图片"),
   title,
   onClose,
 }) => {
@@ -51,7 +52,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           {error ? (
             <div className="preview-error">
               <WarningOutlined className="error-icon" />
-              <div className="error-text">无法加载预览图片</div>
+              <div className="error-text">{tr("无法加载预览图片")}</div>
             </div>
           ) : (
             <Image
@@ -70,7 +71,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           {loading && !error && (
             <div className="preview-loading">
               <div className="loading-spinner" />
-              <div className="loading-text">加载中...</div>
+              <div className="loading-text">{tr("加载中...")}</div>
             </div>
           )}
         </div>

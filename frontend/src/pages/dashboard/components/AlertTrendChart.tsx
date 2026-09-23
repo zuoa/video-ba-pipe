@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Segmented } from 'antd';
 import { LineChartOutlined } from '@ant-design/icons';
@@ -25,19 +26,19 @@ interface ChartPoint extends TrendBucket {
 }
 
 const PERIOD_OPTIONS: Array<{ label: string; value: AlertStatsPeriod }> = [
-  { label: '时', value: 'hour' },
-  { label: '日', value: 'day' },
-  { label: '周', value: 'week' },
-  { label: '月', value: 'month' },
-  { label: '年', value: 'year' },
+  { label: tr("时"), value: 'hour' },
+  { label: tr("日"), value: 'day' },
+  { label: tr("周"), value: 'week' },
+  { label: tr("月"), value: 'month' },
+  { label: tr("年"), value: 'year' },
 ];
 
 const PERIOD_HINTS: Record<AlertStatsPeriod, string> = {
-  hour: '本小时 · 每 5 分钟',
-  day: '今日 · 每小时',
-  week: '本周 · 每天',
-  month: '本月 · 每天',
-  year: '今年 · 每月',
+  hour: tr("本小时 · 每 5 分钟"),
+  day: tr("今日 · 每小时"),
+  week: tr("本周 · 每天"),
+  month: tr("本月 · 每天"),
+  year: tr("今年 · 每月"),
 };
 
 const CHART_WIDTH = 960;
@@ -64,7 +65,7 @@ const AlertTrendChart: React.FC = () => {
         }
       } catch (requestError) {
         console.error('加载告警趋势失败:', requestError);
-        if (active) setError('趋势数据暂不可用');
+        if (active) setError(tr("趋势数据暂不可用"));
       } finally {
         if (active) setLoading(false);
       }
@@ -130,7 +131,7 @@ const AlertTrendChart: React.FC = () => {
         <div>
           <h3 id="alert-trend-title" className="alert-trend-card__title">
             <span className="title-icon"><LineChartOutlined /></span>
-            告警趋势
+            {tr("告警趋势")}
           </h3>
           <p>{PERIOD_HINTS[period]}</p>
         </div>
@@ -139,26 +140,26 @@ const AlertTrendChart: React.FC = () => {
           value={period}
           onChange={(value) => setPeriod(value as AlertStatsPeriod)}
           options={PERIOD_OPTIONS}
-          aria-label="告警趋势时间范围"
+          aria-label={tr("告警趋势时间范围")}
         />
       </div>
 
       <div className="alert-trend-card__summary" aria-live="polite">
         <div>
-          <span>时段告警</span>
+          <span>{tr("时段告警")}</span>
           <strong>{totalCount}</strong>
-          <small>条</small>
+          <small>{tr("条")}</small>
         </div>
         <div>
-          <span>单周期峰值</span>
+          <span>{tr("单周期峰值")}</span>
           <strong>{peakCount}</strong>
-          <small>条</small>
+          <small>{tr("条")}</small>
         </div>
-        {totalCount === 0 ? <em>当前时段暂无告警</em> : null}
+        {totalCount === 0 ? <em>{tr("当前时段暂无告警")}</em> : null}
       </div>
 
       {loading && !trend ? (
-        <div className="alert-trend-card__placeholder" aria-busy="true">正在读取趋势...</div>
+        <div className="alert-trend-card__placeholder" aria-busy="true">{tr("正在读取趋势...")}</div>
       ) : error && !trend ? (
         <div className="alert-trend-card__placeholder is-error">{error}</div>
       ) : (
@@ -167,9 +168,9 @@ const AlertTrendChart: React.FC = () => {
             className="alert-trend-card__chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
-            aria-label={`${PERIOD_HINTS[period]}告警趋势，共 ${totalCount} 条`}
+            aria-label={trf("__VAR0__告警趋势，共 __VAR1__ 条", [PERIOD_HINTS[period], totalCount])}
           >
-            <title>{`${PERIOD_HINTS[period]}告警趋势，共 ${totalCount} 条`}</title>
+            <title>{trf("__VAR0__告警趋势，共 __VAR1__ 条", [PERIOD_HINTS[period], totalCount])}</title>
             <defs>
               <linearGradient id="alertTrendArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#46bfa7" stopOpacity="0.3" />
@@ -199,7 +200,7 @@ const AlertTrendChart: React.FC = () => {
               <g key={point.start} className={point.is_future ? 'is-future' : undefined}>
                 {!point.is_future ? (
                   <circle className="alert-trend-card__point" cx={point.x} cy={point.y} r="3.5">
-                    <title>{`${point.label} · ${point.count} 条告警`}</title>
+                    <title>{trf("__VAR0__ · __VAR1__ 条告警", [point.label, point.count])}</title>
                   </circle>
                 ) : null}
                 {tickIndexes.includes(index) ? (
@@ -225,7 +226,7 @@ const AlertTrendChart: React.FC = () => {
         </div>
       )}
 
-      {error && trend ? <span className="alert-trend-card__stale">更新失败，正在显示上次数据</span> : null}
+      {error && trend ? <span className="alert-trend-card__stale">{tr("更新失败，正在显示上次数据")}</span> : null}
     </section>
   );
 };

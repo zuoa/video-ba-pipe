@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -89,8 +90,8 @@ const buildNodeMatches = (workflows: Workflow[]): NodeMatch[] => {
   groups.forEach((groupWorkflows, groupKey) => {
     const first = groupWorkflows[0];
     const groupLabel = first.source_template_id == null
-      ? '自主创建'
-      : first.source_template_name || `模板 #${first.source_template_id}`;
+      ? tr("自主创建")
+      : first.source_template_name || trf("模板 #__VAR0__", [first.source_template_id]);
     const firstNodes = (first.workflow_data?.nodes || []).filter(supportedNode);
 
     if (groupKey !== 'direct') {
@@ -240,12 +241,12 @@ const BatchConfigDrawer: React.FC<BatchConfigDrawerProps> = ({
     if (Array.isArray(failures) && failures.length > 0) {
       return failures.slice(0, 3).map((item: any) => item.error).join('；');
     }
-    return error?.data?.error || error?.message || '批量配置失败';
+    return error?.data?.error || error?.message || tr("批量配置失败");
   };
 
   const handleSubmit = async () => {
     if (targets.length === 0) {
-      message.warning('请先勾选至少一个要应用的参数');
+      message.warning(tr("请先勾选至少一个要应用的参数"));
       return;
     }
     const payload = {
@@ -262,16 +263,16 @@ const BatchConfigDrawer: React.FC<BatchConfigDrawerProps> = ({
       const { summary } = preview;
       confirmAction({
         tone: 'info',
-        title: '应用批量配置',
-        objectName: `${summary.workflow_count} 个编排 · ${summary.node_change_count} 处节点修改`,
+        title: tr("应用批量配置"),
+        objectName: trf("__VAR0__ 个编排 · __VAR1__ 处节点修改", [summary.workflow_count, summary.node_change_count]),
         description: summary.active_count > 0
-          ? `其中 ${summary.active_count} 个正在运行，保存后将按配置版本自动重载。`
-          : '所有目标编排当前均已停用。',
-        confirmText: '确认应用',
+          ? trf("其中 __VAR0__ 个正在运行，保存后将按配置版本自动重载。", [summary.active_count])
+          : tr("所有目标编排当前均已停用。"),
+        confirmText: tr("确认应用"),
         onConfirm: async () => {
           try {
             const applied = await batchConfigWorkflows({ ...payload, dry_run: false });
-            message.success(applied.message || `已更新 ${applied.summary.workflow_count} 个编排`);
+            message.success(applied.message || trf("已更新 __VAR0__ 个编排", [applied.summary.workflow_count]));
             onApplied();
             onClose();
           } catch (error: any) {
@@ -296,49 +297,49 @@ const BatchConfigDrawer: React.FC<BatchConfigDrawerProps> = ({
           <span className={`batch-config-node-icon is-${match.nodeType}`}>{nodeIcon(match.nodeType)}</span>
           <div>
             <strong>{match.label}</strong>
-            <span>{match.groupLabel} · 覆盖 {match.workflowNodes.length} 个编排</span>
+            <span>{match.groupLabel} {tr("· 覆盖")} {match.workflowNodes.length} {tr("个编排")}</span>
           </div>
-          <Tag>{match.nodeType === 'algorithm' ? '算法' : match.nodeType === 'alert' ? '告警' : '时间计划'}</Tag>
+          <Tag>{match.nodeType === 'algorithm' ? tr("算法") : match.nodeType === 'alert' ? tr("告警") : tr("时间计划")}</Tag>
         </div>
       ),
       children: match.nodeType === 'algorithm' ? (
         <div className="batch-config-fields">
           <div className="batch-config-field">
             <Switch checked={draft.applyConfidence} onChange={(checked) => updateDraft(match.key, { applyConfidence: checked })} />
-            <div><strong>覆盖置信度</strong><span>仅修改当前算法节点的检测阈值</span></div>
+            <div><strong>{tr("覆盖置信度")}</strong><span>{tr("仅修改当前算法节点的检测阈值")}</span></div>
             <InputNumber min={0} max={1} step={0.1} value={draft.confidence} disabled={!draft.applyConfidence} onChange={(value) => updateDraft(match.key, { confidence: value ?? 0.5 })} />
           </div>
           <div className="batch-config-field">
             <Switch checked={draft.applyInterval} onChange={(checked) => updateDraft(match.key, { applyInterval: checked })} />
-            <div><strong>覆盖检测间隔</strong><span>0.1–60 秒</span></div>
-            <InputNumber min={0.1} max={60} step={0.1} addonAfter="秒" value={draft.intervalSeconds} disabled={!draft.applyInterval} onChange={(value) => updateDraft(match.key, { intervalSeconds: value ?? 1 })} />
+            <div><strong>{tr("覆盖检测间隔")}</strong><span>{tr("0.1–60 秒")}</span></div>
+            <InputNumber min={0.1} max={60} step={0.1} addonAfter={tr("秒")} value={draft.intervalSeconds} disabled={!draft.applyInterval} onChange={(value) => updateDraft(match.key, { intervalSeconds: value ?? 1 })} />
           </div>
         </div>
       ) : match.nodeType === 'alert' ? (
         <div className="batch-config-fields">
           <div className="batch-config-section-switch">
             <Switch checked={draft.applyTrigger} onChange={(checked) => updateDraft(match.key, { applyTrigger: checked })} />
-            <div><strong>覆盖窗口检测</strong><span>统一触发窗口、统计方式和阈值</span></div>
+            <div><strong>{tr("覆盖窗口检测")}</strong><span>{tr("统一触发窗口、统计方式和阈值")}</span></div>
           </div>
           {draft.applyTrigger ? (
             <div className="batch-config-subform">
-              <Space><Text>启用窗口检测</Text><Switch checked={draft.triggerEnabled} onChange={(checked) => updateDraft(match.key, { triggerEnabled: checked })} /></Space>
+              <Space><Text>{tr("启用窗口检测")}</Text><Switch checked={draft.triggerEnabled} onChange={(checked) => updateDraft(match.key, { triggerEnabled: checked })} /></Space>
               {draft.triggerEnabled ? <>
-                <label>时间窗口<InputNumber min={1} max={300} addonAfter="秒" value={draft.triggerWindow} onChange={(value) => updateDraft(match.key, { triggerWindow: value ?? 30 })} /></label>
-                <label>检测模式<Select value={draft.triggerMode} onChange={(value) => updateDraft(match.key, { triggerMode: value, triggerThreshold: value === 'ratio' ? 0.3 : 3 })} options={[{ value: 'ratio', label: '检测比例' }, { value: 'count', label: '检测次数' }, { value: 'consecutive', label: '连续检测' }]} /></label>
-                <label>检测阈值<InputNumber min={draft.triggerMode === 'ratio' ? 0 : 1} max={draft.triggerMode === 'ratio' ? 1 : 100} step={draft.triggerMode === 'ratio' ? 0.05 : 1} value={draft.triggerThreshold} onChange={(value) => updateDraft(match.key, { triggerThreshold: value ?? 1 })} /></label>
+                <label>{tr("时间窗口")}<InputNumber min={1} max={300} addonAfter={tr("秒")} value={draft.triggerWindow} onChange={(value) => updateDraft(match.key, { triggerWindow: value ?? 30 })} /></label>
+                <label>{tr("检测模式")}<Select value={draft.triggerMode} onChange={(value) => updateDraft(match.key, { triggerMode: value, triggerThreshold: value === 'ratio' ? 0.3 : 3 })} options={[{ value: 'ratio', label: tr("检测比例") }, { value: 'count', label: tr("检测次数") }, { value: 'consecutive', label: tr("连续检测") }]} /></label>
+                <label>{tr("检测阈值")}<InputNumber min={draft.triggerMode === 'ratio' ? 0 : 1} max={draft.triggerMode === 'ratio' ? 1 : 100} step={draft.triggerMode === 'ratio' ? 0.05 : 1} value={draft.triggerThreshold} onChange={(value) => updateDraft(match.key, { triggerThreshold: value ?? 1 })} /></label>
               </> : null}
             </div>
           ) : null}
           <Divider />
           <div className="batch-config-section-switch">
             <Switch checked={draft.applySuppression} onChange={(checked) => updateDraft(match.key, { applySuppression: checked })} />
-            <div><strong>覆盖告警抑制</strong><span>统一告警触发后的冷却时间</span></div>
+            <div><strong>{tr("覆盖告警抑制")}</strong><span>{tr("统一告警触发后的冷却时间")}</span></div>
           </div>
           {draft.applySuppression ? (
             <div className="batch-config-subform">
-              <Space><Text>启用告警抑制</Text><Switch checked={draft.suppressionEnabled} onChange={(checked) => updateDraft(match.key, { suppressionEnabled: checked })} /></Space>
-              {draft.suppressionEnabled ? <label>抑制时长<InputNumber min={1} max={3600} addonAfter="秒" value={draft.suppressionSeconds} onChange={(value) => updateDraft(match.key, { suppressionSeconds: value ?? 60 })} /></label> : null}
+              <Space><Text>{tr("启用告警抑制")}</Text><Switch checked={draft.suppressionEnabled} onChange={(checked) => updateDraft(match.key, { suppressionEnabled: checked })} /></Space>
+              {draft.suppressionEnabled ? <label>{tr("抑制时长")}<InputNumber min={1} max={3600} addonAfter={tr("秒")} value={draft.suppressionSeconds} onChange={(value) => updateDraft(match.key, { suppressionSeconds: value ?? 60 })} /></label> : null}
             </div>
           ) : null}
         </div>
@@ -346,7 +347,7 @@ const BatchConfigDrawer: React.FC<BatchConfigDrawerProps> = ({
         <div className="batch-config-fields">
           <div className="batch-config-section-switch">
             <Switch checked={draft.applySchedule} onChange={(checked) => updateDraft(match.key, { applySchedule: checked })} />
-            <div><strong>覆盖周计划</strong><span>整周计划将替换选中编排中的当前设置</span></div>
+            <div><strong>{tr("覆盖周计划")}</strong><span>{tr("整周计划将替换选中编排中的当前设置")}</span></div>
           </div>
           {draft.applySchedule ? <TimeScheduleEditor value={draft.weeklySchedule} onChange={(value) => updateDraft(match.key, { weeklySchedule: value })} /> : null}
         </div>
@@ -361,25 +362,25 @@ const BatchConfigDrawer: React.FC<BatchConfigDrawerProps> = ({
       width={720}
       rootClassName="batch-config-drawer-root"
       className="batch-config-drawer"
-      title={<div className="batch-config-heading"><ControlOutlined /><div><strong>批量配置</strong><span>只覆盖明确勾选的公共参数</span></div></div>}
-      extra={<Button onClick={onClose} disabled={submitting}>取消</Button>}
+      title={<div className="batch-config-heading"><ControlOutlined /><div><strong>{tr("批量配置")}</strong><span>{tr("只覆盖明确勾选的公共参数")}</span></div></div>}
+      extra={<Button onClick={onClose} disabled={submitting}>{tr("取消")}</Button>}
       footer={(
         <div className="batch-config-footer">
-          <span>已选择 {workflows.length} 个编排，配置 {targets.length} 组节点参数</span>
-          <Button type="primary" icon={<ControlOutlined />} loading={submitting} disabled={matches.length === 0} onClick={handleSubmit}>预览并应用</Button>
+          <span>{tr("已选择")} {workflows.length} {tr("个编排，配置")} {targets.length} {tr("组节点参数")}</span>
+          <Button type="primary" icon={<ControlOutlined />} loading={submitting} disabled={matches.length === 0} onClick={handleSubmit}>{tr("预览并应用")}</Button>
         </div>
       )}
     >
       <Alert
         type="info"
         showIcon
-        message="字段级覆盖"
-        description="未打开“覆盖”开关的字段、视频源绑定和编排结构都不会改变。正式保存前会完成整批预检。"
+        message={tr("字段级覆盖")}
+        description={tr("未打开“覆盖”开关的字段、视频源绑定和编排结构都不会改变。正式保存前会完成整批预检。")}
       />
       {matches.length > 0 ? (
         <Collapse className="batch-config-collapse" items={collapseItems} defaultActiveKey={[matches[0].key]} />
       ) : (
-        <Alert className="batch-config-empty" type="warning" showIcon message="没有共同的可配置节点" description="所选编排来自不同结构，或自主创建的同类节点无法唯一匹配。请缩小选择范围后重试。" />
+        <Alert className="batch-config-empty" type="warning" showIcon message={tr("没有共同的可配置节点")} description={tr("所选编排来自不同结构，或自主创建的同类节点无法唯一匹配。请缩小选择范围后重试。")} />
       )}
     </Drawer>
   );

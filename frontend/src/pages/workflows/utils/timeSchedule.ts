@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 export interface TimePeriod {
   start: string;
   end: string;
@@ -37,7 +38,7 @@ export const summarizeWeeklySchedule = (schedule?: WeeklySchedule): string => {
   if (activeDays.length === 7 && periods === 7 && activeDays.every(({ key }) => (
     normalized[key][0]?.start === '00:00' && normalized[key][0]?.end === '23:59'
   ))) {
-    return '每天 · 全天启用';
+    return tr("每天 · 全天启用");
   }
-  return `${activeDays.length} 天 · ${periods} 个时段`;
+  return trf("__VAR0__ 天 · __VAR1__ 个时段", [activeDays.length, periods]);
 };

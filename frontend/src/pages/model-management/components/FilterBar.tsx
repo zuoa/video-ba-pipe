@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import { Input, Select, Checkbox, Space } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
@@ -29,7 +30,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
       <Space size="middle" wrap>
         <Input
           className="filter-search"
-          placeholder="搜索模型名称或描述..."
+          placeholder={tr("搜索模型名称或描述...")}
           prefix={<SearchOutlined />}
           value={filter.search || ''}
           onChange={(e) => onFilterChange({ search: e.target.value || undefined })}
@@ -37,7 +38,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
         />
         <Select
           className="filter-select"
-          placeholder="所有类型"
+          placeholder={tr("所有类型")}
           value={filter.type}
           onChange={(value) => onFilterChange({ type: value || undefined })}
           allowClear
@@ -50,7 +51,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
         </Select>
         <Select
           className="filter-select"
-          placeholder="所有框架"
+          placeholder={tr("所有框架")}
           value={filter.framework}
           onChange={(value) => onFilterChange({ framework: value || undefined })}
           allowClear
@@ -65,7 +66,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
           checked={filter.enabledOnly}
           onChange={(e) => onFilterChange({ enabledOnly: e.target.checked || undefined })}
         >
-          仅显示启用
+          {tr("仅显示启用")}
         </Checkbox>
       </Space>
     </AppToolbar>

@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useState } from 'react';
 import { Image, Space, Typography } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -67,7 +69,7 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleString('zh-CN', { hour12: false });
+  return date.toLocaleString(getDateLocale(), { hour12: false });
 };
 
 const formatClockTime = (value?: string) => {
@@ -76,7 +78,7 @@ const formatClockTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleTimeString('zh-CN', { hour12: false });
+  return date.toLocaleTimeString(getDateLocale(), { hour12: false });
 };
 
 const VideoPreview: React.FC<{
@@ -115,8 +117,8 @@ const VideoPreview: React.FC<{
     return (
       <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
         <VideoCameraOutlined />
-        <strong>{title}暂不可用</strong>
-        <span>未生成可播放的视频地址。</span>
+        <strong>{title}{tr("暂不可用")}</strong>
+        <span>{tr("未生成可播放的视频地址。")}</span>
       </div>
     );
   }
@@ -125,15 +127,15 @@ const VideoPreview: React.FC<{
     return (
       <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
         <VideoCameraOutlined />
-        <strong>{title}无法播放</strong>
-        <span>文件已返回，但浏览器无法解码该编码。告警录像需要 H.264。</span>
+        <strong>{title}{tr("无法播放")}</strong>
+        <span>{tr("文件已返回，但浏览器无法解码该编码。告警录像需要 H.264。")}</span>
         <span className="alertDetail__videoFallbackPath">{rawPath}</span>
         <div className="alertDetail__videoFallbackActions">
           <Button size="small" icon={<ReloadOutlined />} onClick={handleRetry}>
-            重试
+            {tr("重试")}
           </Button>
           <Button size="small" type="link" icon={<LinkOutlined />} href={currentSrc} target="_blank">
-            新窗口打开
+            {tr("新窗口打开")}
           </Button>
         </div>
       </div>
@@ -144,9 +146,9 @@ const VideoPreview: React.FC<{
     <div className="alertDetail__videoShell">
       <video controls preload="metadata" src={currentSrc} onError={handleError} />
       <div className="alertDetail__videoMeta">
-        <span>{hasAlternative ? `正在尝试地址 ${activeIndex + 1}/${candidates.length}` : '视频地址已就绪'}</span>
+        <span>{hasAlternative ? trf("正在尝试地址 __VAR0__/__VAR1__", [activeIndex + 1, candidates.length]) : tr("视频地址已就绪")}</span>
         <a href={currentSrc} target="_blank" rel="noreferrer">
-          打开原视频
+          {tr("打开原视频")}
         </a>
       </div>
     </div>
@@ -165,7 +167,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   if (!alert) return null;
 
   const task = tasks.find(t => t.id === alert.task_id);
-  const taskName = task?.name || `任务 #${alert.task_id}`;
+  const taskName = task?.name || trf("任务 #__VAR0__", [alert.task_id]);
   const alertTypeConfig = getAlertTypeConfig(alert.alert_type);
   const windowStats = safeParseJson<Partial<WindowStats>>(alert.window_stats, {});
   const detectionImages = safeParseJson<DetectionImage[]>(alert.detection_images, []);
@@ -181,17 +183,17 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   if (alert.alert_image_url || alert.alert_image) {
     mediaItems.push({
       key: 'alert-image',
-      label: '告警截图',
+      label: tr("告警截图"),
       type: 'image',
       src: alert.alert_image_url || `/api/image/frames/${alert.alert_image}`,
-      previewTitle: '告警截图',
+      previewTitle: tr("告警截图"),
     });
   }
 
   if (alert.alert_video_url || alert.alert_video) {
     mediaItems.push({
       key: 'alert-video',
-      label: '告警视频',
+      label: tr("告警视频"),
       type: 'video',
       srcCandidates: alert.alert_video_url ? [alert.alert_video_url] : buildAlertVideoUrls(alert.alert_video),
       rawPath: alert.alert_video,
@@ -201,10 +203,10 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   if (alert.alert_image_ori_url || alert.alert_image_ori) {
     mediaItems.push({
       key: 'origin-image',
-      label: '原始画面',
+      label: tr("原始画面"),
       type: 'image',
       src: alert.alert_image_ori_url || `/api/image/frames/${alert.alert_image_ori}`,
-      previewTitle: '原始画面',
+      previewTitle: tr("原始画面"),
     });
   }
 
@@ -212,26 +214,26 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
   const metaItems = [
     {
-      label: '告警时间',
+      label: tr("告警时间"),
       value: formatDateTime(alert.alert_time),
       icon: <ClockCircleOutlined />,
     },
     {
-      label: '检测帧数',
-      value: `${alert.detection_count} 帧`,
+      label: tr("检测帧数"),
+      value: trf("__VAR0__ 帧", [alert.detection_count]),
       icon: <DashboardOutlined />,
     },
     {
-      label: '记录编号',
+      label: tr("记录编号"),
       value: `#${alert.id}`,
       icon: <NumberOutlined />,
     },
   ];
 
   const techItems = [
-    `任务 #${alert.task_id}`,
-    `类型编码 ${alert.alert_type}`,
-    alert.workflow_id ? `工作流 #${alert.workflow_id}` : null,
+    trf("任务 #__VAR0__", [alert.task_id]),
+    trf("类型编码 __VAR0__", [alert.alert_type]),
+    alert.workflow_id ? trf("工作流 #__VAR0__", [alert.workflow_id]) : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -247,7 +249,7 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
         <div className="alertDetailModal__toolbar">
           <div className="alertDetailModal__toolbarTitle">
             <div className="alertDetailModal__titleGroup">
-              <span className="alertDetailModal__titleEyebrow">告警详情</span>
+              <span className="alertDetailModal__titleEyebrow">{tr("告警详情")}</span>
               <span className="alertDetailModal__titleMain">{taskName}</span>
             </div>
             <span className="alertDetailModal__position">
@@ -260,14 +262,14 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
               onClick={() => onNavigate('prev')}
               disabled={currentIndex === 0}
             >
-              上一条
+              {tr("上一条")}
             </Button>
             <Button
               icon={<RightOutlined />}
               onClick={() => onNavigate('next')}
               disabled={currentIndex === total - 1}
             >
-              下一条
+              {tr("下一条")}
             </Button>
           </Space>
         </div>
@@ -288,12 +290,12 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
               {alert.workflow_id && (
                 <span className="alertDetail__workflowPill">
                   <ApartmentOutlined />
-                  <span>{alert.workflow_name || `流程编排 #${alert.workflow_id}`}</span>
+                  <span>{alert.workflow_name || trf("流程编排 #__VAR0__", [alert.workflow_id])}</span>
                 </span>
               )}
             </div>
             <p className="alertDetail__headerMessage">
-              {alert.alert_message || '暂无告警说明'}
+              {alert.alert_message || tr("暂无告警说明")}
             </p>
           </div>
 
@@ -313,9 +315,9 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="alertDetail__panelHeader">
               <div className="alertDetail__panelTitle">
                 <PlayCircleOutlined />
-                <span>现场画面</span>
+                <span>{tr("现场画面")}</span>
               </div>
-              <Text type="secondary">告警截图、录像与原始画面</Text>
+              <Text type="secondary">{tr("告警截图、录像与原始画面")}</Text>
             </div>
 
             <div className="alertDetail__mediaLayout">
@@ -372,25 +374,25 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="alertDetail__panelHeader">
               <div className="alertDetail__panelTitle">
                 <BarChartOutlined />
-                <span>窗口统计</span>
+                <span>{tr("窗口统计")}</span>
               </div>
-              <Text type="secondary">时间窗口内的命中率与连续命中，辅助判断告警稳定性</Text>
+              <Text type="secondary">{tr("时间窗口内的命中率与连续命中，辅助判断告警稳定性")}</Text>
             </div>
 
             <div className="alertDetail__statsGrid">
               <div className="alertDetail__statCard">
-                <span className="alertDetail__statLabel">检测帧数</span>
+                <span className="alertDetail__statLabel">{tr("检测帧数")}</span>
                 <strong className="alertDetail__statValue">
                   {windowStats.detection_count || 0}
                   <small> / {windowStats.total_count || 0}</small>
                 </strong>
               </div>
               <div className="alertDetail__statCard">
-                <span className="alertDetail__statLabel">检测比例</span>
+                <span className="alertDetail__statLabel">{tr("检测比例")}</span>
                 <strong className="alertDetail__statValue">{ratioPercent.toFixed(1)}%</strong>
               </div>
               <div className="alertDetail__statCard">
-                <span className="alertDetail__statLabel">最大连续命中</span>
+                <span className="alertDetail__statLabel">{tr("最大连续命中")}</span>
                 <strong className="alertDetail__statValue">{windowStats.max_consecutive || 0}</strong>
               </div>
             </div>
@@ -402,9 +404,9 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
             <div className="alertDetail__panelHeader">
               <div className="alertDetail__panelTitle">
                 <FileImageOutlined />
-                <span>检测序列</span>
+                <span>{tr("检测序列")}</span>
               </div>
-              <Text type="secondary">按触发顺序查看时间窗口中的关键帧</Text>
+              <Text type="secondary">{tr("按触发顺序查看时间窗口中的关键帧")}</Text>
             </div>
 
             <div className="alertDetail__sequenceGrid">
@@ -413,14 +415,14 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                   <div className="alertDetail__sequenceThumb">
                     <Image
                       src={img.image_url || `/api/image/frames/${img.image_path}`}
-                      alt={`检测 ${index + 1}`}
+                      alt={trf("检测 __VAR0__", [index + 1])}
                       preview={{
-                        title: `第 ${index + 1} 次检测`,
+                        title: trf("第 __VAR0__ 次检测", [index + 1]),
                       }}
                     />
                   </div>
                   <div className="alertDetail__sequenceMeta">
-                    <span className="alertDetail__sequenceIndex">第 {index + 1} 次</span>
+                    <span className="alertDetail__sequenceIndex">{tr("第")} {index + 1} {tr("次")}</span>
                     <span className="alertDetail__sequenceTime">
                       {formatClockTime(img.detection_time)}
                     </span>

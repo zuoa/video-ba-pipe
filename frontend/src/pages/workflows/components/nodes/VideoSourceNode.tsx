@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { VideoCameraOutlined } from '@ant-design/icons';
@@ -32,14 +33,14 @@ const VideoSourceNode = ({ data }: any) => {
     if (data.isTemplate) {
       return (
         <div className="node-meta template-source-placeholder">
-          <span className="meta-label">复制时绑定视频源</span>
+          <span className="meta-label">{tr("复制时绑定视频源")}</span>
         </div>
       );
     }
     if (!isConfigured) {
       return (
         <div className="node-meta" style={{ color: '#ff4d4f' }}>
-          <span className="meta-label">未配置视频源</span>
+          <span className="meta-label">{tr("未配置视频源")}</span>
         </div>
       );
     }
@@ -49,13 +50,13 @@ const VideoSourceNode = ({ data }: any) => {
       <div className="node-meta" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
         {sourceName && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="meta-label">名称:</span>
+            <span className="meta-label">{tr("名称:")}</span>
             <span className="meta-value" style={{ fontWeight: 500 }}>{sourceName}</span>
           </div>
         )}
         {hasSourceCode && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="meta-label">编码:</span>
+            <span className="meta-label">{tr("编码:")}</span>
             <span className="meta-value" style={{ fontSize: 12, color: '#8c8c8c' }}>{data.videoSourceCode}</span>
           </div>
         )}
@@ -74,7 +75,7 @@ const VideoSourceNode = ({ data }: any) => {
       <Handle type="source" position={Position.Right} id="output" className="node-handle" />
       <div className="node-header">
         <VideoCameraOutlined className="node-icon" />
-        <span className="node-title">视频源</span>
+        <span className="node-title">{tr("视频源")}</span>
       </div>
       {data.description && (
         <div className="node-description">{data.description}</div>

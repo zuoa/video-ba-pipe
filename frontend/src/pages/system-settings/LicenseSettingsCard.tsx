@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Descriptions, Progress, Space, Spin, Tag, Upload, message } from 'antd';
 import { SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
@@ -23,7 +24,7 @@ const LicenseSettingsCard: React.FC = () => {
     try {
       setStatus(await getLicenseStatus());
     } catch (error: any) {
-      message.error(`加载许可证状态失败：${error.message || error.error || '未知错误'}`);
+      message.error(trf("加载许可证状态失败：__VAR0__", [error.message || error.error || tr("未知错误")]));
     } finally {
       setLoading(false);
     }
@@ -33,7 +34,7 @@ const LicenseSettingsCard: React.FC = () => {
 
   const handleInstall = async () => {
     if (!file) {
-      message.warning('请先选择 .license 文件');
+      message.warning(tr("请先选择 .license 文件"));
       return;
     }
     setInstalling(true);
@@ -42,9 +43,9 @@ const LicenseSettingsCard: React.FC = () => {
       setStatus(nextStatus);
       setFile(null);
       window.dispatchEvent(new Event(LICENSE_UPDATED_EVENT));
-      message.success('许可证安装成功，运行服务将自动刷新授权');
+      message.success(tr("许可证安装成功，运行服务将自动刷新授权"));
     } catch (error: any) {
-      message.error(`许可证安装失败：${error.error || error.message || '未知错误'}`);
+      message.error(trf("许可证安装失败：__VAR0__", [error.error || error.message || tr("未知错误")]));
     } finally {
       setInstalling(false);
     }
@@ -58,29 +59,29 @@ const LicenseSettingsCard: React.FC = () => {
       <Alert
         showIcon
         type={licensed ? 'success' : 'warning'}
-        message={licensed ? '付费许可证有效' : '永久免费试用版'}
+        message={licensed ? tr("付费许可证有效") : tr("永久免费试用版")}
         description={licensed
-          ? `有效期至 ${dayjs(status.expires_at).format('YYYY-MM-DD HH:mm:ss')}`
-          : `${status.message}。系统按固定规则运行最早创建的一路视频源和三个算法。`}
+          ? trf("有效期至 __VAR0__", [dayjs(status.expires_at).format('YYYY-MM-DD HH:mm:ss')])
+          : trf("__VAR0__。系统按固定规则运行最早创建的一路视频源和三个算法。", [status.message])}
       />
 
       <Descriptions bordered column={{ xs: 1, sm: 2 }} size="small">
-        <Descriptions.Item label="授权层级">
-          <Tag color={licensed ? 'green' : 'gold'}>{licensed ? '付费版' : '免费版'}</Tag>
+        <Descriptions.Item label={tr("授权层级")}>
+          <Tag color={licensed ? 'green' : 'gold'}>{licensed ? tr("付费版") : tr("免费版")}</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="节点 ID">{status.node_id || '—'}</Descriptions.Item>
-        <Descriptions.Item label="客户">{status.customer || '—'}</Descriptions.Item>
-        <Descriptions.Item label="许可证编号">{status.license_id || '—'}</Descriptions.Item>
+        <Descriptions.Item label={tr("节点 ID")}>{status.node_id || '—'}</Descriptions.Item>
+        <Descriptions.Item label={tr("客户")}>{status.customer || '—'}</Descriptions.Item>
+        <Descriptions.Item label={tr("许可证编号")}>{status.license_id || '—'}</Descriptions.Item>
       </Descriptions>
 
       <div className="license-quota-grid">
         <div className="license-quota-item">
-          <strong>视频源</strong>
+          <strong>{tr("视频源")}</strong>
           <span>{status.usage.video_sources} / {status.limits.video_sources}</span>
           <Progress percent={quotaPercent(status.usage.video_sources, status.limits.video_sources)} status={status.over_limit.video_sources ? 'exception' : 'normal'} />
         </div>
         <div className="license-quota-item">
-          <strong>算法</strong>
+          <strong>{tr("算法")}</strong>
           <span>{status.usage.algorithms} / {status.limits.algorithms}</span>
           <Progress percent={quotaPercent(status.usage.algorithms, status.limits.algorithms)} status={status.over_limit.algorithms ? 'exception' : 'normal'} />
         </div>
@@ -94,10 +95,10 @@ const LicenseSettingsCard: React.FC = () => {
           beforeUpload={(selected) => { setFile(selected); return false; }}
           onRemove={() => { setFile(null); return true; }}
         >
-          <Button icon={<UploadOutlined />}>选择许可证</Button>
+          <Button icon={<UploadOutlined />}>{tr("选择许可证")}</Button>
         </Upload>
         <Button type="primary" icon={<SafetyCertificateOutlined />} loading={installing} onClick={handleInstall}>
-          安装 / 续期
+          {tr("安装 / 续期")}
         </Button>
       </Space>
     </Space>

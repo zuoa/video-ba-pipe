@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect, useRef } from 'react';
 import { Button, Tooltip } from 'antd';
 import { ReloadOutlined, CloseOutlined, VideoCameraOutlined } from '@ant-design/icons';
@@ -88,12 +89,12 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
     const url = buildWhepUrl();
     if (!url) {
       setPhase('failed');
-      setErrorText('缺少视频源标识 (source_code)');
+      setErrorText(tr("缺少视频源标识 (source_code)"));
       return;
     }
     if (typeof RTCPeerConnection === 'undefined') {
       setPhase('failed');
-      setErrorText('当前浏览器不支持 WebRTC');
+      setErrorText(tr("当前浏览器不支持 WebRTC"));
       return;
     }
 
@@ -107,7 +108,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
       pcRef.current = pc;
     } catch (e: any) {
       setPhase('failed');
-      setErrorText('创建 WebRTC 连接失败');
+      setErrorText(tr("创建 WebRTC 连接失败"));
       return;
     }
 
@@ -128,7 +129,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
         // 关闭由 teardown 触发的 'closed' 不算失败
         if (state !== 'closed') {
           setPhase('failed');
-          setErrorText('实时连接中断，请重试');
+          setErrorText(tr("实时连接中断，请重试"));
         }
       }
     };
@@ -147,7 +148,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
         body: pc.localDescription?.sdp,
       });
       if (!resp.ok) {
-        throw new Error(`WHEP 信令失败 (HTTP ${resp.status})`);
+        throw new Error(trf("WHEP 信令失败 (HTTP __VAR0__)", [resp.status]));
       }
       const answerSdp = await resp.text();
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
@@ -155,7 +156,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
     } catch (e: any) {
       if (pcRef.current === pc) {
         setPhase('failed');
-        setErrorText(e?.message || '无法建立 WebRTC 连接');
+        setErrorText(e?.message || tr("无法建立 WebRTC 连接"));
       }
     }
   };
@@ -185,7 +186,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
       title={
         <span className="wr-title">
           <VideoCameraOutlined />
-          实时预览{titleName}
+          {tr("实时预览")}{titleName}
           <span className="wr-live-tag">
             <span className="wr-live-dot" /> LIVE
           </span>
@@ -212,21 +213,21 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
               {phase === 'connecting' && (
                 <>
                   <div className="wr-spinner" />
-                  <div className="wr-overlay-text">正在建立 WebRTC 连接…</div>
-                  <div className="wr-overlay-sub">按需拉流，首次连接可能需要数秒</div>
+                  <div className="wr-overlay-text">{tr("正在建立 WebRTC 连接…")}</div>
+                  <div className="wr-overlay-sub">{tr("按需拉流，首次连接可能需要数秒")}</div>
                 </>
               )}
               {phase === 'failed' && (
                 <>
-                  <div className="wr-overlay-text wr-error-text">实时连接失败</div>
-                  <div className="wr-overlay-sub">{errorText || '请检查 MediaMTX 服务与网络配置'}</div>
+                  <div className="wr-overlay-text wr-error-text">{tr("实时连接失败")}</div>
+                  <div className="wr-overlay-sub">{errorText || tr("请检查 MediaMTX 服务与网络配置")}</div>
                   <Button
                     size="small"
                     icon={<ReloadOutlined />}
                     onClick={start}
                     className="wr-retry-btn"
                   >
-                    重试
+                    {tr("重试")}
                   </Button>
                 </>
               )}
@@ -236,8 +237,8 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
 
         {phase === 'playing' && (
           <div className="wr-footer">
-            <span className="wr-hint">WebRTC 实时画面 · 关闭窗口即停止拉流</span>
-            <Tooltip title="重新连接">
+            <span className="wr-hint">{tr("WebRTC 实时画面 · 关闭窗口即停止拉流")}</span>
+            <Tooltip title={tr("重新连接")}>
               <Button
                 size="small"
                 type="text"
@@ -245,7 +246,7 @@ const WebRtcPreviewModal: React.FC<WebRtcPreviewModalProps> = ({
                 onClick={start}
                 className="wr-reconnect-btn"
               >
-                重连
+                {tr("重连")}
               </Button>
             </Tooltip>
           </div>

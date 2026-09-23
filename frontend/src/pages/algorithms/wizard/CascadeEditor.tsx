@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -244,9 +245,9 @@ export const createEmptyCascadeConfig = (): CascadeConfig => ({
   version: 2,
   evaluation: { scope: 'frame', anchor_node_id: null },
   nodes: [
-    { id: 'frame', type: 'frame', name: '画面输入' },
+    { id: 'frame', type: 'frame', name: tr("画面输入") },
     {
-      id: 'output', type: 'output', name: '最终输出', label: '组合事件',
+      id: 'output', type: 'output', name: tr("最终输出"), label: tr("组合事件"),
       color: '#ff4d4f', box_source_node_id: null,
     },
   ],
@@ -263,14 +264,14 @@ export const createHelmetTemplate = (): CascadeConfig => ({
   version: 2,
   evaluation: { scope: 'per_anchor', anchor_node_id: 'head' },
   nodes: [
-    { id: 'frame', type: 'frame', name: '画面输入' },
-    detectorNode('head', '检测头部'),
-    detectorNode('helmet', '检测安全帽'),
-    { id: 'head_exists', type: 'predicate', name: '检测到头部', operator: 'exists' },
-    { id: 'helmet_missing', type: 'predicate', name: '没有安全帽', operator: 'not_exists' },
-    { id: 'all', type: 'logic', name: '全部满足', operator: 'and' },
+    { id: 'frame', type: 'frame', name: tr("画面输入") },
+    detectorNode('head', tr("检测头部")),
+    detectorNode('helmet', tr("检测安全帽")),
+    { id: 'head_exists', type: 'predicate', name: tr("检测到头部"), operator: 'exists' },
+    { id: 'helmet_missing', type: 'predicate', name: tr("没有安全帽"), operator: 'not_exists' },
+    { id: 'all', type: 'logic', name: tr("全部满足"), operator: 'and' },
     {
-      id: 'output', type: 'output', name: '最终输出', label: '未戴安全帽',
+      id: 'output', type: 'output', name: tr("最终输出"), label: tr("未戴安全帽"),
       color: '#ff4d4f', box_source_node_id: 'head',
     },
   ],
@@ -297,14 +298,14 @@ export const createLinearTemplate = (): CascadeConfig => {
     version: 2,
     evaluation: { scope: 'per_anchor', anchor_node_id: 'primary' },
     nodes: [
-      { id: 'frame', type: 'frame', name: '画面输入' },
-      detectorNode('primary', '检测主体'),
-      detectorNode('secondary', '检测目标'),
-      { id: 'primary_exists', type: 'predicate', name: '检测到主体', operator: 'exists' },
-      { id: 'secondary_exists', type: 'predicate', name: '检测到目标', operator: 'exists' },
-      { id: 'all', type: 'logic', name: '全部满足', operator: 'and' },
+      { id: 'frame', type: 'frame', name: tr("画面输入") },
+      detectorNode('primary', tr("检测主体")),
+      detectorNode('secondary', tr("检测目标")),
+      { id: 'primary_exists', type: 'predicate', name: tr("检测到主体"), operator: 'exists' },
+      { id: 'secondary_exists', type: 'predicate', name: tr("检测到目标"), operator: 'exists' },
+      { id: 'all', type: 'logic', name: tr("全部满足"), operator: 'and' },
       {
-        id: 'output', type: 'output', name: '最终输出', label: '复合事件',
+        id: 'output', type: 'output', name: tr("最终输出"), label: tr("复合事件"),
         color: '#ff4d4f', box_source_node_id: 'primary',
       },
     ],
@@ -339,7 +340,7 @@ export const normalizeCascadeForEditor = (raw: CascadeConfig | LegacyCascadeConf
   }
   const legacy = raw as LegacyCascadeConfig;
   const stages = legacy.stages || [];
-  const nodes: CascadeGraphNode[] = [{ id: 'frame', type: 'frame', name: '画面输入' }];
+  const nodes: CascadeGraphNode[] = [{ id: 'frame', type: 'frame', name: tr("画面输入") }];
   const edges: CascadeGraphEdge[] = [];
   const positions: Record<string, { x: number; y: number }> = { frame: { x: 30, y: 120 } };
   let previous = 'frame';
@@ -355,7 +356,7 @@ export const normalizeCascadeForEditor = (raw: CascadeConfig | LegacyCascadeConf
       inference: stage.inference || { ...DEFAULT_INFERENCE_CONFIG },
     });
     const predicateId = `${stage.id}_exists`;
-    nodes.push({ id: predicateId, type: 'predicate', name: `${stage.name}存在`, operator: 'exists' });
+    nodes.push({ id: predicateId, type: 'predicate', name: trf("__VAR0__存在", [stage.name]), operator: 'exists' });
     edges.push(
       { source: previous, target: stage.id, kind: 'data' },
       { source: stage.id, target: predicateId, kind: 'rule' },
@@ -366,10 +367,10 @@ export const normalizeCascadeForEditor = (raw: CascadeConfig | LegacyCascadeConf
     previous = stage.id;
   });
   nodes.push(
-    { id: 'all_stages', type: 'logic', name: '全部阶段命中', operator: 'and' },
+    { id: 'all_stages', type: 'logic', name: tr("全部阶段命中"), operator: 'and' },
     {
-      id: 'output', type: 'output', name: '最终输出',
-      label: legacy.output?.label || '复合事件', color: legacy.output?.color || '#ff4d4f',
+      id: 'output', type: 'output', name: tr("最终输出"),
+      label: legacy.output?.label || tr("复合事件"), color: legacy.output?.color || '#ff4d4f',
       box_source_node_id: stages[0]?.id || null,
     },
   );
@@ -394,30 +395,30 @@ export const validateCascadeGraph = (config: CascadeConfig): string | null => {
   const frames = config.nodes.filter(node => node.type === 'frame');
   const detectors = config.nodes.filter(node => node.type === 'detector');
   const outputs = config.nodes.filter(node => node.type === 'output');
-  if (frames.length !== 1) return '组合检测必须保留一个画面输入节点';
-  if (detectors.length < 1) return '请至少添加一个检测节点';
-  if (detectors.length > 8) return '检测节点最多支持 8 个';
-  if (outputs.length !== 1) return '组合检测必须保留一个最终输出节点';
+  if (frames.length !== 1) return tr("组合检测必须保留一个画面输入节点");
+  if (detectors.length < 1) return tr("请至少添加一个检测节点");
+  if (detectors.length > 8) return tr("检测节点最多支持 8 个");
+  if (outputs.length !== 1) return tr("组合检测必须保留一个最终输出节点");
   for (const detector of detectors) {
-    if (!detector.name.trim()) return '请填写检测节点名称';
-    if (!detector.model_id) return `请为“${detector.name}”选择模型`;
+    if (!detector.name.trim()) return tr("请填写检测节点名称");
+    if (!detector.model_id) return trf("请为“__VAR0__”选择模型", [detector.name]);
     const inputs = config.edges.filter(edge => edge.kind === 'data' && edge.target === detector.id);
-    if (inputs.length !== 1) return `检测节点“${detector.name}”需要一个蓝色数据输入`;
+    if (inputs.length !== 1) return trf("检测节点“__VAR0__”需要一个蓝色数据输入", [detector.name]);
   }
   for (const predicate of config.nodes.filter(node => node.type === 'predicate')) {
     const inputs = config.edges.filter(edge => edge.kind === 'rule' && edge.target === predicate.id);
-    if (inputs.length !== 1) return `条件“${predicate.name}”需要连接一个检测节点`;
+    if (inputs.length !== 1) return trf("条件“__VAR0__”需要连接一个检测节点", [predicate.name]);
   }
   for (const logic of config.nodes.filter(node => node.type === 'logic')) {
     const inputs = config.edges.filter(edge => edge.kind === 'rule' && edge.target === logic.id);
     if (logic.operator === 'not' ? inputs.length !== 1 : inputs.length < 2) {
-      return `${logic.name}的判定输入数量不正确`;
+      return trf("__VAR0__的判定输入数量不正确", [logic.name]);
     }
   }
   const output = outputs[0];
-  if (!output.label?.trim()) return '请填写最终输出标签';
+  if (!output.label?.trim()) return tr("请填写最终输出标签");
   if (config.edges.filter(edge => edge.kind === 'rule' && edge.target === output.id).length !== 1) {
-    return '最终输出需要连接一个橙色判定输入';
+    return tr("最终输出需要连接一个橙色判定输入");
   }
   const reverseRuleInputs = new Map<string, string[]>();
   config.edges.filter(edge => edge.kind === 'rule').forEach(edge => {
@@ -432,12 +433,12 @@ export const validateCascadeGraph = (config: CascadeConfig): string | null => {
     pending.push(...(reverseRuleInputs.get(nodeId) || []));
   }
   const disconnectedRule = config.nodes.find(node => ['predicate', 'logic'].includes(node.type) && !connectedToOutput.has(node.id));
-  if (disconnectedRule) return `判定节点“${disconnectedRule.name}”尚未连接到最终输出`;
+  if (disconnectedRule) return trf("判定节点“__VAR0__”尚未连接到最终输出", [disconnectedRule.name]);
   if (config.evaluation.scope === 'per_anchor' && !detectors.some(node => node.id === config.evaluation.anchor_node_id)) {
-    return '逐主体判定需要选择锚点检测节点';
+    return tr("逐主体判定需要选择锚点检测节点");
   }
   if (output.box_source_node_id && !detectors.some(node => node.id === output.box_source_node_id)) {
-    return '最终输出的画框来源已不存在，请重新选择';
+    return tr("最终输出的画框来源已不存在，请重新选择");
   }
   for (const kind of ['data', 'rule'] as EdgeKind[]) {
     const adjacency = new Map<string, string[]>();
@@ -456,36 +457,36 @@ export const validateCascadeGraph = (config: CascadeConfig): string | null => {
       return false;
     };
     if (config.nodes.some(node => hasCycle(node.id))) {
-      return kind === 'data' ? '蓝色检测数据流不能形成循环' : '橙色判定流不能形成循环';
+      return kind === 'data' ? tr("蓝色检测数据流不能形成循环") : tr("橙色判定流不能形成循环");
     }
   }
   return null;
 };
 
 const kindLabel: Record<NodeKind, string> = {
-  frame: '画面', detector: '检测', predicate: '条件', logic: '逻辑', output: '输出',
+  frame: tr("画面"), detector: tr("检测"), predicate: tr("条件"), logic: tr("逻辑"), output: tr("输出"),
 };
 
 const predicateLabel: Record<PredicateOperator, string> = {
-  exists: '存在', not_exists: '不存在', eq: '数量 =', ne: '数量 ≠',
-  gt: '数量 >', gte: '数量 ≥', lt: '数量 <', lte: '数量 ≤',
+  exists: tr("存在"), not_exists: tr("不存在"), eq: tr("数量 ="), ne: tr("数量 ≠"),
+  gt: tr("数量 >"), gte: tr("数量 ≥"), lt: tr("数量 <"), lte: tr("数量 ≤"),
 };
 
-const logicLabel: Record<LogicOperator, string> = { and: '全部满足', or: '任一满足', not: '取反' };
+const logicLabel: Record<LogicOperator, string> = { and: tr("全部满足"), or: tr("任一满足"), not: tr("取反") };
 
 const executionStateMeta: Record<string, { label: string; color: string }> = {
-  matched: { label: '已命中', color: 'success' },
-  not_matched: { label: '已执行·未命中', color: 'default' },
-  skipped: { label: '上游无目标·未执行', color: 'default' },
-  blocked: { label: '上游异常·未执行', color: 'warning' },
-  failed: { label: '执行失败', color: 'error' },
-  degraded: { label: '部分失败', color: 'warning' },
+  matched: { label: tr("已命中"), color: 'success' },
+  not_matched: { label: tr("已执行·未命中"), color: 'default' },
+  skipped: { label: tr("上游无目标·未执行"), color: 'default' },
+  blocked: { label: tr("上游异常·未执行"), color: 'warning' },
+  failed: { label: tr("执行失败"), color: 'error' },
+  degraded: { label: tr("部分失败"), color: 'warning' },
 };
 
 const truthStateMeta = {
-  true: { label: '成立', color: 'success' },
-  false: { label: '不成立', color: 'default' },
-  unknown: { label: '未知', color: 'warning' },
+  true: { label: tr("成立"), color: 'success' },
+  false: { label: tr("不成立"), color: 'default' },
+  unknown: { label: tr("未知"), color: 'warning' },
 } as const;
 
 const GraphNodeCard = memo(({ data }: NodeProps<CanvasNodeData>) => {
@@ -493,14 +494,14 @@ const GraphNodeCard = memo(({ data }: NodeProps<CanvasNodeData>) => {
   const status = data.status;
   const executionMeta = status?.execution_state ? executionStateMeta[status.execution_state] : null;
   const subtitle = node.type === 'detector'
-    ? `模型 ${node.model_id ? `#${node.model_id}` : '未选择'} · 阈值 ${node.confidence ?? 0.6}`
+    ? trf("模型 __VAR0__ · 阈值 __VAR1__", [node.model_id ? `#${node.model_id}` : tr("未选择"), node.confidence ?? 0.6])
     : node.type === 'predicate'
-      ? `${predicateLabel[node.operator as PredicateOperator] || '检测条件'}${node.value !== undefined ? ` ${node.value}` : ''}`
+      ? `${predicateLabel[node.operator as PredicateOperator] || tr("检测条件")}${node.value !== undefined ? ` ${node.value}` : ''}`
       : node.type === 'logic'
         ? logicLabel[node.operator as LogicOperator]
         : node.type === 'output'
-          ? node.label || '未配置标签'
-          : '完整视频帧';
+          ? node.label || tr("未配置标签")
+          : tr("完整视频帧");
   return (
     <div className={`combination-node combination-node-${node.type} ${data.selected ? 'is-selected' : ''} ${status ? `status-${status.status}` : ''}`}>
       {node.type === 'detector' ? <Handle type="target" position={Position.Left} id="data-in" className="data-handle" /> : null}
@@ -514,8 +515,8 @@ const GraphNodeCard = memo(({ data }: NodeProps<CanvasNodeData>) => {
       <small>{subtitle}</small>
       {status ? (
         <div className="combination-node-metrics">
-          <span>输入 {status.input_count}</span>
-          <span>命中 {status.detection_count}</span>
+          <span>{tr("输入")} {status.input_count}</span>
+          <span>{tr("命中")} {status.detection_count}</span>
           <span>{status.inference_time_ms} ms</span>
         </div>
       ) : null}
@@ -619,7 +620,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
   const removeNode = useCallback((nodeId: string) => {
     const node = value.nodes.find(item => item.id === nodeId);
     if (!node || node.type === 'frame' || node.type === 'output') {
-      message.warning('画面输入和最终输出不能删除');
+      message.warning(tr("画面输入和最终输出不能删除"));
       return;
     }
     updateConfig({
@@ -639,15 +640,15 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
 
   const addNode = useCallback((type: Exclude<NodeKind, 'frame' | 'output'>) => {
     if (type === 'detector' && value.nodes.filter(node => node.type === 'detector').length >= 8) {
-      message.warning('检测节点最多支持 8 个');
+      message.warning(tr("检测节点最多支持 8 个"));
       return;
     }
     const id = newId(type);
     const node: CascadeGraphNode = type === 'detector'
-      ? detectorNode(id, '新检测目标')
+      ? detectorNode(id, tr("新检测目标"))
       : type === 'predicate'
-        ? { id, type, name: '检测条件', operator: 'exists' }
-        : { id, type, name: '组合条件', operator: 'and' };
+        ? { id, type, name: tr("检测条件"), operator: 'exists' }
+        : { id, type, name: tr("组合条件"), operator: 'and' };
     const position = reactFlowRef.current?.screenToFlowPosition({ x: 520, y: 360 }) || DEFAULT_POSITIONS[type];
     updateConfig({
       ...value,
@@ -697,7 +698,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
 
   const onConnect = useCallback((connection: Connection) => {
     if (!isValidConnection(connection) || !connection.source || !connection.target) {
-      message.warning('端口类型不匹配，或目标节点已有唯一输入');
+      message.warning(tr("端口类型不匹配，或目标节点已有唯一输入"));
       return;
     }
     const kind = connectionKind(connection)!;
@@ -758,7 +759,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
     }
     const file = fileList[0]?.originFileObj;
     if (!file) {
-      message.warning('请先上传测试图片');
+      message.warning(tr("请先上传测试图片"));
       return;
     }
     setPreviewing(true);
@@ -768,10 +769,10 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
       setPreview(result);
       setResultOpen(true);
       result.success
-        ? message.success(`测试完成，输出 ${result.detection_count} 个业务结果`)
-        : message.error(result.error || '测试失败');
+        ? message.success(trf("测试完成，输出 __VAR0__ 个业务结果", [result.detection_count]))
+        : message.error(result.error || tr("测试失败"));
     } catch (error: any) {
-      const detail = error?.response?.data?.error || error?.message || '测试失败';
+      const detail = error?.response?.data?.error || error?.message || tr("测试失败");
       setPreview({ success: false, detection_count: 0, error: detail });
       setResultOpen(true);
       message.error(detail);
@@ -806,28 +807,28 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
     <div className="cascade-editor combination-editor">
       <div className="combination-toolbar">
         <Space wrap className="combination-template-shortcuts">
-          <span className="combination-template-label">参考模板</span>
-          <Button onClick={() => applyTemplate('helmet')}>安全帽缺失示例</Button>
-          <Button onClick={() => applyTemplate('linear')}>线性级联示例</Button>
+          <span className="combination-template-label">{tr("参考模板")}</span>
+          <Button onClick={() => applyTemplate('helmet')}>{tr("安全帽缺失示例")}</Button>
+          <Button onClick={() => applyTemplate('linear')}>{tr("线性级联示例")}</Button>
         </Space>
         <Space>
-          <Button aria-label="撤销" icon={<UndoOutlined />} disabled={historyIndexRef.current === 0} onClick={() => travelHistory(-1)}>撤销</Button>
-          <Button aria-label="重做" icon={<RedoOutlined />} disabled={historyIndexRef.current >= historyRef.current.length - 1} onClick={() => travelHistory(1)}>重做</Button>
-          <Button icon={<ReloadOutlined />} onClick={autoLayout}>自动布局</Button>
-          <Button onClick={() => reactFlowRef.current?.fitView({ padding: 0.16 })}>适应画布</Button>
+          <Button aria-label={tr("撤销")} icon={<UndoOutlined />} disabled={historyIndexRef.current === 0} onClick={() => travelHistory(-1)}>{tr("撤销")}</Button>
+          <Button aria-label={tr("重做")} icon={<RedoOutlined />} disabled={historyIndexRef.current >= historyRef.current.length - 1} onClick={() => travelHistory(1)}>{tr("重做")}</Button>
+          <Button icon={<ReloadOutlined />} onClick={autoLayout}>{tr("自动布局")}</Button>
+          <Button onClick={() => reactFlowRef.current?.fitView({ padding: 0.16 })}>{tr("适应画布")}</Button>
         </Space>
       </div>
 
       <div className="combination-scope-bar">
         <div>
-          <strong>判定范围</strong>
-          <span>{value.evaluation.scope === 'per_anchor' ? '每个主体独立判断，避免目标相互抵消' : '汇总整张画面的检测结果后判断'}</span>
+          <strong>{tr("判定范围")}</strong>
+          <span>{value.evaluation.scope === 'per_anchor' ? tr("每个主体独立判断，避免目标相互抵消") : tr("汇总整张画面的检测结果后判断")}</span>
         </div>
         <Radio.Group
           value={value.evaluation.scope}
           optionType="button"
           buttonStyle="solid"
-          options={[{ label: '逐主体', value: 'per_anchor' }, { label: '整帧', value: 'frame' }]}
+          options={[{ label: tr("逐主体"), value: 'per_anchor' }, { label: tr("整帧"), value: 'frame' }]}
           onChange={event => updateConfig({
             ...value,
             evaluation: {
@@ -840,9 +841,9 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
         />
         {value.evaluation.scope === 'per_anchor' ? (
           <Select
-            aria-label="逐主体锚点"
+            aria-label={tr("逐主体锚点")}
             value={value.evaluation.anchor_node_id || undefined}
-            placeholder="选择主体节点"
+            placeholder={tr("选择主体节点")}
             options={detectorOptions}
             onChange={anchorNodeId => updateConfig({
               ...value, evaluation: { ...value.evaluation, anchor_node_id: anchorNodeId },
@@ -851,46 +852,46 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
         ) : null}
       </div>
 
-      {validationError ? <Alert type="warning" showIcon message="画布尚未完整" description={validationError} /> : null}
+      {validationError ? <Alert type="warning" showIcon message={tr("画布尚未完整")} description={validationError} /> : null}
       {hasNegativeRule ? (
         <Alert
           type="info"
           showIcon
-          message="反向条件已启用"
-          description="只有模型正常执行且返回 0 个目标时，“不存在”才成立；模型超时或故障不会触发告警。建议在下一步启用时间窗口抑制单帧漏检。"
+          message={tr("反向条件已启用")}
+          description={tr("只有模型正常执行且返回 0 个目标时，“不存在”才成立；模型超时或故障不会触发告警。建议在下一步启用时间窗口抑制单帧漏检。")}
         />
       ) : null}
 
       <div className="combination-workbench">
-        <aside className="combination-palette" aria-label="节点库">
+        <aside className="combination-palette" aria-label={tr("节点库")}>
           <div className="combination-palette-heading">
             <span>NODE LIBRARY</span>
-            <strong>节点库</strong>
+            <strong>{tr("节点库")}</strong>
           </div>
           <button type="button" className="combination-palette-item palette-detector" onClick={() => addNode('detector')}>
             <RadarChartOutlined />
-            <span><strong>检测节点</strong><small>运行模型并传递目标区域</small></span>
+            <span><strong>{tr("检测节点")}</strong><small>{tr("运行模型并传递目标区域")}</small></span>
             <PlusOutlined />
           </button>
           <button type="button" className="combination-palette-item palette-predicate" onClick={() => addNode('predicate')}>
             <BranchesOutlined />
-            <span><strong>条件节点</strong><small>判断存在、不存在或数量</small></span>
+            <span><strong>{tr("条件节点")}</strong><small>{tr("判断存在、不存在或数量")}</small></span>
             <PlusOutlined />
           </button>
           <button type="button" className="combination-palette-item palette-logic" onClick={() => addNode('logic')}>
             <NodeIndexOutlined />
-            <span><strong>逻辑节点</strong><small>组合 AND、OR、NOT</small></span>
+            <span><strong>{tr("逻辑节点")}</strong><small>{tr("组合 AND、OR、NOT")}</small></span>
             <PlusOutlined />
           </button>
           <div className="combination-palette-hint">
-            <i className="legend-data" />蓝色传递检测区域
-            <i className="legend-rule" />橙色传递判定结果
+            <i className="legend-data" />{tr("蓝色传递检测区域")}
+            <i className="legend-rule" />{tr("橙色传递判定结果")}
           </div>
         </aside>
-        <section className="combination-canvas" aria-label="组合检测画布">
-          <div className="combination-legend" aria-label="连线说明">
-            <span><i className="legend-data" />数据流</span>
-            <span><i className="legend-rule" />判定流</span>
+        <section className="combination-canvas" aria-label={tr("组合检测画布")}>
+          <div className="combination-legend" aria-label={tr("连线说明")}>
+            <span><i className="legend-data" />{tr("数据流")}</span>
+            <span><i className="legend-rule" />{tr("判定流")}</span>
           </div>
           <ReactFlow
             nodes={flowNodes}
@@ -922,36 +923,36 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
           </ReactFlow>
         </section>
 
-        <aside className="combination-inspector" aria-label="节点属性">
+        <aside className="combination-inspector" aria-label={tr("节点属性")}>
           {selectedNode ? (
             <>
               <div className="combination-inspector-header">
-                <div><span>{kindLabel[selectedNode.type]}节点</span><strong>{selectedNode.name}</strong></div>
-                <Button size="small" aria-label="关闭属性面板" onClick={() => setSelectedNodeId(null)}><CloseOutlined /></Button>
+                <div><span>{kindLabel[selectedNode.type]}{tr("节点")}</span><strong>{selectedNode.name}</strong></div>
+                <Button size="small" aria-label={tr("关闭属性面板")} onClick={() => setSelectedNodeId(null)}><CloseOutlined /></Button>
               </div>
               <Form layout="vertical" className="combination-inspector-form">
-                <Form.Item label="节点名称" required>
+                <Form.Item label={tr("节点名称")} required>
                   <Input value={selectedNode.name} maxLength={80} onChange={event => updateNode(selectedNode.id, { name: event.target.value })} />
                 </Form.Item>
 
                 {selectedNode.type === 'detector' ? (
                   <>
-                    <Form.Item label="检测模型" required>
+                    <Form.Item label={tr("检测模型")} required>
                       <Select
                         showSearch
                         optionFilterProp="label"
                         value={selectedNode.model_id || undefined}
-                        placeholder="选择 YOLO 兼容模型"
+                        placeholder={tr("选择 YOLO 兼容模型")}
                         options={compatibleModels.map(model => ({ value: model.id, label: `${model.name} · ${model.model_type}/${model.framework}` }))}
                         onChange={modelId => updateNode(selectedNode.id, { model_id: modelId, class_ids: [] })}
                       />
                     </Form.Item>
-                    <Form.Item label="目标类别" extra="留空表示模型的全部类别">
+                    <Form.Item label={tr("目标类别")} extra={tr("留空表示模型的全部类别")}>
                       <Select
                         mode="tags"
                         value={selectedNode.class_ids || []}
                         options={classOptions}
-                        placeholder="全部类别"
+                        placeholder={tr("全部类别")}
                         onChange={items => updateNode(selectedNode.id, {
                           class_ids: items.map(Number).filter(item => Number.isInteger(item) && item >= 0),
                         })}
@@ -959,12 +960,12 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                     </Form.Item>
                     <Row gutter={12}>
                       <Col span={12}>
-                        <Form.Item label="置信度">
+                        <Form.Item label={tr("置信度")}>
                           <InputNumber min={0} max={1} step={0.05} value={selectedNode.confidence} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { confidence: Number(number ?? 0.6) })} />
                         </Form.Item>
                       </Col>
                       <Col span={12}>
-                        <Form.Item label="区域扩展">
+                        <Form.Item label={tr("区域扩展")}>
                           <InputNumber min={0} max={1} step={0.05} value={selectedNode.expand_ratio} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { expand_ratio: Number(number ?? 0.1) })} />
                         </Form.Item>
                       </Col>
@@ -974,46 +975,46 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                       size="small"
                       items={[{
                         key: 'advanced',
-                        label: '高级推理设置',
+                        label: tr("高级推理设置"),
                         children: (
                           <>
-                            <Form.Item label="推理后端">
+                            <Form.Item label={tr("推理后端")}>
                               <Select
-                                aria-label="推理后端"
+                                aria-label={tr("推理后端")}
                                 value={selectedNode.inference?.backend || 'auto'}
                                 options={[
-                                  { value: 'auto', label: '自动选择' }, { value: 'ultralytics', label: 'Ultralytics' },
+                                  { value: 'auto', label: tr("自动选择") }, { value: 'ultralytics', label: 'Ultralytics' },
                                   { value: 'onnxruntime', label: 'ONNX Runtime' }, { value: 'rknn', label: 'RKNNLite' },
                                 ]}
                                 onChange={backend => updateSelectedInference({ backend })}
                               />
                             </Form.Item>
                             <Form.Item
-                              label="推理模式"
+                              label={tr("推理模式")}
                               extra={selectedNode.inference?.inference_mode === 'sahi'
-                                ? '将大图切片后分别推理，适合小目标检测；输入尺寸同时作为默认切片尺寸。'
-                                : '保持画面比例并补边到模型输入尺寸，适合常规检测。'}
+                                ? tr("将大图切片后分别推理，适合小目标检测；输入尺寸同时作为默认切片尺寸。")
+                                : tr("保持画面比例并补边到模型输入尺寸，适合常规检测。")}
                             >
                               <Select
-                                aria-label="推理模式"
+                                aria-label={tr("推理模式")}
                                 value={selectedNode.inference?.inference_mode || 'letterbox'}
                                 options={[
-                                  { value: 'letterbox', label: '标准推理（Letterbox）' },
-                                  { value: 'sahi', label: '切片推理（SAHI）' },
+                                  { value: 'letterbox', label: tr("标准推理（Letterbox）") },
+                                  { value: 'sahi', label: tr("切片推理（SAHI）") },
                                 ]}
                                 onChange={inferenceMode => updateSelectedInference({ inference_mode: inferenceMode })}
                               />
                             </Form.Item>
-                            <Form.Item label="输入尺寸" extra="留空时使用模型元数据中的尺寸；未配置时默认为 640 × 640。">
+                            <Form.Item label={tr("输入尺寸")} extra={tr("留空时使用模型元数据中的尺寸；未配置时默认为 640 × 640。")}>
                               <Row gutter={12}>
                                 <Col span={12}>
                                   <InputNumber
-                                    aria-label="输入宽度"
+                                    aria-label={tr("输入宽度")}
                                     min={32}
                                     max={8192}
                                     step={32}
                                     precision={0}
-                                    placeholder="宽度"
+                                    placeholder={tr("宽度")}
                                     value={selectedNode.inference?.input_width}
                                     style={{ width: '100%' }}
                                     onChange={number => updateSelectedInference({ input_width: number ?? undefined })}
@@ -1021,12 +1022,12 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                                 </Col>
                                 <Col span={12}>
                                   <InputNumber
-                                    aria-label="输入高度"
+                                    aria-label={tr("输入高度")}
                                     min={32}
                                     max={8192}
                                     step={32}
                                     precision={0}
-                                    placeholder="高度"
+                                    placeholder={tr("高度")}
                                     value={selectedNode.inference?.input_height}
                                     style={{ width: '100%' }}
                                     onChange={number => updateSelectedInference({ input_height: number ?? undefined })}
@@ -1036,7 +1037,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                             </Form.Item>
                             <Row gutter={12}>
                               <Col span={12}><Form.Item label="NMS IOU"><InputNumber aria-label="NMS IOU" min={0} max={1} step={0.05} value={selectedNode.inference?.nms_iou ?? 0.45} style={{ width: '100%' }} onChange={number => updateSelectedInference({ nms_iou: Number(number ?? 0.45) })} /></Form.Item></Col>
-                              <Col span={12}><Form.Item label="最大候选"><InputNumber min={1} max={200} value={selectedNode.max_candidates || 20} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { max_candidates: Number(number ?? 20) })} /></Form.Item></Col>
+                              <Col span={12}><Form.Item label={tr("最大候选")}><InputNumber min={1} max={200} value={selectedNode.max_candidates || 20} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { max_candidates: Number(number ?? 20) })} /></Form.Item></Col>
                             </Row>
                           </>
                         ),
@@ -1047,7 +1048,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
 
                 {selectedNode.type === 'predicate' ? (
                   <>
-                    <Form.Item label="判断方式">
+                    <Form.Item label={tr("判断方式")}>
                       <Select
                         value={selectedNode.operator}
                         options={(Object.entries(predicateLabel) as Array<[PredicateOperator, string]>).map(([value, label]) => ({ value, label }))}
@@ -1055,13 +1056,13 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                       />
                     </Form.Item>
                     {!['exists', 'not_exists'].includes(selectedNode.operator || '') ? (
-                      <Form.Item label="比较数量"><InputNumber min={0} max={200} value={selectedNode.value ?? 1} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { value: Number(number ?? 1) })} /></Form.Item>
+                      <Form.Item label={tr("比较数量")}><InputNumber min={0} max={200} value={selectedNode.value ?? 1} style={{ width: '100%' }} onChange={number => updateNode(selectedNode.id, { value: Number(number ?? 1) })} /></Form.Item>
                     ) : null}
                   </>
                 ) : null}
 
                 {selectedNode.type === 'logic' ? (
-                  <Form.Item label="组合方式">
+                  <Form.Item label={tr("组合方式")}>
                     <Select
                       value={selectedNode.operator}
                       options={(Object.entries(logicLabel) as Array<[LogicOperator, string]>).map(([value, label]) => ({ value, label }))}
@@ -1072,30 +1073,30 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
 
                 {selectedNode.type === 'output' ? (
                   <>
-                    <Form.Item label="输出标签" required><Input value={selectedNode.label} onChange={event => updateNode(selectedNode.id, { label: event.target.value })} /></Form.Item>
-                    <Form.Item label="标记颜色"><Input type="color" value={selectedNode.color || '#ff4d4f'} className="combination-color-input" onChange={event => updateNode(selectedNode.id, { color: event.target.value })} /></Form.Item>
-                    <Form.Item label="输出框来源" extra="留空时输出无框业务事件">
-                      <Select allowClear value={selectedNode.box_source_node_id || undefined} options={detectorOptions} placeholder="仅事件，不画框" onChange={boxSource => updateNode(selectedNode.id, { box_source_node_id: boxSource || null })} />
+                    <Form.Item label={tr("输出标签")} required><Input value={selectedNode.label} onChange={event => updateNode(selectedNode.id, { label: event.target.value })} /></Form.Item>
+                    <Form.Item label={tr("标记颜色")}><Input type="color" value={selectedNode.color || '#ff4d4f'} className="combination-color-input" onChange={event => updateNode(selectedNode.id, { color: event.target.value })} /></Form.Item>
+                    <Form.Item label={tr("输出框来源")} extra={tr("留空时输出无框业务事件")}>
+                      <Select allowClear value={selectedNode.box_source_node_id || undefined} options={detectorOptions} placeholder={tr("仅事件，不画框")} onChange={boxSource => updateNode(selectedNode.id, { box_source_node_id: boxSource || null })} />
                     </Form.Item>
                   </>
                 ) : null}
 
                 {!['frame', 'output'].includes(selectedNode.type) ? (
-                  <Button block tone="danger" icon={<DeleteOutlined />} onClick={() => removeNode(selectedNode.id)}>删除节点</Button>
+                  <Button block tone="danger" icon={<DeleteOutlined />} onClick={() => removeNode(selectedNode.id)}>{tr("删除节点")}</Button>
                 ) : null}
               </Form>
             </>
           ) : (
             <div className="combination-inspector-empty">
               <ApartmentOutlined />
-              <strong>选择一个节点</strong>
-              <p>详细参数会在这里显示。蓝色端口传递画面或目标区域，橙色端口传递判定结果。</p>
+              <strong>{tr("选择一个节点")}</strong>
+              <p>{tr("详细参数会在这里显示。蓝色端口传递画面或目标区域，橙色端口传递判定结果。")}</p>
             </div>
           )}
         </aside>
       </div>
 
-      <Card title={<Space><ExperimentOutlined />测试当前组合</Space>} className="cascade-preview-card">
+      <Card title={<Space><ExperimentOutlined />{tr("测试当前组合")}</Space>} className="cascade-preview-card">
         <div className="combination-test-row">
           <Upload.Dragger
             accept="image/*"
@@ -1105,42 +1106,42 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
             onChange={({ fileList: next }) => { setFileList(next.slice(-1)); setPreview(null); }}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">上传真实场景图片</p>
-            <p className="ant-upload-hint">测试结果会回写到画布节点，不会保存图片。</p>
+            <p className="ant-upload-text">{tr("上传真实场景图片")}</p>
+            <p className="ant-upload-hint">{tr("测试结果会回写到画布节点，不会保存图片。")}</p>
           </Upload.Dragger>
           <div className="combination-test-action">
             <ThunderboltOutlined />
-            <strong>逐节点解释结果</strong>
-            <p>检查每个主体、条件真假、模型异常与最终输出。</p>
-            <Button type="primary" icon={<ExperimentOutlined />} loading={previewing} disabled={fileList.length === 0 || Boolean(validationError)} onClick={runPreview}>运行测试</Button>
-            {preview ? <Button onClick={() => setResultOpen(true)}>查看上次结果</Button> : null}
+            <strong>{tr("逐节点解释结果")}</strong>
+            <p>{tr("检查每个主体、条件真假、模型异常与最终输出。")}</p>
+            <Button type="primary" icon={<ExperimentOutlined />} loading={previewing} disabled={fileList.length === 0 || Boolean(validationError)} onClick={runPreview}>{tr("运行测试")}</Button>
+            {preview ? <Button onClick={() => setResultOpen(true)}>{tr("查看上次结果")}</Button> : null}
           </div>
         </div>
       </Card>
 
-      <Drawer title="组合检测测试结果" open={resultOpen} onClose={() => setResultOpen(false)} width={720}>
+      <Drawer title={tr("组合检测测试结果")} open={resultOpen} onClose={() => setResultOpen(false)} width={720}>
         {preview?.error ? <Alert type="error" showIcon message={preview.error} /> : null}
         {preview?.diagnosis ? (
           <Alert
             className="combination-diagnosis"
             type={preview.diagnosis.state === 'matched' ? 'success' : preview.diagnosis.state === 'unknown' ? 'warning' : 'info'}
             showIcon
-            message={preview.diagnosis.state === 'matched' ? '组合规则已命中' : preview.diagnosis.state === 'unknown' ? '检测结果不完整' : '组合规则未命中'}
+            message={preview.diagnosis.state === 'matched' ? tr("组合规则已命中") : preview.diagnosis.state === 'unknown' ? tr("检测结果不完整") : tr("组合规则未命中")}
             description={preview.diagnosis.summary}
           />
         ) : null}
         {preview?.context_evaluations?.length ? (
-          <Card size="small" title={`主体判定 · ${preview.context_evaluations.length} 个上下文`} className="combination-context-card">
+          <Card size="small" title={trf("主体判定 · __VAR0__ 个上下文", [preview.context_evaluations.length])} className="combination-context-card">
             {preview.context_evaluations.map((context, index) => (
               <div className="combination-context-row" key={context.anchor_record_id ?? index}>
                 <Tag color={truthStateMeta[context.state].color}>{truthStateMeta[context.state].label}</Tag>
-                <strong>主体 {index + 1}</strong>
+                <strong>{tr("主体")} {index + 1}</strong>
                 <div className="combination-context-detail">
                   <span>{context.summary || context.predicates.map(item => `${item.name}: ${item.count}`).join(' · ')}</span>
                   {context.predicates.map(item => (
                     <div className="combination-predicate-result" key={item.node_id}>
                       <Tag color={truthStateMeta[item.state].color}>{truthStateMeta[item.state].label}</Tag>
-                      <span>{item.reason || `${item.name}：命中 ${item.count} 个`}</span>
+                      <span>{item.reason || trf("__VAR0__：命中 __VAR1__ 个", [item.name, item.count])}</span>
                     </div>
                   ))}
                 </div>
@@ -1156,20 +1157,20 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
                 <Tag color={(node.execution_state && executionStateMeta[node.execution_state]?.color) || (node.status === 'ok' ? 'success' : node.status === 'failed' ? 'error' : 'warning')}>
                   {(node.execution_state && executionStateMeta[node.execution_state]?.label) || node.status}
                 </Tag>
-                <span>输入 {node.input_count}</span>
-                <span>执行 {node.successful_inferences ?? 0}</span>
-                <span>命中 {node.detection_count}</span>
-                {node.forwarded_count !== undefined ? <span>下传 {node.forwarded_count}</span> : null}
-                {node.pruned_count ? <span>截断 {node.pruned_count}</span> : null}
+                <span>{tr("输入")} {node.input_count}</span>
+                <span>{tr("执行")} {node.successful_inferences ?? 0}</span>
+                <span>{tr("命中")} {node.detection_count}</span>
+                {node.forwarded_count !== undefined ? <span>{tr("下传")} {node.forwarded_count}</span> : null}
+                {node.pruned_count ? <span>{tr("截断")} {node.pruned_count}</span> : null}
                 <span>{node.inference_time_ms} ms</span>
               </Space>
               {node.reason ? <Alert className="cascade-node-reason" type={node.execution_state === 'failed' ? 'error' : node.execution_state === 'blocked' || node.execution_state === 'degraded' ? 'warning' : 'info'} showIcon message={node.reason} /> : null}
               {node.errors?.length ? <div className="cascade-node-errors">{node.errors.map((error, errorIndex) => <div key={`${error}-${errorIndex}`}>{error}</div>)}</div> : null}
-              <Image src={node.image} alt={`${node.node_name || node.stage_name}测试结果`} />
+              <Image src={node.image} alt={trf("__VAR0__测试结果", [node.node_name || node.stage_name])} />
             </Card>
           ))}
         </div>
-        {preview?.result_image ? <Card size="small" title={`最终结果 · ${preview.detection_count} 个`}><Image src={preview.result_image} alt="组合检测最终结果" /></Card> : null}
+        {preview?.result_image ? <Card size="small" title={trf("最终结果 · __VAR0__ 个", [preview.detection_count])}><Image src={preview.result_image} alt={tr("组合检测最终结果")} /></Card> : null}
       </Drawer>
     </div>
   );

@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Checkbox, message, Tabs, Upload } from 'antd';
 import { CodeOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
@@ -76,7 +77,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
   const beforeUpload = (file: File) => {
     if (!file.name.endsWith('.py')) {
-      message.error('只能上传 .py 文件');
+      message.error(tr("只能上传 .py 文件"));
       return Upload.LIST_IGNORE;
     }
     return false; // 阻止自动上传
@@ -88,7 +89,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       const values = await form.validateFields();
 
       if (!codeContent.trim()) {
-        message.error(uploadMode === 'code' ? '请输入脚本内容' : '请上传脚本文件');
+        message.error(uploadMode === 'code' ? tr("请输入脚本内容") : tr("请上传脚本文件"));
         return;
       }
 
@@ -104,7 +105,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       if (error?.errorFields) {
         return; // 表单验证错误
       }
-      message.error(error?.response?.data?.error || '上传失败');
+      message.error(error?.response?.data?.error || tr("上传失败"));
     } finally {
       setSubmitting(false);
     }
@@ -119,14 +120,14 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
   return (
     <AppModal
-      title={script?.content ? '使用模板创建脚本' : '创建脚本'}
-      description="在线编辑或导入 Python 文件，保存到用户脚本目录"
+      title={script?.content ? tr("使用模板创建脚本") : tr("创建脚本")}
+      description={tr("在线编辑或导入 Python 文件，保存到用户脚本目录")}
       open={visible}
       onCancel={handleCancel}
       onOk={handleSubmit}
       size="xl"
-      okText="创建脚本"
-      cancelText="取消"
+      okText={tr("创建脚本")}
+      cancelText={tr("取消")}
       confirmLoading={submitting}
       okButtonProps={{ disabled: submitting }}
       cancelButtonProps={{ disabled: submitting }}
@@ -140,10 +141,10 @@ const UploadModal: React.FC<UploadModalProps> = ({
         layout="vertical"
       >
         <Form.Item
-          label="脚本路径"
+          label={tr("脚本路径")}
           name="path"
-          rules={[{ required: true, message: '请输入脚本路径' }]}
-          help="相对于 app/user_scripts/ 的路径，例如: my_detector.py 或 detectors/my_detector.py"
+          rules={[{ required: true, message: tr("请输入脚本路径") }]}
+          help={tr("相对于 app/user_scripts/ 的路径，例如: my_detector.py 或 detectors/my_detector.py")}
         >
           <Input
             prefix={<CodeOutlined />}
@@ -161,11 +162,11 @@ const UploadModal: React.FC<UploadModalProps> = ({
               label: (
                 <span>
                   <CodeOutlined />
-                  在线编辑
+                  {tr("在线编辑")}
                 </span>
               ),
               children: (
-                <Form.Item label="脚本内容" required>
+                <Form.Item label={tr("脚本内容")} required>
                   <CodeEditor
                     value={codeContent}
                     onChange={setCodeContent}
@@ -179,11 +180,11 @@ const UploadModal: React.FC<UploadModalProps> = ({
               label: (
                 <span>
                   <FileTextOutlined />
-                  文件上传
+                  {tr("文件上传")}
                 </span>
               ),
               children: (
-                <Form.Item label="上传 .py 文件" required>
+                <Form.Item label={tr("上传 .py 文件")} required>
                   <Upload.Dragger
                     fileList={fileList}
                     onChange={handleFileChange}
@@ -194,14 +195,14 @@ const UploadModal: React.FC<UploadModalProps> = ({
                     <p className="ant-upload-drag-icon">
                       <InboxOutlined />
                     </p>
-                    <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+                    <p className="ant-upload-text">{tr("点击或拖拽文件到此区域上传")}</p>
                     <p className="ant-upload-hint">
-                      支持 .py 文件，文件将自动读取并填充到编辑器
+                      {tr("支持 .py 文件，文件将自动读取并填充到编辑器")}
                     </p>
                   </Upload.Dragger>
                   {codeContent && (
                     <div style={{ marginTop: 16 }}>
-                      <p>文件内容预览：</p>
+                      <p>{tr("文件内容预览：")}</p>
                       <CodeEditor
                         value={codeContent}
                         onChange={setCodeContent}
@@ -220,7 +221,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
             checked={createAlgorithm}
             onChange={(e) => setCreateAlgorithm(e.target.checked)}
           >
-            同时创建算法记录（可直接在任务中使用）
+            {tr("同时创建算法记录（可直接在任务中使用）")}
           </Checkbox>
         </Form.Item>
       </Form>

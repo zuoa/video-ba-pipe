@@ -1,3 +1,4 @@
+import { getDateLocale, tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Form, Input, InputNumber, Progress, Select, Switch, Tabs, Tag, Typography, message, Spin } from 'antd';
 import type { FormInstance } from 'antd';
@@ -67,21 +68,21 @@ const validateAndGetAllFields = async (form: FormInstance) => {
 };
 
 const NODE_ID_SOURCE_LABELS: Record<string, string> = {
-  environment: '环境变量',
-  mac: 'MAC 地址',
-  persistent_file: '持久化文件',
-  uuid: '自动 UUID',
-  hostname: '主机名回退',
+  environment: tr("环境变量"),
+  mac: tr("MAC 地址"),
+  persistent_file: tr("持久化文件"),
+  uuid: tr("自动 UUID"),
+  hostname: tr("主机名回退"),
 };
 
 const EMPTY_HTTP_HEADERS: Array<{ name?: string; value?: string }> = [];
-const GPU_POLICY_OPTIONS = [{ value: 'balanced', label: '预计显存占用最低' }];
+const GPU_POLICY_OPTIONS = [{ value: 'balanced', label: tr("预计显存占用最低") }];
 const GPU_FAILURE_MODE_OPTIONS = [
-  { value: 'reject', label: '拒绝新模型（推荐）' },
-  { value: 'legacy', label: '降级为旧模式' },
+  { value: 'reject', label: tr("拒绝新模型（推荐）") },
+  { value: 'legacy', label: tr("降级为旧模式") },
 ];
 const FACE_BACKEND_LABELS: Record<string, string> = {
-  auto: '自动选择（推荐）',
+  auto: tr("自动选择（推荐）"),
   onnxruntime: 'ONNX Runtime',
   tensorrt: 'TensorRT / CUDA',
   torchscript: 'TorchScript',
@@ -99,7 +100,18 @@ const buildHttpReceiverPrompt = ({
   customHeaderNames: string[];
   mediaDeliveryMode: string;
 }) => {
-  const signatureInstruction = `HMAC-SHA256 校验协议必须与发送端完全一致：
+  const isEnglish = getDateLocale() === 'en-US';
+  const signatureInstruction = isEnglish
+    ? `The HMAC-SHA256 verification protocol must match the sender exactly:
+   - Read X-VideoBA-Node-Id, X-VideoBA-Timestamp, X-VideoBA-Nonce, X-VideoBA-Event-Id, X-VideoBA-Event-Type, X-VideoBA-Test, and X-VideoBA-Signature. Preserve the original string value of each header.
+   - Read the raw HTTP request body bytes (raw_body) before parsing JSON. body_sha256 is the lowercase hexadecimal SHA256(raw_body).
+   - X-VideoBA-Test must be the lowercase string true or false. canonical = node_id + "\\n" + timestamp + "\\n" + nonce + "\\n" + event_id + "\\n" + event_type + "\\n" + test_marker + "\\n" + body_sha256. event_type and test_marker are the original values of X-VideoBA-Event-Type and X-VideoBA-Test.
+   - expected is the lowercase hexadecimal HMAC-SHA256(key=UTF8(<HMAC_SHARED_SECRET>), message=UTF8(canonical)).
+   - X-VideoBA-Signature has the format sha256=<expected>. Compare signatures in constant time; do not use ordinary string comparison.
+   - timestamp is Unix time in seconds and must be within 300 seconds of the server clock. nonce must be nonempty, cached for at least 10 minutes, and rejected with 409 if reused.
+   - Verify the signature before recording the nonce so forged requests cannot fill the replay cache. Keep sender and receiver clocks synchronized.
+   - X-VideoBA-Node-Id must equal the registered node ${nodeId || '<CURRENT_NODE_ID>'}. JSON node_id, event_id, and event_type must match their corresponding headers. X-VideoBA-Test must be true exactly when JSON test is the boolean true; otherwise it must be false. Reject any mismatch among duplicate fields. Never route on unverified headers. Return 401 for signature, timestamp, or node verification failures.`
+    : `HMAC-SHA256 校验协议必须与发送端完全一致：
    - 读取 X-VideoBA-Node-Id、X-VideoBA-Timestamp、X-VideoBA-Nonce、X-VideoBA-Event-Id、X-VideoBA-Event-Type、X-VideoBA-Test 和 X-VideoBA-Signature；保留各请求头的原始字符串值。
    - 先读取未经重新序列化的原始 HTTP 请求体字节 raw_body，再解析 JSON；body_sha256 = SHA256(raw_body) 的小写十六进制。
    - X-VideoBA-Test 只允许小写 true 或 false。canonical = node_id + "\\n" + timestamp + "\\n" + nonce + "\\n" + event_id + "\\n" + event_type + "\\n" + test_marker + "\\n" + body_sha256，其中 event_type 和 test_marker 分别是 X-VideoBA-Event-Type、X-VideoBA-Test 的原始值。
@@ -109,8 +121,8 @@ const buildHttpReceiverPrompt = ({
    - 先完成签名校验，再登记 nonce，避免伪造请求占满防重放缓存；发送端和接收端都要同步系统时间。
    - X-VideoBA-Node-Id 必须等于已登记节点 ${nodeId || '<CURRENT_NODE_ID>'}；JSON 中的 node_id、event_id、event_type 必须分别等于对应请求头。JSON test 严格为布尔值 true 时 X-VideoBA-Test 必须为 true，否则必须为 false。任何重复字段不一致都要拒绝，不能用未核验的请求头分流。签名、时间戳或节点校验失败返回 401。`;
   const customHeaders = customHeaderNames.length > 0
-    ? `还要校验这些自定义请求头（值从安全配置读取）：${customHeaderNames.map((name) => `${name}: <${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_VALUE>`).join('；')}。`
-    : '没有额外的自定义请求头。';
+    ? trf("还要校验这些自定义请求头（值从安全配置读取）：__VAR0__。", [customHeaderNames.map((name) => `${name}: <${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_VALUE>`).join('；')])
+    : tr("没有额外的自定义请求头。");
   const commonExample = {
     event_id: 'box-01-42:alert-created',
     event_type: 'alert.created',
@@ -121,7 +133,7 @@ const buildHttpReceiverPrompt = ({
     alert_id: 42,
     alert_type: 'person',
     alert_level: 'warning',
-    alert_message: '检测到人员',
+    alert_message: tr('检测到人员'),
   };
   const example = {
     ...commonExample,
@@ -176,6 +188,26 @@ const buildHttpReceiverPrompt = ({
       },
     },
   };
+  if (isEnglish) {
+    return `Implement a VideoBA alert receiver API in the current project with these requirements:
+
+1. Create POST ${endpointUrl || '<HTTP_ENDPOINT_URL>'} accepting Content-Type: application/json. Do not depend on redirects.
+2. Every request must use the HMAC-SHA256 request signature defined below; do not send Authorization. Read the shared secret from an environment variable or secure configuration, shown here as <HMAC_SHARED_SECRET>. ${customHeaders}
+3. ${signatureInstruction}
+4. Route events only after both signature verification and header/JSON consistency checks succeed. Treat an event as a connectivity test only when event_type=system.test AND test=true. Reject mismatches; never classify by unsigned or unverified values.
+5. Example request body:
+${JSON.stringify(example, null, 2)}
+6. The sender currently uses ${mediaDeliveryMode} for media delivery. The receiver must explicitly support all three branches based on media_delivery_mode and media.image.kind:
+${JSON.stringify(mediaContracts, null, 2)}
+   - inline: The image is already in media.image.data in this JSON request. Decode and save it only when encoding=base64 and content_type is an allowed image type. Verify the decoded byte count against size_bytes. Do not fetch from the sender using alert_image, alert_image_url, or a local relative path.
+   - url: Fetch the image from media.image.url with connection/read timeouts, a response size limit, and SSRF protection. Do not treat the URL string as Base64.
+   - object_storage: On alert.created with media.status=pending, persist the text alert first. Later associate alert.media.ready through external_alert_id, then process its media.image.url. Pending does not mean the image is missing.
+   The media field is authoritative for media handling. Top-level local paths such as alert_image and alert_image_ori are compatibility metadata only; never build a sender URL from them. Return 422 and log the reason for unknown media_delivery_mode or kind. Other new optional fields may be ignored.
+7. Make event_id unique and processing idempotent. A repeated event_id must return the original successful result or another 2xx, not a unique-constraint error. Use external_alert_id to associate created and media.ready events for the same alert.
+8. Return a 2xx only after the event has been reliably accepted or persisted. Return 4xx for validation failures and 5xx for temporary failures. The sender retries every non-2xx response, timeout, and network error with at-least-once delivery semantics.
+9. Production must use HTTPS. HMAC authenticates and protects integrity; it does not encrypt request content.
+10. Provide a runnable implementation, dependency installation commands, environment variable examples, database schema/migrations, and automated tests for a valid event, duplicate event, test event, expired timestamp, reused nonce, modified body, modified event-type header, modified test-marker header, inconsistent duplicate fields, and invalid signature.`;
+  }
   return `请在当前项目中实现 VideoBA 告警接收端 API，要求如下：
 
 1. 创建 POST ${endpointUrl || '<HTTP_ENDPOINT_URL>'}，接收 Content-Type: application/json；不要依赖重定向。
@@ -338,7 +370,7 @@ const SystemSettingsPage: React.FC = () => {
       messageQueueForm.setFieldsValue(messageQueueResponse.config);
       setSystemInfo(systemInfoResponse);
     } catch (error: any) {
-      message.error(`加载系统配置失败: ${error.message}`);
+      message.error(trf("加载系统配置失败: __VAR0__", [error.message]));
     } finally {
       setLoading(false);
     }
@@ -380,7 +412,7 @@ const SystemSettingsPage: React.FC = () => {
     const firstErrorIndex = results.findIndex((result) => result.status === 'rejected');
     if (firstErrorIndex >= 0) {
       setActiveTabKey(sections[firstErrorIndex].key);
-      message.error('请完善当前页签中标红的必填项');
+      message.error(tr("请完善当前页签中标红的必填项"));
       return;
     }
     const [
@@ -409,13 +441,13 @@ const SystemSettingsPage: React.FC = () => {
       ]);
       setInferenceResource(inferenceResponse);
       setFaceRecognition(faceResponse);
-      message.success('系统配置已保存');
+      message.success(tr("系统配置已保存"));
       await loadConfig();
     } catch (error: any) {
       if (error?.errorFields) {
         return;
       }
-      message.error(`保存失败: ${error.message}`);
+      message.error(trf("保存失败: __VAR0__", [error.message]));
     } finally {
       setSaving(false);
     }
@@ -426,10 +458,10 @@ const SystemSettingsPage: React.FC = () => {
       const values = await opsForm.validateFields(['webhook_url', 'secret']);
       setTestingWebhook(true);
       await testOpsNotificationConfig({ ...opsForm.getFieldsValue(), ...values });
-      message.success('钉钉测试通知已发送');
+      message.success(tr("钉钉测试通知已发送"));
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(`测试通知失败: ${error.message}`);
+      message.error(trf("测试通知失败: __VAR0__", [error.message]));
     } finally {
       setTestingWebhook(false);
     }
@@ -441,12 +473,12 @@ const SystemSettingsPage: React.FC = () => {
       const values = await messageQueueForm.validateFields();
       const response = await testMessageQueueConfig(values);
       if (response?.success) {
-        message.success(response.message || '消息投递连接正常');
+        message.success(response.message || tr("消息投递连接正常"));
       } else {
-        message.error(response?.error || '测试连接失败');
+        message.error(response?.error || tr("测试连接失败"));
       }
     } catch (error: any) {
-      message.error(`测试连接失败: ${error.message || error.error || '未知错误'}`);
+      message.error(trf("测试连接失败: __VAR0__", [error.message || error.error || tr("未知错误")]));
     } finally {
       setTestingMq(false);
     }
@@ -455,9 +487,9 @@ const SystemSettingsPage: React.FC = () => {
   const handleCopyHttpPrompt = async () => {
     const copied = await copyToClipboard(httpReceiverPrompt);
     if (copied) {
-      message.success('接收端 Prompt 已复制');
+      message.success(tr("接收端 Prompt 已复制"));
     } else {
-      message.error('复制失败，请手动选择并复制');
+      message.error(tr("复制失败，请手动选择并复制"));
     }
   };
 
@@ -466,10 +498,10 @@ const SystemSettingsPage: React.FC = () => {
       const values = await validateAndGetAllFields(publicMediaForm);
       setTestingObjectStorage(true);
       const response = await testObjectStorageConfig(values);
-      message.success(response.message || '对象存储连接正常');
+      message.success(response.message || tr("对象存储连接正常"));
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(`对象存储测试失败: ${error.message || error.error || '未知错误'}`);
+      message.error(trf("对象存储测试失败: __VAR0__", [error.message || error.error || tr("未知错误")]));
     } finally {
       setTestingObjectStorage(false);
     }
@@ -482,7 +514,7 @@ const SystemSettingsPage: React.FC = () => {
       setDeliveryStats(response.delivery_stats);
       message.success(response.message);
     } catch (error: any) {
-      message.error(`重新投递失败: ${error.message || error.error || '未知错误'}`);
+      message.error(trf("重新投递失败: __VAR0__", [error.message || error.error || tr("未知错误")]));
     } finally {
       setRetryingDeliveries(false);
     }
@@ -493,8 +525,8 @@ const SystemSettingsPage: React.FC = () => {
       <PageHeader
         icon={<SettingOutlined />}
         eyebrow="SYSTEM CONTROL"
-        title="系统设置"
-        subtitle="统一管理推理资源、人脸识别、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。"
+        title={tr("系统设置")}
+        subtitle={tr("统一管理推理资源、人脸识别、录像存储、运维通知、视频轮转、API Key、VL 核验与消息投递配置。")}
         extra={!['apiKeys', 'license'].includes(activeTabKey) ? (
           <Button
             type="primary"
@@ -502,7 +534,7 @@ const SystemSettingsPage: React.FC = () => {
             loading={saving}
             onClick={handleSave}
           >
-            保存配置
+            {tr("保存配置")}
           </Button>
         ) : undefined}
       />
@@ -513,28 +545,28 @@ const SystemSettingsPage: React.FC = () => {
         </div>
       ) : (
         <>
-          <section className="node-identity-strip" aria-label="当前系统节点身份">
+          <section className="node-identity-strip" aria-label={tr("当前系统节点身份")}>
             <div className="node-identity-primary">
               <span className="node-identity-icon" aria-hidden="true"><ApartmentOutlined /></span>
               <div>
-                <span className="node-identity-eyebrow">当前系统节点</span>
+                <span className="node-identity-eyebrow">{tr("当前系统节点")}</span>
                 <Typography.Text
                   className="node-identity-value"
-                  copyable={systemInfo?.node_id ? { text: systemInfo.node_id, tooltips: ['复制节点 ID', '已复制'] } : false}
+                  copyable={systemInfo?.node_id ? { text: systemInfo.node_id, tooltips: [tr("复制节点 ID"), tr("已复制")] } : false}
                 >
-                  {systemInfo?.node_id || '未获取'}
+                  {systemInfo?.node_id || tr("未获取")}
                 </Typography.Text>
-                <small>用于消息主题、告警来源标识和集群去重</small>
+                <small>{tr("用于消息主题、告警来源标识和集群去重")}</small>
               </div>
             </div>
             <dl className="node-identity-meta">
               <div>
-                <dt>身份来源</dt>
-                <dd>{NODE_ID_SOURCE_LABELS[systemInfo?.node_id_source || ''] || systemInfo?.node_id_source || '未知'}</dd>
+                <dt>{tr("身份来源")}</dt>
+                <dd>{NODE_ID_SOURCE_LABELS[systemInfo?.node_id_source || ''] || systemInfo?.node_id_source || tr("未知")}</dd>
               </div>
               <div>
-                <dt>主机名</dt>
-                <dd title={systemInfo?.hostname}>{systemInfo?.hostname || '未知'}</dd>
+                <dt>{tr("主机名")}</dt>
+                <dd title={systemInfo?.hostname}>{systemInfo?.hostname || tr("未知")}</dd>
               </div>
             </dl>
           </section>
@@ -546,67 +578,67 @@ const SystemSettingsPage: React.FC = () => {
             items={[
             {
               key: 'license',
-              label: (<span><SafetyCertificateOutlined /> 许可证</span>),
+              label: (<span><SafetyCertificateOutlined /> {tr("许可证")}</span>),
               children: (
-                <Card className="system-settings-card" title={<span><SafetyCertificateOutlined /> 许可证与资源额度</span>}>
+                <Card className="system-settings-card" title={<span><SafetyCertificateOutlined /> {tr("许可证与资源额度")}</span>}>
                   <LicenseSettingsCard />
                 </Card>
               ),
             },
             {
               key: 'inference',
-              label: (<span><SafetyCertificateOutlined /> 推理资源保护</span>),
+              label: (<span><SafetyCertificateOutlined /> {tr("推理资源保护")}</span>),
               children: (
                 <Card
                   className="system-settings-card inference-resource-card"
-                  title={<span><SafetyCertificateOutlined /> 推理资源保护</span>}
-                  extra={<span className="inference-config-source">自动兼容 · {configSourceLabel(inferenceResource?.config_source)}</span>}
+                  title={<span><SafetyCertificateOutlined /> {tr("推理资源保护")}</span>}
+                  extra={<span className="inference-config-source">{tr("自动兼容 ·")} {configSourceLabel(inferenceResource?.config_source)}</span>}
                 >
-                  <div className="inference-status-strip" aria-label="推理资源运行状态">
+                  <div className="inference-status-strip" aria-label={tr("推理资源运行状态")}>
                     <InferenceStatusMetric
                       label="Worker"
-                      value={workerOnline ? '在线' : '离线'}
+                      value={workerOnline ? tr("在线") : tr("离线")}
                       tone={workerOnline ? 'healthy' : 'danger'}
-                      detail={inferenceStatus?.platform || inferenceCapabilities.platform || '未知平台'}
+                      detail={inferenceStatus?.platform || inferenceCapabilities.platform || tr("未知平台")}
                     />
                     <InferenceStatusMetric
-                      label="共享服务"
-                      value={sharedServiceRunning ? '运行中' : '未运行'}
+                      label={tr("共享服务")}
+                      value={sharedServiceRunning ? tr("运行中") : tr("未运行")}
                       tone={sharedServiceRunning ? 'healthy' : sharedInferenceEnabled ? 'warning' : 'neutral'}
-                      detail={effectiveInference?.shared_inference_enabled ? `PID ${inferenceStatus?.service_pid || '—'}` : '当前未生效'}
+                      detail={effectiveInference?.shared_inference_enabled ? `PID ${inferenceStatus?.service_pid || '—'}` : tr("当前未生效")}
                     />
                     <InferenceStatusMetric
-                      label="共享模型"
-                      value={`${inferenceStatus?.model_count || 0} 个`}
+                      label={tr("共享模型")}
+                      value={trf("__VAR0__ 个", [inferenceStatus?.model_count || 0])}
                       tone="neutral"
-                      detail={`${inferenceModels.reduce((sum, model) => sum + (model.references || 0), 0)} 个引用`}
+                      detail={trf("__VAR0__ 个引用", [inferenceModels.reduce((sum, model) => sum + (model.references || 0), 0)])}
                     />
                     <InferenceStatusMetric
-                      label="GPU 调度"
-                      value={effectiveInference?.gpu_scheduling_enabled ? `${inferenceGpus.length} 张卡` : '未启用'}
+                      label={tr("GPU 调度")}
+                      value={effectiveInference?.gpu_scheduling_enabled ? trf("__VAR0__ 张卡", [inferenceGpus.length]) : tr("未启用")}
                       tone={gpuScheduler?.degraded_to_legacy ? 'warning' : effectiveInference?.gpu_scheduling_enabled ? 'healthy' : 'neutral'}
-                      detail={gpuScheduler?.metrics_stale ? 'NVML 指标已过期' : gpuScheduler?.degraded_to_legacy ? '已降级为旧模式' : '按预计显存动态选卡'}
+                      detail={gpuScheduler?.metrics_stale ? tr("NVML 指标已过期") : gpuScheduler?.degraded_to_legacy ? tr("已降级为旧模式") : tr("按预计显存动态选卡")}
                     />
                     <InferenceStatusMetric
-                      label="内存余量"
-                      value={inferenceMemory ? formatMb(inferenceMemory.available_mb) : '暂无数据'}
+                      label={tr("内存余量")}
+                      value={inferenceMemory ? formatMb(inferenceMemory.available_mb) : tr("暂无数据")}
                       tone={inferenceMemory && inferenceMemory.usage_percent >= 90 ? 'danger' : 'neutral'}
-                      detail={inferenceMemory ? `Swap ${formatMb(inferenceMemory.swap_used_mb)}` : '等待 worker 心跳'}
+                      detail={inferenceMemory ? `Swap ${formatMb(inferenceMemory.swap_used_mb)}` : tr("等待 worker 心跳")}
                     />
                   </div>
 
-                  <div className="inference-capability-row" aria-label="平台推理能力">
-                    <span>平台能力</span>
-                    <CapabilityTag supported={Boolean(inferenceCapabilities.shared_ultralytics)}>Ultralytics 共享</CapabilityTag>
-                    <CapabilityTag supported={Boolean(inferenceCapabilities.memory_admission)}>内存准入</CapabilityTag>
-                    <CapabilityTag supported={Boolean(inferenceCapabilities.gpu_scheduling)}>多 GPU 调度</CapabilityTag>
-                    <CapabilityTag supported={Boolean(inferenceCapabilities.oom_detection)}>OOM 检测</CapabilityTag>
-                    <CapabilityTag supported={Boolean(inferenceCapabilities.rknn_shared)}>RKNN 共享</CapabilityTag>
+                  <div className="inference-capability-row" aria-label={tr("平台推理能力")}>
+                    <span>{tr("平台能力")}</span>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.shared_ultralytics)}>{tr("Ultralytics 共享")}</CapabilityTag>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.memory_admission)}>{tr("内存准入")}</CapabilityTag>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.gpu_scheduling)}>{tr("多 GPU 调度")}</CapabilityTag>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.oom_detection)}>{tr("OOM 检测")}</CapabilityTag>
+                    <CapabilityTag supported={Boolean(inferenceCapabilities.rknn_shared)}>{tr("RKNN 共享")}</CapabilityTag>
                     {inferenceResource?.restart_required
-                      ? <Tag color="red">需要重启 worker</Tag>
+                      ? <Tag color="red">{tr("需要重启 worker")}</Tag>
                       : inferenceResource?.config_pending
-                        ? <Tag color="gold">等待 worker 应用</Tag>
-                        : <Tag color="green">配置已生效</Tag>}
+                        ? <Tag color="gold">{tr("等待 worker 应用")}</Tag>
+                        : <Tag color="green">{tr("配置已生效")}</Tag>}
                   </div>
 
                   <Alert
@@ -614,19 +646,19 @@ const SystemSettingsPage: React.FC = () => {
                     showIcon
                     className="system-settings-alert"
                     message={inferenceStatus?.reconcile_error
-                      ? '共享推理服务应用失败'
+                      ? tr("共享推理服务应用失败")
                       : !workerOnline
-                        ? '没有收到 worker 状态心跳'
+                        ? tr("没有收到 worker 状态心跳")
                         : inferenceResource?.config_pending
-                          ? '配置已保存，worker 正在自动应用'
-                          : '推理资源保护配置已生效'}
-                    description="共享服务或 GPU 调度参数变化时会安全重建共享模型进程。V1 管理共享 Ultralytics 与 PaddleOCR；RKNN、ONNX 和直连 YOLO 仍按本地模型副本计算。"
+                          ? tr("配置已保存，worker 正在自动应用")
+                          : tr("推理资源保护配置已生效")}
+                    description={tr("共享服务或 GPU 调度参数变化时会安全重建共享模型进程。V1 管理共享 Ultralytics 与 PaddleOCR；RKNN、ONNX 和直连 YOLO 仍按本地模型副本计算。")}
                   />
 
                   <Form form={inferenceForm} layout="vertical">
-                    <InferenceSectionTitle icon={<ThunderboltOutlined />} title="多 GPU 动态调度" description="加载共享模型前按预计显存选择物理 GPU，并为冷启动预留容量" />
+                    <InferenceSectionTitle icon={<ThunderboltOutlined />} title={tr("多 GPU 动态调度")} description={tr("加载共享模型前按预计显存选择物理 GPU，并为冷启动预留容量")} />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用 GPU 调度" name="gpu_scheduling_enabled" valuePropName="checked" extra="仅在 x86 Linux 且至少有两张可见 NVIDIA GPU 时生效；开启后会同时启用共享推理。">
+                      <Form.Item label={tr("启用 GPU 调度")} name="gpu_scheduling_enabled" valuePropName="checked" extra={tr("仅在 x86 Linux 且至少有两张可见 NVIDIA GPU 时生效；开启后会同时启用共享推理。")}>
                         <Switch
                           disabled={!inferenceCapabilities.gpu_scheduling}
                           onChange={(checked) => {
@@ -634,124 +666,124 @@ const SystemSettingsPage: React.FC = () => {
                           }}
                         />
                       </Form.Item>
-                      <Form.Item label="调度策略" name="gpu_scheduling_policy">
+                      <Form.Item label={tr("调度策略")} name="gpu_scheduling_policy">
                         <Select disabled={!gpuSchedulingEnabled} options={GPU_POLICY_OPTIONS} />
                       </Form.Item>
-                      <Form.Item label="允许使用的 GPU" name="gpu_allowed_devices" extra="留空表示使用全部可见 GPU。">
-                        <Select mode="multiple" allowClear disabled={!gpuSchedulingEnabled} options={gpuOptions} placeholder="全部可见 GPU" />
+                      <Form.Item label={tr("允许使用的 GPU")} name="gpu_allowed_devices" extra={tr("留空表示使用全部可见 GPU。")}>
+                        <Select mode="multiple" allowClear disabled={!gpuSchedulingEnabled} options={gpuOptions} placeholder={tr("全部可见 GPU")} />
                       </Form.Item>
-                      <Form.Item label="每卡保留显存（MB）" name="gpu_memory_reserve_mb" rules={[{ required: gpuSchedulingEnabled, message: '请输入每卡保留显存' }]}>
+                      <Form.Item label={tr("每卡保留显存（MB）")} name="gpu_memory_reserve_mb" rules={[{ required: gpuSchedulingEnabled, message: tr("请输入每卡保留显存") }]}>
                         <InputNumber min={0} max={1048576} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="新模型预估显存（MB）" name="gpu_new_model_default_mb" rules={[{ required: gpuSchedulingEnabled, message: '请输入新模型预估显存' }]}>
+                      <Form.Item label={tr("新模型预估显存（MB）")} name="gpu_new_model_default_mb" rules={[{ required: gpuSchedulingEnabled, message: tr("请输入新模型预估显存") }]}>
                         <InputNumber min={128} max={1048576} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="模型显存余量（%）" name="gpu_model_memory_margin_percent" rules={[{ required: gpuSchedulingEnabled, message: '请输入模型显存余量' }]}>
+                      <Form.Item label={tr("模型显存余量（%）")} name="gpu_model_memory_margin_percent" rules={[{ required: gpuSchedulingEnabled, message: tr("请输入模型显存余量") }]}>
                         <InputNumber min={0} max={100} precision={1} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="OOM 卡冷却（秒）" name="gpu_oom_cooldown_seconds" rules={[{ required: gpuSchedulingEnabled, message: '请输入 OOM 冷却时间' }]}>
+                      <Form.Item label={tr("OOM 卡冷却（秒）")} name="gpu_oom_cooldown_seconds" rules={[{ required: gpuSchedulingEnabled, message: tr("请输入 OOM 冷却时间") }]}>
                         <InputNumber min={1} max={86400} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="NVML 失效策略" name="gpu_failure_mode" extra="推荐拒绝新模型，避免静默集中到 GPU 0。">
+                      <Form.Item label={tr("NVML 失效策略")} name="gpu_failure_mode" extra={tr("推荐拒绝新模型，避免静默集中到 GPU 0。")}>
                         <Select disabled={!gpuSchedulingEnabled} options={GPU_FAILURE_MODE_OPTIONS} />
                       </Form.Item>
-                      <Form.Item label="NVML 快照有效期（秒）" name="gpu_nvml_stale_seconds" rules={[{ required: gpuSchedulingEnabled, message: '请输入快照有效期' }]}>
+                      <Form.Item label={tr("NVML 快照有效期（秒）")} name="gpu_nvml_stale_seconds" rules={[{ required: gpuSchedulingEnabled, message: tr("请输入快照有效期") }]}>
                         <InputNumber min={1} max={3600} precision={0} disabled={!gpuSchedulingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
 
-                    <InferenceSectionTitle icon={<ThunderboltOutlined />} title="共享推理" description="相同 Ultralytics 模型只保留一个模型进程" />
+                    <InferenceSectionTitle icon={<ThunderboltOutlined />} title={tr("共享推理")} description={tr("相同 Ultralytics 模型只保留一个模型进程")} />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用共享推理" name="shared_inference_enabled" valuePropName="checked" extra="GPU 调度依赖共享推理；关闭共享推理会同时关闭 GPU 调度。平台不支持时自动降级。">
+                      <Form.Item label={tr("启用共享推理")} name="shared_inference_enabled" valuePropName="checked" extra={tr("GPU 调度依赖共享推理；关闭共享推理会同时关闭 GPU 调度。平台不支持时自动降级。")}>
                         <Switch
                           onChange={(checked) => {
                             if (!checked) inferenceForm.setFieldValue('gpu_scheduling_enabled', false);
                           }}
                         />
                       </Form.Item>
-                      <Form.Item label="请求队列长度" name="queue_size" rules={[{ required: sharedInferenceEnabled, message: '请输入队列长度' }]}>
+                      <Form.Item label={tr("请求队列长度")} name="queue_size" rules={[{ required: sharedInferenceEnabled, message: tr("请输入队列长度") }]}>
                         <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="最大批量" name="batch_max_size" rules={[{ required: sharedInferenceEnabled, message: '请输入最大批量' }]}>
+                      <Form.Item label={tr("最大批量")} name="batch_max_size" rules={[{ required: sharedInferenceEnabled, message: tr("请输入最大批量") }]}>
                         <InputNumber min={1} max={64} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="批量等待（毫秒）" name="batch_wait_ms" rules={[{ required: sharedInferenceEnabled, message: '请输入批量等待时间' }]}>
+                      <Form.Item label={tr("批量等待（毫秒）")} name="batch_wait_ms" rules={[{ required: sharedInferenceEnabled, message: tr("请输入批量等待时间") }]}>
                         <InputNumber min={0} max={1000} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="请求超时（秒）" name="request_timeout_seconds" rules={[{ required: sharedInferenceEnabled, message: '请输入请求超时' }]}>
+                      <Form.Item label={tr("请求超时（秒）")} name="request_timeout_seconds" rules={[{ required: sharedInferenceEnabled, message: tr("请输入请求超时") }]}>
                         <InputNumber min={1} max={1800} precision={1} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="模型空闲回收（秒）" name="model_idle_seconds" rules={[{ required: sharedInferenceEnabled, message: '请输入空闲回收时间' }]}>
+                      <Form.Item label={tr("模型空闲回收（秒）")} name="model_idle_seconds" rules={[{ required: sharedInferenceEnabled, message: tr("请输入空闲回收时间") }]}>
                         <InputNumber min={10} max={86400} precision={0} disabled={!sharedInferenceEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
 
-                    <InferenceSectionTitle icon={<HddOutlined />} title="内存准入" description="在加载模型前保留系统安全水位，Swap 不计入可用容量" />
+                    <InferenceSectionTitle icon={<HddOutlined />} title={tr("内存准入")} description={tr("在加载模型前保留系统安全水位，Swap 不计入可用容量")} />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用内存准入" name="inference_admission_enabled" valuePropName="checked">
+                      <Form.Item label={tr("启用内存准入")} name="inference_admission_enabled" valuePropName="checked">
                         <Switch />
                       </Form.Item>
-                      <Form.Item label="保留内存（MB）" name="system_reserve_mb" rules={[{ required: inferenceAdmissionEnabled, message: '请输入保留内存' }]}>
+                      <Form.Item label={tr("保留内存（MB）")} name="system_reserve_mb" rules={[{ required: inferenceAdmissionEnabled, message: tr("请输入保留内存") }]}>
                         <InputNumber min={256} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="保留内存比例（%）" name="system_reserve_percent" extra="MB 与比例取较大值。" rules={[{ required: inferenceAdmissionEnabled, message: '请输入保留比例' }]}>
+                      <Form.Item label={tr("保留内存比例（%）")} name="system_reserve_percent" extra={tr("MB 与比例取较大值。")} rules={[{ required: inferenceAdmissionEnabled, message: tr("请输入保留比例") }]}>
                         <InputNumber min={0} max={50} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="新模型预估（MB）" name="new_model_default_mb" rules={[{ required: inferenceAdmissionEnabled, message: '请输入模型预估内存' }]}>
+                      <Form.Item label={tr("新模型预估（MB）")} name="new_model_default_mb" rules={[{ required: inferenceAdmissionEnabled, message: tr("请输入模型预估内存") }]}>
                         <InputNumber min={128} max={1048576} precision={0} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="模型内存余量（%）" name="model_memory_margin_percent" rules={[{ required: inferenceAdmissionEnabled, message: '请输入模型内存余量' }]}>
+                      <Form.Item label={tr("模型内存余量（%）")} name="model_memory_margin_percent" rules={[{ required: inferenceAdmissionEnabled, message: tr("请输入模型内存余量") }]}>
                         <InputNumber min={0} max={100} precision={1} disabled={!inferenceAdmissionEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
 
-                    <InferenceSectionTitle icon={<SafetyCertificateOutlined />} title="OOM 熔断" description="模型或 source host 被系统终止后逐级退避，避免重启风暴" />
+                    <InferenceSectionTitle icon={<SafetyCertificateOutlined />} title={tr("OOM 熔断")} description={tr("模型或 source host 被系统终止后逐级退避，避免重启风暴")} />
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用 OOM 熔断" name="oom_circuit_breaker_enabled" valuePropName="checked" extra="非 Linux/cgroup 平台自动降级。">
+                      <Form.Item label={tr("启用 OOM 熔断")} name="oom_circuit_breaker_enabled" valuePropName="checked" extra={tr("非 Linux/cgroup 平台自动降级。")}>
                         <Switch />
                       </Form.Item>
-                      <Form.Item label="熔断失败次数" name="oom_failure_threshold" rules={[{ required: oomCircuitEnabled, message: '请输入失败次数' }]}>
+                      <Form.Item label={tr("熔断失败次数")} name="oom_failure_threshold" rules={[{ required: oomCircuitEnabled, message: tr("请输入失败次数") }]}>
                         <InputNumber min={1} max={100} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="熔断持续（秒）" name="oom_circuit_open_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入熔断时间' }]}>
+                      <Form.Item label={tr("熔断持续（秒）")} name="oom_circuit_open_seconds" rules={[{ required: oomCircuitEnabled, message: tr("请输入熔断时间") }]}>
                         <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="稳定恢复（秒）" name="oom_stable_reset_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入恢复时间' }]}>
+                      <Form.Item label={tr("稳定恢复（秒）")} name="oom_stable_reset_seconds" rules={[{ required: oomCircuitEnabled, message: tr("请输入恢复时间") }]}>
                         <InputNumber min={60} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="最大退避（秒）" name="oom_restart_backoff_max_seconds" rules={[{ required: oomCircuitEnabled, message: '请输入最大退避时间' }]}>
+                      <Form.Item label={tr("最大退避（秒）")} name="oom_restart_backoff_max_seconds" rules={[{ required: oomCircuitEnabled, message: tr("请输入最大退避时间") }]}>
                         <InputNumber min={30} max={86400} precision={0} disabled={!oomCircuitEnabled} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
                   </Form>
 
                   {inferenceGpus.length > 0 ? (
-                    <div className="inference-model-list" aria-label="GPU 调度运行详情">
+                    <div className="inference-model-list" aria-label={tr("GPU 调度运行详情")}>
                       {inferenceGpus.map((gpu) => (
                         <div className="inference-model-row" key={gpu.uuid}>
                           <span className={`inference-model-dot ${gpu.cooldown_seconds > 0 ? '' : 'is-ready'}`} />
                           <strong>GPU {gpu.index} · {gpu.name}</strong>
-                          <span>显存 {formatMb(gpu.used_mb)} / {formatMb(gpu.total_mb)}</span>
-                          <span>预留 {formatMb(gpu.pending_reserved_mb)}</span>
-                          <span>{gpu.assignment_count} 个模型</span>
-                          <span>利用率 {gpu.utilization_percent ?? '—'}%</span>
-                          <span>{gpu.cooldown_seconds > 0 ? `冷却 ${gpu.cooldown_seconds.toFixed(0)}s` : '可分配'}</span>
+                          <span>{tr("显存")} {formatMb(gpu.used_mb)} / {formatMb(gpu.total_mb)}</span>
+                          <span>{tr("预留")} {formatMb(gpu.pending_reserved_mb)}</span>
+                          <span>{gpu.assignment_count} {tr("个模型")}</span>
+                          <span>{tr("利用率")} {gpu.utilization_percent ?? '—'}%</span>
+                          <span>{gpu.cooldown_seconds > 0 ? trf("冷却 __VAR0__s", [gpu.cooldown_seconds.toFixed(0)]) : tr("可分配")}</span>
                         </div>
                       ))}
                     </div>
                   ) : null}
 
                   {inferenceModels.length > 0 ? (
-                    <div className="inference-model-list" aria-label="共享模型运行详情">
+                    <div className="inference-model-list" aria-label={tr("共享模型运行详情")}>
                       {inferenceModels.map((model, index) => (
                         <div className="inference-model-row" key={`${model.model_id ?? 'model'}-${model.pid ?? index}`}>
                           <span className={`inference-model-dot ${model.ready ? 'is-ready' : ''}`} />
-                          <strong>模型 {model.model_id ?? '未知'}</strong>
-                          <span>{model.gpu_index === null || model.gpu_index === undefined ? model.device || '未绑卡' : `GPU ${model.gpu_index}`}</span>
-                          <span>显存 {formatMb(model.actual_gpu_mb ?? model.reserved_gpu_mb)}</span>
+                          <strong>{tr("模型")} {model.model_id ?? tr("未知")}</strong>
+                          <span>{model.gpu_index === null || model.gpu_index === undefined ? model.device || tr("未绑卡") : `GPU ${model.gpu_index}`}</span>
+                          <span>{tr("显存")} {formatMb(model.actual_gpu_mb ?? model.reserved_gpu_mb)}</span>
                           <span>PSS {formatMb(model.pss_mb)}</span>
-                          <span>{model.references || 0} 个引用</span>
-                          <span>队列 {model.queue_depth ?? '—'}</span>
+                          <span>{model.references || 0} {tr("个引用")}</span>
+                          <span>{tr("队列")} {model.queue_depth ?? '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -761,18 +793,18 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'faceRecognition',
-              label: (<span><TeamOutlined /> 人脸识别</span>),
+              label: (<span><TeamOutlined /> {tr("人脸识别")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><TeamOutlined /> 人脸识别运行策略</span>}
+                  title={<span><TeamOutlined /> {tr("人脸识别运行策略")}</span>}
                   extra={(
                     <span className="inference-config-source">
-                      来源：{faceRecognition?.config_source === 'database'
-                        ? '系统配置'
+                      {tr("来源：")}{faceRecognition?.config_source === 'database'
+                        ? tr("系统配置")
                         : faceRecognition?.config_source === 'cache'
-                          ? '上次有效配置'
-                          : '内置默认值'}
+                          ? tr("上次有效配置")
+                          : tr("内置默认值")}
                     </span>
                   )}
                 >
@@ -780,17 +812,17 @@ const SystemSettingsPage: React.FC = () => {
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="运行策略由系统设置统一管理"
-                    description="保留期对新事件立即生效；默认后端和商用门禁对下一次加载的人脸模型实例生效。各工作流仍可显式覆盖默认后端。"
+                    message={tr("运行策略由系统设置统一管理")}
+                    description={tr("保留期对新事件立即生效；默认后端和商用门禁对下一次加载的人脸模型实例生效。各工作流仍可显式覆盖默认后端。")}
                   />
 
                   <Form form={faceForm} layout="vertical">
                     <div className="system-settings-form-grid">
                       <Form.Item
-                        label="全局默认推理后端"
+                        label={tr("全局默认推理后端")}
                         name="inference_backend"
-                        extra="推荐保持自动选择，以便同一配置在 RK、Jetson、x86 CPU/GPU 等架构间迁移。"
-                        rules={[{ required: true, message: '请选择默认推理后端' }]}
+                        extra={tr("推荐保持自动选择，以便同一配置在 RK、Jetson、x86 CPU/GPU 等架构间迁移。")}
+                        rules={[{ required: true, message: tr("请选择默认推理后端") }]}
                       >
                         <Select
                           options={(faceRecognition?.available_backends || ['auto']).map((backend) => ({
@@ -800,26 +832,26 @@ const SystemSettingsPage: React.FC = () => {
                         />
                       </Form.Item>
                       <Form.Item
-                        label="只允许已声明可商用的模型"
+                        label={tr("只允许已声明可商用的模型")}
                         name="require_commercial_models"
                         valuePropName="checked"
-                        extra="开启后，未勾选“许可证允许商用”的模型包会被拒绝加载。"
+                        extra={tr("开启后，未勾选“许可证允许商用”的模型包会被拒绝加载。")}
                       >
-                        <Switch checkedChildren="强制" unCheckedChildren="不强制" />
+                        <Switch checkedChildren={tr("强制")} unCheckedChildren={tr("不强制")} />
                       </Form.Item>
                       <Form.Item
-                        label="已识别事件保留（天）"
+                        label={tr("已识别事件保留（天）")}
                         name="known_retention_days"
-                        extra="设置为 0 时不再持久化新的已识别事件及抓拍。"
-                        rules={[{ required: true, message: '请输入保留天数' }]}
+                        extra={tr("设置为 0 时不再持久化新的已识别事件及抓拍。")}
+                        rules={[{ required: true, message: tr("请输入保留天数") }]}
                       >
                         <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
                       <Form.Item
-                        label="陌生人事件保留（天）"
+                        label={tr("陌生人事件保留（天）")}
                         name="unknown_retention_days"
-                        extra="陌生人抓拍通常更敏感，建议使用更短的保留期；0 表示不持久化。"
-                        rules={[{ required: true, message: '请输入保留天数' }]}
+                        extra={tr("陌生人抓拍通常更敏感，建议使用更短的保留期；0 表示不持久化。")}
+                        rules={[{ required: true, message: tr("请输入保留天数") }]}
                       >
                         <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
@@ -830,39 +862,39 @@ const SystemSettingsPage: React.FC = () => {
                     type="warning"
                     showIcon
                     className="system-settings-alert"
-                    message="仍需在启动环境中提供生物数据密钥"
-                    description="数据目录、加密密钥和可信推理插件涉及卷挂载、密钥注入或 Python 模块加载，仍属于启动级配置；页面不会读取或回显密钥。"
+                    message={tr("仍需在启动环境中提供生物数据密钥")}
+                    description={tr("数据目录、加密密钥和可信推理插件涉及卷挂载、密钥注入或 Python 模块加载，仍属于启动级配置；页面不会读取或回显密钥。")}
                   />
                 </Card>
               ),
             },
             {
               key: 'videoDecode',
-              label: (<span><VideoCameraOutlined /> 视频解码</span>),
+              label: (<span><VideoCameraOutlined /> {tr("视频解码")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><VideoCameraOutlined /> 视频解码策略</span>}
-                  extra={<span className="inference-config-source">来源：{videoDecodeConfigSource === 'database' ? '系统配置' : '环境变量默认值'}</span>}
+                  title={<span><VideoCameraOutlined /> {tr("视频解码策略")}</span>}
+                  extra={<span className="inference-config-source">{tr("来源：")}{videoDecodeConfigSource === 'database' ? tr("系统配置") : tr("环境变量默认值")}</span>}
                 >
                   <Alert
                     type={decodeKeyframesOnly ? 'warning' : 'success'}
                     showIcon
                     className="system-settings-alert"
-                    message={decodeKeyframesOnly ? '仅解码关键帧已开启' : '当前解码全部帧'}
+                    message={decodeKeyframesOnly ? tr("仅解码关键帧已开启") : tr("当前解码全部帧")}
                     description={decodeKeyframesOnly
-                      ? '仅适合明确接受降低时间分辨率的场景；保存后，继承系统配置的视频源会在 5 秒内自动重启。'
-                      : '默认推荐配置。算法始终消费解码队列中的最新帧，减少队列堆积造成的画面延迟。'}
+                      ? tr("仅适合明确接受降低时间分辨率的场景；保存后，继承系统配置的视频源会在 5 秒内自动重启。")
+                      : tr("默认推荐配置。算法始终消费解码队列中的最新帧，减少队列堆积造成的画面延迟。")}
                   />
 
                   <Form form={videoDecodeForm} layout="vertical">
                     <Form.Item
-                      label="仅解码关键帧"
+                      label={tr("仅解码关键帧")}
                       name="decode_keyframes_only"
                       valuePropName="checked"
-                      extra="单个视频源中明确设置的开关优先于此全局配置；选择“继承系统配置”的视频源使用这里的值。"
+                      extra={tr("单个视频源中明确设置的开关优先于此全局配置；选择“继承系统配置”的视频源使用这里的值。")}
                     >
-                      <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                      <Switch checkedChildren={tr("开启")} unCheckedChildren={tr("关闭")} />
                     </Form.Item>
                   </Form>
                 </Card>
@@ -870,86 +902,86 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'recording',
-              label: (<span><VideoCameraOutlined /> 录像与存储</span>),
+              label: (<span><VideoCameraOutlined /> {tr("录像与存储")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><VideoCameraOutlined /> 录像与存储保护</span>}
+                  title={<span><VideoCameraOutlined /> {tr("录像与存储保护")}</span>}
                 >
                   <Alert
                     type={recordingEnabled ? 'warning' : 'success'}
                     showIcon
                     className="system-settings-alert"
-                    message={recordingEnabled ? '录像已开启，会持续占用磁盘空间' : '录像默认关闭'}
-                    description="配置保存后 worker 会自动重建相关缓冲区。媒体目录超过上限时按最老文件优先覆盖；磁盘低于安全水位时会提前回收。"
+                    message={recordingEnabled ? tr("录像已开启，会持续占用磁盘空间") : tr("录像默认关闭")}
+                    description={tr("配置保存后 worker 会自动重建相关缓冲区。媒体目录超过上限时按最老文件优先覆盖；磁盘低于安全水位时会提前回收。")}
                   />
 
                   <Form form={recordingForm} layout="vertical">
                     <div className="system-settings-form-grid">
                       <Form.Item
-                        label="启用告警录像"
+                        label={tr("启用告警录像")}
                         name="recording_enabled"
                         valuePropName="checked"
-                        extra="仅影响告警前后录像，告警图片仍会保存并受容量上限保护。"
+                        extra={tr("仅影响告警前后录像，告警图片仍会保存并受容量上限保护。")}
                       >
                         <Switch />
                       </Form.Item>
 
                       <Form.Item
-                        label="录像帧率（FPS）"
+                        label={tr("录像帧率（FPS）")}
                         name="recording_fps"
-                        rules={[{ required: recordingEnabled, message: '请输入录像帧率' }]}
+                        rules={[{ required: recordingEnabled, message: tr("请输入录像帧率") }]}
                       >
                         <InputNumber min={1} max={30} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="告警前录像（秒）"
+                        label={tr("告警前录像（秒）")}
                         name="pre_alert_seconds"
-                        rules={[{ required: recordingEnabled, message: '请输入告警前录像时长' }]}
+                        rules={[{ required: recordingEnabled, message: tr("请输入告警前录像时长") }]}
                       >
                         <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="告警后录像（秒）"
+                        label={tr("告警后录像（秒）")}
                         name="post_alert_seconds"
-                        rules={[{ required: recordingEnabled, message: '请输入告警后录像时长' }]}
+                        rules={[{ required: recordingEnabled, message: tr("请输入告警后录像时长") }]}
                       >
                         <InputNumber min={0} max={300} precision={0} disabled={!recordingEnabled} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="录像目录上限（GB）"
+                        label={tr("录像目录上限（GB）")}
                         name="video_max_gb"
-                        extra="达到上限后回收到约 90%，避免频繁逐文件清理。"
-                        rules={[{ required: true, message: '请输入录像容量上限' }]}
+                        extra={tr("达到上限后回收到约 90%，避免频繁逐文件清理。")}
+                        rules={[{ required: true, message: tr("请输入录像容量上限") }]}
                       >
                         <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="自动停录像水位（%）"
+                        label={tr("自动停录像水位（%）")}
                         name="stop_recording_percent"
-                        extra="磁盘达到该使用率后，正在进行和后续录像都会停止。"
-                        rules={[{ required: true, message: '请输入自动停录像水位' }]}
+                        extra={tr("磁盘达到该使用率后，正在进行和后续录像都会停止。")}
+                        rules={[{ required: true, message: tr("请输入自动停录像水位") }]}
                       >
                         <InputNumber min={1} max={98} precision={1} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="仅保留元数据水位（%）"
+                        label={tr("仅保留元数据水位（%）")}
                         name="metadata_only_percent"
                         dependencies={['stop_recording_percent']}
-                        extra="达到后不再写入告警图片、临时图片和录像。"
+                        extra={tr("达到后不再写入告警图片、临时图片和录像。")}
                         rules={[
-                          { required: true, message: '请输入仅保留元数据水位' },
+                          { required: true, message: tr("请输入仅保留元数据水位") },
                           ({ getFieldValue }) => ({
                             validator(_, value) {
                               if (Number(value) > Number(getFieldValue('stop_recording_percent'))) {
                                 return Promise.resolve();
                               }
-                              return Promise.reject(new Error('必须高于自动停录像水位'));
+                              return Promise.reject(new Error(tr("必须高于自动停录像水位")));
                             },
                           }),
                         ]}
@@ -958,18 +990,18 @@ const SystemSettingsPage: React.FC = () => {
                       </Form.Item>
 
                       <Form.Item
-                        label="图片目录上限（GB）"
+                        label={tr("图片目录上限（GB）")}
                         name="image_max_gb"
-                        rules={[{ required: true, message: '请输入图片容量上限' }]}
+                        rules={[{ required: true, message: tr("请输入图片容量上限") }]}
                       >
                         <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="最低剩余空间（GB）"
+                        label={tr("最低剩余空间（GB）")}
                         name="min_free_gb"
-                        extra="低于该水位时，即使尚未达到目录上限，也会优先淘汰最老录像和图片。"
-                        rules={[{ required: true, message: '请输入最低剩余空间' }]}
+                        extra={tr("低于该水位时，即使尚未达到目录上限，也会优先淘汰最老录像和图片。")}
+                        rules={[{ required: true, message: tr("请输入最低剩余空间") }]}
                       >
                         <InputNumber min={1} max={4096} precision={1} style={{ width: '100%' }} />
                       </Form.Item>
@@ -977,20 +1009,20 @@ const SystemSettingsPage: React.FC = () => {
                   </Form>
 
                   {storageUsage ? (
-                    <div className="storage-usage-panel" aria-label="当前媒体存储用量">
+                    <div className="storage-usage-panel" aria-label={tr("当前媒体存储用量")}>
                       <StorageUsageItem
-                        label="录像"
+                        label={tr("录像")}
                         usedBytes={storageUsage.video_bytes}
                         maxGb={videoMaxGb}
                       />
                       <StorageUsageItem
-                        label="图片"
+                        label={tr("图片")}
                         usedBytes={storageUsage.image_bytes}
                         maxGb={imageMaxGb}
                       />
                       <div className="storage-free-space">
                         <DatabaseOutlined />
-                        磁盘使用率 {storageUsage.disk_used_percent.toFixed(1)}%，剩余 {formatBytes(storageUsage.disk_free_bytes)} / {formatBytes(storageUsage.disk_total_bytes)}
+                        {tr("磁盘使用率")} {storageUsage.disk_used_percent.toFixed(1)}{tr("%，剩余")} {formatBytes(storageUsage.disk_free_bytes)} / {formatBytes(storageUsage.disk_total_bytes)}
                         <span className={`storage-pressure-badge storage-pressure-${storageUsage.pressure_level}`}>
                           {pressureLevelLabel(storageUsage.pressure_level)}
                         </span>
@@ -1002,14 +1034,14 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'publicMedia',
-              label: (<span><GlobalOutlined /> 告警媒体</span>),
+              label: (<span><GlobalOutlined /> {tr("告警媒体")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><GlobalOutlined /> 告警媒体交付</span>}
+                  title={<span><GlobalOutlined /> {tr("告警媒体交付")}</span>}
                   extra={mediaDeliveryMode === 'object_storage' ? (
                     <Button icon={<ApiOutlined />} loading={testingObjectStorage} onClick={handleTestObjectStorage}>
-                      测试对象存储
+                      {tr("测试对象存储")}
                     </Button>
                   ) : undefined}
                 >
@@ -1017,17 +1049,17 @@ const SystemSettingsPage: React.FC = () => {
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="消息投递使用持久化异步任务"
-                    description="URL 模式保持当前行为：录像走 Nginx 公开目录 /api/video/，告警导出 ZIP 走 /media/exports/，不再经过 API 进程，避免大文件 502。消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。"
+                    message={tr("消息投递使用持久化异步任务")}
+                    description={tr("URL 模式保持当前行为：录像走 Nginx 公开目录 /api/video/，告警导出 ZIP 走 /media/exports/，不再经过 API 进程，避免大文件 502。消息内嵌模式发送 Base64 标注图；对象存储模式先发文字告警，上传成功后再发送媒体就绪消息。")}
                   />
 
                   <Form form={publicMediaForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item label="媒体交付模式" name="delivery_mode" rules={[{ required: true, message: '请选择媒体交付模式' }]}>
+                      <Form.Item label={tr("媒体交付模式")} name="delivery_mode" rules={[{ required: true, message: tr("请选择媒体交付模式") }]}>
                         <Select options={[
-                          { value: 'url', label: '盒子 URL（默认）' },
-                          { value: 'inline', label: '消息内嵌图片' },
-                          { value: 'object_storage', label: 'S3 兼容对象存储' },
+                          { value: 'url', label: tr("盒子 URL（默认）") },
+                          { value: 'inline', label: tr("消息内嵌图片") },
+                          { value: 'object_storage', label: tr("S3 兼容对象存储") },
                         ]} />
                       </Form.Item>
 
@@ -1035,17 +1067,17 @@ const SystemSettingsPage: React.FC = () => {
                         <>
                           <Form.Item
                             className="system-settings-field-span-2"
-                            label="公共访问地址"
+                            label={tr("公共访问地址")}
                             name="public_base_url_override"
-                            rules={[{ type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}
-                            extra={`例如 https://video.example.com；留空时继承环境变量。当前生效：${publicMediaConfig?.public_base_url || '仅相对路径'}`}
+                            rules={[{ type: 'url', message: tr("请输入有效的 HTTP/HTTPS 地址") }]}
+                            extra={trf("例如 https://video.example.com；留空时继承环境变量。当前生效：__VAR0__", [publicMediaConfig?.public_base_url || tr("仅相对路径")])}
                           >
                             <Input placeholder="https://video.example.com" />
                           </Form.Item>
-                          <Form.Item label="生成签名媒体 URL" name="sign_media_urls" valuePropName="checked">
+                          <Form.Item label={tr("生成签名媒体 URL")} name="sign_media_urls" valuePropName="checked">
                             <Switch />
                           </Form.Item>
-                          <Form.Item label="链接有效期（小时）" name="media_url_ttl_hours" rules={[{ required: mediaSigningEnabled, message: '请输入链接有效期' }]}>
+                          <Form.Item label={tr("链接有效期（小时）")} name="media_url_ttl_hours" rules={[{ required: mediaSigningEnabled, message: tr("请输入链接有效期") }]}>
                             <InputNumber min={1} max={720} precision={0} disabled={!mediaSigningEnabled} style={{ width: '100%' }} />
                           </Form.Item>
                         </>
@@ -1053,13 +1085,13 @@ const SystemSettingsPage: React.FC = () => {
 
                       {mediaDeliveryMode === 'inline' ? (
                         <>
-                          <Form.Item label="最大消息图片（字节）" name={['inline', 'max_bytes']} rules={[{ required: true, message: '请输入大小上限' }]}>
+                          <Form.Item label={tr("最大消息图片（字节）")} name={['inline', 'max_bytes']} rules={[{ required: true, message: tr("请输入大小上限") }]}>
                             <InputNumber min={32768} max={8388608} precision={0} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="图片最大边（像素）" name={['inline', 'max_edge']} rules={[{ required: true, message: '请输入最大边' }]}>
+                          <Form.Item label={tr("图片最大边（像素）")} name={['inline', 'max_edge']} rules={[{ required: true, message: tr("请输入最大边") }]}>
                             <InputNumber min={320} max={4096} precision={0} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="JPEG 初始质量" name={['inline', 'jpeg_quality']} rules={[{ required: true, message: '请输入图片质量' }]}>
+                          <Form.Item label={tr("JPEG 初始质量")} name={['inline', 'jpeg_quality']} rules={[{ required: true, message: tr("请输入图片质量") }]}>
                             <InputNumber min={30} max={95} precision={0} style={{ width: '100%' }} />
                           </Form.Item>
                         </>
@@ -1067,60 +1099,60 @@ const SystemSettingsPage: React.FC = () => {
 
                       {mediaDeliveryMode === 'object_storage' ? (
                         <>
-                          <Form.Item className="system-settings-field-span-2" label="Endpoint" name={['object_storage', 'endpoint_url']} rules={[{ required: true, message: '请输入 Endpoint' }, { type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' }]}>
+                          <Form.Item className="system-settings-field-span-2" label="Endpoint" name={['object_storage', 'endpoint_url']} rules={[{ required: true, message: tr("请输入 Endpoint") }, { type: 'url', message: tr("请输入有效的 HTTP/HTTPS 地址") }]}>
                             <Input placeholder="https://s3.example.com" />
                           </Form.Item>
                           <Form.Item label="Region" name={['object_storage', 'region']}>
-                            <Input placeholder="us-east-1（可选）" />
+                            <Input placeholder={tr("us-east-1（可选）")} />
                           </Form.Item>
-                          <Form.Item label="Bucket" name={['object_storage', 'bucket']} rules={[{ required: true, message: '请输入 Bucket' }]}>
+                          <Form.Item label="Bucket" name={['object_storage', 'bucket']} rules={[{ required: true, message: tr("请输入 Bucket") }]}>
                             <Input placeholder="video-alerts" />
                           </Form.Item>
-                          <Form.Item label="Access Key ID" name={['object_storage', 'access_key_id']} rules={[{ required: true, message: '请输入 Access Key ID' }]}>
+                          <Form.Item label="Access Key ID" name={['object_storage', 'access_key_id']} rules={[{ required: true, message: tr("请输入 Access Key ID") }]}>
                             <Input autoComplete="off" />
                           </Form.Item>
                           <Form.Item
                             label="Secret Access Key"
                             name={['object_storage', 'secret_access_key']}
-                            rules={[{ required: !publicMediaConfig?.object_storage?.secret_configured, message: '请输入 Secret Access Key' }]}
-                            extra={publicMediaConfig?.object_storage?.secret_configured ? '已配置；留空保持原值' : '尚未配置'}
+                            rules={[{ required: !publicMediaConfig?.object_storage?.secret_configured, message: tr("请输入 Secret Access Key") }]}
+                            extra={publicMediaConfig?.object_storage?.secret_configured ? tr("已配置；留空保持原值") : tr("尚未配置")}
                           >
                             <Input.Password autoComplete="new-password" />
                           </Form.Item>
-                          <Form.Item label="对象前缀" name={['object_storage', 'key_prefix']}>
+                          <Form.Item label={tr("对象前缀")} name={['object_storage', 'key_prefix']}>
                             <Input placeholder="alerts" />
                           </Form.Item>
-                          <Form.Item label="预签名有效期（小时）" name={['object_storage', 'presigned_url_ttl_hours']} rules={[{ required: true, message: '请输入有效期' }]}>
+                          <Form.Item label={tr("预签名有效期（小时）")} name={['object_storage', 'presigned_url_ttl_hours']} rules={[{ required: true, message: tr("请输入有效期") }]}>
                             <InputNumber min={1} max={168} precision={0} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="Path-style 寻址" name={['object_storage', 'force_path_style']} valuePropName="checked">
+                          <Form.Item label={tr("Path-style 寻址")} name={['object_storage', 'force_path_style']} valuePropName="checked">
                             <Switch />
                           </Form.Item>
-                          <Form.Item label="验证 TLS 证书" name={['object_storage', 'verify_ssl']} valuePropName="checked">
+                          <Form.Item label={tr("验证 TLS 证书")} name={['object_storage', 'verify_ssl']} valuePropName="checked">
                             <Switch />
                           </Form.Item>
                         </>
                       ) : null}
 
-                      <Form.Item label="最大尝试次数" name={['async_delivery', 'max_attempts']} rules={[{ required: true, message: '请输入最大尝试次数' }]}>
+                      <Form.Item label={tr("最大尝试次数")} name={['async_delivery', 'max_attempts']} rules={[{ required: true, message: tr("请输入最大尝试次数") }]}>
                         <InputNumber min={1} max={100} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="初始退避（秒）" name={['async_delivery', 'initial_backoff_seconds']} rules={[{ required: true, message: '请输入初始退避' }]}>
+                      <Form.Item label={tr("初始退避（秒）")} name={['async_delivery', 'initial_backoff_seconds']} rules={[{ required: true, message: tr("请输入初始退避") }]}>
                         <InputNumber min={1} max={300} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
-                      <Form.Item label="最大退避（秒）" name={['async_delivery', 'max_backoff_seconds']} rules={[{ required: true, message: '请输入最大退避' }]}>
+                      <Form.Item label={tr("最大退避（秒）")} name={['async_delivery', 'max_backoff_seconds']} rules={[{ required: true, message: tr("请输入最大退避") }]}>
                         <InputNumber min={1} max={86400} precision={0} style={{ width: '100%' }} />
                       </Form.Item>
                     </div>
                   </Form>
 
-                  <div className="delivery-status-row" aria-label="异步投递状态">
-                    <Tag>待投递 {deliveryStats.pending}</Tag>
-                    <Tag color="processing">处理中 {deliveryStats.processing}</Tag>
-                    <Tag color="warning">重试中 {deliveryStats.retrying}</Tag>
-                    <Tag color={deliveryStats.failed ? 'error' : 'default'}>失败 {deliveryStats.failed}</Tag>
+                  <div className="delivery-status-row" aria-label={tr("异步投递状态")}>
+                    <Tag>{tr("待投递")} {deliveryStats.pending}</Tag>
+                    <Tag color="processing">{tr("处理中")} {deliveryStats.processing}</Tag>
+                    <Tag color="warning">{tr("重试中")} {deliveryStats.retrying}</Tag>
+                    <Tag color={deliveryStats.failed ? 'error' : 'default'}>{tr("失败")} {deliveryStats.failed}</Tag>
                     <Button size="small" icon={<SyncOutlined />} loading={retryingDeliveries} disabled={!deliveryStats.failed} onClick={handleRetryFailedDeliveries}>
-                      重试失败任务
+                      {tr("重试失败任务")}
                     </Button>
                   </div>
                 </Card>
@@ -1128,11 +1160,11 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'messageQueue',
-              label: (<span><ApiOutlined /> 消息投递</span>),
+              label: (<span><ApiOutlined /> {tr("消息投递")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><ApiOutlined /> 消息投递</span>}
+                  title={<span><ApiOutlined /> {tr("消息投递")}</span>}
                   extra={
                     <Button
                       icon={<ApiOutlined />}
@@ -1140,7 +1172,7 @@ const SystemSettingsPage: React.FC = () => {
                       onClick={handleTestMessageQueue}
                       disabled={!messageQueueEnabled}
                     >
-                      {messageQueueProvider === 'http' ? '发送测试事件' : '测试连接'}
+                      {messageQueueProvider === 'http' ? tr("发送测试事件") : tr("测试连接")}
                     </Button>
                   }
                 >
@@ -1148,26 +1180,26 @@ const SystemSettingsPage: React.FC = () => {
                     type={messageQueueEnabled ? 'info' : 'warning'}
                     showIcon
                     className="system-settings-alert"
-                    message={messageQueueEnabled ? `${messageQueueProvider.toUpperCase()} 预警投递已启用` : '预警消息投递未启用'}
-                    description="系统每次只使用一个通道。MQTT 为默认通道，RabbitMQ 用于兼容现有消费端，HTTP 用于直接调用接收端 API。所有通道均复用持久化异步投递与失败重试。"
+                    message={messageQueueEnabled ? trf("__VAR0__ 预警投递已启用", [messageQueueProvider.toUpperCase()]) : tr("预警消息投递未启用")}
+                    description={tr("系统每次只使用一个通道。MQTT 为默认通道，RabbitMQ 用于兼容现有消费端，HTTP 用于直接调用接收端 API。所有通道均复用持久化异步投递与失败重试。")}
                   />
 
                   <Form form={messageQueueForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用消息投递" name="enabled" valuePropName="checked" extra="关闭后不再连接或投递。">
+                      <Form.Item label={tr("启用消息投递")} name="enabled" valuePropName="checked" extra={tr("关闭后不再连接或投递。")}>
                         <Switch />
                       </Form.Item>
 
                       <Form.Item
-                        label="投递通道"
+                        label={tr("投递通道")}
                         name="provider"
-                        rules={[{ required: true, message: '请选择提供方' }]}
+                        rules={[{ required: true, message: tr("请选择提供方") }]}
                       >
                         <Select
                           disabled={!messageQueueEnabled}
                           options={[
-                            { value: 'mqtt', label: 'MQTT（推荐）' },
-                            { value: 'rabbitmq', label: 'RabbitMQ（兼容）' },
+                            { value: 'mqtt', label: tr("MQTT（推荐）") },
+                            { value: 'rabbitmq', label: tr("RabbitMQ（兼容）") },
                             { value: 'http', label: 'HTTP API' },
                           ]}
                         />
@@ -1175,61 +1207,61 @@ const SystemSettingsPage: React.FC = () => {
 
                       {messageQueueProvider === 'mqtt' ? (
                         <>
-                          <Form.Item label="Broker 主机" name={['mqtt', 'host']} rules={[{ required: messageQueueEnabled, message: '请输入 Broker 主机' }]}>
-                            <Input placeholder="mqtt 或 10.0.4.15" disabled={!messageQueueEnabled} />
+                          <Form.Item label={tr("Broker 主机")} name={['mqtt', 'host']} rules={[{ required: messageQueueEnabled, message: tr("请输入 Broker 主机") }]}>
+                            <Input placeholder={tr("mqtt 或 10.0.4.15")} disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="端口" name={['mqtt', 'port']} rules={[{ required: messageQueueEnabled, message: '请输入端口' }]}>
+                          <Form.Item label={tr("端口")} name={['mqtt', 'port']} rules={[{ required: messageQueueEnabled, message: tr("请输入端口") }]}>
                             <InputNumber min={1} max={65535} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="用户名" name={['mqtt', 'username']} extra="外部 Broker 允许匿名时可以留空。">
+                          <Form.Item label={tr("用户名")} name={['mqtt', 'username']} extra={tr("外部 Broker 允许匿名时可以留空。")}>
                             <Input placeholder="video-ba" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="密码" name={['mqtt', 'password']} extra="留空则保留已保存的密码。内置 Broker 首次部署可执行 docker compose exec mqtt cat /mosquitto/secrets/initial-password 获取随机密码。">
-                            <Input.Password placeholder="请输入密码" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                          <Form.Item label={tr("密码")} name={['mqtt', 'password']} extra={tr("留空则保留已保存的密码。内置 Broker 首次部署可执行 docker compose exec mqtt cat /mosquitto/secrets/initial-password 获取随机密码。")}>
+                            <Input.Password placeholder={tr("请输入密码")} disabled={!messageQueueEnabled} autoComplete="new-password" />
                           </Form.Item>
-                          <Form.Item label="主题前缀" name={['mqtt', 'topic_prefix']} rules={[{ required: messageQueueEnabled, message: '请输入主题前缀' }]} extra="实际主题：{前缀}/{node_id}/{alert_type}；不允许 + 和 #。">
+                          <Form.Item label={tr("主题前缀")} name={['mqtt', 'topic_prefix']} rules={[{ required: messageQueueEnabled, message: tr("请输入主题前缀") }]} extra={tr("实际主题：{前缀}/{node_id}/{alert_type}；不允许 + 和 #。")}>
                             <Input placeholder="video/alert" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="连接超时（秒）" name={['mqtt', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入连接超时' }]}>
+                          <Form.Item label={tr("连接超时（秒）")} name={['mqtt', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: tr("请输入连接超时") }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="PUBACK 超时（秒）" name={['mqtt', 'publish_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入确认超时' }]}>
+                          <Form.Item label={tr("PUBACK 超时（秒）")} name={['mqtt', 'publish_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: tr("请输入确认超时") }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="Keep Alive（秒）" name={['mqtt', 'keepalive_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入 Keep Alive' }]}>
+                          <Form.Item label={tr("Keep Alive（秒）")} name={['mqtt', 'keepalive_seconds']} rules={[{ required: messageQueueEnabled, message: tr("请输入 Keep Alive") }]}>
                             <InputNumber min={5} max={3600} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
                         </>
                       ) : messageQueueProvider === 'rabbitmq' ? (
                         <>
-                          <Form.Item label="主机地址" name={['rabbitmq', 'host']} rules={[{ required: messageQueueEnabled, message: '请输入主机地址' }]}>
-                            <Input placeholder="rabbitmq 或 10.0.4.15" disabled={!messageQueueEnabled} />
+                          <Form.Item label={tr("主机地址")} name={['rabbitmq', 'host']} rules={[{ required: messageQueueEnabled, message: tr("请输入主机地址") }]}>
+                            <Input placeholder={tr("rabbitmq 或 10.0.4.15")} disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="端口" name={['rabbitmq', 'port']} rules={[{ required: messageQueueEnabled, message: '请输入端口' }]}>
+                          <Form.Item label={tr("端口")} name={['rabbitmq', 'port']} rules={[{ required: messageQueueEnabled, message: tr("请输入端口") }]}>
                             <InputNumber min={1} max={65535} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
-                          <Form.Item label="虚拟主机" name={['rabbitmq', 'vhost']} rules={[{ required: messageQueueEnabled, message: '请输入虚拟主机' }]}>
+                          <Form.Item label={tr("虚拟主机")} name={['rabbitmq', 'vhost']} rules={[{ required: messageQueueEnabled, message: tr("请输入虚拟主机") }]}>
                             <Input placeholder="/" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="用户名" name={['rabbitmq', 'username']} rules={[{ required: messageQueueEnabled, message: '请输入用户名' }]}>
+                          <Form.Item label={tr("用户名")} name={['rabbitmq', 'username']} rules={[{ required: messageQueueEnabled, message: tr("请输入用户名") }]}>
                             <Input placeholder="admin" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="密码" name={['rabbitmq', 'password']} extra="留空则保留已保存的密码。">
-                            <Input.Password placeholder="请输入密码" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                          <Form.Item label={tr("密码")} name={['rabbitmq', 'password']} extra={tr("留空则保留已保存的密码。")}>
+                            <Input.Password placeholder={tr("请输入密码")} disabled={!messageQueueEnabled} autoComplete="new-password" />
                           </Form.Item>
-                          <Form.Item label="交换机名称" name={['rabbitmq', 'alert_exchange']} rules={[{ required: messageQueueEnabled, message: '请输入交换机名称' }]}>
+                          <Form.Item label={tr("交换机名称")} name={['rabbitmq', 'alert_exchange']} rules={[{ required: messageQueueEnabled, message: tr("请输入交换机名称") }]}>
                             <Input placeholder="video_alerts" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="交换机类型" name={['rabbitmq', 'exchange_type']} rules={[{ required: messageQueueEnabled, message: '请选择交换机类型' }]}>
-                            <Select disabled={!messageQueueEnabled} options={[{ value: 'topic', label: 'topic（按节点/类型订阅）' }, { value: 'direct', label: 'direct（固定 routing key）' }]} />
+                          <Form.Item label={tr("交换机类型")} name={['rabbitmq', 'exchange_type']} rules={[{ required: messageQueueEnabled, message: tr("请选择交换机类型") }]}>
+                            <Select disabled={!messageQueueEnabled} options={[{ value: 'topic', label: tr("topic（按节点/类型订阅）") }, { value: 'direct', label: tr("direct（固定 routing key）") }]} />
                           </Form.Item>
-                          <Form.Item label="Routing Key" name={['rabbitmq', 'alert_routing_key']} extra="仅 direct 模式使用。">
+                          <Form.Item label="Routing Key" name={['rabbitmq', 'alert_routing_key']} extra={tr("仅 direct 模式使用。")}>
                             <Input placeholder="alert" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="队列名" name={['rabbitmq', 'alert_queue']} extra="生产者不声明队列，仅作消费端约定。">
+                          <Form.Item label={tr("队列名")} name={['rabbitmq', 'alert_queue']} extra={tr("生产者不声明队列，仅作消费端约定。")}>
                             <Input placeholder="video_alerts" disabled={!messageQueueEnabled} />
                           </Form.Item>
-                          <Form.Item label="连接超时（秒）" name={['rabbitmq', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入连接超时' }]}>
+                          <Form.Item label={tr("连接超时（秒）")} name={['rabbitmq', 'connection_timeout_seconds']} rules={[{ required: messageQueueEnabled, message: tr("请输入连接超时") }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
                         </>
@@ -1237,34 +1269,34 @@ const SystemSettingsPage: React.FC = () => {
                         <>
                           <Form.Item
                             className="system-settings-field-span-2"
-                            label="接收端 URL"
+                            label={tr("接收端 URL")}
                             name={['http', 'endpoint_url']}
                             rules={[
-                              { required: messageQueueEnabled, message: '请输入接收端 URL' },
-                              { type: 'url', message: '请输入有效的 HTTP/HTTPS 地址' },
+                              { required: messageQueueEnabled, message: tr("请输入接收端 URL") },
+                              { type: 'url', message: tr("请输入有效的 HTTP/HTTPS 地址") },
                             ]}
-                            extra="告警和测试事件都会以 application/json POST 到该地址；不会跟随重定向。"
+                            extra={tr("告警和测试事件都会以 application/json POST 到该地址；不会跟随重定向。")}
                           >
                             <Input placeholder="https://receiver.example.com/api/v1/video-ba/events" disabled={!messageQueueEnabled} />
                           </Form.Item>
 
-                          <Form.Item label="请求超时（秒）" name={['http', 'timeout_seconds']} rules={[{ required: messageQueueEnabled, message: '请输入请求超时' }]}>
+                          <Form.Item label={tr("请求超时（秒）")} name={['http', 'timeout_seconds']} rules={[{ required: messageQueueEnabled, message: tr("请输入请求超时") }]}>
                             <InputNumber min={1} max={300} precision={0} disabled={!messageQueueEnabled} style={{ width: '100%' }} />
                           </Form.Item>
 
                           <Form.Item
-                            label="HMAC-SHA256 共享密钥"
+                            label={tr("HMAC-SHA256 共享密钥")}
                             name={['http', 'hmac_secret']}
                             rules={[
                               {
                                 required: messageQueueEnabled && !messageQueueForm.getFieldValue(['http', 'hmac_secret_configured']),
-                                message: '请输入 HMAC 共享密钥',
+                                message: tr("请输入 HMAC 共享密钥"),
                               },
-                              { min: 16, message: '共享密钥至少需要 16 个字符' },
+                              { min: 16, message: tr("共享密钥至少需要 16 个字符") },
                             ]}
-                            extra="HTTP 投递固定使用 HMAC-SHA256。发送端和接收端配置相同密钥；密钥不会随请求发送，留空会保留已保存的值。生产环境建议使用至少 32 位随机字符串。"
+                            extra={tr("HTTP 投递固定使用 HMAC-SHA256。发送端和接收端配置相同密钥；密钥不会随请求发送，留空会保留已保存的值。生产环境建议使用至少 32 位随机字符串。")}
                           >
-                            <Input.Password placeholder="请输入至少 16 个字符的共享密钥" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                            <Input.Password placeholder={tr("请输入至少 16 个字符的共享密钥")} disabled={!messageQueueEnabled} autoComplete="new-password" />
                           </Form.Item>
 
                           <Form.List name={['http', 'custom_headers']}>
@@ -1272,8 +1304,8 @@ const SystemSettingsPage: React.FC = () => {
                               <div className="http-header-editor system-settings-field-span-2">
                                 <div className="http-header-editor__heading">
                                   <div>
-                                    <strong>自定义请求头</strong>
-                                    <span>请求头值保存后全部脱敏；留空保留原值。</span>
+                                    <strong>{tr("自定义请求头")}</strong>
+                                    <span>{tr("请求头值保存后全部脱敏；留空保留原值。")}</span>
                                   </div>
                                   <Button
                                     size="small"
@@ -1281,28 +1313,28 @@ const SystemSettingsPage: React.FC = () => {
                                     onClick={() => add({ name: '', value: '' })}
                                     disabled={!messageQueueEnabled}
                                   >
-                                    添加请求头
+                                    {tr("添加请求头")}
                                   </Button>
                                 </div>
                                 {fields.length === 0 ? (
-                                  <div className="http-header-editor__empty">没有额外请求头</div>
+                                  <div className="http-header-editor__empty">{tr("没有额外请求头")}</div>
                                 ) : fields.map((field) => (
                                   <div className="http-header-editor__row" key={field.key}>
                                     <Form.Item
                                       {...field}
                                       key={`${field.key}-name`}
                                       name={[field.name, 'name']}
-                                      rules={[{ required: true, message: '请输入请求头名称' }]}
+                                      rules={[{ required: true, message: tr("请输入请求头名称") }]}
                                     >
                                       <Input placeholder="X-API-Key" disabled={!messageQueueEnabled} />
                                     </Form.Item>
                                     <Form.Item {...field} key={`${field.key}-value`} name={[field.name, 'value']}>
-                                      <Input.Password placeholder="留空保留已保存值" disabled={!messageQueueEnabled} autoComplete="new-password" />
+                                      <Input.Password placeholder={tr("留空保留已保存值")} disabled={!messageQueueEnabled} autoComplete="new-password" />
                                     </Form.Item>
                                     <Button
                                       type="text"
                                       danger
-                                      aria-label="删除请求头"
+                                      aria-label={tr("删除请求头")}
                                       icon={<DeleteOutlined />}
                                       onClick={() => remove(field.name)}
                                       disabled={!messageQueueEnabled}
@@ -1317,14 +1349,14 @@ const SystemSettingsPage: React.FC = () => {
                             <div className="http-prompt-card__header">
                               <div>
                                 <span className="http-prompt-card__eyebrow">RECEIVER CONTRACT</span>
-                                <strong>Vibe Coding 接收端 Prompt</strong>
+                                <strong>{tr("Vibe Coding 接收端 Prompt")}</strong>
                               </div>
                               <Button size="small" icon={<CopyOutlined />} onClick={handleCopyHttpPrompt}>
-                                复制 Prompt
+                                {tr("复制 Prompt")}
                               </Button>
                             </div>
                             <Typography.Paragraph className="http-prompt-card__hint">
-                              已根据当前 URL、鉴权、请求头和媒体模式生成，并包含 URL、Base64 内嵌、对象存储三种接收分支。HMAC Prompt 会说明签名原文、时钟窗口与防重放校验；所有密钥始终使用占位符。
+                              {tr("已根据当前 URL、鉴权、请求头和媒体模式生成，并包含 URL、Base64 内嵌、对象存储三种接收分支。HMAC Prompt 会说明签名原文、时钟窗口与防重放校验；所有密钥始终使用占位符。")}
                             </Typography.Paragraph>
                             <pre className="http-prompt-card__content">{httpReceiverPrompt}</pre>
                           </div>
@@ -1337,18 +1369,18 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'ops',
-              label: (<span><NotificationOutlined /> 钉钉通知</span>),
+              label: (<span><NotificationOutlined /> {tr("钉钉通知")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><NotificationOutlined /> 钉钉运维通知</span>}
+                  title={<span><NotificationOutlined /> {tr("钉钉运维通知")}</span>}
                   extra={
                     <Button
                       icon={<SendOutlined />}
                       loading={testingWebhook}
                       onClick={handleTestWebhook}
                     >
-                      发送测试通知
+                      {tr("发送测试通知")}
                     </Button>
                   }
                 >
@@ -1356,70 +1388,70 @@ const SystemSettingsPage: React.FC = () => {
                     type={opsEnabled ? 'info' : 'warning'}
                     showIcon
                     className="system-settings-alert"
-                    message={opsEnabled ? '运维通知已启用' : '运维通知未启用'}
-                    description="支持磁盘水位变化、媒体清理失败和滑动时间窗内告警量异常。相同事件按冷却时间去重，避免通知风暴。"
+                    message={opsEnabled ? tr("运维通知已启用") : tr("运维通知未启用")}
+                    description={tr("支持磁盘水位变化、媒体清理失败和滑动时间窗内告警量异常。相同事件按冷却时间去重，避免通知风暴。")}
                   />
 
                   <Form form={opsForm} layout="vertical">
                     <div className="system-settings-form-grid">
-                      <Form.Item label="启用钉钉通知" name="enabled" valuePropName="checked">
+                      <Form.Item label={tr("启用钉钉通知")} name="enabled" valuePropName="checked">
                         <Switch />
                       </Form.Item>
 
-                      <Form.Item label="磁盘水位通知" name="notify_disk_pressure" valuePropName="checked">
+                      <Form.Item label={tr("磁盘水位通知")} name="notify_disk_pressure" valuePropName="checked">
                         <Switch disabled={!opsEnabled} />
                       </Form.Item>
 
-                      <Form.Item label="清理失败通知" name="notify_cleanup_failure" valuePropName="checked">
+                      <Form.Item label={tr("清理失败通知")} name="notify_cleanup_failure" valuePropName="checked">
                         <Switch disabled={!opsEnabled} />
                       </Form.Item>
 
-                      <Form.Item label="异常告警增长通知" name="notify_alert_growth" valuePropName="checked">
+                      <Form.Item label={tr("异常告警增长通知")} name="notify_alert_growth" valuePropName="checked">
                         <Switch disabled={!opsEnabled} />
                       </Form.Item>
 
                       <Form.Item
                         className="system-settings-field-span-2"
-                        label="钉钉机器人 Webhook"
+                        label={tr("钉钉机器人 Webhook")}
                         name="webhook_url"
                         rules={[
-                          { required: opsEnabled, message: '启用通知时必须填写 Webhook' },
-                          { type: 'url', message: '请输入有效的 HTTPS URL' },
+                          { required: opsEnabled, message: tr("启用通知时必须填写 Webhook") },
+                          { type: 'url', message: tr("请输入有效的 HTTPS URL") },
                         ]}
-                        extra="仅接受钉钉官方 oapi.dingtalk.com/robot/send 地址；机器人关键词可设置为“VideoBA运维”。"
+                        extra={tr("仅接受钉钉官方 oapi.dingtalk.com/robot/send 地址；机器人关键词可设置为“VideoBA运维”。")}
                       >
                         <Input placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
                       </Form.Item>
 
                       <Form.Item
                         className="system-settings-field-span-2"
-                        label="加签密钥（可选）"
+                        label={tr("加签密钥（可选）")}
                         name="secret"
-                        extra="留空会保留已保存的密钥；建议在钉钉机器人安全设置中启用加签。"
+                        extra={tr("留空会保留已保存的密钥；建议在钉钉机器人安全设置中启用加签。")}
                       >
                         <Input.Password placeholder="SEC..." autoComplete="new-password" />
                       </Form.Item>
 
                       <Form.Item
-                        label="统计窗口（分钟）"
+                        label={tr("统计窗口（分钟）")}
                         name="alert_growth_window_minutes"
-                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: '请输入统计窗口' }]}
+                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: tr("请输入统计窗口") }]}
                       >
                         <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="窗口告警阈值（条）"
+                        label={tr("窗口告警阈值（条）")}
                         name="alert_growth_threshold"
-                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: '请输入告警阈值' }]}
+                        rules={[{ required: opsEnabled && alertGrowthEnabled, message: tr("请输入告警阈值") }]}
                       >
                         <InputNumber min={1} max={1000000} precision={0} disabled={!opsEnabled || !alertGrowthEnabled} style={{ width: '100%' }} />
                       </Form.Item>
 
                       <Form.Item
-                        label="相同事件冷却（分钟）"
+                        label={tr("相同事件冷却（分钟）")}
                         name="cooldown_minutes"
-                        rules={[{ required: opsEnabled, message: '请输入通知冷却时间' }]}
+                        rules={[{ required: opsEnabled, message: tr("请输入通知冷却时间") }]}
                       >
                         <InputNumber min={1} max={1440} precision={0} disabled={!opsEnabled} style={{ width: '100%' }} />
                       </Form.Item>
@@ -1430,23 +1462,23 @@ const SystemSettingsPage: React.FC = () => {
             },
             {
               key: 'rotation',
-              label: (<span><SyncOutlined /> 视频轮转</span>),
+              label: (<span><SyncOutlined /> {tr("视频轮转")}</span>),
               children: (
                 <Card
                   className="system-settings-card"
-                  title={<span><SyncOutlined /> 视频轮转检测</span>}
+                  title={<span><SyncOutlined /> {tr("视频轮转检测")}</span>}
                 >
                   <Alert
                     type="warning"
                     showIcon
                     className="system-settings-alert"
-                    message="轮转会形成检测盲区"
-                    description="只有已启用且绑定活动工作流的视频源参与。批次时长从首帧和工作流就绪后开始计算。"
+                    message={tr("轮转会形成检测盲区")}
+                    description={tr("只有已启用且绑定活动工作流的视频源参与。批次时长从首帧和工作流就绪后开始计算。")}
                   />
 
                   <Form form={rotationForm} layout="vertical">
                     <Form.Item
-                      label="启用轮转检测"
+                      label={tr("启用轮转检测")}
                       name="enabled"
                       valuePropName="checked"
                     >
@@ -1454,44 +1486,44 @@ const SystemSettingsPage: React.FC = () => {
                     </Form.Item>
 
                     <Form.Item
-                      label="每批检测路数"
+                      label={tr("每批检测路数")}
                       name="batch_size"
-                      rules={[{ required: rotationEnabled, message: '请输入每批检测路数' }]}
+                      rules={[{ required: rotationEnabled, message: tr("请输入每批检测路数") }]}
                     >
                       <InputNumber min={1} precision={0} disabled={!rotationEnabled} style={{ width: '100%' }} />
                     </Form.Item>
 
                     <Form.Item
-                      label="单批检测时长（秒）"
+                      label={tr("单批检测时长（秒）")}
                       name="dwell_seconds"
-                      extra="最短 10 秒；RTSP 建链和模型加载时间不计入检测时长。"
-                      rules={[{ required: rotationEnabled, message: '请输入单批检测时长' }]}
+                      extra={tr("最短 10 秒；RTSP 建链和模型加载时间不计入检测时长。")}
+                      rules={[{ required: rotationEnabled, message: tr("请输入单批检测时长") }]}
                     >
                       <InputNumber min={10} precision={0} disabled={!rotationEnabled} style={{ width: '100%' }} />
                     </Form.Item>
 
                     <div className="rotation-estimate">
-                      <span>授权后候选：{eligibleSourceCount} 路</span>
-                      <span>有效并发：{effectiveRotationConcurrency} 路</span>
+                      <span>{tr("授权后候选：")}{eligibleSourceCount} {tr("路")}</span>
+                      <span>{tr("有效并发：")}{effectiveRotationConcurrency} {tr("路")}</span>
                       {configuredCandidateCount > eligibleSourceCount ? (
                         <span className="rotation-estimate-wide">
-                          已配置候选 {configuredCandidateCount} 路，其中 {configuredCandidateCount - eligibleSourceCount} 路不在当前授权运行范围
+                          {tr("已配置候选")} {configuredCandidateCount} {tr("路，其中")} {configuredCandidateCount - eligibleSourceCount} {tr("路不在当前授权运行范围")}
                         </span>
                       ) : null}
-                      <span>预计轮巡批次：{estimatedBatches} 批</span>
-                      <span>理论最短复访：{estimatedBestRevisitSeconds} 秒</span>
+                      <span>{tr("预计轮巡批次：")}{estimatedBatches} {tr("批")}</span>
+                      <span>{tr("理论最短复访：")}{estimatedBestRevisitSeconds} {tr("秒")}</span>
                       <strong>
-                        实测 P95 复访约 {estimatedP95RevisitSeconds} 秒
-                        {rotationWorstRevisitSeconds > 0 ? ` · 保护上界 ${rotationWorstRevisitSeconds} 秒` : ''}
+                        {tr("实测 P95 复访约")} {estimatedP95RevisitSeconds} {tr("秒")}
+                        {rotationWorstRevisitSeconds > 0 ? trf(" · 保护上界 __VAR0__ 秒", [rotationWorstRevisitSeconds]) : ''}
                       </strong>
                       {rotationEnabled && workerOnline ? (
                         <div className="rotation-runtime-row">
-                          <Tag color="green">检测 {rotationRuntime?.running || 0}</Tag>
-                          <Tag color="blue">启动 {rotationRuntime?.starting || 0}</Tag>
-                          <Tag>排队 {rotationRuntime?.queued || 0}</Tag>
-                          <Tag color="orange">排空 {rotationRuntime?.draining || 0}</Tag>
+                          <Tag color="green">{tr("检测")} {rotationRuntime?.running || 0}</Tag>
+                          <Tag color="blue">{tr("启动")} {rotationRuntime?.starting || 0}</Tag>
+                          <Tag>{tr("排队")} {rotationRuntime?.queued || 0}</Tag>
+                          <Tag color="orange">{tr("排空")} {rotationRuntime?.draining || 0}</Tag>
                           {(rotationRuntime?.capacity_waiting || 0) > 0 ? (
-                            <Tag color="gold">容量等待 {rotationRuntime?.capacity_waiting}</Tag>
+                            <Tag color="gold">{tr("容量等待")} {rotationRuntime?.capacity_waiting}</Tag>
                           ) : null}
                         </div>
                       ) : null}
@@ -1504,26 +1536,26 @@ const SystemSettingsPage: React.FC = () => {
               key: 'apiKeys',
               label: (<span><KeyOutlined /> API Key</span>),
               children: (
-                <Card className="system-settings-card" title={<span><KeyOutlined /> API Key 管理</span>}>
+                <Card className="system-settings-card" title={<span><KeyOutlined /> {tr("API Key 管理")}</span>}>
                   <ApiKeySettingsCard />
                 </Card>
               ),
             },
             {
               key: 'vl',
-              label: (<span><SafetyCertificateOutlined /> VL 核验</span>),
+              label: (<span><SafetyCertificateOutlined /> {tr("VL 核验")}</span>),
               children: (
-                <Card className="system-settings-card" title="视觉语言（VL）核验">
+                <Card className="system-settings-card" title={tr("视觉语言（VL）核验")}>
                   <Alert
                     type="info"
                     showIcon
                     className="system-settings-alert"
-                    message="用于告警输出节点的 VL 二次核验能力。"
+                    message={tr("用于告警输出节点的 VL 二次核验能力。")}
                   />
 
                   <Form form={vlForm} layout="vertical">
                     <Form.Item
-                      label="启用全局 VL 服务"
+                      label={tr("启用全局 VL 服务")}
                       name="enabled"
                       valuePropName="checked"
                     >
@@ -1533,27 +1565,27 @@ const SystemSettingsPage: React.FC = () => {
                     <Form.Item
                       label="BASE URL"
                       name="base_url"
-                      extra="填写 OpenAI 兼容接口的基础地址，通常应包含 /v1。"
+                      extra={tr("填写 OpenAI 兼容接口的基础地址，通常应包含 /v1。")}
                     >
-                      <Input placeholder="例如: https://your-host/v1" />
+                      <Input placeholder={tr("例如: https://your-host/v1")} />
                     </Form.Item>
 
                     <Form.Item
                       label="Model Name"
                       name="model_name"
                     >
-                      <Input placeholder="例如: gpt-4.1-mini" />
+                      <Input placeholder={tr("例如: gpt-4.1-mini")} />
                     </Form.Item>
 
                     <Form.Item
                       label="API Key"
                       name="api_key"
                     >
-                      <Input.Password placeholder="请输入调用密钥" />
+                      <Input.Password placeholder={tr("请输入调用密钥")} />
                     </Form.Item>
 
                     <Form.Item
-                      label="请求超时（秒）"
+                      label={tr("请求超时（秒）")}
                       name="timeout_seconds"
                     >
                       <InputNumber min={3} max={120} style={{ width: '100%' }} />
@@ -1581,10 +1613,10 @@ function formatMb(value?: number | null): string {
 }
 
 function configSourceLabel(source?: string): string {
-  if (source === 'database') return '数据库配置';
-  if (source === 'environment_initialized') return '环境默认已入库';
-  if (source === 'environment_fallback') return '数据库不可用，环境回退';
-  return '环境默认';
+  if (source === 'database') return tr("数据库配置");
+  if (source === 'environment_initialized') return tr("环境默认已入库");
+  if (source === 'environment_fallback') return tr("数据库不可用，环境回退");
+  return tr("环境默认");
 }
 
 interface InferenceStatusMetricProps {
@@ -1603,7 +1635,7 @@ const InferenceStatusMetric: React.FC<InferenceStatusMetricProps> = ({ label, va
 );
 
 const CapabilityTag: React.FC<{ supported: boolean; children: React.ReactNode }> = ({ supported, children }) => (
-  <Tag color={supported ? 'cyan' : 'default'}>{children} · {supported ? '支持' : '未支持'}</Tag>
+  <Tag color={supported ? 'cyan' : 'default'}>{children} · {supported ? tr("支持") : tr("未支持")}</Tag>
 );
 
 const InferenceSectionTitle: React.FC<{
@@ -1626,9 +1658,9 @@ function formatBytes(bytes: number): string {
 }
 
 function pressureLevelLabel(level: RecordingStorageUsage['pressure_level']): string {
-  if (level === 'metadata_only') return '仅保留元数据';
-  if (level === 'recording_stopped') return '录像已暂停';
-  return '正常';
+  if (level === 'metadata_only') return tr("仅保留元数据");
+  if (level === 'recording_stopped') return tr("录像已暂停");
+  return tr("正常");
 }
 
 interface StorageUsageItemProps {

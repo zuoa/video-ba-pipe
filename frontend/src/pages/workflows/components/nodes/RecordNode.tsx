@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { VideoCameraAddOutlined } from '@ant-design/icons';
@@ -16,8 +17,8 @@ const RecordNode = ({ data }: any) => {
       )}
       {data.recordDuration && (
         <div className="node-meta">
-          <span className="meta-label">时长:</span>
-          <span className="meta-value">{data.recordDuration}秒</span>
+          <span className="meta-label">{tr("时长:")}</span>
+          <span className="meta-value">{data.recordDuration}{tr("秒")}</span>
         </div>
       )}
     </div>

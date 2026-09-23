@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useCallback } from 'react';
 import {
   Upload,
@@ -152,12 +154,12 @@ interface TestHistory {
 }
 
 const cascadeExecutionStateMeta: Record<string, { label: string; color: string }> = {
-  matched: { label: '已命中', color: 'success' },
-  not_matched: { label: '已执行·未命中', color: 'default' },
-  skipped: { label: '上游无目标·未执行', color: 'default' },
-  blocked: { label: '上游异常·未执行', color: 'warning' },
-  failed: { label: '执行失败', color: 'error' },
-  degraded: { label: '部分失败', color: 'warning' },
+  matched: { label: tr("已命中"), color: 'success' },
+  not_matched: { label: tr("已执行·未命中"), color: 'default' },
+  skipped: { label: tr("上游无目标·未执行"), color: 'default' },
+  blocked: { label: tr("上游异常·未执行"), color: 'warning' },
+  failed: { label: tr("执行失败"), color: 'error' },
+  degraded: { label: tr("部分失败"), color: 'warning' },
 };
 
 const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) => {
@@ -195,7 +197,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
   const handleTest = async () => {
     if (fileList.length === 0 || !algorithm) {
-      message.warning('请先上传测试图片');
+      message.warning(tr("请先上传测试图片"));
       return;
     }
 
@@ -217,17 +219,17 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
       if (result.success) {
         message.success({
-          content: `检测完成，发现 ${result.detection_count} 个目标`,
+          content: trf("检测完成，发现 __VAR0__ 个目标", [result.detection_count]),
           icon: <CheckCircleOutlined />
         });
       } else {
         message.error({
-          content: result.error || '检测失败',
+          content: result.error || tr("检测失败"),
           icon: <CloseCircleOutlined />
         });
       }
     } catch (error: any) {
-      const errorMsg = error?.response?.data?.error || '未知错误';
+      const errorMsg = error?.response?.data?.error || tr("未知错误");
       message.error({
         content: errorMsg,
         icon: <CloseCircleOutlined />
@@ -251,7 +253,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    message.success('图片已下载');
+    message.success(tr("图片已下载"));
   }, [testResult, algorithm]);
 
   const handleRetest = useCallback(() => {
@@ -269,7 +271,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
   const detectionColumns = [
     {
-      title: '序号',
+      title: tr("序号"),
       key: 'index',
       width: 60,
       align: 'center' as const,
@@ -278,7 +280,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
       ),
     },
     {
-      title: '标签',
+      title: tr("标签"),
       dataIndex: 'label_name',
       key: 'label_name',
       width: 140,
@@ -289,7 +291,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
       ),
     },
     {
-      title: '置信度',
+      title: tr("置信度"),
       dataIndex: 'confidence',
       key: 'confidence',
       width: 150,
@@ -310,7 +312,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
       },
     },
     {
-      title: '位置',
+      title: tr("位置"),
       dataIndex: 'bbox',
       key: 'bbox',
       width: 180,
@@ -322,7 +324,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
         const width = Math.round(x2 - x1);
         const height = Math.round(y2 - y1);
         return (
-          <Tooltip title={`位置: (${Math.round(x1)}, ${Math.round(y1)})\n尺寸: ${width}x${height}`}>
+          <Tooltip title={trf("位置: (__VAR0__, __VAR1__)\n尺寸: __VAR2__x__VAR3__", [Math.round(x1), Math.round(y1), width, height])}>
             <code className="detection-bbox-code">
               [{Math.round(x1)}, {Math.round(y1)}, {Math.round(x2)}, {Math.round(y2)}]
             </code>
@@ -354,7 +356,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
           <Card className="test-card upload-card" bordered={false}>
             <div className="card-header">
               <PictureOutlined />
-              <h4>上传测试图片</h4>
+              <h4>{tr("上传测试图片")}</h4>
             </div>
 
             {!previewImage ? (
@@ -369,15 +371,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                 <p className="ant-upload-drag-icon">
                   <InboxOutlined />
                 </p>
-                <p className="ant-upload-text">点击或拖拽上传图片</p>
-                <p className="ant-upload-hint">支持 JPG、PNG、WEBP 格式，建议尺寸 ≥ 640x640</p>
+                <p className="ant-upload-text">{tr("点击或拖拽上传图片")}</p>
+                <p className="ant-upload-hint">{tr("支持 JPG、PNG、WEBP 格式，建议尺寸 ≥ 640x640")}</p>
               </Dragger>
             ) : (
               <div className="test-preview-container">
                 <div className="test-preview-wrapper">
                   <Image
                     src={previewImage}
-                    alt="预览"
+                    alt={tr("预览")}
                     className="test-preview-image"
                     preview={false}
                   />
@@ -388,7 +390,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                     onClick={handleRemoveImage}
                     className="test-remove-btn"
                   >
-                    移除图片
+                    {tr("移除图片")}
                   </Button>
                 </div>
               </div>
@@ -405,7 +407,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                 size="large"
                 className="test-run-btn"
               >
-                开始测试
+                {tr("开始测试")}
               </Button>
 
               {testResult && (
@@ -414,7 +416,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                   onClick={handleRetest}
                   block
                 >
-                  重新测试
+                  {tr("重新测试")}
                 </Button>
               )}
             </Space>
@@ -425,28 +427,28 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
             <Card className="test-card info-card" bordered={false} title={
               <Space>
                 <InfoCircleOutlined />
-                <span>算法信息</span>
+                <span>{tr("算法信息")}</span>
               </Space>
             }>
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="算法名称">{algorithm.name}</Descriptions.Item>
-                <Descriptions.Item label="算法类型">
+                <Descriptions.Item label={tr("算法名称")}>{algorithm.name}</Descriptions.Item>
+                <Descriptions.Item label={tr("算法类型")}>
                   {algorithm.algorithm_type === 'vl'
-                    ? 'VL 语义算法'
+                    ? tr("VL 语义算法")
                     : algorithm.algorithm_type === 'ocr'
-                      ? 'OCR 算法'
+                      ? tr("OCR 算法")
                       : algorithm.algorithm_type === 'cascade'
-                        ? '组合检测'
-                        : '脚本算法'}
+                        ? tr("组合检测")
+                        : tr("脚本算法")}
                 </Descriptions.Item>
                 {algorithm.algorithm_type === 'vl' ? (
-                  <Descriptions.Item label="VL 模型">{algorithm.vl_config?.model_name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label={tr("VL 模型")}>{algorithm.vl_config?.model_name || '-'}</Descriptions.Item>
                 ) : null}
-                <Descriptions.Item label="标签名称">{algorithm.label_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="检测间隔">{algorithm.interval_seconds} 秒</Descriptions.Item>
-                <Descriptions.Item label="运行超时">{algorithm.runtime_timeout || 30} 秒</Descriptions.Item>
+                <Descriptions.Item label={tr("标签名称")}>{algorithm.label_name || '-'}</Descriptions.Item>
+                <Descriptions.Item label={tr("检测间隔")}>{algorithm.interval_seconds} {tr("秒")}</Descriptions.Item>
+                <Descriptions.Item label={tr("运行超时")}>{algorithm.runtime_timeout || 30} {tr("秒")}</Descriptions.Item>
                 {algorithm.algorithm_type === 'vl' || algorithm.algorithm_type === 'cascade' ? null : (
-                  <Descriptions.Item label="内存限制">{algorithm.memory_limit_mb || 512} MB</Descriptions.Item>
+                  <Descriptions.Item label={tr("内存限制")}>{algorithm.memory_limit_mb || 512} MB</Descriptions.Item>
                 )}
               </Descriptions>
             </Card>
@@ -469,15 +471,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                 ) : (
                   <ThunderboltOutlined />
                 )}
-                <span>测试结果</span>
+                <span>{tr("测试结果")}</span>
               </Space>
             }
           >
             {testing && (
               <div className="test-loading-state">
                 <Spin size="large" />
-                <p>正在运行检测算法...</p>
-                <p className="loading-hint">这可能需要几秒钟</p>
+                <p>{tr("正在运行检测算法...")}</p>
+                <p className="loading-hint">{tr("这可能需要几秒钟")}</p>
               </div>
             )}
 
@@ -485,8 +487,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
               <div className="test-empty-state">
                 <AppEmptyState
                   compact
-                  title="等待测试结果"
-                  description="上传图片并点击“开始测试”查看检测结果"
+                  title={tr("等待测试结果")}
+                  description={tr("上传图片并点击“开始测试”查看检测结果")}
                 />
               </div>
             )}
@@ -499,7 +501,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                     <Row gutter={16} className="test-stats-row">
                       <Col span={12}>
                         <Statistic
-                          title="检测数量"
+                          title={tr("检测数量")}
                           value={testResult.detection_count}
                           prefix={<CheckCircleOutlined />}
                           valueStyle={{ color: '#52c41a' }}
@@ -507,8 +509,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                       </Col>
                       <Col span={12}>
                         <Statistic
-                          title="检测状态"
-                          value="成功"
+                          title={tr("检测状态")}
+                          value={tr("成功")}
                           valueStyle={{ color: '#52c41a', fontSize: 16 }}
                         />
                       </Col>
@@ -518,10 +520,10 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                       <Alert
                         type={testResult.metadata.error ? 'error' : (testResult.detection_count > 0 ? 'success' : 'info')}
                         showIcon
-                        message={testResult.metadata.error ? 'VL 调用未完成' : 'VL 判断结果'}
+                        message={testResult.metadata.error ? tr("VL 调用未完成") : tr("VL 判断结果")}
                         description={(
                           <Space direction="vertical" size={2}>
-                            <span>{testResult.metadata.error || testResult.metadata.vl_reason || '模型未提供判断原因'}</span>
+                            <span>{testResult.metadata.error || testResult.metadata.vl_reason || tr("模型未提供判断原因")}</span>
                             <span style={{ color: '#8c8c8c', fontSize: 12 }}>
                               {testResult.metadata.vl_model || algorithm.vl_config?.model_name || 'VL'}
                               {testResult.metadata.latency_ms ? ` · ${testResult.metadata.latency_ms.toFixed(0)} ms` : ''}
@@ -537,19 +539,19 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                     {testResult.result_image && (
                       <div className="test-result-image-container">
                         <div className="result-image-header">
-                          <h5>检测结果可视化</h5>
+                          <h5>{tr("检测结果可视化")}</h5>
                           <Button
                             type="primary"
                             size="small"
                             icon={<DownloadOutlined />}
                             onClick={handleDownloadResult}
                           >
-                            下载结果
+                            {tr("下载结果")}
                           </Button>
                         </div>
                         <Image
                           src={testResult.result_image}
-                          alt="检测结果"
+                          alt={tr("检测结果")}
                           className="test-result-image"
                         />
                       </div>
@@ -558,7 +560,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                     {/* Detection Details */}
                     {testResult.detections && testResult.detections.length > 0 && (
                       <div className="test-detection-details">
-                        <Divider>检测详情</Divider>
+                        <Divider>{tr("检测详情")}</Divider>
                         <Table
                           dataSource={testResult.detections}
                           columns={detectionColumns}
@@ -576,7 +578,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                         <Divider>
                           <Space>
                             <BugOutlined />
-                            多模型调试信息
+                            {tr("多模型调试信息")}
                           </Space>
                         </Divider>
                         <Collapse
@@ -585,7 +587,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                           items={[
                             {
                               key: '1',
-                              label: <span>查看每个模型的详细检测情况</span>,
+                              label: <span>{tr("查看每个模型的详细检测情况")}</span>,
                               children: (
                                 <div className="debug-info-content">
                                   {testResult.metadata.model_debug_info.map((modelInfo, idx) => (
@@ -607,21 +609,21 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                       {!modelInfo.success ? (
                                         <Alert
                                           type="error"
-                                          message="模型推理失败"
+                                          message={tr("模型推理失败")}
                                           description={modelInfo.error}
                                           showIcon
                                         />
                                       ) : (
                                         <>
                                           <Descriptions size="small" column={2}>
-                                            <Descriptions.Item label="检测数量">
+                                            <Descriptions.Item label={tr("检测数量")}>
                                               <Tag color="blue">{modelInfo.detections_count}</Tag>
                                             </Descriptions.Item>
-                                            <Descriptions.Item label="置信度阈值">
+                                            <Descriptions.Item label={tr("置信度阈值")}>
                                               {modelInfo.confidence_threshold}
                                             </Descriptions.Item>
-                                            <Descriptions.Item label="类别过滤" span={2}>
-                                              {modelInfo.class_filter?.join(', ') || '全部'}
+                                            <Descriptions.Item label={tr("类别过滤")} span={2}>
+                                              {modelInfo.class_filter?.join(', ') || tr("全部")}
                                             </Descriptions.Item>
                                           </Descriptions>
 
@@ -635,24 +637,24 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                               pagination={false}
                                               columns={[
                                                 {
-                                                  title: '序号',
+                                                  title: tr("序号"),
                                                   width: 50,
                                                   render: (_: any, __: any, i: number) => i + 1
                                                 },
                                                 {
-                                                  title: '类别',
+                                                  title: tr("类别"),
                                                   dataIndex: 'class_name',
                                                   width: 80,
                                                   render: (name: string) => <Tag>{name}</Tag>
                                                 },
                                                 {
-                                                  title: '置信度',
+                                                  title: tr("置信度"),
                                                   dataIndex: 'confidence',
                                                   width: 100,
                                                   render: (conf: number) => `${(conf * 100).toFixed(1)}%`
                                                 },
                                                 {
-                                                  title: '位置',
+                                                  title: tr("位置"),
                                                   dataIndex: 'box',
                                                   render: (box: number[]) => {
                                                     if (!box || box.length < 4) return '-';
@@ -667,8 +669,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                           {modelInfo.detections_count === 0 && (
                                             <Alert
                                               type="info"
-                                              message="该模型未检测到任何目标"
-                                              description="可能原因：置信度阈值过高、类别过滤不匹配、目标不在此模型检测范围内"
+                                              message={tr("该模型未检测到任何目标")}
+                                              description={tr("可能原因：置信度阈值过高、类别过滤不匹配、目标不在此模型检测范围内")}
                                               showIcon
                                             />
                                           )}
@@ -679,20 +681,20 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
                                   {testResult.metadata.merge_debug_info && (
                                     <>
-                                      <Divider style={{ margin: '12px 0' }}>IOU合并信息</Divider>
+                                      <Divider style={{ margin: '12px 0' }}>{tr("IOU合并信息")}</Divider>
                                       <Descriptions size="small" column={2}>
-                                        <Descriptions.Item label="参与合并模型数">
+                                        <Descriptions.Item label={tr("参与合并模型数")}>
                                           {testResult.metadata.merge_debug_info.total_models}
                                         </Descriptions.Item>
-                                        <Descriptions.Item label="IOU阈值">
+                                        <Descriptions.Item label={tr("IOU阈值")}>
                                           {testResult.metadata.merge_debug_info.iou_threshold}
                                         </Descriptions.Item>
-                                        <Descriptions.Item label="合并后组数">
+                                        <Descriptions.Item label={tr("合并后组数")}>
                                           <Tag color={testResult.metadata.merge_debug_info.detection_groups > 0 ? 'success' : 'warning'}>
                                             {testResult.metadata.merge_debug_info.detection_groups}
                                           </Tag>
                                         </Descriptions.Item>
-                                        <Descriptions.Item label="模型名称">
+                                        <Descriptions.Item label={tr("模型名称")}>
                                           {testResult.metadata.merge_debug_info.model_names.join(', ')}
                                         </Descriptions.Item>
                                       </Descriptions>
@@ -700,15 +702,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                       {testResult.metadata.merge_debug_info.detection_groups === 0 && (
                                         <Alert
                                           type="warning"
-                                          message="多模型IOU合并失败"
+                                          message={tr("多模型IOU合并失败")}
                                           description={
                                             <div>
-                                              <p>虽然各模型分别检测到了目标，但无法通过IOU匹配合并为确认目标。</p>
-                                              <p>可能原因：</p>
+                                              <p>{tr("虽然各模型分别检测到了目标，但无法通过IOU匹配合并为确认目标。")}</p>
+                                              <p>{tr("可能原因：")}</p>
                                               <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                                                <li>各模型检测到的目标位置差异较大</li>
-                                                <li>IOU阈值设置过高（当前为 {testResult.metadata.merge_debug_info.iou_threshold}）</li>
-                                                <li>尝试降低 IOU 阈值或调整模型的扩展比例（expand_width/expand_height）</li>
+                                                <li>{tr("各模型检测到的目标位置差异较大")}</li>
+                                                <li>{tr("IOU阈值设置过高（当前为")} {testResult.metadata.merge_debug_info.iou_threshold}）</li>
+                                                <li>{tr("尝试降低 IOU 阈值或调整模型的扩展比例（expand_width/expand_height）")}</li>
                                               </ul>
                                             </div>
                                           }
@@ -722,14 +724,14 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                   {testResult.metadata.stage_debug?.length ? (
                                     <>
                                       <Divider style={{ margin: '12px 0' }}>
-                                        {testResult.metadata.combination_checked ? '组合检测节点' : '级联阶段'}
+                                        {testResult.metadata.combination_checked ? tr("组合检测节点") : tr("级联阶段")}
                                       </Divider>
                                       {testResult.metadata.combination_checked && testResult.metadata.diagnosis ? (
                                         <Alert
                                           style={{ marginBottom: 12 }}
                                           type={testResult.metadata.diagnosis.state === 'matched' ? 'success' : testResult.metadata.diagnosis.state === 'unknown' ? 'warning' : 'info'}
                                           showIcon
-                                          message={testResult.metadata.diagnosis.state === 'matched' ? '组合规则已命中' : testResult.metadata.diagnosis.state === 'unknown' ? '检测结果不完整' : '组合规则未命中'}
+                                          message={testResult.metadata.diagnosis.state === 'matched' ? tr("组合规则已命中") : testResult.metadata.diagnosis.state === 'unknown' ? tr("检测结果不完整") : tr("组合规则未命中")}
                                           description={testResult.metadata.diagnosis.summary}
                                         />
                                       ) : null}
@@ -737,21 +739,21 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                         {testResult.metadata.stage_debug.map((stage, index) => (
                                           <Card key={stage.node_id || stage.stage_id || index} size="small">
                                             <Descriptions size="small" column={2}>
-                                              <Descriptions.Item label={testResult.metadata?.combination_checked ? `节点 ${index + 1}` : `阶段 ${index + 1}`}>
+                                              <Descriptions.Item label={testResult.metadata?.combination_checked ? trf("节点 __VAR0__", [index + 1]) : trf("阶段 __VAR0__", [index + 1])}>
                                                 {stage.node_name || stage.stage_name}
                                               </Descriptions.Item>
-                                              <Descriptions.Item label="状态">
+                                              <Descriptions.Item label={tr("状态")}>
                                                 <Tag color={cascadeExecutionStateMeta[stage.execution_state || '']?.color || (stage.status === 'ok' ? 'success' : stage.status === 'failed' ? 'error' : 'warning')}>
                                                   {cascadeExecutionStateMeta[stage.execution_state || '']?.label || stage.status}
                                                 </Tag>
                                               </Descriptions.Item>
-                                              <Descriptions.Item label="输入候选">{stage.input_count}</Descriptions.Item>
-                                              <Descriptions.Item label="成功执行">{stage.successful_inferences ?? '-'}</Descriptions.Item>
-                                              <Descriptions.Item label="命中目标">{stage.detection_count}</Descriptions.Item>
-                                              {stage.forwarded_count !== undefined ? <Descriptions.Item label="下传候选">{stage.forwarded_count}</Descriptions.Item> : null}
-                                              <Descriptions.Item label="耗时">{stage.inference_time_ms} ms</Descriptions.Item>
-                                              <Descriptions.Item label="失败候选">{stage.error_count}</Descriptions.Item>
-                                              {stage.reason ? <Descriptions.Item label="分析" span={2}>{stage.reason}</Descriptions.Item> : null}
+                                              <Descriptions.Item label={tr("输入候选")}>{stage.input_count}</Descriptions.Item>
+                                              <Descriptions.Item label={tr("成功执行")}>{stage.successful_inferences ?? '-'}</Descriptions.Item>
+                                              <Descriptions.Item label={tr("命中目标")}>{stage.detection_count}</Descriptions.Item>
+                                              {stage.forwarded_count !== undefined ? <Descriptions.Item label={tr("下传候选")}>{stage.forwarded_count}</Descriptions.Item> : null}
+                                              <Descriptions.Item label={tr("耗时")}>{stage.inference_time_ms} ms</Descriptions.Item>
+                                              <Descriptions.Item label={tr("失败候选")}>{stage.error_count}</Descriptions.Item>
+                                              {stage.reason ? <Descriptions.Item label={tr("分析")} span={2}>{stage.reason}</Descriptions.Item> : null}
                                             </Descriptions>
                                             {stage.errors?.length ? <Alert type="error" showIcon message={stage.errors.join('；')} /> : null}
                                           </Card>
@@ -759,18 +761,18 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                       </Space>
                                       {testResult.metadata.context_evaluations?.length ? (
                                         <div style={{ marginTop: 12 }}>
-                                          <Divider style={{ margin: '12px 0' }}>逐主体判定</Divider>
+                                          <Divider style={{ margin: '12px 0' }}>{tr("逐主体判定")}</Divider>
                                           <Space direction="vertical" style={{ width: '100%' }}>
                                             {testResult.metadata.context_evaluations.map((context, index) => (
                                               <Alert
                                                 key={context.anchor_record_id ?? index}
                                                 type={context.state === 'true' ? 'success' : context.state === 'unknown' ? 'warning' : 'info'}
                                                 showIcon
-                                                message={`主体 ${index + 1}：${context.state === 'true' ? '规则成立' : context.state === 'unknown' ? '结果未知' : '规则不成立'}`}
+                                                message={trf("主体 __VAR0__：__VAR1__", [index + 1, context.state === 'true' ? tr("规则成立") : context.state === 'unknown' ? tr("结果未知") : tr("规则不成立")])}
                                                 description={(
                                                   <div>
                                                     {context.summary ? <div>{context.summary}</div> : null}
-                                                    {context.predicates.map(item => <div key={item.name}>{item.reason || `${item.name}命中 ${item.count} 个（${item.state}）`}</div>)}
+                                                    {context.predicates.map(item => <div key={item.name}>{item.reason || trf("__VAR0__命中 __VAR1__ 个（__VAR2__）", [item.name, item.count, item.state])}</div>)}
                                                   </div>
                                                 )}
                                               />
@@ -794,7 +796,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                         <Divider>
                           <Space>
                             <BugOutlined />
-                            检测调试信息
+                            {tr("检测调试信息")}
                           </Space>
                         </Divider>
                         <Collapse
@@ -803,35 +805,35 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                           items={[
                             {
                               key: '1',
-                              label: <span>查看检测详情</span>,
+                              label: <span>{tr("查看检测详情")}</span>,
                               children: (
                                 <div className="debug-info-content">
-                                  <Card size="small" title="检测配置" style={{ marginBottom: 8 }}>
+                                  <Card size="small" title={tr("检测配置")} style={{ marginBottom: 8 }}>
                                     <Descriptions size="small" column={2}>
-                                      <Descriptions.Item label="模型路径">
+                                      <Descriptions.Item label={tr("模型路径")}>
                                         <span style={{ fontSize: 12 }}>
                                           {testResult.metadata.model_path?.split('/').pop() || 'unknown'}
                                         </span>
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="置信度阈值">
+                                      <Descriptions.Item label={tr("置信度阈值")}>
                                         {testResult.metadata.confidence_threshold}
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="类别过滤">
+                                      <Descriptions.Item label={tr("类别过滤")}>
                                         {Array.isArray(testResult.metadata.class_filter)
                                           ? testResult.metadata.class_filter.join(', ')
-                                          : testResult.metadata.class_filter || '全部'}
+                                          : testResult.metadata.class_filter || tr("全部")}
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="推理时间">
+                                      <Descriptions.Item label={tr("推理时间")}>
                                         {testResult.metadata.inference_time_ms?.toFixed(1)} ms
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="图像尺寸">
+                                      <Descriptions.Item label={tr("图像尺寸")}>
                                         {testResult.metadata.image_size?.width} x {testResult.metadata.image_size?.height}
                                       </Descriptions.Item>
                                     </Descriptions>
                                   </Card>
 
                                   {testResult.metadata.detections_detail.length > 0 ? (
-                                    <Card size="small" title="所有检测结果" style={{ marginBottom: 8 }}>
+                                    <Card size="small" title={tr("所有检测结果")} style={{ marginBottom: 8 }}>
                                       <Table
                                         size="small"
                                         dataSource={testResult.metadata.detections_detail.map((det: any, i: number) => ({
@@ -841,24 +843,24 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                         pagination={false}
                                         columns={[
                                           {
-                                            title: '序号',
+                                            title: tr("序号"),
                                             width: 50,
                                             render: (_: any, __: any, i: number) => i + 1
                                           },
                                           {
-                                            title: '类别',
+                                            title: tr("类别"),
                                             dataIndex: 'class_name',
                                             width: 80,
                                             render: (name: string) => <Tag>{name}</Tag>
                                           },
                                           {
-                                            title: '置信度',
+                                            title: tr("置信度"),
                                             dataIndex: 'confidence',
                                             width: 100,
                                             render: (conf: number) => `${(conf * 100).toFixed(1)}%`
                                           },
                                           {
-                                            title: '位置',
+                                            title: tr("位置"),
                                             dataIndex: 'box',
                                             render: (box: number[]) => {
                                               if (!box || box.length < 4) return '-';
@@ -872,16 +874,16 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                   ) : (
                                     <Alert
                                       type="info"
-                                      message="未检测到任何目标"
+                                      message={tr("未检测到任何目标")}
                                       description={
                                         <div>
-                                          <p>模型已成功运行，但在图片中未发现任何目标。</p>
-                                          <p>可能原因：</p>
+                                          <p>{tr("模型已成功运行，但在图片中未发现任何目标。")}</p>
+                                          <p>{tr("可能原因：")}</p>
                                           <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                                            <li>置信度阈值过高（当前为 {testResult.metadata.confidence_threshold}），建议降低到 0.3-0.5</li>
-                                            <li>类别过滤配置不匹配，当前过滤：{Array.isArray(testResult.metadata.class_filter) ? testResult.metadata.class_filter.join(', ') : '全部'}</li>
-                                            <li>图片中确实没有目标物体</li>
-                                            <li>模型训练数据不包含此类目标</li>
+                                            <li>{tr("置信度阈值过高（当前为")} {testResult.metadata.confidence_threshold}{tr("），建议降低到 0.3-0.5")}</li>
+                                            <li>{tr("类别过滤配置不匹配，当前过滤：")}{Array.isArray(testResult.metadata.class_filter) ? testResult.metadata.class_filter.join(', ') : tr("全部")}</li>
+                                            <li>{tr("图片中确实没有目标物体")}</li>
+                                            <li>{tr("模型训练数据不包含此类目标")}</li>
                                           </ul>
                                         </div>
                                       }
@@ -901,15 +903,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                       <>
                         {testResult.metadata?.model_debug_info && testResult.metadata.model_debug_info.length > 1 ? (
                           <Alert
-                            message="多模型检测未确认任何目标"
+                            message={tr("多模型检测未确认任何目标")}
                             description={
                               <div>
-                                <p>算法已成功运行，但多模型未共同确认任何目标。</p>
-                                <p>请查看下方的"多模型调试信息"了解每个模型的检测情况，可能的原因：</p>
+                                <p>{tr("算法已成功运行，但多模型未共同确认任何目标。")}</p>
+                                <p>{tr("请查看下方的\"多模型调试信息\"了解每个模型的检测情况，可能的原因：")}</p>
                                 <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                                  <li>各模型检测到的目标位置差异较大，无法通过IOU匹配合并</li>
-                                  <li>部分模型未检测到目标（置信度阈值过高或类别不匹配）</li>
-                                  <li>IOU阈值设置过高，建议降低阈值或调整扩展比例</li>
+                                  <li>{tr("各模型检测到的目标位置差异较大，无法通过IOU匹配合并")}</li>
+                                  <li>{tr("部分模型未检测到目标（置信度阈值过高或类别不匹配）")}</li>
+                                  <li>{tr("IOU阈值设置过高，建议降低阈值或调整扩展比例")}</li>
                                 </ul>
                               </div>
                             }
@@ -919,11 +921,11 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                           />
                         ) : testResult.metadata?.detections_detail ? (
                           <Alert
-                            message="未检测到任何目标"
+                            message={tr("未检测到任何目标")}
                             description={
                               <div>
-                                <p>算法已成功运行，但在图片中未发现任何目标。</p>
-                                <p>请查看下方的"检测调试信息"了解详细情况。</p>
+                                <p>{tr("算法已成功运行，但在图片中未发现任何目标。")}</p>
+                                <p>{tr("请查看下方的\"检测调试信息\"了解详细情况。")}</p>
                               </div>
                             }
                             type="info"
@@ -932,8 +934,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                           />
                         ) : (
                           <Alert
-                            message="未检测到任何目标"
-                            description="算法已成功运行，但在图片中未发现任何目标"
+                            message={tr("未检测到任何目标")}
+                            description={tr("算法已成功运行，但在图片中未发现任何目标")}
                             type="info"
                             showIcon
                             icon={<InfoCircleOutlined />}
@@ -944,8 +946,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                   </>
                 ) : (
                   <Alert
-                    message="测试失败"
-                    description={testResult.error || '未知错误'}
+                    message={tr("测试失败")}
+                    description={testResult.error || tr("未知错误")}
                     type="error"
                     showIcon
                     icon={<CloseCircleOutlined />}
@@ -963,8 +965,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
     <div className="test-history-content">
       {testHistory.length === 0 ? (
         <AppEmptyState
-          title="暂无测试历史"
-          description="完成测试后将自动记录"
+          title={tr("暂无测试历史")}
+          description={tr("完成测试后将自动记录")}
         />
       ) : (
         <>
@@ -972,11 +974,11 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
             <Card className="history-stats-card" bordered={false}>
               <Row gutter={16}>
                 <Col span={6}>
-                  <Statistic title="总测试次数" value={stats.totalTests} />
+                  <Statistic title={tr("总测试次数")} value={stats.totalTests} />
                 </Col>
                 <Col span={6}>
                   <Statistic
-                    title="成功次数"
+                    title={tr("成功次数")}
                     value={stats.successfulTests}
                     suffix={`/ ${stats.totalTests}`}
                     valueStyle={{ color: '#52c41a' }}
@@ -984,14 +986,14 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                 </Col>
                 <Col span={6}>
                   <Statistic
-                    title="总检测数"
+                    title={tr("总检测数")}
                     value={stats.totalDetections}
                     valueStyle={{ color: '#1890ff' }}
                   />
                 </Col>
                 <Col span={6}>
                   <Statistic
-                    title="平均检测数"
+                    title={tr("平均检测数")}
                     value={stats.avgDetections.toFixed(1)}
                     precision={1}
                     valueStyle={{ color: '#722ed1' }}
@@ -1008,15 +1010,15 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                   <div className="history-item-header">
                     <Space>
                       <Tag color={item.result.success ? 'success' : 'error'}>
-                        测试 #{testHistory.length - index}
+                        {tr("测试 #")}{testHistory.length - index}
                       </Tag>
                       <span className="history-timestamp">
-                        {new Date(item.timestamp).toLocaleString('zh-CN')}
+                        {new Date(item.timestamp).toLocaleString(getDateLocale())}
                       </span>
                     </Space>
                     <Space>
                       <Statistic
-                        title="检测数"
+                        title={tr("检测数")}
                         value={item.result.detection_count}
                         valueStyle={{ fontSize: 16 }}
                       />
@@ -1025,7 +1027,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                   {item.result.result_image && (
                     <Image
                       src={item.result.result_image}
-                      alt={`测试结果 #${testHistory.length - index}`}
+                      alt={trf("测试结果 #__VAR0__", [testHistory.length - index])}
                       className="history-result-image"
                     />
                   )}
@@ -1055,7 +1057,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
       label: (
         <span>
           <PlayCircleOutlined />
-          测试
+          {tr("测试")}
         </span>
       ),
       children: renderTestTab(),
@@ -1065,7 +1067,7 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
       label: (
         <span>
           <HistoryOutlined />
-          历史 {testHistory.length > 0 && <Tag>{testHistory.length}</Tag>}
+          {tr("历史")} {testHistory.length > 0 && <Tag>{testHistory.length}</Tag>}
         </span>
       ),
       children: renderHistoryTab(),
@@ -1074,8 +1076,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
 
   return (
     <AppModal
-      title="算法测试"
-      description={algorithm ? `${algorithm.name} · ID ${algorithm.id}` : '上传样本并检查算法输出'}
+      title={tr("算法测试")}
+      description={algorithm ? `${algorithm.name} · ID ${algorithm.id}` : tr("上传样本并检查算法输出")}
       kind="inspect"
       size="xl"
       bodyMode="canvas"

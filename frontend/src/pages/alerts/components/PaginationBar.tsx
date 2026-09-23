@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import { Pagination, Space, Card, Typography } from 'antd';
 
@@ -31,7 +32,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
     >
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
         <Text type="secondary">
-          共 {total} 条记录，当前第 {current} 页
+          {tr("共")} {total} {tr("条记录，当前第")} {current} {tr("页")}
         </Text>
         <Pagination
           current={current}

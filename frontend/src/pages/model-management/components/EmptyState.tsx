@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import { ApiOutlined, ReloadOutlined } from '@ant-design/icons';
 import AppButton from '@/components/common/AppButton';
@@ -14,11 +15,11 @@ const EmptyState: React.FC<EmptyStateProps> = ({ hasFilter, onReset }) => {
     return (
       <AppEmptyState
         className="empty-state"
-        title="没有找到匹配的模型"
-        description="请尝试调整筛选条件"
+        title={tr("没有找到匹配的模型")}
+        description={tr("请尝试调整筛选条件")}
         action={onReset ? (
             <AppButton icon={<ReloadOutlined />} onClick={onReset}>
-              重置筛选
+              {tr("重置筛选")}
             </AppButton>
         ) : undefined}
       />
@@ -29,8 +30,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({ hasFilter, onReset }) => {
     <AppEmptyState
       className="empty-state"
       image={<ApiOutlined className="empty-state__icon" />}
-      title="暂无模型"
-      description="点击“上传模型”按钮添加第一个模型"
+      title={tr("暂无模型")}
+      description={tr("点击“上传模型”按钮添加第一个模型")}
     />
   );
 };

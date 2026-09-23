@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import './index.css';
 
@@ -14,8 +15,8 @@ const SwitchBadge: React.FC<SwitchBadgeProps> = ({
   checked,
   onChange,
   disabled = false,
-  checkedText = '启用',
-  uncheckedText = '禁用',
+  checkedText = tr("启用"),
+  uncheckedText = tr("禁用"),
   size = 'default',
 }) => {
   const handleClick = () => {

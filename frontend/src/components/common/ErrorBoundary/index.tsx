@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import { Result, Button } from 'antd';
 
@@ -44,14 +45,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       return (
         <Result
           status="error"
-          title="页面出错了"
-          subTitle="渲染过程中发生异常。可以尝试重试,或返回首页后重新进入该页面。"
+          title={tr("页面出错了")}
+          subTitle={tr("渲染过程中发生异常。可以尝试重试,或返回首页后重新进入该页面。")}
           extra={[
             <Button key="retry" onClick={this.handleRetry}>
-              重试
+              {tr("重试")}
             </Button>,
             <Button key="home" type="primary" onClick={this.handleGoHome}>
-              返回首页
+              {tr("返回首页")}
             </Button>,
           ]}
         />

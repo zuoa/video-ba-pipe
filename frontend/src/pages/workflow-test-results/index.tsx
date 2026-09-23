@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Row, Col, message, Card, Space, Select } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -62,7 +63,7 @@ const WorkflowTestResultsPage: React.FC = () => {
       setTasks(taskData || []);
       setWorkflows(workflowData || []);
     } catch (error: any) {
-      message.error('加载测试结果基础数据失败: ' + error.message);
+      message.error(tr("加载测试结果基础数据失败: ") + error.message);
     }
   }, []);
 
@@ -98,7 +99,7 @@ const WorkflowTestResultsPage: React.FC = () => {
         per_page: response.pagination?.per_page || 20,
       }));
     } catch (error: any) {
-      message.error('加载测试结果失败: ' + error.message);
+      message.error(tr("加载测试结果失败: ") + error.message);
       setRecords([]);
     } finally {
       setLoading(false);
@@ -144,17 +145,17 @@ const WorkflowTestResultsPage: React.FC = () => {
       <PageHeader
         icon={<ExperimentOutlined />}
         eyebrow="TEST RUNS"
-        title="编排测试结果"
-        subtitle="测试数据独立存储，不计入告警中心统计"
+        title={tr("编排测试结果")}
+        subtitle={tr("测试数据独立存储，不计入告警中心统计")}
         count={pagination.total}
-        countLabel="条测试记录"
+        countLabel={tr("条测试记录")}
       />
 
       <Card className="workflow-test-filter-card">
         <Space size="middle" wrap>
           <Select
             allowClear
-            placeholder="筛选工作流"
+            placeholder={tr("筛选工作流")}
             style={{ width: 220 }}
             value={workflowId}
             onChange={(value) => {
@@ -166,7 +167,7 @@ const WorkflowTestResultsPage: React.FC = () => {
 
           <Select
             allowClear
-            placeholder="输入类型"
+            placeholder={tr("输入类型")}
             style={{ width: 160 }}
             value={mediaType}
             onChange={(value) => {
@@ -174,8 +175,8 @@ const WorkflowTestResultsPage: React.FC = () => {
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
             options={[
-              { label: '图片测试', value: 'image' },
-              { label: '视频测试', value: 'video' },
+              { label: tr("图片测试"), value: 'image' },
+              { label: tr("视频测试"), value: 'video' },
             ]}
           />
 
@@ -187,15 +188,15 @@ const WorkflowTestResultsPage: React.FC = () => {
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
             options={[
-              { label: '近24小时', value: '24h' },
-              { label: '近7天', value: '7d' },
-              { label: '近30天', value: '30d' },
-              { label: '全部时间', value: 'all' },
+              { label: tr("近24小时"), value: '24h' },
+              { label: tr("近7天"), value: '7d' },
+              { label: tr("近30天"), value: '30d' },
+              { label: tr("全部时间"), value: 'all' },
             ]}
           />
 
           <Button icon={<ReloadOutlined />} loading={loading} onClick={loadRecords}>
-            刷新
+            {tr("刷新")}
           </Button>
         </Space>
       </Card>
@@ -213,7 +214,7 @@ const WorkflowTestResultsPage: React.FC = () => {
       )}
 
       {records.length === 0 ? (
-        <EmptyState type="alerts" onRefresh={loadRecords} />
+        <EmptyState type="testResults" onRefresh={loadRecords} />
       ) : (
         <Row gutter={[16, 16]}>
           {records.map(record => (

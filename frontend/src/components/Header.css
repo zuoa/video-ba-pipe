@@ -260,6 +260,20 @@
   gap: 6px;
 }
 
+.site-language-switch {
+  min-width: 108px;
+}
+
+.site-language-switch .ant-select-selector {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: #e8f2f4 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.site-language-switch .ant-select-arrow {
+  color: rgba(232, 242, 244, 0.72);
+}
+
 .site-tools__button {
   display: grid;
   width: 34px;
@@ -401,5 +415,16 @@
 
   .nav-link {
     padding: 0 10px;
+  }
+}
+
+@media (max-width: 560px) {
+  .site-brand__text,
+  .site-brand__version {
+    display: none;
+  }
+
+  .site-brand {
+    flex: 0 0 auto;
   }
 }

@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import {
   CheckCircleOutlined,
@@ -21,24 +22,24 @@ const ValidationModal: React.FC<ValidationModalProps> = ({
   if (!validation) return null;
 
   const items = [
-    { label: '语法检查', passed: validation.syntax_valid, error: validation.syntax_error, optional: false },
-    { label: 'process函数', passed: validation.has_process, optional: false },
-    { label: 'init函数', passed: validation.has_init, optional: true },
-    { label: 'cleanup函数', passed: validation.has_cleanup, optional: true },
+    { label: tr("语法检查"), passed: validation.syntax_valid, error: validation.syntax_error, optional: false },
+    { label: tr("process函数"), passed: validation.has_process, optional: false },
+    { label: tr("init函数"), passed: validation.has_init, optional: true },
+    { label: tr("cleanup函数"), passed: validation.has_cleanup, optional: true },
     { label: 'SCRIPT_METADATA', passed: validation.has_metadata, optional: false },
-    { label: '整体评估', passed: validation.is_valid, optional: false },
+    { label: tr("整体评估"), passed: validation.is_valid, optional: false },
   ];
 
   return (
     <AppModal
-      title="语法验证结果"
-      description="检查脚本结构和运行入口是否完整"
+      title={tr("语法验证结果")}
+      description={tr("检查脚本结构和运行入口是否完整")}
       kind="inspect"
       size="sm"
       open={visible}
       onCancel={onClose}
       onOk={onClose}
-      okText="关闭"
+      okText={tr("关闭")}
       cancelButtonProps={{ style: { display: 'none' } }}
       className="validation-modal"
       centered
@@ -60,7 +61,7 @@ const ValidationModal: React.FC<ValidationModalProps> = ({
             </div>
             {item.error && !item.passed && (
               <div className="validation-error">
-                第 {item.error.line} 行: {item.error.message}
+                {tr("第")} {item.error.line} {tr("行:")} {item.error.message}
               </div>
             )}
           </div>

@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Card, Tooltip } from 'antd';
 import {
@@ -70,11 +71,11 @@ const DEFAULT_COLOR = {
 
 const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
   const alertType = alert.alert_type.toLowerCase();
-  const taskName = task?.name || `任务 #${alert.task_id}`;
+  const taskName = task?.name || trf("任务 #__VAR0__", [alert.task_id]);
   const alertIcon = ALERT_ICONS[alertType] || <InfoCircleOutlined />;
   const colorScheme = ALERT_COLORS[alertType] || DEFAULT_COLOR;
   const alertTypeLabel = ALERT_TYPE_CONFIG[alertType]?.label || alert.alert_type.replace(/_/g, ' ');
-  const workflowName = alert.workflow_name || (alert.workflow_id ? `编排 #${alert.workflow_id}` : '未关联编排');
+  const workflowName = alert.workflow_name || (alert.workflow_id ? trf("编排 #__VAR0__", [alert.workflow_id]) : tr("未关联编排"));
   const cardStyle = {
     '--alert-color': colorScheme.primary,
     '--alert-soft': colorScheme.bg,
@@ -94,7 +95,7 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
       onKeyDown={handleKeyDown}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      aria-label={onClick ? `查看${taskName}的${alertTypeLabel}告警详情` : undefined}
+      aria-label={onClick ? trf("查看__VAR0__的__VAR1__告警详情", [taskName, alertTypeLabel]) : undefined}
       className="alert-record-card"
       style={cardStyle}
       styles={{ body: { padding: 0 } }}
@@ -102,14 +103,14 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
         <div className="alert-card-media">
           {alert.alert_image_url || alert.alert_image ? (
             <img
-              alt={`${taskName}的${alertTypeLabel}告警画面`}
+              alt={trf("__VAR0__的__VAR1__告警画面", [taskName, alertTypeLabel])}
               src={alert.alert_image_url || `/api/image/frames/${alert.alert_image}`}
               loading="lazy"
               decoding="async"
               className="alert-card-image"
             />
           ) : (
-            <div className="alert-card-image-placeholder" aria-label="暂无告警图片">
+            <div className="alert-card-image-placeholder" aria-label={tr("暂无告警图片")}>
               {alertIcon}
             </div>
           )}
@@ -123,7 +124,7 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
             {alert.alert_video ? (
               <span className="alert-card-video-badge">
                 <PlayCircleOutlined />
-                有录像
+                {tr("有录像")}
               </span>
             ) : null}
           </div>
@@ -136,7 +137,7 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
             <VideoCameraOutlined />
           </span>
           <div className="alert-card-source-copy">
-            <span className="alert-card-label">视频源</span>
+            <span className="alert-card-label">{tr("视频源")}</span>
             <Tooltip title={taskName} mouseEnterDelay={0.5}>
               <strong className="alert-card-source-name">{taskName}</strong>
             </Tooltip>
@@ -146,14 +147,14 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
         <div className="alert-card-meta">
           <div className="alert-card-meta-row">
             <ClockCircleOutlined aria-hidden="true" />
-            <span className="alert-card-meta-label">发生时间</span>
+            <span className="alert-card-meta-label">{tr("发生时间")}</span>
             <span className="alert-card-meta-value alert-card-time">
               <RelativeTime time={alert.alert_time} showFullTime />
             </span>
           </div>
           <div className="alert-card-meta-row">
             <ApartmentOutlined aria-hidden="true" />
-            <span className="alert-card-meta-label">算法编排</span>
+            <span className="alert-card-meta-label">{tr("算法编排")}</span>
             <Tooltip title={workflowName} mouseEnterDelay={0.5}>
               <span className="alert-card-meta-value">{workflowName}</span>
             </Tooltip>
@@ -163,10 +164,10 @@ const AlertCard: React.FC<AlertCardProps> = ({ alert, task, onClick }) => {
         <div className="alert-card-footer">
           <span className="alert-card-frame-count">
             <AppstoreOutlined aria-hidden="true" />
-            检测 {alert.detection_count || 0} 帧
+            {tr("检测")} {alert.detection_count || 0} {tr("帧")}
           </span>
           <span className="alert-card-detail">
-            查看详情
+            {tr("查看详情")}
             <RightOutlined aria-hidden="true" />
           </span>
         </div>

@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import {
   CloudServerOutlined,
@@ -95,7 +97,7 @@ interface UsageBarProps {
 }
 
 const formatBytes = (bytes?: number | null, decimals = 1) => {
-  if (bytes === undefined || bytes === null) return '不可用';
+  if (bytes === undefined || bytes === null) return tr("不可用");
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const unitIndex = Math.min(
@@ -111,9 +113,9 @@ const formatUptime = (seconds: number) => {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days} 天 ${hours} 小时`;
-  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
-  return `${minutes} 分钟`;
+  if (days > 0) return trf("__VAR0__ 天 __VAR1__ 小时", [days, hours]);
+  if (hours > 0) return trf("__VAR0__ 小时 __VAR1__ 分钟", [hours, minutes]);
+  return trf("__VAR0__ 分钟", [minutes]);
 };
 
 const getUsageLevel = (value: number) => {
@@ -133,7 +135,7 @@ const UsageBar: React.FC<UsageBarProps> = ({ value, label }) => {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={unavailable ? undefined : safeValue}
-      aria-valuetext={unavailable ? '指标不可用' : `${safeValue}%`}
+      aria-valuetext={unavailable ? tr("指标不可用") : `${safeValue}%`}
     >
       <span style={{ width: unavailable ? '0%' : `${safeValue}%` }} />
     </div>
@@ -171,24 +173,24 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
       <section className="system-monitor system-monitor--error">
         <DashboardOutlined />
         <div>
-          <h2>主机状态暂不可用</h2>
-          <p>{error || '无法读取系统指标，请稍后刷新页面。'}</p>
+          <h2>{tr("主机状态暂不可用")}</h2>
+          <p>{error || tr("无法读取系统指标，请稍后刷新页面。")}</p>
         </div>
       </section>
     );
   }
 
   const cpuSubtitle = [
-    `${metrics.cpu.physical_cores || metrics.cpu.logical_cores} 核`,
+    trf("__VAR0__ 核", [metrics.cpu.physical_cores || metrics.cpu.logical_cores]),
     metrics.cpu.frequency_mhz ? `${Math.round(metrics.cpu.frequency_mhz)} MHz` : null,
   ].filter(Boolean).join(' · ');
   const primaryDisk = metrics.disks[0];
   const interfaces = metrics.network.active_interfaces;
   const networkScopeLabel = metrics.network.scope === 'host'
-    ? '宿主网络'
+    ? tr("宿主网络")
     : metrics.network.scope === 'container'
-      ? 'API 容器网络'
-      : '网络';
+      ? tr("API 容器网络")
+      : tr("网络");
 
   return (
     <section className="system-monitor" aria-labelledby="system-monitor-title">
@@ -196,16 +198,16 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
         <div>
           <div className="system-monitor__eyebrow">
             <span className={`system-monitor__live-dot ${error ? 'is-stale' : ''}`} />
-            {error ? '数据更新中断' : '实时状态'}
+            {error ? tr("数据更新中断") : tr("实时状态")}
           </div>
-          <h2 id="system-monitor-title">主机资源</h2>
+          <h2 id="system-monitor-title">{tr("主机资源")}</h2>
           <p>
             <span>{metrics.hostname}</span>
-            <span>已运行 {formatUptime(metrics.uptime_seconds)}</span>
+            <span>{tr("已运行")} {formatUptime(metrics.uptime_seconds)}</span>
           </p>
         </div>
         <time dateTime={new Date(metrics.timestamp * 1000).toISOString()}>
-          更新于 {new Date(metrics.timestamp * 1000).toLocaleTimeString('zh-CN', { hour12: false })}
+          {tr("更新于")} {new Date(metrics.timestamp * 1000).toLocaleTimeString(getDateLocale(), { hour12: false })}
         </time>
       </div>
 
@@ -219,13 +221,13 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
             title="CPU"
             value={`${metrics.cpu.usage_percent.toFixed(1)}%`}
           />
-          <UsageBar value={metrics.cpu.usage_percent} label="CPU 使用率" />
+          <UsageBar value={metrics.cpu.usage_percent} label={tr("CPU 使用率")} />
           <div className="system-metric-card__details">
             <span>{cpuSubtitle}</span>
             <span>
               {metrics.cpu.load_average?.length
-                ? `负载 ${metrics.cpu.load_average.slice(0, 3).join(' / ')}`
-                : `${metrics.cpu.logical_cores} 逻辑核心`}
+                ? trf("负载 __VAR0__", [metrics.cpu.load_average.slice(0, 3).join(' / ')])
+                : trf("__VAR0__ 逻辑核心", [metrics.cpu.logical_cores])}
             </span>
           </div>
         </article>
@@ -233,35 +235,35 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
         <article className="system-metric-card">
           <MetricCardHeader
             icon={<DatabaseOutlined />}
-            title="内存"
+            title={tr("内存")}
             value={`${metrics.memory.usage_percent.toFixed(1)}%`}
           />
-          <UsageBar value={metrics.memory.usage_percent} label="内存使用率" />
+          <UsageBar value={metrics.memory.usage_percent} label={tr("内存使用率")} />
           <div className="system-metric-card__details">
             <span>
               {formatBytes(metrics.memory.used_bytes)} / {formatBytes(metrics.memory.total_bytes)}
             </span>
-            <span>可用 {formatBytes(metrics.memory.available_bytes)}</span>
+            <span>{tr("可用")} {formatBytes(metrics.memory.available_bytes)}</span>
           </div>
         </article>
 
         <article className="system-metric-card">
           <MetricCardHeader
             icon={<HddOutlined />}
-            title="磁盘"
-            value={primaryDisk ? `${primaryDisk.usage_percent.toFixed(1)}%` : '不可用'}
+            title={tr("磁盘")}
+            value={primaryDisk ? `${primaryDisk.usage_percent.toFixed(1)}%` : tr("不可用")}
           />
-          <UsageBar value={primaryDisk?.usage_percent} label="主磁盘使用率" />
+          <UsageBar value={primaryDisk?.usage_percent} label={tr("主磁盘使用率")} />
           <div className="system-metric-card__details">
             {primaryDisk ? (
               <>
                 <span>
                   {formatBytes(primaryDisk.used_bytes)} / {formatBytes(primaryDisk.total_bytes)}
                 </span>
-                <span title={primaryDisk.mountpoint}>挂载于 {primaryDisk.mountpoint}</span>
+                <span title={primaryDisk.mountpoint}>{tr("挂载于")} {primaryDisk.mountpoint}</span>
               </>
             ) : (
-              <span>未读取到可用磁盘</span>
+              <span>{tr("未读取到可用磁盘")}</span>
             )}
           </div>
         </article>
@@ -270,16 +272,16 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
           <MetricCardHeader
             icon={<CloudServerOutlined />}
             title={networkScopeLabel}
-            value={`${interfaces.length} 个接口`}
+            value={trf("__VAR0__ 个接口", [interfaces.length])}
           />
           <div className="system-network-rates">
             <div>
               <span className="system-network-rates__arrow">↓</span>
               <div>
-                <small>下载</small>
+                <small>{tr("下载")}</small>
                 <strong>
                   {metrics.network.rate_sampled === false
-                    ? '采样中…'
+                    ? tr("采样中…")
                     : formatRate(metrics.network.download_bytes_per_second)}
                 </strong>
               </div>
@@ -287,10 +289,10 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
             <div>
               <span className="system-network-rates__arrow">↑</span>
               <div>
-                <small>上传</small>
+                <small>{tr("上传")}</small>
                 <strong>
                   {metrics.network.rate_sampled === false
-                    ? '采样中…'
+                    ? tr("采样中…")
                     : formatRate(metrics.network.upload_bytes_per_second)}
                 </strong>
               </div>
@@ -298,7 +300,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
           </div>
           <div className="system-metric-card__details">
             <span title={interfaces.join(', ')}>
-              {interfaces.length ? interfaces.join(' · ') : '无活动网络接口'}
+              {interfaces.length ? interfaces.join(' · ') : tr("无活动网络接口")}
             </span>
           </div>
         </article>
@@ -311,26 +313,26 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
                 <h3>{gpu.name}</h3>
               </div>
               <strong>{gpu.usage_percent === null || gpu.usage_percent === undefined
-                ? '在线'
+                ? tr("在线")
                 : `${gpu.usage_percent.toFixed(1)}%`}</strong>
             </div>
-            <UsageBar value={gpu.usage_percent} label={`${gpu.name} GPU 使用率`} />
+            <UsageBar value={gpu.usage_percent} label={trf("__VAR0__ GPU 使用率", [gpu.name])} />
             <div className="system-gpu-card__stats">
               {gpu.memory_total_bytes ? (
                 <span>
-                  <small>显存</small>
+                  <small>{tr("显存")}</small>
                   {formatBytes(gpu.memory_used_bytes)} / {formatBytes(gpu.memory_total_bytes)}
                 </span>
               ) : null}
               {gpu.temperature_c !== null && gpu.temperature_c !== undefined ? (
                 <span>
-                  <small>温度</small>
+                  <small>{tr("温度")}</small>
                   {gpu.temperature_c.toFixed(1)}°C
                 </span>
               ) : null}
               {gpu.power_watts !== null && gpu.power_watts !== undefined ? (
                 <span>
-                  <small>功耗</small>
+                  <small>{tr("功耗")}</small>
                   {gpu.power_watts.toFixed(1)} W
                 </span>
               ) : null}
@@ -346,26 +348,26 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
                 <h3>{npu.name}</h3>
               </div>
               <strong>{npu.usage_percent === null || npu.usage_percent === undefined
-                ? '在线'
+                ? tr("在线")
                 : `${npu.usage_percent.toFixed(1)}%`}</strong>
             </div>
-            <UsageBar value={npu.usage_percent} label={`${npu.name} NPU 使用率`} />
+            <UsageBar value={npu.usage_percent} label={trf("__VAR0__ NPU 使用率", [npu.name])} />
             <div className="system-gpu-card__stats">
               {npu.core_load_percent && npu.core_load_percent.length ? (
                 <span>
-                  <small>各核负载</small>
+                  <small>{tr("各核负载")}</small>
                   {npu.core_load_percent.map((c) => `${c.toFixed(0)}%`).join(' / ')}
                 </span>
               ) : null}
               {npu.memory_total_bytes ? (
                 <span>
-                  <small>显存</small>
+                  <small>{tr("显存")}</small>
                   {formatBytes(npu.memory_used_bytes)} / {formatBytes(npu.memory_total_bytes)}
                 </span>
               ) : null}
               {npu.temperature_c !== null && npu.temperature_c !== undefined ? (
                 <span>
-                  <small>温度</small>
+                  <small>{tr("温度")}</small>
                   {npu.temperature_c.toFixed(1)}°C
                 </span>
               ) : null}
@@ -376,13 +378,13 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, loading, error }
 
       {metrics.disks.length > 1 ? (
         <div className="system-monitor__disks">
-          <span>其他磁盘</span>
+          <span>{tr("其他磁盘")}</span>
           {metrics.disks.slice(1).map((disk) => (
             <div key={`${disk.device}-${disk.mountpoint}`} className="system-disk-chip">
               <span title={disk.device}>{disk.mountpoint}</span>
               <strong>{disk.usage_percent.toFixed(1)}%</strong>
-              <UsageBar value={disk.usage_percent} label={`${disk.mountpoint} 磁盘使用率`} />
-              <small>{formatBytes(disk.free_bytes)} 可用</small>
+              <UsageBar value={disk.usage_percent} label={trf("__VAR0__ 磁盘使用率", [disk.mountpoint])} />
+              <small>{formatBytes(disk.free_bytes)} {tr("可用")}</small>
             </div>
           ))}
         </div>

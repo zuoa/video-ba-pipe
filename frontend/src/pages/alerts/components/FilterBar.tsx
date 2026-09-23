@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState } from 'react';
 import { Select, Space, Tag, DatePicker } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -65,11 +66,11 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   // 时间范围选项
   const timeRangeOptions = [
-    { label: '最近1小时', value: '1h' },
-    { label: '最近24小时', value: '24h' },
-    { label: '最近7天', value: '7d' },
-    { label: '最近30天', value: '30d' },
-    { label: '自定义', value: 'custom' },
+    { label: tr("最近1小时"), value: '1h' },
+    { label: tr("最近24小时"), value: '24h' },
+    { label: tr("最近7天"), value: '7d' },
+    { label: tr("最近30天"), value: '30d' },
+    { label: tr("自定义"), value: 'custom' },
   ];
 
   // 处理自定义时间范围
@@ -125,7 +126,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
               loading={exporting}
               disabled={exportDisabled || exporting}
             >
-              导出
+              {tr("导出")}
             </Button>
           ) : null}
           <Button
@@ -134,7 +135,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
             onClick={onRefresh}
             loading={loading}
           >
-            刷新
+            {tr("刷新")}
           </Button>
         </Space>
       )}
@@ -142,7 +143,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
       <Space size="middle" wrap>
           {/* 视频源筛选 */}
           <Select
-            placeholder={<span><VideoCameraOutlined /> 选择视频源</span>}
+            placeholder={<span><VideoCameraOutlined /> {tr("选择视频源")}</span>}
             value={selectedTask}
             onChange={onTaskChange}
             allowClear
@@ -155,7 +156,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
           {/* 流程编排筛选 */}
           <Select
-            placeholder={<span><ApartmentOutlined /> 选择流程编排</span>}
+            placeholder={<span><ApartmentOutlined /> {tr("选择流程编排")}</span>}
             value={selectedWorkflow}
             onChange={onWorkflowChange}
             allowClear
@@ -168,7 +169,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
           {/* 编排模板筛选 */}
           <Select
-            placeholder={<span><ApartmentOutlined /> 选择编排模板</span>}
+            placeholder={<span><ApartmentOutlined /> {tr("选择编排模板")}</span>}
             value={selectedSourceTemplate}
             onChange={onSourceTemplateChange}
             allowClear
@@ -181,7 +182,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
           {/* 告警类型筛选 */}
           <Select
-            placeholder={<span><BugOutlined /> 告警类型</span>}
+            placeholder={<span><BugOutlined /> {tr("告警类型")}</span>}
             value={selectedAlertType}
             onChange={onAlertTypeChange}
             allowClear
@@ -194,7 +195,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
           {/* 时间范围筛选 */}
           <Select
-            placeholder={<span><CalendarOutlined /> 时间范围</span>}
+            placeholder={<span><CalendarOutlined /> {tr("时间范围")}</span>}
             value={selectedTimeRange}
             onChange={(value) => {
               // 切换到非自定义选项时，清除自定义时间范围
@@ -229,7 +230,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   closeIcon={<CloseCircleOutlined />}
                   color="blue"
                 >
-                  视频源: {getTaskLabel()}
+                  {tr("视频源:")} {getTaskLabel()}
                 </Tag>
               )}
               {selectedWorkflow && (
@@ -239,7 +240,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   closeIcon={<CloseCircleOutlined />}
                   color="purple"
                 >
-                  流程编排: {getWorkflowLabel()}
+                  {tr("流程编排:")} {getWorkflowLabel()}
                 </Tag>
               )}
               {selectedSourceTemplate && (
@@ -249,7 +250,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   closeIcon={<CloseCircleOutlined />}
                   color="geekblue"
                 >
-                  编排模板: {getSourceTemplateLabel()}
+                  {tr("编排模板:")} {getSourceTemplateLabel()}
                 </Tag>
               )}
               {selectedAlertType && (
@@ -259,7 +260,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   closeIcon={<CloseCircleOutlined />}
                   color="orange"
                 >
-                  类型: {selectedAlertType}
+                  {tr("类型:")} {selectedAlertType}
                 </Tag>
               )}
               {selectedTimeRange && selectedTimeRange !== 'custom' && (
@@ -269,7 +270,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   closeIcon={<CloseCircleOutlined />}
                   color="green"
                 >
-                  时间: {getTimeRangeLabel()}
+                  {tr("时间:")} {getTimeRangeLabel()}
                 </Tag>
               )}
             </Space>

@@ -1,10 +1,16 @@
 import { defineConfig } from '@umijs/max';
-import { SYSTEM_NAME_ZH } from './src/constants/branding';
 
 const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://10.0.4.147:5002';
 
 export default defineConfig({
-  title: SYSTEM_NAME_ZH,
+  title: 'app.title',
+  locale: {
+    default: 'zh-CN',
+    baseNavigator: true,
+    useLocalStorage: true,
+    antd: true,
+    title: true,
+  },
   define: {
     'process.env.UMI_APP_VERSION': JSON.stringify(process.env.UMI_APP_VERSION || ''),
   },

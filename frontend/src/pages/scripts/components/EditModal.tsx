@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Checkbox, Space, message, Spin } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -44,7 +45,7 @@ const EditModal: React.FC<EditModalProps> = ({
         changelog: '',
       });
     } catch (error) {
-      message.error('加载脚本内容失败');
+      message.error(tr("加载脚本内容失败"));
     } finally {
       setLoading(false);
     }
@@ -59,7 +60,7 @@ const EditModal: React.FC<EditModalProps> = ({
         setValidationModalVisible(true);
       }
     } catch (error: any) {
-      message.error('验证失败');
+      message.error(tr("验证失败"));
     } finally {
       setValidating(false);
     }
@@ -77,7 +78,7 @@ const EditModal: React.FC<EditModalProps> = ({
       });
       onSuccess();
     } catch (error: any) {
-      message.error(error?.response?.data?.error || '保存失败');
+      message.error(error?.response?.data?.error || tr("保存失败"));
     } finally {
       setSaving(false);
     }
@@ -93,21 +94,21 @@ const EditModal: React.FC<EditModalProps> = ({
   return (
     <>
       <AppModal
-        title="编辑脚本"
+        title={tr("编辑脚本")}
         description={script?.path}
         size="xl"
         open={visible}
         onCancel={handleCancel}
         footer={
           <Space>
-            <Button onClick={handleCancel} disabled={saving || validating}>取消</Button>
+            <Button onClick={handleCancel} disabled={saving || validating}>{tr("取消")}</Button>
             <Button
               icon={<CheckOutlined />}
               onClick={handleValidate}
               disabled={!codeContent.trim() || saving}
               loading={validating}
             >
-              验证
+              {tr("验证")}
             </Button>
             <Button
               type="primary"
@@ -116,7 +117,7 @@ const EditModal: React.FC<EditModalProps> = ({
               loading={saving}
               disabled={!codeContent.trim() || validating}
             >
-              保存
+              {tr("保存")}
             </Button>
           </Space>
         }
@@ -127,7 +128,7 @@ const EditModal: React.FC<EditModalProps> = ({
       >
         <Spin spinning={loading}>
           <Form form={form} layout="vertical">
-            <Form.Item label="脚本内容" required>
+            <Form.Item label={tr("脚本内容")} required>
               <CodeEditor
                 value={codeContent}
                 onChange={setCodeContent}
@@ -136,12 +137,12 @@ const EditModal: React.FC<EditModalProps> = ({
             </Form.Item>
 
             <Form.Item
-              label="更新说明"
+              label={tr("更新说明")}
               name="changelog"
-              help="描述这次更新做了什么（可选）"
+              help={tr("描述这次更新做了什么（可选）")}
             >
               <Input
-                placeholder="例如: 修复了检测精度问题，优化了性能"
+                placeholder={tr("例如: 修复了检测精度问题，优化了性能")}
                 size="large"
               />
             </Form.Item>
@@ -151,7 +152,7 @@ const EditModal: React.FC<EditModalProps> = ({
                 checked={createVersion}
                 onChange={(e) => setCreateVersion(e.target.checked)}
               >
-                创建版本备份
+                {tr("创建版本备份")}
               </Checkbox>
             </Form.Item>
           </Form>

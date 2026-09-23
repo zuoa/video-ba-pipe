@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'antd';
 import { getLicenseStatus, LicenseStatus } from '@/services/api';
@@ -28,15 +29,15 @@ const LicenseBanner: React.FC = () => {
   if (!status || status.tier === 'licensed') return null;
 
   const reason = status.license_status === 'missing'
-    ? '当前为永久免费试用版'
-    : `付费许可证不可用（${status.message}），已自动降级`;
+    ? tr("当前为永久免费试用版")
+    : trf("付费许可证不可用（__VAR0__），已自动降级", [status.message]);
   return (
     <Alert
       className="license-global-banner"
       type="warning"
       showIcon
       message={reason}
-      description={`当前额度：${status.limits.video_sources} 路视频源、${status.limits.algorithms} 个算法。超出额度的数据会保留，但不参与运行。`}
+      description={trf("当前额度：__VAR0__ 路视频源、__VAR1__ 个算法。超出额度的数据会保留，但不参与运行。", [status.limits.video_sources, status.limits.algorithms])}
     />
   );
 };

@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Descriptions, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
@@ -45,11 +47,11 @@ function healthBadge(detail: SourceHealthDetail): {
   tone: SemanticTone | 'muted';
   text: string;
 } {
-  if (detail.is_healthy === true) return { tone: 'success', text: '健康' };
-  if (detail.is_healthy === false) return { tone: 'danger', text: '异常' };
-  if (detail.health_state === 'pending') return { tone: 'info', text: '启动中' };
-  if (detail.health_state === 'inactive') return { tone: 'muted', text: '未运行' };
-  return { tone: 'muted', text: '暂无数据' };
+  if (detail.is_healthy === true) return { tone: 'success', text: tr("健康") };
+  if (detail.is_healthy === false) return { tone: 'danger', text: tr("异常") };
+  if (detail.health_state === 'pending') return { tone: 'info', text: tr("启动中") };
+  if (detail.health_state === 'inactive') return { tone: 'muted', text: tr("未运行") };
+  return { tone: 'muted', text: tr("暂无数据") };
 }
 
 const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
@@ -67,20 +69,20 @@ const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
     <AppModal
       kind="detail"
       size="sm"
-      title="实时状态探测"
+      title={tr("实时状态探测")}
       description={detail?._name || detail?.name}
       open={open}
       onCancel={onClose}
       footer={(
         <Space>
-          <Button onClick={onClose}>关闭</Button>
+          <Button onClick={onClose}>{tr("关闭")}</Button>
           <Button
             type="primary"
             icon={<ReloadOutlined />}
             loading={retrying}
             onClick={onRetry}
           >
-            重新探测
+            {tr("重新探测")}
           </Button>
         </Space>
       )}
@@ -88,39 +90,39 @@ const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
     >
       {detail && (
         <Descriptions column={2} size="small" bordered colon={false}>
-          <Descriptions.Item label="综合健康">
+          <Descriptions.Item label={tr("综合健康")}>
             <StatusBadge
               tone={health?.tone}
               text={health?.text}
             />
           </Descriptions.Item>
-          <Descriptions.Item label="运行状态">
+          <Descriptions.Item label={tr("运行状态")}>
             <StatusBadge status={detail.status || 'UNKNOWN'} />
           </Descriptions.Item>
-          <Descriptions.Item label="距上一帧" span={2}>
+          <Descriptions.Item label={tr("距上一帧")} span={2}>
             <span style={{ color, fontWeight: 600 }}>
-              {typeof t === 'number' ? `${t.toFixed(1)} 秒` : '—'}
+              {typeof t === 'number' ? trf("__VAR0__ 秒", [t.toFixed(1)]) : '—'}
             </span>
             <span style={{ color: '#999', marginLeft: 8, fontSize: 12 }}>
-              （&gt;{NO_FRAME_WARNING}s 预警，&gt;{NO_FRAME_CRITICAL}s 危险）
+              （&gt;{NO_FRAME_WARNING}{tr("s 预警，&gt;")}{NO_FRAME_CRITICAL}{tr("s 危险）")}
             </span>
           </Descriptions.Item>
-          <Descriptions.Item label="累计帧数">
+          <Descriptions.Item label={tr("累计帧数")}>
             {detail.frame_count ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="连续错误">
+          <Descriptions.Item label={tr("连续错误")}>
             {detail.consecutive_errors ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="启用" span={2}>
-            {detail.enabled ? '启用' : '禁用'}
+          <Descriptions.Item label={tr("启用")} span={2}>
+            {detail.enabled ? tr("启用") : tr("禁用")}
           </Descriptions.Item>
           {detail.probed_at && (
-            <Descriptions.Item label="探测时间" span={2}>
-              {new Date(detail.probed_at * 1000).toLocaleString()}
+            <Descriptions.Item label={tr("探测时间")} span={2}>
+              {new Date(detail.probed_at * 1000).toLocaleString(getDateLocale())}
             </Descriptions.Item>
           )}
           {detail.error && (
-            <Descriptions.Item label="异常信息" span={2}>
+            <Descriptions.Item label={tr("异常信息")} span={2}>
               <span style={{ color: '#cf1322' }}>{detail.error}</span>
             </Descriptions.Item>
           )}

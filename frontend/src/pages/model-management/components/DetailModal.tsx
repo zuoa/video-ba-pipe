@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr } from '@/i18n/tr';
 import React, { useState } from 'react';
 import { Descriptions, Space, Tag, message } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -39,9 +41,9 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
   const handleCopy = async () => {
     const ok = await copyToClipboard(model.file_path);
     if (ok) {
-      message.success('路径已复制到剪贴板');
+      message.success(tr("路径已复制到剪贴板"));
     } else {
-      message.error('复制失败');
+      message.error(tr("复制失败"));
     }
   };
 
@@ -50,7 +52,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
     try {
       await downloadModelFile(model.id);
     } catch (error: any) {
-      message.error(error?.message || '下载失败');
+      message.error(error?.message || tr("下载失败"));
     } finally {
       setDownloading(false);
     }
@@ -58,7 +60,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleString(getDateLocale(), {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -70,7 +72,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
 
   return (
     <AppModal
-      title="模型详情"
+      title={tr("模型详情")}
       description={model.name}
       kind="detail"
       size="md"
@@ -79,7 +81,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
       footer={
         <Space>
           <Button icon={<CopyOutlined />} onClick={handleCopy}>
-            复制路径
+            {tr("复制路径")}
           </Button>
           <Button
             type="primary"
@@ -88,31 +90,31 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
             loading={downloading}
             disabled={downloading}
           >
-            下载模型
+            {tr("下载模型")}
           </Button>
         </Space>
       }
     >
       <Descriptions column={2} bordered size="small">
-        <Descriptions.Item label="模型名称" span={2}>
+        <Descriptions.Item label={tr("模型名称")} span={2}>
           <span style={{ fontSize: 16, fontWeight: 600 }}>{model.name}</span>
         </Descriptions.Item>
-        <Descriptions.Item label="版本">{model.version || 'v1.0'}</Descriptions.Item>
-        <Descriptions.Item label="状态">
+        <Descriptions.Item label={tr("版本")}>{model.version || 'v1.0'}</Descriptions.Item>
+        <Descriptions.Item label={tr("状态")}>
           <Tag color={model.enabled ? 'green' : 'default'}>
-            {model.enabled ? '启用' : '禁用'}
+            {model.enabled ? tr("启用") : tr("禁用")}
           </Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="类型">{model.model_type}</Descriptions.Item>
-        <Descriptions.Item label="框架">{model.framework}</Descriptions.Item>
+        <Descriptions.Item label={tr("类型")}>{model.model_type}</Descriptions.Item>
+        <Descriptions.Item label={tr("框架")}>{model.framework}</Descriptions.Item>
         {model.model_type === 'OCR' ? (
-          <Descriptions.Item label="OCR 角色" span={2}>
+          <Descriptions.Item label={tr("OCR 角色")} span={2}>
             <Tag color={model.model_role === 'detection' ? 'cyan' : 'geekblue'}>
-              {model.model_role === 'detection' ? '文字检测' : '文字识别'}
+              {model.model_role === 'detection' ? tr("文字检测") : tr("文字识别")}
             </Tag>
           </Descriptions.Item>
         ) : null}
-        <Descriptions.Item label="文件名" span={2}>
+        <Descriptions.Item label={tr("文件名")} span={2}>
           <span style={{
             fontFamily: 'monospace',
             background: '#fafafa',
@@ -123,12 +125,12 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
             {model.filename}
           </span>
         </Descriptions.Item>
-        <Descriptions.Item label="文件大小">{model.file_size_mb} MB</Descriptions.Item>
-        <Descriptions.Item label="输入尺寸">{model.input_shape || '-'}</Descriptions.Item>
-        <Descriptions.Item label="下载次数">{model.download_count || 0}</Descriptions.Item>
-        <Descriptions.Item label="使用次数">{model.usage_count || 0}</Descriptions.Item>
+        <Descriptions.Item label={tr("文件大小")}>{model.file_size_mb} MB</Descriptions.Item>
+        <Descriptions.Item label={tr("输入尺寸")}>{model.input_shape || '-'}</Descriptions.Item>
+        <Descriptions.Item label={tr("下载次数")}>{model.download_count || 0}</Descriptions.Item>
+        <Descriptions.Item label={tr("使用次数")}>{model.usage_count || 0}</Descriptions.Item>
         {model.model_postprocess && (
-          <Descriptions.Item label="后处理配置" span={2}>
+          <Descriptions.Item label={tr("后处理配置")} span={2}>
             <pre style={{
               margin: 0,
               padding: '8px 10px',
@@ -141,15 +143,15 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, model, onClose }) =>
             </pre>
           </Descriptions.Item>
         )}
-        <Descriptions.Item label="上传时间" span={2}>
+        <Descriptions.Item label={tr("上传时间")} span={2}>
           {formatDate(model.created_at)}
         </Descriptions.Item>
         {model.description && (
-          <Descriptions.Item label="描述" span={2}>
+          <Descriptions.Item label={tr("描述")} span={2}>
             <div style={{ lineHeight: 1.8 }}>{model.description}</div>
           </Descriptions.Item>
         )}
-        <Descriptions.Item label="文件路径" span={2}>
+        <Descriptions.Item label={tr("文件路径")} span={2}>
           <span style={{
             fontFamily: 'monospace',
             background: '#fafafa',

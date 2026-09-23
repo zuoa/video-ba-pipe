@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { history } from '@umijs/max';
 import { Progress, Space, Table, Typography, message } from 'antd';
@@ -23,11 +24,11 @@ import {
 import './index.css';
 
 const STATUS_META: Record<string, { label: string; tone: SemanticTone | 'muted' }> = {
-  pending: { label: '排队中', tone: 'info' },
-  running: { label: '进行中', tone: 'info' },
-  succeeded: { label: '已完成', tone: 'success' },
-  failed: { label: '失败', tone: 'danger' },
-  cancelled: { label: '已取消', tone: 'muted' },
+  pending: { label: tr("排队中"), tone: 'info' },
+  running: { label: tr("进行中"), tone: 'info' },
+  succeeded: { label: tr("已完成"), tone: 'success' },
+  failed: { label: tr("失败"), tone: 'danger' },
+  cancelled: { label: tr("已取消"), tone: 'muted' },
 };
 
 function formatDateTime(value?: string | null) {
@@ -80,7 +81,7 @@ const AlertExportsPage: React.FC = () => {
       }));
     } catch (error: any) {
       if (!silent) {
-        message.error(getApiErrorMessage(error, '加载导出任务失败'));
+        message.error(getApiErrorMessage(error, tr("加载导出任务失败")));
       }
     } finally {
       if (!silent) {
@@ -108,7 +109,7 @@ const AlertExportsPage: React.FC = () => {
     try {
       await downloadAlertExport(task.id, task.file_url);
     } catch (error: any) {
-      message.error(getApiErrorMessage(error, '下载失败'));
+      message.error(getApiErrorMessage(error, tr("下载失败")));
     } finally {
       setDownloadingId(null);
     }
@@ -117,17 +118,17 @@ const AlertExportsPage: React.FC = () => {
   const handleCancel = (task: AlertExportTask) => {
     confirmAction({
       tone: 'danger',
-      title: '取消导出',
-      objectName: `任务 #${task.id}`,
-      description: '取消后将停止打包并删除已生成的临时文件。',
-      confirmText: '确认取消',
+      title: tr("取消导出"),
+      objectName: trf("任务 #__VAR0__", [task.id]),
+      description: tr("取消后将停止打包并删除已生成的临时文件。"),
+      confirmText: tr("确认取消"),
       onConfirm: async () => {
         try {
           await cancelAlertExport(task.id);
-          message.success('已取消导出');
+          message.success(tr("已取消导出"));
           loadTasks();
         } catch (error: any) {
-          message.error(getApiErrorMessage(error, '取消失败'));
+          message.error(getApiErrorMessage(error, tr("取消失败")));
         }
       },
     });
@@ -136,16 +137,16 @@ const AlertExportsPage: React.FC = () => {
   const handleDelete = (task: AlertExportTask) => {
     confirmAction({
       tone: 'danger',
-      title: '删除导出',
-      objectName: task.file_name || `任务 #${task.id}`,
-      description: '删除后将无法再下载该 ZIP 文件。',
+      title: tr("删除导出"),
+      objectName: task.file_name || trf("任务 #__VAR0__", [task.id]),
+      description: tr("删除后将无法再下载该 ZIP 文件。"),
       onConfirm: async () => {
         try {
           await deleteAlertExport(task.id);
-          message.success('已删除');
+          message.success(tr("已删除"));
           loadTasks();
         } catch (error: any) {
-          message.error(getApiErrorMessage(error, '删除失败'));
+          message.error(getApiErrorMessage(error, tr("删除失败")));
         }
       },
     });
@@ -153,18 +154,18 @@ const AlertExportsPage: React.FC = () => {
 
   const columns: ColumnsType<AlertExportTask> = [
     {
-      title: '创建时间',
+      title: tr("创建时间"),
       dataIndex: 'created_at',
       width: 180,
       render: formatDateTime,
     },
     {
-      title: '筛选条件',
+      title: tr("筛选条件"),
       dataIndex: 'filter_summary',
       ellipsis: true,
       render: (value: string, record) => (
         <div className="alert-exports__summary">
-          <span>{value || '全部告警'}</span>
+          <span>{value || tr("全部告警")}</span>
           {record.error_message && record.status === 'failed' ? (
             <Typography.Text type="danger" ellipsis={{ tooltip: record.error_message }}>
               {record.error_message}
@@ -174,12 +175,12 @@ const AlertExportsPage: React.FC = () => {
       ),
     },
     {
-      title: '记录数',
+      title: tr("记录数"),
       dataIndex: 'total_count',
       width: 90,
     },
     {
-      title: '进度',
+      title: tr("进度"),
       width: 180,
       render: (_: unknown, record) => (
         <div className="alert-exports__progress">
@@ -198,13 +199,13 @@ const AlertExportsPage: React.FC = () => {
           />
           <span className="alert-exports__progressMeta">
             {record.processed_count}/{record.total_count}
-            {record.missing_image_count ? ` · 缺图 ${record.missing_image_count}` : ''}
+            {record.missing_image_count ? trf(" · 缺图 __VAR0__", [record.missing_image_count]) : ''}
           </span>
         </div>
       ),
     },
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'status',
       width: 110,
       render: (status: string) => {
@@ -219,19 +220,19 @@ const AlertExportsPage: React.FC = () => {
       },
     },
     {
-      title: '文件大小',
+      title: tr("文件大小"),
       dataIndex: 'file_size',
       width: 110,
       render: formatFileSize,
     },
     {
-      title: '过期时间',
+      title: tr("过期时间"),
       dataIndex: 'expires_at',
       width: 180,
       render: formatDateTime,
     },
     {
-      title: '操作',
+      title: tr("操作"),
       width: 220,
       render: (_: unknown, record) => {
         const active = record.status === 'pending' || record.status === 'running';
@@ -244,7 +245,7 @@ const AlertExportsPage: React.FC = () => {
               loading={downloadingId === record.id}
               onClick={() => handleDownload(record)}
             >
-              下载
+              {tr("下载")}
             </Button>
             {active ? (
               <Button
@@ -253,7 +254,7 @@ const AlertExportsPage: React.FC = () => {
                 icon={<StopOutlined />}
                 onClick={() => handleCancel(record)}
               >
-                取消
+                {tr("取消")}
               </Button>
             ) : (
               <Button
@@ -262,7 +263,7 @@ const AlertExportsPage: React.FC = () => {
                 icon={<DeleteOutlined />}
                 onClick={() => handleDelete(record)}
               >
-                删除
+                {tr("删除")}
               </Button>
             )}
           </Space>
@@ -276,13 +277,13 @@ const AlertExportsPage: React.FC = () => {
       <PageHeader
         icon={<ExportOutlined />}
         eyebrow="EXPORT JOBS"
-        title="导出管理"
-        subtitle="查看告警导出进度，完成后下载 ZIP 包"
+        title={tr("导出管理")}
+        subtitle={tr("查看告警导出进度，完成后下载 ZIP 包")}
         count={pagination.total}
-        countLabel="个任务"
+        countLabel={tr("个任务")}
         extra={(
           <Button icon={<ArrowLeftOutlined />} onClick={() => history.push('/alerts')}>
-            返回告警记录
+            {tr("返回告警记录")}
           </Button>
         )}
       />

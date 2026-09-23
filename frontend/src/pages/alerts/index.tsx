@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { message } from 'antd';
 import { BellOutlined, FolderOpenOutlined } from '@ant-design/icons';
@@ -49,7 +50,7 @@ const AlertsPage: React.FC = () => {
       setTasks(data || []);
     } catch (error: any) {
       if (!isUnauthorizedError(error)) {
-        message.error('加载任务列表失败: ' + error.message);
+        message.error(tr("加载任务列表失败: ") + error.message);
       }
     }
   }, []);
@@ -61,7 +62,7 @@ const AlertsPage: React.FC = () => {
       setWorkflows(data || []);
     } catch (error: any) {
       if (!isUnauthorizedError(error)) {
-        message.error('加载工作流列表失败: ' + error.message);
+        message.error(tr("加载工作流列表失败: ") + error.message);
       }
     }
   }, []);
@@ -73,7 +74,7 @@ const AlertsPage: React.FC = () => {
       setAlertTypes(types || []);
     } catch (error: any) {
       if (!isUnauthorizedError(error)) {
-        message.error('加载告警类型失败: ' + error.message);
+        message.error(tr("加载告警类型失败: ") + error.message);
       }
     }
   }, []);
@@ -98,7 +99,7 @@ const AlertsPage: React.FC = () => {
       }));
     } catch (error: any) {
       if (!isUnauthorizedError(error)) {
-        message.error('加载告警列表失败: ' + error.message);
+        message.error(tr("加载告警列表失败: ") + error.message);
       }
       setAlerts([]);
     } finally {
@@ -210,16 +211,16 @@ const AlertsPage: React.FC = () => {
 
   const handleExport = () => {
     if (!pagination.total) {
-      message.warning('当前筛选条件下没有可导出的告警记录');
+      message.warning(tr("当前筛选条件下没有可导出的告警记录"));
       return;
     }
 
     confirmAction({
       tone: 'info',
-      title: '导出告警记录',
-      objectName: `${pagination.total} 条告警`,
-      description: '将按当前筛选导出 CSV 以及标注图、原图，打包为 ZIP，任务在后台执行。',
-      confirmText: '开始导出',
+      title: tr("导出告警记录"),
+      objectName: trf("__VAR0__ 条告警", [pagination.total]),
+      description: tr("将按当前筛选导出 CSV 以及标注图、原图，打包为 ZIP，任务在后台执行。"),
+      confirmText: tr("开始导出"),
       onConfirm: async () => {
         setExporting(true);
         try {
@@ -227,11 +228,11 @@ const AlertsPage: React.FC = () => {
           message.success({
             content: (
               <span>
-                导出进行中，可到
+                {tr("导出进行中，可到")}
                 <Button type="link" onClick={goToExports} style={{ padding: '0 4px' }}>
-                  导出管理
+                  {tr("导出管理")}
                 </Button>
-                查看进度
+                {tr("查看进度")}
               </span>
             ),
             duration: 5,
@@ -240,7 +241,7 @@ const AlertsPage: React.FC = () => {
           if (isUnauthorizedError(error)) {
             return;
           }
-          const apiMessage = getApiErrorMessage(error, '创建导出任务失败');
+          const apiMessage = getApiErrorMessage(error, tr("创建导出任务失败"));
           message.error(apiMessage);
           const status = error?.response?.status ?? error?.status;
           if (status === 409 || apiMessage.includes('正在进行')) {
@@ -258,13 +259,13 @@ const AlertsPage: React.FC = () => {
       <PageHeader
         icon={<BellOutlined />}
         eyebrow="EVENT LOG"
-        title="告警记录"
-        subtitle="筛选、回溯并处置视频分析事件"
+        title={tr("告警记录")}
+        subtitle={tr("筛选、回溯并处置视频分析事件")}
         count={pagination.total}
-        countLabel="条告警"
+        countLabel={tr("条告警")}
         extra={(
           <Button icon={<FolderOpenOutlined />} onClick={goToExports}>
-            导出管理
+            {tr("导出管理")}
           </Button>
         )}
       />

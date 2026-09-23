@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo, useCallback } from 'react';
 import { Input, Select, Space } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -22,10 +23,10 @@ type Props = {
 };
 
 const OPERATORS = [
-  ['eq', '等于'], ['ne', '不等于'], ['gt', '大于'], ['gte', '大于等于'],
-  ['lt', '小于'], ['lte', '小于等于'], ['contains', '包含'],
-  ['not_contains', '不包含'], ['in', '属于'], ['not_in', '不属于'],
-  ['exists', '存在'], ['not_exists', '不存在'], ['truthy', '为真'], ['falsy', '为假'],
+  ['eq', tr("等于")], ['ne', tr("不等于")], ['gt', tr("大于")], ['gte', tr("大于等于")],
+  ['lt', tr("小于")], ['lte', tr("小于等于")], ['contains', tr("包含")],
+  ['not_contains', tr("不包含")], ['in', tr("属于")], ['not_in', tr("不属于")],
+  ['exists', tr("存在")], ['not_exists', tr("不存在")], ['truthy', tr("为真")], ['falsy', tr("为假")],
 ] as const;
 
 const VALUELESS = new Set(['exists', 'not_exists', 'truthy', 'falsy']);
@@ -72,12 +73,12 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
   return (
     <div className={`http-condition-group depth-${Math.min(depth, 3)}`}>
       <div className="http-condition-group-head">
-        <span className="http-condition-rail">{depth === 0 ? '满足' : '条件组'}</span>
+        <span className="http-condition-rail">{depth === 0 ? tr("满足") : tr("条件组")}</span>
         <Select
           size="small"
           value={group.logic}
           style={{ width: 92 }}
-          options={[{ label: '全部 AND', value: 'and' }, { label: '任一 OR', value: 'or' }]}
+          options={[{ label: tr("全部 AND"), value: 'and' }, { label: tr("任一 OR"), value: 'or' }]}
           onChange={(logic) => onChange({ ...group, logic })}
         />
       </div>
@@ -115,7 +116,7 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
                         ...child,
                         value: parseComparisonValue(event.target.value),
                       })}
-                      placeholder='比较值，如 0.8、true、["a"]'
+                      placeholder={tr("比较值，如 0.8、true、[\"a\"]")}
                       style={{ minWidth: 150, flex: 1 }}
                     />
                   )}
@@ -125,7 +126,7 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
                 type="text"
                 danger
                 size="small"
-                aria-label="删除条件"
+                aria-label={tr("删除条件")}
                 icon={<DeleteOutlined />}
                 onClick={() => removeChild(index)}
               />
@@ -133,7 +134,7 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
           );
         })}
         {group.children.length === 0 ? (
-          <div className="http-condition-empty">添加一条规则后才能保存条件。</div>
+          <div className="http-condition-empty">{tr("添加一条规则后才能保存条件。")}</div>
         ) : null}
       </div>
 
@@ -143,7 +144,7 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
           icon={<PlusOutlined />}
           onClick={() => onChange({ ...group, children: [...group.children, defaultRule(variables)] })}
         >
-          添加规则
+          {tr("添加规则")}
         </Button>
         {depth < 4 ? (
           <Button
@@ -154,7 +155,7 @@ const ConditionGroup = memo(({ group, variables, depth, onChange }: GroupProps) 
               children: [...group.children, { logic: 'and', children: [defaultRule(variables)] }],
             })}
           >
-            添加条件组
+            {tr("添加条件组")}
           </Button>
         ) : null}
       </Space>

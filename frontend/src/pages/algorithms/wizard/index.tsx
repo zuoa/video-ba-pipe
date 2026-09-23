@@ -1,3 +1,4 @@
+import { getDateLocale, tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from '@umijs/max';
 import {
@@ -69,24 +70,24 @@ interface DetectorPreset extends Script {
 
 const DETECTOR_PRESETS: readonly DetectorPreset[] = [
   {
-    name: '通用单模型',
+    name: tr("通用单模型"),
     path: 'templates/adaptive_yolo_detector.py',
-    description: '单模型检测，自动适配 Ultralytics、ONNX 和 RKNN 后端',
+    description: tr("单模型检测，自动适配 Ultralytics、ONNX 和 RKNN 后端"),
   },
   {
-    name: '并行多模型共同确认',
+    name: tr("并行多模型共同确认"),
     path: 'templates/yolo_detector.py',
-    description: '多个模型对同一画面并行推理，通过 IOU 匹配共同确认目标',
+    description: tr("多个模型对同一画面并行推理，通过 IOU 匹配共同确认目标"),
   },
   {
-    name: '目标追踪',
+    name: tr("目标追踪"),
     path: 'templates/object_tracker.py',
-    description: '为上游检测框分配跨帧 ID，并可在同一节点选择徘徊、停留或按方向穿越热区。向导间隔最低 0.1 秒',
+    description: tr("为上游检测框分配跨帧 ID，并可在同一节点选择徘徊、停留或按方向穿越热区。向导间隔最低 0.1 秒"),
   },
   {
-    name: '跨平台人脸识别',
+    name: tr("跨平台人脸识别"),
     path: 'templates/face_recognizer.py',
-    description: '绑定人脸库完成千人级 1:N 识别，自动适配当前设备可用的推理后端',
+    description: tr("绑定人脸库完成千人级 1:N 识别，自动适配当前设备可用的推理后端"),
   },
 ];
 
@@ -119,12 +120,12 @@ const ocrTypeDescription = (backends: string[]) => {
   const hasRknn = backends.includes('rknn_ocr');
   const hasPaddle = backends.includes('paddleocr');
   if (hasRknn && !hasPaddle) {
-    return '使用 RKNN PPOCR 在 NPU 上检测并识别视频画面中的文字。';
+    return tr("使用 RKNN PPOCR 在 NPU 上检测并识别视频画面中的文字。");
   }
   if (hasPaddle && !hasRknn) {
-    return '使用本地 PaddleOCR 检测并识别视频画面中的文字。';
+    return tr("使用本地 PaddleOCR 检测并识别视频画面中的文字。");
   }
-  return '使用 PaddleOCR 或 RKNN PPOCR 检测并识别视频画面中的文字。';
+  return tr("使用 PaddleOCR 或 RKNN PPOCR 检测并识别视频画面中的文字。");
 };
 
 const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
@@ -132,7 +133,11 @@ const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
   return DETECTOR_PRESETS.filter(preset => availablePaths.has(preset.path));
 };
 
-const DEFAULT_VL_PROMPT = `请判断画面中是否存在需要关注的目标或事件。
+const DEFAULT_VL_PROMPT = getDateLocale() === 'en-US'
+  ? `Determine whether the frame contains an object or event of interest.
+For each match, return one detection item. Set bbox to null when the location cannot be determined reliably.
+Briefly explain the evidence in reason.`
+  : `请判断画面中是否存在需要关注的目标或事件。
 如果命中，请为每个目标或事件返回一个检测项；无法可靠定位时 bbox 返回 null。
 请在 reason 中简要说明判断依据。`;
 
@@ -142,9 +147,9 @@ const validateJsonObject = (_: unknown, value: string) => {
     const parsed = JSON.parse(value);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
       ? Promise.resolve()
-      : Promise.reject(new Error('请输入 JSON 对象'));
+      : Promise.reject(new Error(tr("请输入 JSON 对象")));
   } catch {
-    return Promise.reject(new Error('JSON 格式不正确'));
+    return Promise.reject(new Error(tr("JSON 格式不正确")));
   }
 };
 
@@ -253,7 +258,7 @@ export default function AlgorithmWizard() {
           setEditingAlgorithm(algorithm);
           await loadEditData(algorithm);
         } else {
-          message.error('算法不存在');
+          message.error(tr("算法不存在"));
           navigate('/algorithms');
         }
       } else if (requestedPreset === 'face-recognition') {
@@ -278,11 +283,11 @@ export default function AlgorithmWizard() {
           }
           setCurrentStep(1);
         } else {
-          message.warning('跨平台人脸识别脚本尚未部署');
+          message.warning(tr("跨平台人脸识别脚本尚未部署"));
         }
       }
     } catch (error) {
-      message.error('加载数据失败');
+      message.error(tr("加载数据失败"));
     } finally {
       setLoading(false);
     }
@@ -299,8 +304,8 @@ export default function AlgorithmWizard() {
       setSelectedDetector({
         type: 'template',
         id: null,
-        name: '视觉语言模型',
-        description: 'OpenAI 兼容 VL API',
+        name: tr("视觉语言模型"),
+        description: tr("OpenAI 兼容 VL API"),
         scriptPath: '',
       });
       setConfigSchema({});
@@ -335,7 +340,7 @@ export default function AlgorithmWizard() {
         type: 'template',
         id: null,
         name: 'OCR',
-        description: '本地文字检测与识别',
+        description: tr("本地文字检测与识别"),
         scriptPath: '',
       });
       setConfigSchema({});
@@ -366,8 +371,8 @@ export default function AlgorithmWizard() {
       setSelectedDetector({
         type: 'template',
         id: null,
-        name: '组合检测',
-        description: '用检测数据流和判定规则形成一个业务结果',
+        name: tr("组合检测"),
+        description: tr("用检测数据流和判定规则形成一个业务结果"),
         scriptPath: '',
       });
       setConfigSchema({});
@@ -474,8 +479,8 @@ export default function AlgorithmWizard() {
     setSelectedDetector({
       type: 'template',
       id: null,
-      name: '视觉语言模型',
-      description: 'OpenAI 兼容 VL API',
+      name: tr("视觉语言模型"),
+      description: tr("OpenAI 兼容 VL API"),
       scriptPath: '',
     });
     setConfigSchema({});
@@ -494,7 +499,7 @@ export default function AlgorithmWizard() {
 
   const handleSelectOcr = () => {
     if (!ocrRuntimeAvailable) {
-      message.error(ocrRuntimeError || '当前运行环境不支持 OCR');
+      message.error(ocrRuntimeError || tr("当前运行环境不支持 OCR"));
       return;
     }
     setAlgorithmType('ocr');
@@ -502,7 +507,7 @@ export default function AlgorithmWizard() {
       type: 'template',
       id: null,
       name: 'OCR',
-      description: '本地文字检测与识别',
+      description: tr("本地文字检测与识别"),
       scriptPath: '',
     });
     setConfigSchema({});
@@ -522,8 +527,8 @@ export default function AlgorithmWizard() {
     setSelectedDetector({
       type: 'template',
       id: null,
-      name: '组合检测',
-      description: '用画布组合多个检测模型和判定规则',
+      name: tr("组合检测"),
+      description: tr("用画布组合多个检测模型和判定规则"),
       scriptPath: '',
     });
     setConfigSchema({});
@@ -544,7 +549,7 @@ export default function AlgorithmWizard() {
   const handleNext = async () => {
     if (currentStep === 0) {
       if (!selectedDetector) {
-        message.warning('请先选择一个检测器');
+        message.warning(tr("请先选择一个检测器"));
         return;
       }
       setCurrentStep(1);
@@ -560,7 +565,7 @@ export default function AlgorithmWizard() {
         await form.validateFields();
         setCurrentStep(2);
       } catch (error) {
-        message.warning('请完善配置信息');
+        message.warning(tr("请完善配置信息"));
       }
     }
   };
@@ -592,14 +597,14 @@ export default function AlgorithmWizard() {
         if (!modelItem.model_id || typeof modelItem.model_id !== 'number') {
           return {
             valid: false,
-            error: `请为第 ${i + 1} 个模型选择有效的模型`
+            error: trf("请为第 __VAR0__ 个模型选择有效的模型", [i + 1])
           };
         }
       }
       if (config.models.length === 0) {
         return {
           valid: false,
-          error: '请至少添加一个模型'
+          error: tr("请至少添加一个模型")
         };
       }
     }
@@ -645,10 +650,10 @@ export default function AlgorithmWizard() {
 
         if (editingAlgorithm) {
           await updateAlgorithm(editingAlgorithm.id, data);
-          message.success('VL 算法更新成功！');
+          message.success(tr("VL 算法更新成功！"));
         } else {
           await createAlgorithm(data);
-          message.success('VL 算法创建成功！');
+          message.success(tr("VL 算法创建成功！"));
         }
         navigate('/algorithms');
         return;
@@ -656,7 +661,7 @@ export default function AlgorithmWizard() {
 
       if (algorithmType === 'ocr') {
         if (!ocrRuntimeAvailable) {
-          message.error(ocrRuntimeError || '当前运行环境不支持 OCR，无法保存');
+          message.error(ocrRuntimeError || tr("当前运行环境不支持 OCR，无法保存"));
           return;
         }
         const data = {
@@ -687,10 +692,10 @@ export default function AlgorithmWizard() {
         };
         if (editingAlgorithm) {
           await updateAlgorithm(editingAlgorithm.id, data);
-          message.success('OCR 算法更新成功！');
+          message.success(tr("OCR 算法更新成功！"));
         } else {
           await createAlgorithm(data);
-          message.success('OCR 算法创建成功！');
+          message.success(tr("OCR 算法创建成功！"));
         }
         navigate('/algorithms');
         return;
@@ -715,16 +720,16 @@ export default function AlgorithmWizard() {
           window_size: values.windowSize,
           window_mode: values.windowMode,
           window_threshold: values.windowThreshold,
-          label_name: cascadeOutput?.label || '组合事件',
+          label_name: cascadeOutput?.label || tr("组合事件"),
           label_color: cascadeOutput?.color || '#ff4d4f',
           cascade_config: cascadeConfig,
         };
         if (editingAlgorithm) {
           await updateAlgorithm(editingAlgorithm.id, data);
-          message.success('组合检测算法更新成功！');
+          message.success(tr("组合检测算法更新成功！"));
         } else {
           await createAlgorithm(data);
-          message.success('组合检测算法创建成功！');
+          message.success(tr("组合检测算法创建成功！"));
         }
         navigate('/algorithms');
         return;
@@ -766,15 +771,15 @@ export default function AlgorithmWizard() {
 
       if (editingAlgorithm) {
         await updateAlgorithm(editingAlgorithm.id, data);
-        message.success('算法更新成功！');
+        message.success(tr("算法更新成功！"));
       } else {
         await createAlgorithm(data);
-        message.success('算法创建成功！');
+        message.success(tr("算法创建成功！"));
       }
       navigate('/algorithms');
     } catch (error: any) {
       const detail = error?.data?.error || error?.response?.data?.error || error?.message;
-      message.error(detail || (editingAlgorithm ? '更新失败' : '创建失败'));
+      message.error(detail || (editingAlgorithm ? tr("更新失败") : tr("创建失败")));
     }
   };
 
@@ -857,7 +862,7 @@ export default function AlgorithmWizard() {
       <div className="detector-section">
         <h3 className="section-title">
           <ApiOutlined className="title-icon" />
-          选择算法类型
+          {tr("选择算法类型")}
         </h3>
         <Row gutter={[16, 16]} className="algorithm-type-grid">
           <Col xs={24} md={12} lg={6}>
@@ -871,8 +876,8 @@ export default function AlgorithmWizard() {
             >
               <CodeOutlined className="algorithm-type-icon" />
               <div>
-                <h4>脚本算法</h4>
-                <p>执行本地检测脚本和模型，适合目标检测与规则计算。</p>
+                <h4>{tr("脚本算法")}</h4>
+                <p>{tr("执行本地检测脚本和模型，适合目标检测与规则计算。")}</p>
               </div>
             </Card>
           </Col>
@@ -884,8 +889,8 @@ export default function AlgorithmWizard() {
             >
               <RobotOutlined className="algorithm-type-icon" />
               <div>
-                <h4>VL 算法</h4>
-                <p>调用 OpenAI 兼容视觉语言模型，输出可编排的语义检测结果。</p>
+                <h4>{tr("VL 算法")}</h4>
+                <p>{tr("调用 OpenAI 兼容视觉语言模型，输出可编排的语义检测结果。")}</p>
               </div>
             </Card>
           </Col>
@@ -897,8 +902,8 @@ export default function AlgorithmWizard() {
             >
               <ApartmentOutlined className="algorithm-type-icon" />
               <div>
-                <h4>组合检测</h4>
-                <p>在画布上组合检测步骤与 AND、OR、NOT 判定规则。</p>
+                <h4>{tr("组合检测")}</h4>
+                <p>{tr("在画布上组合检测步骤与 AND、OR、NOT 判定规则。")}</p>
               </div>
             </Card>
           </Col>
@@ -911,10 +916,10 @@ export default function AlgorithmWizard() {
             >
               <FileSearchOutlined className="algorithm-type-icon" />
               <div>
-                <h4>OCR 算法</h4>
+                <h4>{tr("OCR 算法")}</h4>
                 <p>{ocrRuntimeAvailable
                   ? ocrTypeDescription(ocrBackends)
-                  : '当前运行环境缺少 OCR 运行时，无法运行或保存。'}</p>
+                  : tr("当前运行环境缺少 OCR 运行时，无法运行或保存。")}</p>
               </div>
             </Card>
           </Col>
@@ -925,14 +930,14 @@ export default function AlgorithmWizard() {
           <div className="algorithm-type-detail">
             <h3 className="section-title compact">
               <CodeOutlined className="title-icon" />
-              选择检测脚本
+              {tr("选择检测脚本")}
             </h3>
             <Row gutter={[12, 12]}>
               {scripts.length === 0 ? (
                 <Col span={24}>
                   <Alert
-                    message="内置检测脚本不可用"
-                    description="请检查通用单模型和多模型脚本是否已正确部署。"
+                    message={tr("内置检测脚本不可用")}
+                    description={tr("请检查通用单模型和多模型脚本是否已正确部署。")}
                     type="warning"
                     showIcon
                   />
@@ -966,7 +971,7 @@ export default function AlgorithmWizard() {
                 onClick={() => window.open('/scripts', '_blank')}
                 className="upload-script-btn"
               >
-                管理脚本
+                {tr("管理脚本")}
               </Button>
             </div>
           </div>
@@ -975,24 +980,24 @@ export default function AlgorithmWizard() {
             className="vl-contract-callout"
             type="info"
             showIcon
-            message="统一算法输出"
-            description="VL 会把模型回答校验为 detections 和 metadata。语义结果可以不带检测框，但仍能参与条件计数和告警。"
+            message={tr("统一算法输出")}
+            description={tr("VL 会把模型回答校验为 detections 和 metadata。语义结果可以不带检测框，但仍能参与条件计数和告警。")}
           />
         ) : algorithmType === 'ocr' ? (
           <Alert
             className="vl-contract-callout"
             type="info"
             showIcon
-            message="检测与识别两阶段"
-            description="OCR 算法需要分别选择文字检测模型和文字识别模型，输出文字、置信度与位置，可连接文字条件节点。"
+            message={tr("检测与识别两阶段")}
+            description={tr("OCR 算法需要分别选择文字检测模型和文字识别模型，输出文字、置信度与位置，可连接文字条件节点。")}
           />
         ) : (
           <Alert
             className="cascade-contract-callout"
             type="warning"
             showIcon
-            message="检测数据流与判定规则分离"
-            description="蓝色连线传递画面或目标区域，橙色连线组合存在、不存在和数量条件；模型失败不会被取反为告警。"
+            message={tr("检测数据流与判定规则分离")}
+            description={tr("蓝色连线传递画面或目标区域，橙色连线组合存在、不存在和数量条件；模型失败不会被取反为告警。")}
           />
         )}
       </div>
@@ -1015,17 +1020,17 @@ export default function AlgorithmWizard() {
       return (
         <div className="config-form vl-config-form">
           <Form form={form} layout="vertical">
-            <Card title={<Space><ApiOutlined />接口与认证</Space>} className="config-card">
+            <Card title={<Space><ApiOutlined />{tr("接口与认证")}</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} lg={12}>
                   <Form.Item
                     label="Base URL"
                     name="vlBaseUrl"
                     rules={[
-                      { required: true, message: '请输入 VL API Base URL' },
-                      { type: 'url', message: '请输入完整的 HTTP(S) 地址' },
+                      { required: true, message: tr("请输入 VL API Base URL") },
+                      { type: 'url', message: tr("请输入完整的 HTTP(S) 地址") },
                     ]}
-                    extra="可填写到 /v1，系统会自动补全 /chat/completions"
+                    extra={tr("可填写到 /v1，系统会自动补全 /chat/completions")}
                   >
                     <Input placeholder="https://api.example.com/v1" />
                   </Form.Item>
@@ -1036,64 +1041,64 @@ export default function AlgorithmWizard() {
                     name="vlApiKey"
                     rules={editingAlgorithm?.vl_config?.api_key_configured
                       ? []
-                      : [{ required: true, message: '请输入 API Key' }]}
+                      : [{ required: true, message: tr("请输入 API Key") }]}
                     extra={editingAlgorithm?.vl_config?.api_key_configured
-                      ? '密钥已保存；留空将保留原值'
-                      : '密钥只写保存，保存后不会再回传明文'}
+                      ? tr("密钥已保存；留空将保留原值")
+                      : tr("密钥只写保存，保存后不会再回传明文")}
                   >
                     <Input.Password autoComplete="new-password" placeholder="sk-..." />
                   </Form.Item>
                 </Col>
               </Row>
               <Form.Item
-                label="附加请求 Headers"
+                label={tr("附加请求 Headers")}
                 name="vlExtraHeaders"
                 rules={[{ validator: validateJsonObject }]}
-                extra="用于租户标识等额外认证信息；Authorization 默认使用 API Key"
+                extra={tr("用于租户标识等额外认证信息；Authorization 默认使用 API Key")}
               >
                 <TextArea rows={4} className="json-editor" placeholder='{"X-Tenant":"demo"}' />
               </Form.Item>
             </Card>
 
-            <Card title={<Space><RobotOutlined />模型参数</Space>} className="config-card">
+            <Card title={<Space><RobotOutlined />{tr("模型参数")}</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} lg={12}>
-                  <Form.Item label="模型名称" name="vlModelName" rules={[{ required: true, message: '请输入模型名称' }]}>
-                    <Input placeholder="例如：qwen-vl-max" />
+                  <Form.Item label={tr("模型名称")} name="vlModelName" rules={[{ required: true, message: tr("请输入模型名称") }]}>
+                    <Input placeholder={tr("例如：qwen-vl-max")} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={8} lg={4}>
-                  <Form.Item label="温度" name="vlTemperature">
+                  <Form.Item label={tr("温度")} name="vlTemperature">
                     <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={8} lg={4}>
-                  <Form.Item label="最大 Token" name="vlMaxTokens">
+                  <Form.Item label={tr("最大 Token")} name="vlMaxTokens">
                     <InputNumber min={1} max={32768} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={8} lg={4}>
-                  <Form.Item label="图片精度" name="vlImageDetail">
+                  <Form.Item label={tr("图片精度")} name="vlImageDetail">
                     <Select>
-                      <Option value="auto">自动</Option>
-                      <Option value="low">低</Option>
-                      <Option value="high">高</Option>
+                      <Option value="auto">{tr("自动")}</Option>
+                      <Option value="low">{tr("低")}</Option>
+                      <Option value="high">{tr("高")}</Option>
                     </Select>
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={16}>
                 <Col xs={24} lg={8}>
-                  <Form.Item label="接口超时（秒）" name="vlTimeoutSeconds">
+                  <Form.Item label={tr("接口超时（秒）")} name="vlTimeoutSeconds">
                     <InputNumber min={1} max={300} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} lg={16}>
                   <Form.Item
-                    label="附加请求参数"
+                    label={tr("附加请求参数")}
                     name="vlExtraBody"
                     rules={[{ validator: validateJsonObject }]}
-                    extra="会合并到请求体顶层，可用于 seed 等供应商扩展参数"
+                    extra={tr("会合并到请求体顶层，可用于 seed 等供应商扩展参数")}
                   >
                     <TextArea rows={3} className="json-editor" placeholder='{"seed":7}' />
                   </Form.Item>
@@ -1101,19 +1106,19 @@ export default function AlgorithmWizard() {
               </Row>
             </Card>
 
-            <Card title={<Space><SettingOutlined />判断提示词</Space>} className="config-card vl-prompt-card">
+            <Card title={<Space><SettingOutlined />{tr("判断提示词")}</Space>} className="config-card vl-prompt-card">
               <Form.Item
                 name="vlPromptTemplate"
-                rules={[{ required: true, message: '请输入判断提示词' }]}
-                extra="可用变量：{workflow_name}、{source_name}、{source_code}、{frame_width}、{frame_height}、{upstream_results_json}、{roi_regions_json}"
+                rules={[{ required: true, message: tr("请输入判断提示词") }]}
+                extra={tr("可用变量：{workflow_name}、{source_name}、{source_code}、{frame_width}、{frame_height}、{upstream_results_json}、{roi_regions_json}")}
               >
                 <TextArea rows={10} placeholder={DEFAULT_VL_PROMPT} />
               </Form.Item>
               <Alert
                 type="success"
                 showIcon
-                message="返回格式由系统约束"
-                description="模型必须返回 has_detection、detections 和 reason。每个检测项包含名称、置信度和可为空的 bbox。"
+                message={tr("返回格式由系统约束")}
+                description={tr("模型必须返回 has_detection、detections 和 reason。每个检测项包含名称、置信度和可为空的 bbox。")}
               />
             </Card>
           </Form>
@@ -1142,21 +1147,21 @@ export default function AlgorithmWizard() {
               <Alert
                 type="error"
                 showIcon
-                message="当前环境不支持 OCR"
-                description={ocrRuntimeError || '当前镜像未提供 PaddleOCR 或 RKNNLite，无法运行 OCR。'}
+                message={tr("当前环境不支持 OCR")}
+                description={ocrRuntimeError || tr("当前镜像未提供 PaddleOCR 或 RKNNLite，无法运行 OCR。")}
                 style={{ marginBottom: 16 }}
               />
             ) : null}
-            <Card title={<Space><FileSearchOutlined />OCR 模型</Space>} className="config-card">
+            <Card title={<Space><FileSearchOutlined />{tr("OCR 模型")}</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} lg={12}>
                   <Form.Item
-                    label="文字检测模型"
+                    label={tr("文字检测模型")}
                     name="ocrDetectionModelId"
-                    rules={[{ required: true, message: '请选择文字检测模型' }]}
+                    rules={[{ required: true, message: tr("请选择文字检测模型") }]}
                   >
                     <Select
-                      placeholder="选择 detection 模型"
+                      placeholder={tr("选择 detection 模型")}
                       onChange={(modelId) => {
                         const detectionModel = detectionModels.find(model => model.id === modelId);
                         const recognitionModel = models.find(
@@ -1180,11 +1185,11 @@ export default function AlgorithmWizard() {
                 </Col>
                 <Col xs={24} lg={12}>
                   <Form.Item
-                    label="文字识别模型"
+                    label={tr("文字识别模型")}
                     name="ocrRecognitionModelId"
-                    rules={[{ required: true, message: '请选择文字识别模型' }]}
+                    rules={[{ required: true, message: tr("请选择文字识别模型") }]}
                   >
-                    <Select placeholder="选择 recognition 模型">
+                    <Select placeholder={tr("选择 recognition 模型")}>
                       {recognitionModels.map(model => (
                         <Option key={model.id} value={model.id}>{model.name} · {model.version}</Option>
                       ))}
@@ -1196,25 +1201,25 @@ export default function AlgorithmWizard() {
                 <Alert
                   type="warning"
                   showIcon
-                  message="OCR 模型不完整"
+                  message={tr("OCR 模型不完整")}
                   description={rknnOnly
-                    ? '请先在模型管理中分别上传 detection 和 recognition 角色的 RKNN OCR 模型（.rknn）。'
-                    : '请先在模型管理中分别上传 detection 和 recognition 角色的 OCR 模型。'}
+                    ? tr("请先在模型管理中分别上传 detection 和 recognition 角色的 RKNN OCR 模型（.rknn）。")
+                    : tr("请先在模型管理中分别上传 detection 和 recognition 角色的 OCR 模型。")}
                 />
               ) : null}
             </Card>
 
-            <Card title={<Space><ThunderboltOutlined />推理参数</Space>} className="config-card">
+            <Card title={<Space><ThunderboltOutlined />{tr("推理参数")}</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} md={8}>
                   <Form.Item
-                    label="运行设备"
+                    label={tr("运行设备")}
                     name="ocrDevice"
                     initialValue="auto"
-                    extra={rknnSelected ? 'RKNN OCR 使用 NPU，auto 表示自动选择 NPU Core。' : undefined}
+                    extra={rknnSelected ? tr("RKNN OCR 使用 NPU，auto 表示自动选择 NPU Core。") : undefined}
                   >
                     <Select>
-                      <Option value="auto">{rknnSelected ? '自动（NPU）' : '自动选择'}</Option>
+                      <Option value="auto">{rknnSelected ? tr("自动（NPU）") : tr("自动选择")}</Option>
                       {rknnSelected ? null : (
                         <>
                           <Option value="cpu">CPU</Option>
@@ -1226,20 +1231,20 @@ export default function AlgorithmWizard() {
                 </Col>
                 <Col xs={24} md={8}>
                   <Form.Item
-                    label="最低文字置信度"
+                    label={tr("最低文字置信度")}
                     name="ocrRecognitionScoreThreshold"
                     initialValue={0.5}
-                    rules={[{ required: true, message: '请输入置信度阈值' }]}
+                    rules={[{ required: true, message: tr("请输入置信度阈值") }]}
                   >
                     <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={8}>
                   <Form.Item
-                    label="识别批大小"
+                    label={tr("识别批大小")}
                     name="ocrRecognitionBatchSize"
                     initialValue={1}
-                    extra={rknnSelected ? 'RKNN OCR 当前逐行调用 NPU，批大小固定为 1。' : undefined}
+                    extra={rknnSelected ? tr("RKNN OCR 当前逐行调用 NPU，批大小固定为 1。") : undefined}
                   >
                     <InputNumber
                       min={1}
@@ -1254,7 +1259,7 @@ export default function AlgorithmWizard() {
               {rknnSelected ? (
                 <Row gutter={16}>
                   <Col xs={24} md={8}>
-                    <Form.Item label="RKNN 输入颜色" name="ocrRknnInputFormat" initialValue="rgb">
+                    <Form.Item label={tr("RKNN 输入颜色")} name="ocrRknnInputFormat" initialValue="rgb">
                       <Select>
                         <Option value="rgb">RGB</Option>
                         <Option value="bgr">BGR</Option>
@@ -1264,7 +1269,7 @@ export default function AlgorithmWizard() {
                   <Col xs={24} md={8}>
                     <Form.Item label="NPU Core" name="ocrRknnCoreMask" initialValue="auto">
                       <Select>
-                        <Option value="auto">自动</Option>
+                        <Option value="auto">{tr("自动")}</Option>
                         <Option value="core_0">Core 0</Option>
                         <Option value="core_1">Core 1</Option>
                         <Option value="core_2">Core 2</Option>
@@ -1275,31 +1280,31 @@ export default function AlgorithmWizard() {
               ) : null}
             </Card>
 
-            <Card title={<Space><SettingOutlined />高级检测参数</Space>} className="config-card">
+            <Card title={<Space><SettingOutlined />{tr("高级检测参数")}</Space>} className="config-card">
               <Alert
                 type="info"
                 showIcon
-                message="留空时使用模型默认值"
+                message={tr("留空时使用模型默认值")}
                 style={{ marginBottom: 16 }}
               />
               <Row gutter={16}>
                 <Col xs={24} md={12} lg={6}>
-                  <Form.Item label="检测阈值" name="ocrDetectionThreshold">
+                  <Form.Item label={tr("检测阈值")} name="ocrDetectionThreshold">
                     <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12} lg={6}>
-                  <Form.Item label="文本框阈值" name="ocrBoxThreshold">
+                  <Form.Item label={tr("文本框阈值")} name="ocrBoxThreshold">
                     <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12} lg={6}>
-                  <Form.Item label="文本框扩展比例" name="ocrUnclipRatio">
+                  <Form.Item label={tr("文本框扩展比例")} name="ocrUnclipRatio">
                     <InputNumber min={0.1} max={10} step={0.1} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12} lg={6}>
-                  <Form.Item label="检测边长限制" name="ocrLimitSideLen">
+                  <Form.Item label={tr("检测边长限制")} name="ocrLimitSideLen">
                     <InputNumber min={32} max={4096} step={32} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
@@ -1330,7 +1335,7 @@ export default function AlgorithmWizard() {
         <div className="config-form">
           {Object.keys(configSchema).length === 0 ? (
             <Alert
-              message="此检测器无需额外配置"
+              message={tr("此检测器无需额外配置")}
               type="success"
               showIcon
             />
@@ -1349,7 +1354,7 @@ export default function AlgorithmWizard() {
                     </Space>
                   }
                   extra={field.description}
-                  rules={field.required && field.type !== 'model_list' ? [{ required: true, message: `请填写${field.label || key}` }] : []}
+                  rules={field.required && field.type !== 'model_list' ? [{ required: true, message: trf("请填写__VAR0__", [field.label || key]) }] : []}
                   initialValue={field.type !== 'model_list' ? field.default : undefined}
                 >
                   {renderConfigField(key, field)}
@@ -1371,7 +1376,7 @@ export default function AlgorithmWizard() {
               {(modelItems[key] || []).map(itemId => (
                 <Card key={itemId} size="small" className="model-item-card">
                   <div className="model-item-header">
-                    <span>模型配置</span>
+                    <span>{tr("模型配置")}</span>
                     <Button
                       type="text"
                       danger
@@ -1379,7 +1384,7 @@ export default function AlgorithmWizard() {
                       icon={<DeleteOutlined />}
                       onClick={() => removeModelItem(key, itemId)}
                     >
-                      删除
+                      {tr("删除")}
                     </Button>
                   </div>
                   {renderModelItemFields(key, field.item_schema || {}, itemId)}
@@ -1392,7 +1397,7 @@ export default function AlgorithmWizard() {
               onClick={() => addModelItem(key)}
               block
             >
-              添加模型
+              {tr("添加模型")}
             </Button>
           </div>
         );
@@ -1400,7 +1405,7 @@ export default function AlgorithmWizard() {
       case 'model_select':
         return (
           <Select
-            placeholder="选择模型..."
+            placeholder={tr("选择模型...")}
             allowClear
           >
             {models.filter(m => {
@@ -1421,10 +1426,10 @@ export default function AlgorithmWizard() {
 
       case 'face_gallery_select':
         return (
-          <Select placeholder="选择已启用的人脸库..." allowClear>
+          <Select placeholder={tr("选择已启用的人脸库...")} allowClear>
             {faceGalleries.filter(gallery => gallery.enabled).map(gallery => (
               <Option key={gallery.id} value={gallery.id}>
-                {gallery.name}（{gallery.person_count} 人 / {gallery.template_count} 模板）
+                {gallery.name}（{gallery.person_count} {tr("人 /")} {gallery.template_count} {tr("模板）")}
               </Option>
             ))}
           </Select>
@@ -1432,10 +1437,10 @@ export default function AlgorithmWizard() {
 
       case 'reid_model_select':
         return (
-          <Select placeholder="选择已启用且含平台制品的 ReID 模型包..." allowClear>
+          <Select placeholder={tr("选择已启用且含平台制品的 ReID 模型包...")} allowClear>
             {reidModelBundles.filter(bundle => bundle.enabled && bundle.artifacts.length > 0).map(bundle => (
               <Option key={bundle.id} value={bundle.id}>
-                {bundle.name}（{bundle.embedding_dimension}D / {bundle.artifacts.length} 个制品）
+                {bundle.name}（{bundle.embedding_dimension}D / {bundle.artifacts.length} {tr("个制品）")}
               </Option>
             ))}
           </Select>
@@ -1479,7 +1484,7 @@ export default function AlgorithmWizard() {
       case 'int_list':
         return (
           <Input
-            placeholder={field.placeholder || '例如: [0, 1, 2]'}
+            placeholder={field.placeholder || tr("例如: [0, 1, 2]")}
           />
         );
 
@@ -1520,13 +1525,13 @@ export default function AlgorithmWizard() {
           label={subField.label || subKey}
           initialValue={defaultValue}
           extra={subKey === 'label_name'
-            ? <>支持 <code>{'{class}'}</code> 占位符，将替换为实际识别类别</>
+            ? <>{tr("支持")} <code>{'{class}'}</code> {tr("占位符，将替换为实际识别类别")}</>
             : undefined}
           style={{ marginBottom: 12 }}
         >
           {subField.type === 'model_select' ? (
             <Select
-              placeholder="选择模型..."
+              placeholder={tr("选择模型...")}
             >
               {models.filter(m => m.enabled).map(m => (
                 <Option key={m.id} value={m.id}>{m.name} ({m.model_type})</Option>
@@ -1548,7 +1553,7 @@ export default function AlgorithmWizard() {
             />
           ) : (
             <Input
-              placeholder={subField.placeholder || (subKey === 'label_name' ? '例如：目标-{class}' : undefined)}
+              placeholder={subField.placeholder || (subKey === 'label_name' ? tr("例如：目标-{class}") : undefined)}
             />
           )}
         </Form.Item>
@@ -1559,44 +1564,44 @@ export default function AlgorithmWizard() {
   const renderStep3 = () => {
     return (
       <Form form={form} layout="vertical">
-          <Card title={<Space><InfoCircleOutlined />基础信息</Space>} className="config-card">
+          <Card title={<Space><InfoCircleOutlined />{tr("基础信息")}</Space>} className="config-card">
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
-                  label="算法名称"
+                  label={tr("算法名称")}
                   name="algorithmName"
-                  rules={[{ required: true, message: '请输入算法名称' }]}
+                  rules={[{ required: true, message: tr("请输入算法名称") }]}
                 >
-                  <Input placeholder="例如: 门口人员检测" />
+                  <Input placeholder={tr("例如: 门口人员检测")} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item
-                  label="检测间隔（秒）"
+                  label={tr("检测间隔（秒）")}
                   name="intervalSeconds"
                   initialValue={isFrequentFrameScript(selectedDetector?.scriptPath) ? 0.1 : 1}
                   extra={
                     isFrequentFrameScript(selectedDetector?.scriptPath)
-                      ? '追踪/事件建议间隔 0.1 秒；徘徊、停留、穿越都在本算法的「输出事件」里选，不必再串一个节点'
+                      ? tr("追踪/事件建议间隔 0.1 秒；徘徊、停留、穿越都在本算法的「输出事件」里选，不必再串一个节点")
                       : undefined
                   }
-                  rules={[{ required: true, message: '请输入检测间隔' }]}
+                  rules={[{ required: true, message: tr("请输入检测间隔") }]}
                 >
                   <InputNumber min={0.1} max={60} step={0.1} style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
             </Row>
-            <Form.Item label="算法描述" name="algorithmDescription">
-              <TextArea rows={3} placeholder="说明这个算法识别什么场景，便于在工作流中选择" />
+            <Form.Item label={tr("算法描述")} name="algorithmDescription">
+              <TextArea rows={3} placeholder={tr("说明这个算法识别什么场景，便于在工作流中选择")} />
             </Form.Item>
           </Card>
 
           {algorithmType === 'script' ? (
-            <Card title={<Space><ThunderboltOutlined />性能配置</Space>} className="config-card">
+            <Card title={<Space><ThunderboltOutlined />{tr("性能配置")}</Space>} className="config-card">
               <Row gutter={16}>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label="运行超时（秒）"
+                    label={tr("运行超时（秒）")}
                     name="runtimeTimeout"
                     initialValue={30}
                   >
@@ -1605,7 +1610,7 @@ export default function AlgorithmWizard() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label="内存限制（MB）"
+                    label={tr("内存限制（MB）")}
                     name="memoryLimitMb"
                     initialValue={512}
                   >
@@ -1616,13 +1621,13 @@ export default function AlgorithmWizard() {
             </Card>
           ) : null}
 
-          <Card title={<Space><ClockCircleOutlined />时间窗口检测（误报抑制）</Space>} className="config-card">
+          <Card title={<Space><ClockCircleOutlined />{tr("时间窗口检测（误报抑制）")}</Space>} className="config-card">
             <Form.Item
-              label="启用时间窗口检测"
+              label={tr("启用时间窗口检测")}
               name="enableWindowCheck"
               valuePropName="checked"
               initialValue={false}
-              extra="在时间窗口内多次检测确认后才触发告警，减少误报"
+              extra={tr("在时间窗口内多次检测确认后才触发告警，减少误报")}
             >
               <Switch />
             </Form.Item>
@@ -1633,7 +1638,7 @@ export default function AlgorithmWizard() {
                   <Row gutter={16}>
                     <Col span={8}>
                       <Form.Item
-                        label="窗口大小（秒）"
+                        label={tr("窗口大小（秒）")}
                         name="windowSize"
                         initialValue={30}
                         rules={[{ required: true }]}
@@ -1643,15 +1648,15 @@ export default function AlgorithmWizard() {
                     </Col>
                     <Col span={8}>
                       <Form.Item
-                        label="预警模式"
+                        label={tr("预警模式")}
                         name="windowMode"
                         initialValue="ratio"
                         rules={[{ required: true }]}
                       >
                         <Select>
-                          <Option value="ratio">占比模式</Option>
-                          <Option value="count">次数模式</Option>
-                          <Option value="consecutive">连续模式</Option>
+                          <Option value="ratio">{tr("占比模式")}</Option>
+                          <Option value="count">{tr("次数模式")}</Option>
+                          <Option value="consecutive">{tr("连续模式")}</Option>
                         </Select>
                       </Form.Item>
                     </Col>
@@ -1661,7 +1666,7 @@ export default function AlgorithmWizard() {
                           const mode = getFieldValue('windowMode');
                           return (
                             <Form.Item
-                              label={mode === 'ratio' ? '预警阈值（检测占比）' : '预警阈值（检测次数）'}
+                              label={mode === 'ratio' ? tr("预警阈值（检测占比）") : tr("预警阈值（检测次数）")}
                               name="windowThreshold"
                               initialValue={mode === 'ratio' ? 0.3 : 5}
                               rules={[{ required: true }]}
@@ -1682,12 +1687,12 @@ export default function AlgorithmWizard() {
             </Form.Item>
 
             <Alert
-              message="模式说明"
+              message={tr("模式说明")}
               description={
                 <ul className="window-mode-description">
-                  <li><strong>占比模式</strong>：检测帧数/总帧数 ≥ 阈值，适合间歇性检测</li>
-                  <li><strong>次数模式</strong>：检测帧数 ≥ 阈值，适合快速响应</li>
-                  <li><strong>连续模式</strong>：最大连续检测次数 ≥ 阈值，适合持续性检测</li>
+                  <li><strong>{tr("占比模式")}</strong>{tr("：检测帧数/总帧数 ≥ 阈值，适合间歇性检测")}</li>
+                  <li><strong>{tr("次数模式")}</strong>{tr("：检测帧数 ≥ 阈值，适合快速响应")}</li>
+                  <li><strong>{tr("连续模式")}</strong>{tr("：最大连续检测次数 ≥ 阈值，适合持续性检测")}</li>
                 </ul>
               }
               type="info"
@@ -1695,21 +1700,21 @@ export default function AlgorithmWizard() {
           </Card>
 
           {algorithmType !== 'cascade' ? (
-          <Card title={<Space><SettingOutlined />显示标签</Space>} className="config-card">
+          <Card title={<Space><SettingOutlined />{tr("显示标签")}</Space>} className="config-card">
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
-                  label="标签名称"
+                  label={tr("标签名称")}
                   name="labelName"
                   initialValue="Object"
-                  extra={<>支持 <code>{'{class}'}</code> 占位符，将替换为实际识别类别，例如：目标-{'{class}'}</>}
+                  extra={<>{tr("支持")} <code>{'{class}'}</code> {tr("占位符，将替换为实际识别类别，例如：目标-")}{'{class}'}</>}
                 >
-                  <Input placeholder="例如：目标-{class}" />
+                  <Input placeholder={tr("例如：目标-{class}")} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item
-                  label="标签颜色"
+                  label={tr("标签颜色")}
                   name="labelColor"
                   initialValue="#FF0000"
                 >
@@ -1728,25 +1733,25 @@ export default function AlgorithmWizard() {
 
   const steps = [
     {
-      title: '选择类型',
+      title: tr("选择类型"),
       icon: <ApiOutlined className="wizard-step-icon" />,
-      description: '选择脚本、组合检测、VL 或 OCR 算法',
+      description: tr("选择脚本、组合检测、VL 或 OCR 算法"),
     },
     {
-      title: '配置参数',
+      title: tr("配置参数"),
       icon: <SettingOutlined className="wizard-step-icon" />,
       description: algorithmType === 'vl'
-        ? '配置接口、模型与提示词'
+        ? tr("配置接口、模型与提示词")
         : algorithmType === 'ocr'
-          ? '配置 OCR 模型与推理参数'
+          ? tr("配置 OCR 模型与推理参数")
           : algorithmType === 'cascade'
-            ? '在画布中连接检测数据流与判定规则'
-          : '配置检测器参数',
+            ? tr("在画布中连接检测数据流与判定规则")
+          : tr("配置检测器参数"),
     },
     {
-      title: '执行配置',
+      title: tr("执行配置"),
       icon: <ControlOutlined className="wizard-step-icon" />,
-      description: '配置执行和告警参数',
+      description: tr("配置执行和告警参数"),
     },
   ];
 
@@ -1754,8 +1759,8 @@ export default function AlgorithmWizard() {
     <Spin spinning={loading}>
       <div className="algorithm-wizard-page">
         <div className="wizard-header">
-          <h1>{editingAlgorithm ? '编辑算法' : '创建算法'}</h1>
-          <Button onClick={handleCancel}>返回</Button>
+          <h1>{editingAlgorithm ? tr("编辑算法") : tr("创建算法")}</h1>
+          <Button onClick={handleCancel}>{tr("返回")}</Button>
         </div>
 
         <Steps
@@ -1774,7 +1779,7 @@ export default function AlgorithmWizard() {
             onClick={handlePrev}
             disabled={currentStep === 0}
           >
-            上一步
+            {tr("上一步")}
           </Button>
           <Space>
             {currentStep < 2 ? (
@@ -1783,7 +1788,7 @@ export default function AlgorithmWizard() {
                 icon={<ArrowRightOutlined />}
                 onClick={handleNext}
               >
-                下一步
+                {tr("下一步")}
               </Button>
             ) : (
               <Button
@@ -1791,7 +1796,7 @@ export default function AlgorithmWizard() {
                 icon={<CheckOutlined />}
                 onClick={handleSubmit}
               >
-                {editingAlgorithm ? '保存修改' : '创建算法'}
+                {editingAlgorithm ? tr("保存修改") : tr("创建算法")}
               </Button>
             )}
           </Space>

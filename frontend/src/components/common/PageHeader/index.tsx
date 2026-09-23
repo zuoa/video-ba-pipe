@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import { Space } from 'antd';
 import './index.css';
@@ -19,7 +20,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   subtitle,
   extra,
   count,
-  countLabel = '总数',
+  countLabel = tr("总数"),
 }) => {
   return (
     <div className="page-header">

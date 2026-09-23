@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useEffect, useRef, useState } from 'react';
 import { Row, Col } from 'antd';
 import {
@@ -138,7 +139,7 @@ export default function Dashboard() {
       } catch (error) {
         console.error('加载系统状态失败:', error);
         if (!cancelled) {
-          setSystemMetricsError('无法读取系统指标，请检查服务权限或稍后重试。');
+          setSystemMetricsError(tr("无法读取系统指标，请检查服务权限或稍后重试。"));
         }
       } finally {
         if (!cancelled) {
@@ -212,36 +213,36 @@ export default function Dashboard() {
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<VideoCameraOutlined />}
-            title="视频源"
+            title={tr("视频源")}
             value={`${stats.runningSources} / ${stats.totalSources}`}
-            subtitle="运行中 / 总数"
+            subtitle={tr("运行中 / 总数")}
             iconBgColor="#14202b"
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<ApartmentOutlined />}
-            title="工作流"
+            title={tr("工作流")}
             value={`${stats.activeWorkflows} / ${stats.totalWorkflows}`}
-            subtitle="启用中 / 总数"
+            subtitle={tr("启用中 / 总数")}
             iconBgColor="#203b48"
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<ExperimentOutlined />}
-            title="算法与模型"
+            title={tr("算法与模型")}
             value={stats.totalAlgorithms + stats.totalModels}
-            subtitle={`算法 ${stats.totalAlgorithms} · 模型 ${stats.totalModels}`}
+            subtitle={trf("算法 __VAR0__ · 模型 __VAR1__", [stats.totalAlgorithms, stats.totalModels])}
             iconBgColor="#2f5f68"
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             icon={<AlertOutlined />}
-            title="今日告警"
+            title={tr("今日告警")}
             value={stats.todayAlerts}
-            subtitle="今日累计触发"
+            subtitle={tr("今日累计触发")}
             iconBgColor="#b54743"
             footer={(
               <LatestAlertTicker

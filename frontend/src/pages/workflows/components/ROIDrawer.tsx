@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useRef, useEffect } from 'react';
 import { Space, message, Spin, Alert, Input, Select, List, Tag, Divider } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -34,15 +35,15 @@ export type ROIAnchor =
   | 'bottom_right';
 
 const ROI_ANCHOR_OPTIONS: Array<{ value: ROIAnchor; label: string }> = [
-  { value: 'top_left', label: '左上角' },
-  { value: 'top_center', label: '上边中点' },
-  { value: 'top_right', label: '右上角' },
-  { value: 'center_left', label: '左边中点' },
-  { value: 'center', label: '中心点' },
-  { value: 'center_right', label: '右边中点' },
-  { value: 'bottom_left', label: '左下角' },
-  { value: 'bottom_center', label: '下边中点' },
-  { value: 'bottom_right', label: '右下角' },
+  { value: 'top_left', label: tr("左上角") },
+  { value: 'top_center', label: tr("上边中点") },
+  { value: 'top_right', label: tr("右上角") },
+  { value: 'center_left', label: tr("左边中点") },
+  { value: 'center', label: tr("中心点") },
+  { value: 'center_right', label: tr("右边中点") },
+  { value: 'bottom_left', label: tr("左下角") },
+  { value: 'bottom_center', label: tr("下边中点") },
+  { value: 'bottom_right', label: tr("右下角") },
 ];
 
 const LEGACY_ANCHOR_VALUE = '__legacy__';
@@ -54,7 +55,7 @@ export const getROIAnchorLabel = (anchor?: string): string => {
   const normalized = normalizeROIAnchor(anchor);
   return normalized
     ? ROI_ANCHOR_OPTIONS.find(option => option.value === normalized)!.label
-    : '原有规则（兼容）';
+    : tr("原有规则（兼容）");
 };
 
 export interface ROIRegion {
@@ -99,7 +100,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   // 加载视频帧
   const loadFrame = async () => {
     if (!videoSourceId) {
-      message.warning('请先选择视频源');
+      message.warning(tr("请先选择视频源"));
       return;
     }
 
@@ -110,32 +111,32 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
       // 只有在实时截图失败时才尝试使用 snapshot
       if (response && response.success && response.image) {
         setImageData(response.image);
-        message.success('视频帧加载成功');
+        message.success(tr("视频帧加载成功"));
         setLoading(false);
         return;
       }
 
       // 实时截图失败，尝试使用 snapshot
       console.log('实时截图失败，尝试使用快照');
-      message.warning('无法获取实时帧，尝试使用快照');
+      message.warning(tr("无法获取实时帧，尝试使用快照"));
 
       try {
         await loadSnapshotFrame();
       } catch (snapshotError) {
         console.error('加载快照也失败:', snapshotError);
-        message.error('加载视频帧失败，请检查视频源是否正在运行');
+        message.error(tr("加载视频帧失败，请检查视频源是否正在运行"));
       }
     } catch (error) {
       console.error('加载视频帧失败:', error);
 
       // 实时截图抛出异常，尝试使用 snapshot
-      message.warning('加载实时帧失败，尝试使用快照');
+      message.warning(tr("加载实时帧失败，尝试使用快照"));
 
       try {
         await loadSnapshotFrame();
       } catch (snapshotError) {
         console.error('加载快照也失败:', snapshotError);
-        message.error('加载视频帧失败，请检查视频源是否正在运行');
+        message.error(tr("加载视频帧失败，请检查视频源是否正在运行"));
       }
     } finally {
       setLoading(false);
@@ -146,7 +147,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   const loadSnapshotFrame = async () => {
     // 使用 sourceCode 构建快照 URL
     if (!sourceCode) {
-      throw new Error('缺少 source_code');
+      throw new Error(tr("缺少 source_code"));
     }
 
     const snapshotUrl = `/api/image/snapshots/${sourceCode}.jpg`;
@@ -166,14 +167,14 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
           ctx.drawImage(img, 0, 0);
           const base64 = canvas.toDataURL('image/jpeg');
           setImageData(base64);
-          message.success('快照加载成功');
+          message.success(tr("快照加载成功"));
           resolve();
         } else {
-          reject(new Error('无法创建 canvas'));
+          reject(new Error(tr("无法创建 canvas")));
         }
       };
       img.onerror = () => {
-        reject(new Error('图片加载失败'));
+        reject(new Error(tr("图片加载失败")));
       };
 
       img.src = snapshotUrl;
@@ -247,7 +248,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
 
     // 绘制当前正在绘制的多边形
     if (currentPolygon.length > 0) {
-      drawPolygon(ctx, currentPolygon, 'rgba(255, 77, 79, 0.2)', 'rgba(255, 77, 79, 1)', true, currentRegionName || '新区域');
+      drawPolygon(ctx, currentPolygon, 'rgba(255, 77, 79, 0.2)', 'rgba(255, 77, 79, 1)', true, currentRegionName || tr("新区域"));
     }
   };
 
@@ -359,7 +360,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     if (currentPolygon.length >= 3) {
       completePolygon();
     } else if (currentPolygon.length > 0) {
-      message.warning('至少需要3个点才能构成多边形');
+      message.warning(tr("至少需要3个点才能构成多边形"));
     }
   };
 
@@ -369,7 +370,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     if (!canvas || !imageSize) return;
 
     if (currentRegionName.trim() === '') {
-      message.warning('请先输入区域名称');
+      message.warning(tr("请先输入区域名称"));
       return;
     }
 
@@ -397,11 +398,11 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
       const updatedRegions = [...savedRegions];
       updatedRegions[editingIndex] = newRegion;
       setSavedRegions(updatedRegions);
-      message.success(`ROI 区域 "${currentRegionName}" 已更新`);
+      message.success(trf("ROI 区域 \"__VAR0__\" 已更新", [currentRegionName]));
     } else {
       // 新建模式：添加新区域
       setSavedRegions([...savedRegions, newRegion]);
-      message.success(`ROI 区域 "${currentRegionName}" 已添加`);
+      message.success(trf("ROI 区域 \"__VAR0__\" 已添加", [currentRegionName]));
     }
 
     // 重置当前绘制状态
@@ -423,7 +424,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   const handleDeleteRegion = (index: number) => {
     const updatedRegions = savedRegions.filter((_, i) => i !== index);
     setSavedRegions(updatedRegions);
-    message.success(`ROI 区域 "${savedRegions[index].name}" 已删除`);
+    message.success(trf("ROI 区域 \"__VAR0__\" 已删除", [savedRegions[index].name]));
   };
 
   // 编辑指定区域
@@ -443,7 +444,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     setCurrentRegionMode(region.mode);
     setCurrentRegionAnchor(normalizeROIAnchor(region.anchor));
     setEditingIndex(index);
-    message.info(`正在编辑区域 "${region.name}"`);
+    message.info(trf("正在编辑区域 \"__VAR0__\"", [region.name]));
   };
 
   // 清除所有已保存的区域
@@ -453,7 +454,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
     setCurrentRegionName('');
     setCurrentRegionAnchor('center');
     setEditingIndex(-1);
-    message.success('所有 ROI 区域已清除');
+    message.success(tr("所有 ROI 区域已清除"));
   };
 
   // 撤销最后一个点
@@ -466,20 +467,20 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
   // 保存所有 ROI 区域
   const handleSave = () => {
     if (savedRegions.length === 0) {
-      message.warning('请先绘制至少一个 ROI 区域');
+      message.warning(tr("请先绘制至少一个 ROI 区域"));
       return;
     }
 
     // 保存的是所有区域
     onSave(savedRegions);
-    message.success(`已保存 ${savedRegions.length} 个 ROI 区域`);
+    message.success(trf("已保存 __VAR0__ 个 ROI 区域", [savedRegions.length]));
     onClose();
   };
 
   return (
     <AppModal
-      title="ROI 区域绘制"
-      description={videoSourceName || '在视频画面上定义需要分析的区域'}
+      title={tr("ROI 区域绘制")}
+      description={videoSourceName || tr("在视频画面上定义需要分析的区域")}
       kind="fullscreen"
       size="full"
       bodyMode="canvas"
@@ -498,20 +499,20 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               loading={loading}
               block
             >
-              重新加载帧
+              {tr("重新加载帧")}
             </Button>
 
             <div className="control-divider" />
 
             <Alert
-              message="操作说明"
+              message={tr("操作说明")}
               description={
                 <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  <li>输入区域名称，选择检测模式</li>
-                  <li>点击画布添加多边形顶点</li>
-                  <li>至少需要 3 个点</li>
-                  <li><strong>双击</strong>或<strong>点击起点</strong>完成当前区域</li>
-                  <li>可以绘制多个区域，每个区域独立配置</li>
+                  <li>{tr("输入区域名称，选择检测模式")}</li>
+                  <li>{tr("点击画布添加多边形顶点")}</li>
+                  <li>{tr("至少需要 3 个点")}</li>
+                  <li><strong>{tr("双击")}</strong>{tr("或")}<strong>{tr("点击起点")}</strong>{tr("完成当前区域")}</li>
+                  <li>{tr("可以绘制多个区域，每个区域独立配置")}</li>
                 </ul>
               }
               type="info"
@@ -524,10 +525,10 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
             {/* 当前区域配置 */}
             <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 4 }}>
               <div style={{ marginBottom: 8, fontWeight: 'bold' }}>
-                {editingIndex >= 0 ? '编辑区域' : '新区域配置'}
+                {editingIndex >= 0 ? tr("编辑区域") : tr("新区域配置")}
               </div>
               <Input
-                placeholder="区域名称（如：大门、停车场）"
+                placeholder={tr("区域名称（如：大门、停车场）")}
                 value={currentRegionName}
                 onChange={(e) => setCurrentRegionName(e.target.value)}
                 style={{ marginBottom: 8 }}
@@ -539,18 +540,18 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                 style={{ width: '100%' }}
                 disabled={editingIndex >= 0}
               >
-                <Option value="pre_mask">前置掩码 (检测前屏蔽)</Option>
-                <Option value="post_filter">后置过滤 (检测后过滤)</Option>
+                <Option value="pre_mask">{tr("前置掩码 (检测前屏蔽)")}</Option>
+                <Option value="post_filter">{tr("后置过滤 (检测后过滤)")}</Option>
               </Select>
               <label
                 htmlFor="roi-anchor-select"
                 style={{ display: 'block', marginTop: 10, marginBottom: 4, color: '#595959' }}
               >
-                目标框判定点
+                {tr("目标框判定点")}
               </label>
               <Select
                 id="roi-anchor-select"
-                aria-label="目标框判定点"
+                aria-label={tr("目标框判定点")}
                 value={currentRegionAnchor || LEGACY_ANCHOR_VALUE}
                 onChange={(value: ROIAnchor | typeof LEGACY_ANCHOR_VALUE) => {
                   setCurrentRegionAnchor(value === LEGACY_ANCHOR_VALUE ? undefined : value);
@@ -560,7 +561,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               >
                 {!currentRegionAnchor && (
                   <Option value={LEGACY_ANCHOR_VALUE} disabled>
-                    原有规则（兼容）
+                    {tr("原有规则（兼容）")}
                   </Option>
                 )}
                 {ROI_ANCHOR_OPTIONS.map(option => (
@@ -577,7 +578,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               disabled={currentPolygon.length === 0}
               block
             >
-              撤销上一个点
+              {tr("撤销上一个点")}
             </Button>
 
             <Button
@@ -586,7 +587,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               disabled={currentPolygon.length === 0}
               block
             >
-              清除当前绘制
+              {tr("清除当前绘制")}
             </Button>
 
             <Button
@@ -596,7 +597,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               disabled={savedRegions.length === 0}
               block
             >
-              清除所有区域
+              {tr("清除所有区域")}
             </Button>
 
             <div className="control-divider" />
@@ -605,7 +606,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
             {savedRegions.length > 0 && (
               <>
                 <div style={{ marginBottom: 8, fontWeight: 'bold' }}>
-                  已保存区域 ({savedRegions.length})
+                  {tr("已保存区域 (")}{savedRegions.length})
                 </div>
                 <div style={{ maxHeight: 200, overflow: 'auto' }}>
                   {savedRegions.map((region, index) => (
@@ -625,13 +626,13 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                             {region.name}
                           </div>
                           <Tag color={region.mode === 'pre_mask' ? 'blue' : 'green'}>
-                            {region.mode === 'pre_mask' ? '前置掩码' : '后置过滤'}
+                            {region.mode === 'pre_mask' ? tr("前置掩码") : tr("后置过滤")}
                           </Tag>
                           {region.mode === 'post_filter' && (
                             <Tag>{getROIAnchorLabel(region.anchor)}</Tag>
                           )}
                           <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4 }}>
-                            {region.polygon.length} 个顶点
+                            {region.polygon.length} {tr("个顶点")}
                           </div>
                         </div>
                         <Space size="small">
@@ -641,7 +642,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                             onClick={() => handleEditRegion(index)}
                             disabled={currentPolygon.length > 0}
                           >
-                            编辑
+                            {tr("编辑")}
                           </Button>
                           <Button
                             size="small"
@@ -649,7 +650,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
                             icon={<DeleteOutlined />}
                             onClick={() => handleDeleteRegion(index)}
                           >
-                            删除
+                            {tr("删除")}
                           </Button>
                         </Space>
                       </div>
@@ -662,8 +663,8 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
             )}
 
             <div className="stats">
-              <div>已保存区域: {savedRegions.length} 个</div>
-              <div>当前顶点: {currentPolygon.length} 个</div>
+              <div>{tr("已保存区域:")} {savedRegions.length} {tr("个")}</div>
+              <div>{tr("当前顶点:")} {currentPolygon.length} {tr("个")}</div>
             </div>
 
             <div className="control-divider" />
@@ -676,7 +677,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
               size="large"
               block
             >
-              保存所有区域
+              {tr("保存所有区域")}
             </Button>
           </Space>
         </div>
@@ -684,7 +685,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
         <div className="roi-canvas-wrapper">
           {loading ? (
             <div className="canvas-loading">
-              <Spin tip="加载视频帧中..." />
+              <Spin tip={tr("加载视频帧中...")} />
             </div>
           ) : imageData ? (
             <canvas
@@ -696,7 +697,7 @@ const ROIDrawer: React.FC<ROIDrawerProps> = ({
           ) : (
             <div className="canvas-empty">
               <InfoCircleOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
-              <p>点击"重新加载帧"按钮加载视频帧</p>
+              <p>{tr("点击\"重新加载帧\"按钮加载视频帧")}</p>
             </div>
           )}
 

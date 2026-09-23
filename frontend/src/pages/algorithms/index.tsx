@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -33,7 +34,7 @@ export default function Algorithms() {
       const data = await getAlgorithms();
       setAlgorithms(data || []);
     } catch (error) {
-      message.error('加载算法列表失败');
+      message.error(tr("加载算法列表失败"));
     } finally {
       setLoading(false);
     }
@@ -65,16 +66,16 @@ export default function Algorithms() {
   const handleDelete = (id: number) => {
     const algorithm = algorithms.find((item) => item.id === id);
     confirmAction({
-      title: '删除算法',
-      objectName: algorithm?.name || `算法 #${id}`,
-      description: '删除后，工作流将无法再选择该算法。',
+      title: tr("删除算法"),
+      objectName: algorithm?.name || trf("算法 #__VAR0__", [id]),
+      description: tr("删除后，工作流将无法再选择该算法。"),
       onConfirm: async () => {
         try {
           await deleteAlgorithm(id);
-          message.success('算法删除成功');
+          message.success(tr("算法删除成功"));
           loadAlgorithms();
         } catch (error) {
-          message.error('删除失败');
+          message.error(tr("删除失败"));
         }
       },
     });
@@ -95,10 +96,10 @@ export default function Algorithms() {
       <PageHeader
         icon={<ExperimentOutlined />}
         eyebrow="ANALYSIS ENGINE"
-        title="算法管理"
-        subtitle="配置并验证视频分析算法"
+        title={tr("算法管理")}
+        subtitle={tr("配置并验证视频分析算法")}
         count={algorithms.length}
-        countLabel="个算法"
+        countLabel={tr("个算法")}
         extra={
           <div className="header-actions">
             <Button
@@ -107,7 +108,7 @@ export default function Algorithms() {
               onClick={handleOpenWizard}
               className="app-primary-button wizard-btn"
             >
-              配置向导
+              {tr("配置向导")}
             </Button>
           </div>
         }

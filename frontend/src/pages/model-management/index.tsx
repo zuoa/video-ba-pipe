@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Row, Col, message, Spin } from 'antd';
 import { useNavigate } from '@umijs/max';
@@ -67,7 +68,7 @@ const ModelsPage: React.FC = () => {
       const data = await getModels();
       setModels(data.models || []);
     } catch (error: any) {
-      message.error('加载模型列表失败: ' + error.message);
+      message.error(tr("加载模型列表失败: ") + error.message);
     } finally {
       setLoading(false);
     }
@@ -135,16 +136,16 @@ const ModelsPage: React.FC = () => {
   const handleDelete = (id: number) => {
     const model = models.find((item) => item.id === id);
     confirmAction({
-      title: '删除模型',
-      objectName: model?.name || `模型 #${id}`,
-      description: '模型文件将被移除，此操作无法恢复。',
+      title: tr("删除模型"),
+      objectName: model?.name || trf("模型 #__VAR0__", [id]),
+      description: tr("模型文件将被移除，此操作无法恢复。"),
       onConfirm: async () => {
         try {
           await deleteModel(id);
-          message.success('模型删除成功');
+          message.success(tr("模型删除成功"));
           await Promise.all([loadModels(), loadFilterOptions()]);
         } catch (error: any) {
-          message.error('删除失败: ' + error.message);
+          message.error(tr("删除失败: ") + error.message);
         }
       },
     });
@@ -161,10 +162,10 @@ const ModelsPage: React.FC = () => {
       <PageHeader
         icon={<ApiOutlined />}
         eyebrow="MODEL REGISTRY"
-        title="模型管理"
-        subtitle="上传、检查并维护推理模型"
+        title={tr("模型管理")}
+        subtitle={tr("上传、检查并维护推理模型")}
         count={filteredModels.length}
-        countLabel="个模型"
+        countLabel={tr("个模型")}
         extra={
           <Button
             type="primary"
@@ -172,7 +173,7 @@ const ModelsPage: React.FC = () => {
             icon={<PlusOutlined />}
             onClick={() => setUploadModalVisible(true)}
           >
-            上传模型
+            {tr("上传模型")}
           </Button>
         }
       />
@@ -203,7 +204,7 @@ const ModelsPage: React.FC = () => {
                 onDelete={handleDelete}
                 onQuickSetup={setQuickSetupModel}
                 onConfigure={(item) => {
-                  message.info(item.quick_setup?.reason || '请在完整向导中选择适合该模型的脚本');
+                  message.info(item.quick_setup?.reason || tr("请在完整向导中选择适合该模型的脚本"));
                   navigate('/algorithms/wizard');
                 }}
               />

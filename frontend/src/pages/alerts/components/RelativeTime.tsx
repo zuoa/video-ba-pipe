@@ -1,10 +1,9 @@
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
 
 dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
 
 interface RelativeTimeProps {
   time: string | Date;
@@ -23,13 +22,13 @@ const RelativeTime: React.FC<RelativeTimeProps> = ({ time, className, showFullTi
   let fullTime = date.format('YYYY-MM-DD HH:mm:ss');
 
   if (diffMinutes < 1) {
-    relativeTime = '刚刚';
+    relativeTime = tr("刚刚");
   } else if (diffMinutes < 60) {
-    relativeTime = `${diffMinutes}分钟前`;
+    relativeTime = trf("__VAR0__分钟前", [diffMinutes]);
   } else if (diffHours < 24) {
-    relativeTime = `${diffHours}小时前`;
+    relativeTime = trf("__VAR0__小时前", [diffHours]);
   } else if (diffDays < 7) {
-    relativeTime = `${diffDays}天前`;
+    relativeTime = trf("__VAR0__天前", [diffDays]);
   } else {
     relativeTime = date.format('YYYY-MM-DD');
   }

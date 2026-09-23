@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Checkbox, Input, Select, Tag } from 'antd';
 import { CheckOutlined, CopyOutlined, FileTextOutlined, VideoCameraOutlined } from '@ant-design/icons';
@@ -112,8 +113,8 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
 
   return (
     <AppModal
-      title="将模板应用到视频源"
-      description="每个选中的视频源都会创建一个可独立配置和调度的运行编排"
+      title={tr("将模板应用到视频源")}
+      description={tr("每个选中的视频源都会创建一个可独立配置和调度的运行编排")}
       open={visible}
       onCancel={onCancel}
       size="lg"
@@ -122,9 +123,9 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
       keyboard={!loading}
       footer={[
         <span key="summary" className="copy-workflow-footer__summary">
-          已选择 <strong>{selectedSourceIds.length}</strong> 个视频源
+          {tr("已选择")} <strong>{selectedSourceIds.length}</strong> {tr("个视频源")}
         </span>,
-        <Button key="cancel" onClick={onCancel} disabled={loading}>取消</Button>,
+        <Button key="cancel" onClick={onCancel} disabled={loading}>{tr("取消")}</Button>,
         <Button
           key="copy"
           type="primary"
@@ -133,7 +134,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
           disabled={!selectedSourceIds.length || loading}
           loading={loading}
         >
-          创建 {selectedSourceIds.length} 个运行编排
+          {tr("创建")} {selectedSourceIds.length} {tr("个运行编排")}
         </Button>,
       ]}
     >
@@ -141,32 +142,32 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
         <div className="copy-template-context">
           <span className="copy-template-context__icon"><FileTextOutlined /></span>
           <span>
-            <small>当前模板</small>
-            <strong>{workflow?.name || '未命名模板'}</strong>
+            <small>{tr("当前模板")}</small>
+            <strong>{workflow?.name || tr("未命名模板")}</strong>
             {workflow?.description ? <p>{workflow.description}</p> : null}
           </span>
         </div>
 
-        <div className="copy-source-toolbar" role="search" aria-label="筛选目标视频源">
+        <div className="copy-source-toolbar" role="search" aria-label={tr("筛选目标视频源")}>
           <Input.Search
             allowClear
-            aria-label="搜索目标视频源"
-            placeholder="搜索视频源名称或编码"
+            aria-label={tr("搜索目标视频源")}
+            placeholder={tr("搜索视频源名称或编码")}
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
           <Select
-            aria-label="按视频源状态筛选"
+            aria-label={tr("按视频源状态筛选")}
             value={statusFilter}
             onChange={setStatusFilter}
             options={[
-              { value: 'all', label: '全部状态' },
-              { value: 'running', label: '运行中' },
-              { value: 'not_running', label: '非运行中' },
+              { value: 'all', label: tr("全部状态") },
+              { value: 'running', label: tr("运行中") },
+              { value: 'not_running', label: tr("非运行中") },
             ]}
           />
           <Checkbox checked={showExisting} onChange={(event) => setShowExisting(event.target.checked)}>
-            显示已创建
+            {tr("显示已创建")}
           </Checkbox>
         </div>
 
@@ -177,9 +178,9 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
             disabled={!filteredAvailableIds.length}
             onChange={(event) => handleSelectFiltered(event.target.checked)}
           >
-            选择当前结果中的可用视频源（{filteredAvailableIds.length} 个）
+            {tr("选择当前结果中的可用视频源（")}{filteredAvailableIds.length} {tr("个）")}
           </Checkbox>
-          <span>共显示 {filteredSources.length} 个视频源</span>
+          <span>{tr("共显示")} {filteredSources.length} {tr("个视频源")}</span>
         </div>
 
         <Checkbox
@@ -188,8 +189,8 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
           onChange={(event) => setActivateAfterCreation(event.target.checked)}
         >
           <span className="copy-activation-option__copy">
-            <strong>创建后立即激活</strong>
-            <small>新编排创建完成后自动参与运行调度</small>
+            <strong>{tr("创建后立即激活")}</strong>
+            <small>{tr("新编排创建完成后自动参与运行调度")}</small>
           </span>
         </Checkbox>
 
@@ -198,19 +199,19 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
             <AppEmptyState
               compact
               title={!videoSources.length
-                ? '暂无可用的视频源'
+                ? tr("暂无可用的视频源")
                 : allSourcesHaveWorkflow && !filtersActive
-                  ? '所有视频源均已创建编排'
-                  : '没有符合条件的视频源'}
+                  ? tr("所有视频源均已创建编排")
+                  : tr("没有符合条件的视频源")}
               description={!videoSources.length
-                ? '请先在视频源管理页面添加视频源。'
+                ? tr("请先在视频源管理页面添加视频源。")
                 : allSourcesHaveWorkflow && !filtersActive
-                  ? '可以显示已创建项，查看对应的运行编排。'
-                  : '调整搜索或状态条件后重试。'}
+                  ? tr("可以显示已创建项，查看对应的运行编排。")
+                  : tr("调整搜索或状态条件后重试。")}
               action={filtersActive
-                ? <Button onClick={clearFilters}>清除筛选</Button>
+                ? <Button onClick={clearFilters}>{tr("清除筛选")}</Button>
                 : allSourcesHaveWorkflow
-                  ? <Button onClick={() => setShowExisting(true)}>显示已创建项</Button>
+                  ? <Button onClick={() => setShowExisting(true)}>{tr("显示已创建项")}</Button>
                   : undefined}
             />
           ) : filteredSources.map((source) => {
@@ -231,15 +232,15 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
                 <span className="copy-video-source__copy">
                   <strong>{source.name}</strong>
                   <small>{source.source_code}</small>
-                  {existingWorkflow ? <small>已有编排：{existingWorkflow.name}</small> : null}
+                  {existingWorkflow ? <small>{tr("已有编排：")}{existingWorkflow.name}</small> : null}
                 </span>
                 <span className="copy-video-source__status">
                   {existingWorkflow ? (
-                    <Tag>已创建</Tag>
+                    <Tag>{tr("已创建")}</Tag>
                   ) : source.status === 'RUNNING' ? (
-                    <Tag color="success" icon={<CheckOutlined />}>运行中</Tag>
+                    <Tag color="success" icon={<CheckOutlined />}>{tr("运行中")}</Tag>
                   ) : (
-                    <Tag>非运行中</Tag>
+                    <Tag>{tr("非运行中")}</Tag>
                   )}
                 </span>
               </label>
@@ -249,7 +250,7 @@ const CopyWorkflowModal: React.FC<CopyWorkflowModalProps> = ({
 
         {selectedSourceIds.length ? (
           <Alert
-            message={`将创建 ${selectedSourceIds.length} 个运行编排${activateAfterCreation ? '并立即激活' : ''}，之后可分别调整参数和启停。`}
+            message={trf("将创建 __VAR0__ 个运行编排__VAR1__，之后可分别调整参数和启停。", [selectedSourceIds.length, activateAfterCreation ? tr("并立即激活") : ''])}
             type="success"
             showIcon
             className="copy-selection-feedback"

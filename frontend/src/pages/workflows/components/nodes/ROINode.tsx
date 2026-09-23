@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { BorderOutlined } from '@ant-design/icons';
@@ -17,8 +18,8 @@ const ROINode = ({ data }: any) => {
       )}
       {data.roiMode && (
         <div className="node-meta">
-          <span className="meta-label">模式:</span>
-          <span className="meta-value">{data.roiMode === 'preMask' ? '前置掩码' : '后置过滤'}</span>
+          <span className="meta-label">{tr("模式:")}</span>
+          <span className="meta-value">{data.roiMode === 'preMask' ? tr("前置掩码") : tr("后置过滤")}</span>
         </div>
       )}
     </div>

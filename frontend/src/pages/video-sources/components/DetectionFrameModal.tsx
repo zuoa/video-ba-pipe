@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect, useRef } from 'react';
 import { Button, Tooltip } from 'antd';
 import { ReloadOutlined, CloseOutlined, WarningOutlined, CameraOutlined } from '@ant-design/icons';
@@ -73,7 +74,7 @@ const DetectionFrameModal: React.FC<DetectionFrameModalProps> = ({ open, sourceC
       title={
         <span className="df-title">
           <CameraOutlined />
-          最新检测帧{name ? ` · ${name}` : ''}
+          {tr("最新检测帧")}{name ? ` · ${name}` : ''}
         </span>
       }
       closeIcon={
@@ -85,20 +86,20 @@ const DetectionFrameModal: React.FC<DetectionFrameModalProps> = ({ open, sourceC
       <div className="df-container">
         <div className="df-toolbar">
           <div className="df-info">
-            {phase === 'detection' && <span className="df-badge df-badge-ok">检测帧</span>}
+            {phase === 'detection' && <span className="df-badge df-badge-ok">{tr("检测帧")}</span>}
             {phase === 'fallback' && (
-              <span className="df-badge df-badge-warn">暂无检测 · 显示原始画面</span>
+              <span className="df-badge df-badge-warn">{tr("暂无检测 · 显示原始画面")}</span>
             )}
-            {phase === 'loading' && <span className="df-badge df-badge-muted">加载中…</span>}
+            {phase === 'loading' && <span className="df-badge df-badge-muted">{tr("加载中…")}</span>}
           </div>
-          <Tooltip title="立即刷新">
+          <Tooltip title={tr("立即刷新")}>
             <Button
               size="small"
               icon={<ReloadOutlined />}
               onClick={refresh}
               className="df-refresh-btn"
             >
-              刷新
+              {tr("刷新")}
             </Button>
           </Tooltip>
         </div>
@@ -107,13 +108,13 @@ const DetectionFrameModal: React.FC<DetectionFrameModalProps> = ({ open, sourceC
           {phase === 'error' ? (
             <div className="df-error">
               <WarningOutlined className="error-icon" />
-              <div className="error-text">无法加载画面</div>
+              <div className="error-text">{tr("无法加载画面")}</div>
             </div>
           ) : (
             <img
               key={src}
               src={src}
-              alt="最新检测帧"
+              alt={tr("最新检测帧")}
               className={`df-image ${phase === 'loading' ? 'loading' : ''}`}
               style={{ display: phase === 'loading' ? 'none' : 'block' }}
               onLoad={() => {
@@ -126,7 +127,7 @@ const DetectionFrameModal: React.FC<DetectionFrameModalProps> = ({ open, sourceC
           {phase === 'loading' && (
             <div className="df-loading">
               <div className="loading-spinner" />
-              <div className="loading-text">加载中...</div>
+              <div className="loading-text">{tr("加载中...")}</div>
             </div>
           )}
         </div>

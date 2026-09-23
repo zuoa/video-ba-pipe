@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { FunctionOutlined } from '@ant-design/icons';
@@ -18,13 +19,13 @@ const FunctionNode = ({ data }: any) => {
       )}
       {data.functionName && (
         <div className="node-meta">
-          <span className="meta-label">函数:</span>
+          <span className="meta-label">{tr("函数:")}</span>
           <span className="meta-value">{data.functionName}</span>
         </div>
       )}
       {data.threshold !== undefined && (
         <div className="node-meta">
-          <span className="meta-label">阈值:</span>
+          <span className="meta-label">{tr("阈值:")}</span>
           <span className="meta-value">{data.threshold}</span>
         </div>
       )}

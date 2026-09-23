@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useMemo } from 'react';
 import { Badge, Tag, Space, Descriptions, Image } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -110,12 +111,12 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
   };
 
   const getStatusBadge = () => {
-    if (isGateSkipped) return <Tag color="default">跳过</Tag>;
-    if (isAbsent || !testResult) return <Tag color="default">未执行</Tag>;
+    if (isGateSkipped) return <Tag color="default">{tr("跳过")}</Tag>;
+    if (isAbsent || !testResult) return <Tag color="default">{tr("未执行")}</Tag>;
     if (testResult.success) {
-      return <Tag color="success">成功</Tag>;
+      return <Tag color="success">{tr("成功")}</Tag>;
     }
-    return <Tag color="error">失败</Tag>;
+    return <Tag color="error">{tr("失败")}</Tag>;
   };
 
   return (
@@ -150,7 +151,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
 
           {testResult.data?.detection_count !== undefined && (
             <div className="node-metric">
-              <span>检测: {testResult.data.detection_count} 个</span>
+              <span>{tr("检测:")} {testResult.data.detection_count} {tr("个")}</span>
             </div>
           )}
 
@@ -164,26 +165,26 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
           {/* 条件节点结果提示 */}
           {nodeType === 'condition' && testResult.data?.debug_info && (
             <div className="node-metric" style={{ color: testResult.data.condition_passed ? '#52c41a' : '#ff4d4f', fontSize: '11px' }}>
-              <span>{testResult.data.condition_passed ? '通过' : '未通过'}</span>
+              <span>{testResult.data.condition_passed ? tr("通过") : tr("未通过")}</span>
             </div>
           )}
 
           {(nodeType === 'http_request' || nodeType === 'httpRequest') && (
             <div className="node-metric" style={{ color: testResult.data?.request_success ? '#13c2c2' : '#ff4d4f', fontSize: '11px' }}>
-              <span>{testResult.data?.status_code || '请求失败'} · {testResult.data?.duration_ms ?? '-'}ms</span>
+              <span>{testResult.data?.status_code || tr("请求失败")} · {testResult.data?.duration_ms ?? '-'}ms</span>
             </div>
           )}
 
           {/* 告警节点触发提示 */}
           {(nodeType === 'alert' || nodeType === 'output') && testResult.data?.debug_info && (
             <div className="node-metric" style={{ color: testResult.data.debug_info.alert_triggered ? '#52c41a' : '#8c8c8c', fontSize: '11px' }}>
-              <span>{testResult.data.debug_info.alert_triggered ? '✓ 触发告警' : '✗ 未触发'}</span>
+              <span>{testResult.data.debug_info.alert_triggered ? tr("✓ 触发告警") : tr("✗ 未触发")}</span>
             </div>
           )}
 
           {nodeType === 'webhook' && testResult.data?.delivery_status && (
             <div className="node-metric" style={{ color: testResult.data.delivery_status === 'preview' ? '#13c2c2' : '#8c8c8c', fontSize: '11px' }}>
-              <span>{testResult.data.delivery_status === 'preview' ? '✓ 已生成推送预览' : '未推送'}</span>
+              <span>{testResult.data.delivery_status === 'preview' ? tr("✓ 已生成推送预览") : tr("未推送")}</span>
             </div>
           )}
 
@@ -196,7 +197,7 @@ const TestResultNode = ({ data, selected }: { data: any; selected?: boolean }) =
       {(isGateSkipped || isAbsent) && (
         <div className="node-skipped-badge">
           {isGateSkipped ? <MinusCircleOutlined /> : <CloseCircleOutlined />}
-          {isGateSkipped ? ' 跳过' : ' 未执行'}
+          {isGateSkipped ? tr(" 跳过") : tr(" 未执行")}
         </div>
       )}
 
@@ -335,17 +336,17 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
       className="test-result-modal"
       title={
         <div className="modal-title">
-          <span>工作流测试结果</span>
+          <span>{tr("工作流测试结果")}</span>
           {testResult && (
             <Space size="large" style={{ marginLeft: 24 }}>
               <span className="title-metric">
-                总耗时: <strong>{testResult.execution_time || testResult.totalTime}ms</strong>
+                {tr("总耗时:")} <strong>{testResult.execution_time || testResult.totalTime}ms</strong>
               </span>
               <span className="title-metric">
-                执行节点: <strong>{testResult.nodes?.length || 0}</strong> 个
+                {tr("执行节点:")} <strong>{testResult.nodes?.length || 0}</strong> {tr("个")}
               </span>
               <span className={`title-status ${testResult.success ? 'success' : 'error'}`}>
-                {testResult.success ? '测试通过' : '测试失败'}
+                {testResult.success ? tr("测试通过") : tr("测试失败")}
               </span>
             </Space>
           )}
@@ -382,7 +383,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
         {selectedNode && (
           <div className="node-detail-panel">
             <div className="detail-header">
-              <h3>节点详情</h3>
+              <h3>{tr("节点详情")}</h3>
               <Button
                 type="text"
                 size="small"
@@ -393,30 +394,30 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
             </div>
             <div className="detail-content">
               <Descriptions column={1} bordered size="small">
-                <Descriptions.Item label="节点名称">
+                <Descriptions.Item label={tr("节点名称")}>
                   {selectedNode.data?.label}
                 </Descriptions.Item>
-                <Descriptions.Item label="节点类型">
+                <Descriptions.Item label={tr("节点类型")}>
                   <Tag>{selectedNode.data?.nodeType}</Tag>
                 </Descriptions.Item>
 
                 {selectedNode.data?.testResult ? (
                   <>
-                    <Descriptions.Item label="执行状态">
+                    <Descriptions.Item label={tr("执行状态")}>
                       {isGateSkippedResult(selectedNode.data.testResult) ? (
-                        <Tag color="default" icon={<MinusCircleOutlined />}>跳过</Tag>
+                        <Tag color="default" icon={<MinusCircleOutlined />}>{tr("跳过")}</Tag>
                       ) : selectedNode.data.testResult.success ? (
-                        <Tag color="success" icon={<CheckCircleOutlined />}>成功</Tag>
+                        <Tag color="success" icon={<CheckCircleOutlined />}>{tr("成功")}</Tag>
                       ) : (
-                        <Tag color="error" icon={<CloseCircleOutlined />}>失败</Tag>
+                        <Tag color="error" icon={<CloseCircleOutlined />}>{tr("失败")}</Tag>
                       )}
                     </Descriptions.Item>
-                    <Descriptions.Item label="执行耗时">
+                    <Descriptions.Item label={tr("执行耗时")}>
                       {selectedNode.data.testResult.execution_time} ms
                     </Descriptions.Item>
 
                     {selectedNode.data.testResult.error ? (
-                      <Descriptions.Item label="错误信息">
+                      <Descriptions.Item label={tr("错误信息")}>
                         <span style={{ color: '#ff4d4f' }}>
                           {selectedNode.data.testResult.error}
                         </span>
@@ -424,31 +425,31 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                     ) : (
                       <>
                         {selectedNode.data.testResult.data?.message && (
-                          <Descriptions.Item label="执行消息">
+                          <Descriptions.Item label={tr("执行消息")}>
                             {selectedNode.data.testResult.data.message}
                           </Descriptions.Item>
                         )}
 
                         {/* ROI 过滤调试信息 */}
                         {selectedNode.data.testResult.data?.debug_info?.roi_filter_enabled && (
-                          <Descriptions.Item label={<span style={{ color: '#faad14', fontWeight: 500 }}>🔍 ROI 过滤详情</span>}>
+                          <Descriptions.Item label={<span style={{ color: '#faad14', fontWeight: 500 }}>{tr("🔍 ROI 过滤详情")}</span>}>
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>过滤前:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("过滤前:")}</span>
                                 <Tag color="orange" style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.debug_info.detections_before_roi} 个
+                                  {selectedNode.data.testResult.data.debug_info.detections_before_roi} {tr("个")}
                                 </Tag>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>过滤后:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("过滤后:")}</span>
                                 <Tag color="green" style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.detection_count} 个
+                                  {selectedNode.data.testResult.data.detection_count} {tr("个")}
                                 </Tag>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>过滤掉:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("过滤掉:")}</span>
                                 <Tag color="red" style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.debug_info.roi_filtered_count} 个
+                                  {selectedNode.data.testResult.data.debug_info.roi_filtered_count} {tr("个")}
                                 </Tag>
                               </div>
                             </Space>
@@ -457,24 +458,24 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
 
                         {/* 条件节点调试信息 */}
                         {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info?.condition_kind !== 'http_value' && (
-                          <Descriptions.Item label={<span style={{ color: '#1890ff', fontWeight: 500 }}>⚖️ 条件判断详情</span>}>
+                          <Descriptions.Item label={<span style={{ color: '#1890ff', fontWeight: 500 }}>{tr("⚖️ 条件判断详情")}</span>}>
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>检测数量:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("检测数量:")}</span>
                                 <Tag color="blue" style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.debug_info.detection_count} 个
+                                  {selectedNode.data.testResult.data.debug_info.detection_count} {tr("个")}
                                 </Tag>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>判断条件:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("判断条件:")}</span>
                                 <Tag color="purple" style={{ margin: 0 }}>
                                   {selectedNode.data.testResult.data.debug_info.comparison_type} {selectedNode.data.testResult.data.debug_info.target_count}
                                 </Tag>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>判断结果:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("判断结果:")}</span>
                                 <Tag color={selectedNode.data.testResult.data.debug_info.condition_result === '通过' ? 'success' : 'error'} style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.debug_info.condition_result}
+                                  {tr(selectedNode.data.testResult.data.debug_info.condition_result)}
                                 </Tag>
                               </div>
                             </Space>
@@ -482,12 +483,12 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         )}
 
                         {selectedNode.data?.nodeType === 'condition' && selectedNode.data.testResult.data?.debug_info?.condition_kind === 'http_value' && (
-                          <Descriptions.Item label="API 值判断">
+                          <Descriptions.Item label={tr("API 值判断")}>
                             <Space direction="vertical" size="small">
                               <Tag color={selectedNode.data.testResult.data.condition_passed ? 'success' : 'error'}>
-                                {selectedNode.data.testResult.data.condition_passed ? '通过' : '未通过'}
+                                {selectedNode.data.testResult.data.condition_passed ? tr("通过") : tr("未通过")}
                               </Tag>
-                              <span>来源：{selectedNode.data.testResult.data.debug_info.source_node_id}</span>
+                              <span>{tr("来源：")}{selectedNode.data.testResult.data.debug_info.source_node_id}</span>
                               <span>HTTP：{selectedNode.data.testResult.data.debug_info.status_code ?? '-'}</span>
                             </Space>
                           </Descriptions.Item>
@@ -495,19 +496,19 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
 
                         {(selectedNode.data?.nodeType === 'http_request' || selectedNode.data?.nodeType === 'httpRequest') && (
                           <>
-                            <Descriptions.Item label="HTTP 状态">
+                            <Descriptions.Item label={tr("HTTP 状态")}>
                               <Tag color={selectedNode.data.testResult.data?.request_success ? 'success' : 'error'}>
-                                {selectedNode.data.testResult.data?.status_code ?? '失败'}
+                                {selectedNode.data.testResult.data?.status_code ?? tr("失败")}
                               </Tag>
                               <span>{selectedNode.data.testResult.data?.duration_ms ?? '-'} ms</span>
                             </Descriptions.Item>
-                            <Descriptions.Item label="提取变量">
+                            <Descriptions.Item label={tr("提取变量")}>
                               <pre style={{ margin: 0, maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
                                 {JSON.stringify(selectedNode.data.testResult.data?.outputs || {}, null, 2)}
                               </pre>
                             </Descriptions.Item>
                             {selectedNode.data.testResult.data?.error ? (
-                              <Descriptions.Item label="请求错误">
+                              <Descriptions.Item label={tr("请求错误")}>
                                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#ff4d4f' }}>
                                   {JSON.stringify(selectedNode.data.testResult.data.error, null, 2)}
                                 </pre>
@@ -518,23 +519,23 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
 
                         {/* 告警节点调试信息 */}
                         {(selectedNode.data?.nodeType === 'alert' || selectedNode.data?.nodeType === 'output') && selectedNode.data.testResult.data?.debug_info && (
-                          <Descriptions.Item label={<span style={{ color: '#52c41a', fontWeight: 500 }}>🚨 告警触发详情</span>}>
+                          <Descriptions.Item label={<span style={{ color: '#52c41a', fontWeight: 500 }}>{tr("🚨 告警触发详情")}</span>}>
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>检测数量:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("检测数量:")}</span>
                                 <Tag color="blue" style={{ margin: 0 }}>
-                                  {selectedNode.data.testResult.data.debug_info.detection_count} 个
+                                  {selectedNode.data.testResult.data.debug_info.detection_count} {tr("个")}
                                 </Tag>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#8c8c8c' }}>触发状态:</span>
+                                <span style={{ color: '#8c8c8c' }}>{tr("触发状态:")}</span>
                                 <Tag color={selectedNode.data.testResult.data.debug_info.alert_triggered ? 'success' : 'default'} style={{ margin: 0 }}>
                                   {selectedNode.data.testResult.data.debug_info.trigger_reason}
                                 </Tag>
                               </div>
                               {selectedNode.data.testResult.data.debug_info.upstream_node_id && (
                                 <div style={{ fontSize: '12px', color: '#8c8c8c' }}>
-                                  上游节点: {selectedNode.data.testResult.data.debug_info.upstream_node_id}
+                                  {tr("上游节点:")} {selectedNode.data.testResult.data.debug_info.upstream_node_id}
                                 </div>
                               )}
                             </Space>
@@ -542,7 +543,7 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         )}
 
                         {selectedNode.data?.nodeType === 'webhook' && selectedNode.data.testResult.data?.request_preview && (
-                          <Descriptions.Item label="Webhook 请求预览">
+                          <Descriptions.Item label={tr("Webhook 请求预览")}>
                             <pre style={{ margin: 0, maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
                               {JSON.stringify(selectedNode.data.testResult.data.request_preview, null, 2)}
                             </pre>
@@ -550,21 +551,21 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         )}
 
                         {selectedNode.data.testResult.data?.detection_count !== undefined && (
-                          <Descriptions.Item label="检测数量">
+                          <Descriptions.Item label={tr("检测数量")}>
                             <Tag color="blue">
-                              {selectedNode.data.testResult.data.detection_count} 个目标
+                              {selectedNode.data.testResult.data.detection_count} {tr("个目标")}
                             </Tag>
                           </Descriptions.Item>
                         )}
 
                         {selectedNode.data.testResult.data?.detections && (
-                          <Descriptions.Item label="检测结果">
+                          <Descriptions.Item label={tr("检测结果")}>
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               {selectedNode.data.testResult.data.detections.map((det: any, i: number) => (
                                 <div key={i} className="detection-item">
                                   <Tag color="blue">{det.label}</Tag>
                                   <span className="confidence">
-                                    置信度: {(det.confidence * 100).toFixed(1)}%
+                                    {tr("置信度:")} {(det.confidence * 100).toFixed(1)}%
                                   </span>
                                 </div>
                               ))}
@@ -573,10 +574,10 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                         )}
 
                         {selectedNode.data.testResult.data?.result_image && (
-                          <Descriptions.Item label="结果图片">
+                          <Descriptions.Item label={tr("结果图片")}>
                             <Image
                               src={selectedNode.data.testResult.data.result_image}
-                              alt="检测结果"
+                              alt={tr("检测结果")}
                               style={{ maxWidth: '100%', borderRadius: 8 }}
                             />
                           </Descriptions.Item>
@@ -585,8 +586,8 @@ const TestResultModal: React.FC<TestResultModalProps> = ({
                     )}
                   </>
                 ) : (
-                  <Descriptions.Item label="执行状态">
-                    <Tag color="default">未执行</Tag>
+                  <Descriptions.Item label={tr("执行状态")}>
+                    <Tag color="default">{tr("未执行")}</Tag>
                   </Descriptions.Item>
                 )}
               </Descriptions>

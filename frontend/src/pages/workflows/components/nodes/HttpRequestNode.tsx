@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { GlobalOutlined } from '@ant-design/icons';
@@ -13,16 +14,16 @@ const HttpRequestNode = ({ data }: any) => {
       <Handle type="source" position={Position.Right} id="output" className="node-handle" />
       <div className="node-header">
         <GlobalOutlined className="node-icon" />
-        <span className="node-title">{data.label || 'HTTP 请求'}</span>
+        <span className="node-title">{data.label || tr("HTTP 请求")}</span>
       </div>
-      <div className="node-description">{config.url || '尚未配置 URL'}</div>
+      <div className="node-description">{config.url || tr("尚未配置 URL")}</div>
       <div className="node-meta">
-        <span className="meta-label">请求:</span>
+        <span className="meta-label">{tr("请求:")}</span>
         <span className="meta-value">{method} → response</span>
       </div>
       <div className="node-meta">
-        <span className="meta-label">输出:</span>
-        <span className="meta-value">{outputCount} 个命名变量</span>
+        <span className="meta-label">{tr("输出:")}</span>
+        <span className="meta-value">{outputCount} {tr("个命名变量")}</span>
       </div>
     </div>
   );

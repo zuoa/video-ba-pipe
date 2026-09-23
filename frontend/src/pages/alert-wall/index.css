@@ -337,6 +337,20 @@
   gap: 24px;
 }
 
+.wall-language-switch {
+  min-width: 108px;
+}
+
+.wall-language-switch .ant-select-selector {
+  border-color: rgb(var(--aw-accent) / 0.35) !important;
+  color: #fff !important;
+  background: rgba(15, 23, 42, 0.65) !important;
+}
+
+.wall-language-switch .ant-select-arrow {
+  color: rgb(var(--aw-accent-soft));
+}
+
 /* 实时状态 */
 .live-badge {
   display: inline-flex;

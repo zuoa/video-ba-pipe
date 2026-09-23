@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { message, Space } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -31,7 +32,7 @@ export default function Scripts() {
       const result = await getScripts();
       setScripts(result.scripts || []);
     } catch (error) {
-      message.error('加载脚本列表失败');
+      message.error(tr("加载脚本列表失败"));
     } finally {
       setLoading(false);
     }
@@ -55,16 +56,16 @@ export default function Scripts() {
 
   const handleDelete = (scriptPath: string) => {
     confirmAction({
-      title: '删除脚本',
+      title: tr("删除脚本"),
       objectName: scriptPath,
-      description: '删除后，引用该脚本的算法可能无法运行。',
+      description: tr("删除后，引用该脚本的算法可能无法运行。"),
       onConfirm: async () => {
         try {
           await deleteScript(scriptPath);
-          message.success('脚本删除成功');
+          message.success(tr("脚本删除成功"));
           loadScripts();
         } catch (error: any) {
-          message.error(error?.response?.data?.error || '删除失败');
+          message.error(error?.response?.data?.error || tr("删除失败"));
         }
       },
     });
@@ -78,13 +79,13 @@ export default function Scripts() {
   const handleUploadSuccess = () => {
     setUploadModalVisible(false);
     loadScripts();
-    message.success('脚本上传成功');
+    message.success(tr("脚本上传成功"));
   };
 
   const handleEditSuccess = () => {
     setEditModalVisible(false);
     loadScripts();
-    message.success('脚本保存成功');
+    message.success(tr("脚本保存成功"));
   };
 
   const handleUseTemplate = (templateContent: string, templatePath: string, isClone: boolean = false) => {
@@ -104,7 +105,7 @@ export default function Scripts() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    message.success(`模板 ${template.name} 已下载`);
+    message.success(trf("模板 __VAR0__ 已下载", [template.name]));
   };
 
   return (
@@ -112,10 +113,10 @@ export default function Scripts() {
       <PageHeader
         icon={<CodeOutlined />}
         eyebrow="SCRIPT LIBRARY"
-        title="脚本管理"
-        subtitle="维护自定义检测逻辑与复用模板"
+        title={tr("脚本管理")}
+        subtitle={tr("维护自定义检测逻辑与复用模板")}
         count={filteredScripts.length}
-        countLabel="个脚本"
+        countLabel={tr("个脚本")}
         extra={
           <Space size="middle">
             <Button
@@ -123,13 +124,13 @@ export default function Scripts() {
               onClick={loadScripts}
               loading={loading}
             >
-              刷新
+              {tr("刷新")}
             </Button>
             <Button
               icon={<FileTextOutlined />}
               onClick={() => setTemplateModalVisible(true)}
             >
-              模板库
+              {tr("模板库")}
             </Button>
             <Button
               type="primary"
@@ -141,7 +142,7 @@ export default function Scripts() {
               size="large"
               className="app-primary-button create-btn"
             >
-              上传脚本
+              {tr("上传脚本")}
             </Button>
           </Space>
         }

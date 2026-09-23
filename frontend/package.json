@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "max dev",
     "build": "max build",
+    "check:i18n": "node scripts/check-i18n.cjs",
     "postinstall": "max setup",
     "start": "npm run dev"
   },

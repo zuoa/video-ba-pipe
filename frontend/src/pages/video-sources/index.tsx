@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { message, Space } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -89,7 +90,7 @@ export default function VideoSources() {
       const data = await getVideoSources();
       setSources(data || []);
     } catch (error) {
-      message.error('加载视频源失败');
+      message.error(tr("加载视频源失败"));
     } finally {
       setLoading(false);
     }
@@ -118,16 +119,16 @@ export default function VideoSources() {
   const handleDelete = (id: number) => {
     const source = sources.find((item) => item.id === id);
     confirmAction({
-      title: '删除视频源',
-      objectName: source?.name || `视频源 #${id}`,
-      description: '删除后，关联的工作流将无法继续读取该视频源。',
+      title: tr("删除视频源"),
+      objectName: source?.name || trf("视频源 #__VAR0__", [id]),
+      description: tr("删除后，关联的工作流将无法继续读取该视频源。"),
       onConfirm: async () => {
         try {
           await deleteVideoSource(id);
-          message.success('视频源删除成功');
+          message.success(tr("视频源删除成功"));
           loadSources();
         } catch (error) {
-          message.error('删除失败');
+          message.error(tr("删除失败"));
         }
       },
     });
@@ -148,10 +149,10 @@ export default function VideoSources() {
             ? { switch_stream_immediately: switchImmediately }
             : {}),
         });
-        message.success(result?.message || '视频源更新成功');
+        message.success(result?.message || tr("视频源更新成功"));
       } else {
         await createVideoSource(values);
-        message.success('视频源创建成功');
+        message.success(tr("视频源创建成功"));
       }
       setModalVisible(false);
       loadSources();
@@ -159,7 +160,7 @@ export default function VideoSources() {
       if (error === streamSwitchCancelled.current) {
         throw error;
       }
-      message.error(editingSource ? '更新失败' : '创建失败');
+      message.error(editingSource ? tr("更新失败") : tr("创建失败"));
       throw error;
     }
   };
@@ -171,7 +172,7 @@ export default function VideoSources() {
 
   const handleLivePreview = async (source: any) => {
     if (!previewConfig?.webrtc_enabled) {
-      message.warning('未启用 WebRTC 实时预览，请在系统配置中开启 MediaMTX');
+      message.warning(tr("未启用 WebRTC 实时预览，请在系统配置中开启 MediaMTX"));
       return;
     }
     // 懒注册兜底：确保 MediaMTX 已有该源的按需拉流路径
@@ -181,7 +182,7 @@ export default function VideoSources() {
       setLivePreviewSource(source);
       setLivePreviewVisible(true);
     } catch (error) {
-      message.error('实时预览路径注册失败，请检查 MediaMTX 服务与视频源配置');
+      message.error(tr("实时预览路径注册失败，请检查 MediaMTX 服务与视频源配置"));
     }
   };
 
@@ -195,7 +196,7 @@ export default function VideoSources() {
       loadSources();
     } catch (error) {
       const detail = (error as any)?.response?.data?.error;
-      message.error(detail || '探测状态失败');
+      message.error(detail || tr("探测状态失败"));
     } finally {
       setRefreshingId(null);
     }
@@ -212,11 +213,11 @@ export default function VideoSources() {
     setStartingId(source.id);
     try {
       const result = await startVideoSourceNow(source.id);
-      message.success(result?.message || '已加入优先启动队列');
+      message.success(result?.message || tr("已加入优先启动队列"));
       await loadSources();
     } catch (error) {
       const detail = (error as any)?.response?.data?.error;
-      message.error(detail || '启动请求失败');
+      message.error(detail || tr("启动请求失败"));
     } finally {
       setStartingId(null);
     }
@@ -227,10 +228,10 @@ export default function VideoSources() {
       <PageHeader
         icon={<VideoCameraOutlined />}
         eyebrow="VIDEO INPUTS"
-        title="视频源管理"
-        subtitle="接入、预览并维护视频分析通道"
+        title={tr("视频源管理")}
+        subtitle={tr("接入、预览并维护视频分析通道")}
         count={sources.length}
-        countLabel="个视频源"
+        countLabel={tr("个视频源")}
         extra={
           <Space size={12} wrap>
             <Button
@@ -239,7 +240,7 @@ export default function VideoSources() {
               size="large"
               className="app-secondary-button import-btn"
             >
-              ONVIF 扫描
+              {tr("ONVIF 扫描")}
             </Button>
             <Button
               icon={<CloudDownloadOutlined />}
@@ -247,7 +248,7 @@ export default function VideoSources() {
               size="large"
               className="app-secondary-button import-btn"
             >
-              批量导入
+              {tr("批量导入")}
             </Button>
             <Button
               type="primary"
@@ -256,7 +257,7 @@ export default function VideoSources() {
               size="large"
               className="app-primary-button create-btn"
             >
-              手工添加
+              {tr("手工添加")}
             </Button>
           </Space>
         }
@@ -285,8 +286,8 @@ export default function VideoSources() {
 
       <AppModal
         open={switchDecisionVisible}
-        title="流地址已变化"
-        description="请选择视频源何时使用新地址"
+        title={tr("流地址已变化")}
+        description={tr("请选择视频源何时使用新地址")}
         size="sm"
         onCancel={() => finishStreamSwitchDecision()}
         maskClosable={false}
@@ -295,28 +296,28 @@ export default function VideoSources() {
             key="back"
             onClick={() => finishStreamSwitchDecision()}
           >
-            返回修改
+            {tr("返回修改")}
           </Button>,
           <Button
             key="deferred"
             onClick={() => finishStreamSwitchDecision(false)}
           >
-            当前流失效后切换
+            {tr("当前流失效后切换")}
           </Button>,
           <Button
             key="immediate"
             type="primary"
             onClick={() => finishStreamSwitchDecision(true)}
           >
-            立即切换
+            {tr("立即切换")}
           </Button>,
         ]}
       >
         <p style={{ marginBottom: 8 }}>
-          立即切换会让运行中的解码进程重启并读取新地址；视频源未运行时，下次启动会直接使用新地址。
+          {tr("立即切换会让运行中的解码进程重启并读取新地址；视频源未运行时，下次启动会直接使用新地址。")}
         </p>
         <p style={{ marginBottom: 0, color: 'var(--text-secondary, #667085)' }}>
-          选择“当前流失效后切换”后，当前地址有效时继续使用；发生断流、无帧或接流失败时再启用新地址。
+          {tr("选择“当前流失效后切换”后，当前地址有效时继续使用；发生断流、无帧或接流失败时再启用新地址。")}
         </p>
       </AppModal>
 

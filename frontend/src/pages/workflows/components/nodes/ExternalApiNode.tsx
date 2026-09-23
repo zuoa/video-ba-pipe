@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { ApiOutlined } from '@ant-design/icons';
@@ -18,8 +19,8 @@ const ExternalApiNode = ({ data }: any) => {
         <div className="node-description">{data.description}</div>
       )}
       <div className="node-meta">
-        <span className="meta-label">模式:</span>
-        <span className="meta-value">{executionMode === 'async_submit' ? '异步提交' : '同步等待'}</span>
+        <span className="meta-label">{tr("模式:")}</span>
+        <span className="meta-value">{executionMode === 'async_submit' ? tr("异步提交") : tr("同步等待")}</span>
       </div>
       {data.externalApiName && (
         <div className="node-meta">

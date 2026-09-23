@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useMemo } from 'react';
 import { Tag } from 'antd';
 import {
@@ -45,7 +46,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
   alerts,
   tasks,
   viewAllPath,
-  viewAllLabel = '查看告警',
+  viewAllLabel = tr("查看告警"),
   loading = false,
   compact = false,
   minimal = false,
@@ -70,14 +71,14 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
       return (
         <div className="recent-alerts-empty">
           {!minimal && <BellOutlined className="loading-icon" spin />}
-          <p>正在加载最新告警…</p>
+          <p>{tr("正在加载最新告警…")}</p>
         </div>
       );
     }
     return (
       <div className="recent-alerts-empty">
         {!minimal && <BellOutlined className="empty-icon" />}
-        <p>当前没有新的告警记录</p>
+        <p>{tr("当前没有新的告警记录")}</p>
       </div>
     );
   };
@@ -109,7 +110,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
             const task = taskById.get(alert.task_id);
             const taskName = task
               ? `${task.name} #${task.source_code}`
-              : `视频源 #${alert.task_id}`;
+              : trf("视频源 #__VAR0__", [alert.task_id]);
             const typeConfig = getAlertTypeConfig(alert.alert_type);
             const time = dayjs(alert.alert_time).format('MM-DD HH:mm');
             const imageUrl = alert.alert_image_url
@@ -180,7 +181,7 @@ const RecentAlertCard: React.FC<RecentAlertCardProps> = ({
                 key={alert.id}
                 href={viewAllPath}
                 className="recent-alert-item"
-                aria-label={`查看 ${taskName} 的 ${alert.alert_type} 告警`}
+                aria-label={trf("查看 __VAR0__ 的 __VAR1__ 告警", [taskName, alert.alert_type])}
               >
                 {itemContent}
               </a>

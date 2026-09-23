@@ -482,11 +482,20 @@ body .login-page .login-button.app-button--solid:not(:disabled):hover {
 }
 
 .login-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 76px;
   color: #9aa4ac;
   font-size: 11px;
   letter-spacing: 0.02em;
   text-align: center;
+}
+
+.login-language-switch {
+  min-width: 104px;
+  text-align: left;
 }
 
 @keyframes login-scan {

@@ -1,3 +1,4 @@
+import { getDateLocale, tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import { RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -68,9 +69,9 @@ const LatestAlertTicker: React.FC<LatestAlertTickerProps> = ({
       <div className="latest-alert-ticker latest-alert-ticker--empty">
         <span className="latest-alert-ticker__label">
           <i aria-hidden="true" />
-          最新告警
+          {tr("最新告警")}
         </span>
-        <span>{loading ? '读取中…' : '暂无最新告警'}</span>
+        <span>{loading ? tr("读取中…") : tr("暂无最新告警")}</span>
       </div>
     );
   }
@@ -78,23 +79,25 @@ const LatestAlertTicker: React.FC<LatestAlertTickerProps> = ({
   const task = taskById.get(activeAlert.task_id);
   const taskName = task
     ? `${task.name} #${task.source_code}`
-    : `视频源 #${activeAlert.task_id}`;
+    : trf("视频源 #__VAR0__", [activeAlert.task_id]);
   const accessibleLabel = [
     taskName,
     activeAlert.alert_type,
-    dayjs(activeAlert.alert_time).format('MM月DD日 HH:mm'),
+    new Intl.DateTimeFormat(getDateLocale(), {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(activeAlert.alert_time)),
   ].join('，');
 
   return (
     <a
       className="latest-alert-ticker"
       href={viewAllPath}
-      aria-label={`查看最新告警：${accessibleLabel}`}
+      aria-label={trf("查看最新告警：__VAR0__", [accessibleLabel])}
       title={activeAlert.alert_message || accessibleLabel}
     >
       <span className="latest-alert-ticker__label">
         <i className={getSeverityClass(activeAlert.alert_type)} aria-hidden="true" />
-        最新告警
+        {tr("最新告警")}
       </span>
       <span
         key={`${activeAlert.id}-${activeIndex}`}

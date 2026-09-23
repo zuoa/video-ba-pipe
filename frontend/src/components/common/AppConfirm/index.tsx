@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useCallback } from 'react';
 import { App } from 'antd';
 import type { ModalFuncProps } from 'antd';
@@ -21,7 +22,7 @@ export function useAppConfirm() {
     objectName,
     description,
     confirmText,
-    cancelText = '取消',
+    cancelText = tr("取消"),
     onConfirm,
   }: AppConfirmOptions) => {
     return modal.confirm({
@@ -32,7 +33,7 @@ export function useAppConfirm() {
           {description ? <span>{description}</span> : null}
         </div>
       ),
-      okText: confirmText ?? (tone === 'danger' ? '确认删除' : '确认'),
+      okText: confirmText ?? (tone === 'danger' ? tr("确认删除") : tr("确认")),
       cancelText,
       okButtonProps: tone === 'danger' ? { danger: true } : undefined,
       centered: true,

@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { BugOutlined, RobotOutlined, FileSearchOutlined } from '@ant-design/icons';
@@ -21,19 +22,19 @@ const AlgorithmNode = ({ data }: any) => {
       )}
       {data.algorithmType === 'vl' ? (
         <div className="node-meta">
-          <span className="meta-label">类型:</span>
-          <span className="meta-value">VL 语义检测</span>
+          <span className="meta-label">{tr("类型:")}</span>
+          <span className="meta-value">{tr("VL 语义检测")}</span>
         </div>
       ) : null}
       {data.algorithmType === 'ocr' ? (
         <div className="node-meta">
-          <span className="meta-label">类型:</span>
-          <span className="meta-value">OCR 文字识别</span>
+          <span className="meta-label">{tr("类型:")}</span>
+          <span className="meta-value">{tr("OCR 文字识别")}</span>
         </div>
       ) : null}
       {data.confidence && (
         <div className="node-meta">
-          <span className="meta-label">置信度:</span>
+          <span className="meta-label">{tr("置信度:")}</span>
           <span className="meta-value">{(data.confidence * 100).toFixed(0)}%</span>
         </div>
       )}

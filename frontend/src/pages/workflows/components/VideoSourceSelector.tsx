@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useMemo } from 'react';
 import { Input, List, Tag, Space, Typography, Badge } from 'antd';
 import { SearchOutlined, VideoCameraOutlined, CheckCircleOutlined } from '@ant-design/icons';
@@ -46,7 +47,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
     const isActive = source.status === 'running' || source.status === 'active';
     return (
       <Tag color={isActive ? 'success' : 'default'} style={{ margin: 0 }}>
-        {isActive ? '运行中' : '未启动'}
+        {isActive ? tr("运行中") : tr("未启动")}
       </Tag>
     );
   };
@@ -62,9 +63,9 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
     } else if (url.includes('m3u8')) {
       return <Tag color="purple">HLS</Tag>;
     } else if (url.startsWith('/') || url.startsWith('file://')) {
-      return <Tag color="orange">本地文件</Tag>;
+      return <Tag color="orange">{tr("本地文件")}</Tag>;
     }
-    return <Tag color="default">其他</Tag>;
+    return <Tag color="default">{tr("其他")}</Tag>;
   };
 
   const selectSource = (sourceId: number) => {
@@ -99,7 +100,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
               {isSelected && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />}
               <VideoCameraOutlined style={{ fontSize: 16 }} />
               <Text strong style={{ fontSize: 14 }}>
-                {source.name || `未命名视频源 #${source.id}`}
+                {source.name || trf("未命名视频源 #__VAR0__", [source.id])}
               </Text>
             </Space>
             <Space size="small">
@@ -112,7 +113,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
             {source.source_code && (
               <div className="detail-row">
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  编码: {source.source_code}
+                  {tr("编码:")} {source.source_code}
                 </Text>
               </div>
             )}
@@ -123,7 +124,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
               </Text>
               {source.decoder_type && (
                 <Text type="secondary" style={{ fontSize: 12, marginLeft: 16 }}>
-                  解码器: {source.decoder_type}
+                  {tr("解码器:")} {source.decoder_type}
                 </Text>
               )}
             </div>
@@ -143,8 +144,8 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
 
   return (
     <AppModal
-      title="选择视频源"
-      description="按名称、编码或 ID 查找可用输入源"
+      title={tr("选择视频源")}
+      description={tr("按名称、编码或 ID 查找可用输入源")}
       open={visible}
       onCancel={onCancel}
       footer={null}
@@ -153,7 +154,7 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
     >
       <div className="video-source-selector">
         <Search
-          placeholder="搜索视频源名称、编码或ID"
+          placeholder={tr("搜索视频源名称、编码或ID")}
           allowClear
           prefix={<SearchOutlined />}
           value={searchText}
@@ -164,15 +165,15 @@ const VideoSourceSelector: React.FC<VideoSourceSelectorProps> = ({
 
         <div className="sources-count">
           <Text type="secondary">
-            找到 <Text strong>{filteredSources.length}</Text> 个视频源
+            {tr("找到")} <Text strong>{filteredSources.length}</Text> {tr("个视频源")}
           </Text>
         </div>
 
         {filteredSources.length === 0 ? (
           <AppEmptyState
             compact
-            title={searchText ? '未找到匹配的视频源' : '暂无可用视频源'}
-            description={searchText ? '请尝试调整搜索关键词' : '请先在视频源管理中添加视频源'}
+            title={searchText ? tr("未找到匹配的视频源") : tr("暂无可用视频源")}
+            description={searchText ? tr("请尝试调整搜索关键词") : tr("请先在视频源管理中添加视频源")}
           />
         ) : (
           <List

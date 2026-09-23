@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import { request } from '@umijs/max';
 
 function getAuthHeaders(extraHeaders?: Record<string, string>) {
@@ -1258,7 +1259,7 @@ export async function downloadWorkflowTemplate(id: number, includeModels: boolea
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || '导出失败');
+    throw new Error(data.error || tr("导出失败"));
   }
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition') || '';
@@ -1297,7 +1298,7 @@ export async function importWorkflowTemplate(
     body: formData,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '导入失败');
+  if (!response.ok) throw new Error(data.error || tr("导入失败"));
   return data;
 }
 
@@ -1667,7 +1668,7 @@ export async function downloadAlertExport(id: number, fileUrl?: string | null) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || '下载失败');
+    throw new Error(data.error || tr("下载失败"));
   }
 
   const blob = await response.blob();
@@ -1753,7 +1754,7 @@ export async function downloadModelFile(id: number) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || '下载失败');
+    throw new Error(data.error || tr("下载失败"));
   }
 
   const blob = await response.blob();
@@ -1811,7 +1812,7 @@ export async function uploadModel(file: File, metadata?: {
 }) {
   // 验证文件对象
   if (!file || !(file instanceof File)) {
-    throw new Error('无效的文件对象');
+    throw new Error(tr("无效的文件对象"));
   }
 
   console.log('开始上传模型文件:', {
@@ -1860,7 +1861,7 @@ export async function uploadModel(file: File, metadata?: {
 
   if (!response.ok) {
     console.error('上传失败:', data);
-    throw new Error(data.error || '上传失败');
+    throw new Error(data.error || tr("上传失败"));
   }
 
   console.log('上传成功:', data);

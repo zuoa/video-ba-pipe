@@ -1,16 +1,17 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { ColumnHeightOutlined } from '@ant-design/icons';
 import { Handle, Position } from 'reactflow';
 import './BaseNode.css';
 
 const DIMENSION_LABELS: Record<string, string> = {
-  height: '高度',
-  width: '宽度',
+  height: tr("高度"),
+  width: tr("宽度"),
 };
 
 const DetectionFilterNode = ({ data }: any) => {
   const config = data.config || {};
-  const dimension = DIMENSION_LABELS[config.dimension] || '高度';
+  const dimension = DIMENSION_LABELS[config.dimension] || tr("高度");
   const comparison = config.comparison === 'lte' ? '≤' : '≥';
   const threshold = config.unit === 'ratio'
     ? `${Number(config.threshold || 0) * 100}%`

@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { Collapse, message } from 'antd';
 import {
@@ -61,7 +62,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <VideoCameraOutlined />
-          <span className="category-title">视频源</span>
+          <span className="category-title">{tr("视频源")}</span>
         </div>
       ),
       children: (
@@ -70,14 +71,14 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             className="component-item"
             onClick={() => {
               if (hasSourceNode) {
-                message.warning('一个编排只允许一个视频源节点');
+                message.warning(tr("一个编排只允许一个视频源节点"));
                 return;
               }
               handleAddNode({
                 type: 'videoSource',
                 nodeType: 'videoSource',
-                label: '视频源',
-                description: '选择视频源',
+                label: tr("视频源"),
+                description: tr("选择视频源"),
                 icon: <VideoCameraOutlined />,
                 color: '#1890ff',
               });
@@ -89,8 +90,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <VideoCameraOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">视频源</div>
-                <div className="component-description">选择视频源</div>
+                <div className="component-label">{tr("视频源")}</div>
+                <div className="component-description">{tr("选择视频源")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -103,7 +104,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <BugOutlined />
-          <span className="category-title">算法</span>
+          <span className="category-title">{tr("算法")}</span>
         </div>
       ),
       children: (
@@ -119,7 +120,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                     type: 'algorithm',
                     nodeType: 'algorithm',
                     label: algo.name,
-                    description: algo.description || '算法检测',
+                    description: algo.description || tr("算法检测"),
                     icon: <BugOutlined />,
                     color: '#52c41a',
                     algorithmId: algo.id,
@@ -159,10 +160,10 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                     <div className="component-label">{algo.name}</div>
                     <div className="component-description">
                       {algo.algorithm_type === 'vl'
-                        ? `VL · ${algo.vl_config?.model_name || '视觉语言模型'}`
+                        ? `VL · ${algo.vl_config?.model_name || tr("视觉语言模型")}`
                         : algo.algorithm_type === 'ocr'
                           ? `OCR · ${algo.ocr_config?.device || 'auto'}`
-                          : (algo.description || '算法检测')}
+                          : (algo.description || tr("算法检测"))}
                     </div>
                   </div>
                   <PlusOutlined className="component-add" />
@@ -171,7 +172,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             ))
           ) : (
             <div className="component-empty">
-              暂无可用组件
+              {tr("暂无可用组件")}
             </div>
           )}
         </div>
@@ -182,7 +183,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <ApiOutlined />
-          <span className="category-title">外部 API</span>
+          <span className="category-title">{tr("外部 API")}</span>
         </div>
       ),
       children: (
@@ -192,8 +193,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'externalApi',
               nodeType: 'externalApi',
-              label: '外部 API',
-              description: '调用外部算法接口',
+              label: tr("外部 API"),
+              description: tr("调用外部算法接口"),
               icon: <ApiOutlined />,
               color: '#1677ff',
               config: {
@@ -217,8 +218,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <ApiOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">外部 API</div>
-                <div className="component-description">调用外部算法接口</div>
+                <div className="component-label">{tr("外部 API")}</div>
+                <div className="component-description">{tr("调用外部算法接口")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -228,8 +229,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'httpRequest',
               nodeType: 'httpRequest',
-              label: 'HTTP 请求',
-              description: '调用通用 JSON 接口并提取变量',
+              label: tr("HTTP 请求"),
+              description: tr("调用通用 JSON 接口并提取变量"),
               icon: <GlobalOutlined />,
               color: '#08979c',
               config: {
@@ -250,8 +251,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <GlobalOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">HTTP 请求</div>
-                <div className="component-description">通用请求、JSONPath 提取</div>
+                <div className="component-label">{tr("HTTP 请求")}</div>
+                <div className="component-description">{tr("通用请求、JSONPath 提取")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -264,7 +265,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <BranchesOutlined />
-          <span className="category-title">条件与筛选</span>
+          <span className="category-title">{tr("条件与筛选")}</span>
         </div>
       ),
       children: (
@@ -274,8 +275,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'condition',
               nodeType: 'condition',
-              label: '检测条件',
-              description: '是/否检测到',
+              label: tr("检测条件"),
+              description: tr("是/否检测到"),
               icon: <BranchesOutlined />,
               color: '#faad14',
               conditionKind: 'count',
@@ -293,8 +294,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <BranchesOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">检测条件</div>
-                <div className="component-description">是/否检测到</div>
+                <div className="component-label">{tr("检测条件")}</div>
+                <div className="component-description">{tr("是/否检测到")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -304,8 +305,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'timeSchedule',
               nodeType: 'timeSchedule',
-              label: '时间启用区间',
-              description: '命中时段才继续',
+              label: tr("时间启用区间"),
+              description: tr("命中时段才继续"),
               icon: <ClockCircleOutlined />,
               color: '#2f54eb',
               weeklySchedule: createDefaultWeeklySchedule(),
@@ -317,8 +318,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <ClockCircleOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">时间启用区间</div>
-                <div className="component-description">按星期与时段控制流程</div>
+                <div className="component-label">{tr("时间启用区间")}</div>
+                <div className="component-description">{tr("按星期与时段控制流程")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -328,8 +329,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'detectionFilter',
               nodeType: 'detectionFilter',
-              label: '目标尺寸筛选',
-              description: '按检测框尺寸保留目标',
+              label: tr("目标尺寸筛选"),
+              description: tr("按检测框尺寸保留目标"),
               icon: <ColumnHeightOutlined />,
               color: '#531dab',
               config: {
@@ -346,8 +347,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <ColumnHeightOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">目标尺寸筛选</div>
-                <div className="component-description">按高度或宽度过滤检测框</div>
+                <div className="component-label">{tr("目标尺寸筛选")}</div>
+                <div className="component-description">{tr("按高度或宽度过滤检测框")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -360,7 +361,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <FunctionOutlined />
-          <span className="category-title">函数计算</span>
+          <span className="category-title">{tr("函数计算")}</span>
         </div>
       ),
       children: (
@@ -370,8 +371,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'function',
               nodeType: 'function',
-              label: '函数计算',
-              description: '多输入计算',
+              label: tr("函数计算"),
+              description: tr("多输入计算"),
               icon: <FunctionOutlined />,
               color: '#722ed1',
             })}
@@ -382,8 +383,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <FunctionOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">函数计算</div>
-                <div className="component-description">多输入计算</div>
+                <div className="component-label">{tr("函数计算")}</div>
+                <div className="component-description">{tr("多输入计算")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -396,7 +397,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <EditOutlined />
-          <span className="category-title">图像处理</span>
+          <span className="category-title">{tr("图像处理")}</span>
         </div>
       ),
       children: (
@@ -406,8 +407,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'roi',
               nodeType: 'roi',
-              label: '热区绘制',
-              description: '绘制ROI区域',
+              label: tr("热区绘制"),
+              description: tr("绘制ROI区域"),
               icon: <EditOutlined />,
               color: '#fa8c16',
             })}
@@ -418,8 +419,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <EditOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">热区绘制</div>
-                <div className="component-description">绘制ROI区域</div>
+                <div className="component-label">{tr("热区绘制")}</div>
+                <div className="component-description">{tr("绘制ROI区域")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -432,7 +433,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
       label: (
         <div className="collapse-item-label">
           <AppstoreOutlined />
-          <span className="category-title">输出</span>
+          <span className="category-title">{tr("输出")}</span>
         </div>
       ),
       children: (
@@ -442,8 +443,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'alert',
               nodeType: 'alert',
-              label: '告警输出',
-              description: '发送告警',
+              label: tr("告警输出"),
+              description: tr("发送告警"),
               icon: <BellOutlined />,
               color: '#f5222d',
               alertLevel: 'info',
@@ -462,8 +463,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <BellOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">告警输出</div>
-                <div className="component-description">发送告警</div>
+                <div className="component-label">{tr("告警输出")}</div>
+                <div className="component-description">{tr("发送告警")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -473,8 +474,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
             onClick={() => handleAddNode({
               type: 'webhook',
               nodeType: 'webhook',
-              label: 'Webhook 推送',
-              description: '推送真实告警事件',
+              label: tr("Webhook 推送"),
+              description: tr("推送真实告警事件"),
               icon: <SendOutlined />,
               color: '#13c2c2',
               config: {
@@ -499,8 +500,8 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
                 <SendOutlined />
               </span>
               <div className="component-content">
-                <div className="component-label">Webhook 推送</div>
-                <div className="component-description">连接告警输出，异步推送事件</div>
+                <div className="component-label">{tr("Webhook 推送")}</div>
+                <div className="component-description">{tr("连接告警输出，异步推送事件")}</div>
               </div>
               <PlusOutlined className="component-add" />
             </div>
@@ -514,7 +515,7 @@ const ComponentSidebar: React.FC<ComponentSidebarProps> = ({ onAddNode, videoSou
     <div className="component-sidebar">
       <div className="sidebar-header">
         <AppstoreOutlined className="sidebar-icon" />
-        <span className="sidebar-title">组件库</span>
+        <span className="sidebar-title">{tr("组件库")}</span>
       </div>
 
       <Collapse

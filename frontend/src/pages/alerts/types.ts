@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 // 告警类型定义
 export interface Alert {
   id: number;
@@ -83,7 +84,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
   gradient: string;
 }> = {
   warning: {
-    label: '警告',
+    label: tr("警告"),
     color: '#faad14',
     bgColor: '#fff7e6',
     borderColor: '#ffd591',
@@ -91,7 +92,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
     gradient: 'from-yellow-400 to-orange-500',
   },
   error: {
-    label: '错误',
+    label: tr("错误"),
     color: '#ff4d4f',
     bgColor: '#fff1f0',
     borderColor: '#ffccc7',
@@ -99,7 +100,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
     gradient: 'from-red-400 to-pink-500',
   },
   info: {
-    label: '信息',
+    label: tr("信息"),
     color: '#1890ff',
     bgColor: '#e6f7ff',
     borderColor: '#91d5ff',
@@ -107,7 +108,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
     gradient: 'from-blue-400 to-cyan-500',
   },
   critical: {
-    label: '严重',
+    label: tr("严重"),
     color: '#722ed1',
     bgColor: '#f9f0ff',
     borderColor: '#d3adf7',
@@ -115,7 +116,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
     gradient: 'from-purple-500 to-pink-500',
   },
   person_detection: {
-    label: '人员检测',
+    label: tr("人员检测"),
     color: '#1890ff',
     bgColor: '#e6f7ff',
     borderColor: '#91d5ff',
@@ -123,7 +124,7 @@ export const ALERT_TYPE_CONFIG: Record<string, {
     gradient: 'from-blue-400 to-cyan-500',
   },
   phone_detection_2stage: {
-    label: '手机检测',
+    label: tr("手机检测"),
     color: '#faad14',
     bgColor: '#fff7e6',
     borderColor: '#ffd591',

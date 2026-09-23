@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@umijs/max';
 import {
@@ -104,13 +106,13 @@ function activePlatform(runtime?: FaceRuntimeStatus) {
 function readableModelError(error?: string) {
   if (!error) return '';
   if (error.includes('模型包缺少当前平台可用的检测/特征制品组合')) {
-    return '当前平台还没有成对的“检测模型 + 特征模型”文件。';
+    return tr("当前平台还没有成对的“检测模型 + 特征模型”文件。");
   }
   if (error.includes('未提供人脸推理后端')) {
-    return '模型文件已上传，但当前服务缺少对应的推理环境。';
+    return tr("模型文件已上传，但当前服务缺少对应的推理环境。");
   }
   if (error.includes('商用')) {
-    return '当前生产策略要求确认模型商用授权。';
+    return tr("当前生产策略要求确认模型商用授权。");
   }
   return error;
 }
@@ -185,7 +187,7 @@ const FaceGalleriesPage: React.FC = () => {
   const openGalleryCreation = () => {
     if (!readyBundles.length) {
       setActiveTab('models');
-      message.info('请先完成一组当前平台可用的人脸模型，再创建人脸库。');
+      message.info(tr("请先完成一组当前平台可用的人脸模型，再创建人脸库。"));
       return;
     }
     galleryForm.resetFields();
@@ -205,7 +207,7 @@ const FaceGalleriesPage: React.FC = () => {
 
   const openFaceAlgorithmWizard = () => {
     if (!selectedGalleryId) {
-      message.info('请先创建并选择一个人脸库。');
+      message.info(tr("请先创建并选择一个人脸库。"));
       openGalleryCreation();
       return;
     }
@@ -228,9 +230,9 @@ const FaceGalleriesPage: React.FC = () => {
       setRuntime((current) => current
         ? { ...current, encryption_ready: response.encryption_ready }
         : current);
-      message.success(response.created ? '生物数据密钥已生成并持久化' : '生物数据密钥已就绪');
+      message.success(response.created ? tr("生物数据密钥已生成并持久化") : tr("生物数据密钥已就绪"));
     } catch (error: any) {
-      message.error(errorText(error, '生成生物数据密钥失败'));
+      message.error(errorText(error, tr("生成生物数据密钥失败")));
     } finally {
       setGeneratingKey(false);
     }
@@ -260,7 +262,7 @@ const FaceGalleriesPage: React.FC = () => {
           : nextGalleries[0]?.id,
       );
     } catch (error: any) {
-      message.error(errorText(error, '无法加载人脸库'));
+      message.error(errorText(error, tr("无法加载人脸库")));
     } finally {
       setLoading(false);
     }
@@ -285,7 +287,7 @@ const FaceGalleriesPage: React.FC = () => {
         setPersonPage(response.pagination.page);
       }
     } catch (error: any) {
-      message.error(errorText(error, '无法加载人员'));
+      message.error(errorText(error, tr("无法加载人员")));
     }
   }, [personPage, search, selectedGalleryId]);
 
@@ -305,7 +307,7 @@ const FaceGalleriesPage: React.FC = () => {
     }
     void getFaceEvents(selectedGalleryId)
       .then((response) => setEvents(response.events || []))
-      .catch((error) => message.error(errorText(error, '无法加载识别事件')));
+      .catch((error) => message.error(errorText(error, tr("无法加载识别事件"))));
   }, [selectedGalleryId]);
 
   useEffect(() => {
@@ -322,7 +324,7 @@ const FaceGalleriesPage: React.FC = () => {
         }
       } catch (error: any) {
         window.clearInterval(timer);
-        message.error(errorText(error, '无法获取导入进度'));
+        message.error(errorText(error, tr("无法获取导入进度")));
       }
     }, 1500);
     return () => window.clearInterval(timer);
@@ -339,9 +341,9 @@ const FaceGalleriesPage: React.FC = () => {
       setPersonPage(1);
       setSelectedGalleryId(response.gallery.id);
       setPersonModalOpen(true);
-      message.success('人脸库已创建，接下来添加第一位人员');
+      message.success(tr("人脸库已创建，接下来添加第一位人员"));
     } catch (error: any) {
-      message.error(errorText(error, '创建人脸库失败'));
+      message.error(errorText(error, tr("创建人脸库失败")));
     } finally {
       setSaving(false);
     }
@@ -356,9 +358,9 @@ const FaceGalleriesPage: React.FC = () => {
       personForm.resetFields();
       await Promise.all([loadPersons(), loadOverview()]);
       setTemplatePerson(response.person);
-      message.success('人员已加入，接下来录入一张清晰正脸照片');
+      message.success(tr("人员已加入，接下来录入一张清晰正脸照片"));
     } catch (error: any) {
-      message.error(errorText(error, '添加人员失败'));
+      message.error(errorText(error, tr("添加人员失败")));
     } finally {
       setSaving(false);
     }
@@ -367,11 +369,11 @@ const FaceGalleriesPage: React.FC = () => {
   const submitTemplate = async () => {
     const file = templateFiles[0]?.originFileObj;
     if (!templatePerson || !file) {
-      message.warning('请选择一张只包含单个人脸的照片');
+      message.warning(tr("请选择一张只包含单个人脸的照片"));
       return;
     }
     if (!runtime?.encryption_ready) {
-      message.warning('请先自动生成生物数据加密密钥，再录入人脸照片');
+      message.warning(tr("请先自动生成生物数据加密密钥，再录入人脸照片"));
       return;
     }
     setSaving(true);
@@ -380,9 +382,9 @@ const FaceGalleriesPage: React.FC = () => {
       setTemplatePerson(undefined);
       setTemplateFiles([]);
       await Promise.all([loadPersons(), loadOverview()]);
-      message.success('人脸照片已通过质量检查并加密录入');
+      message.success(tr("人脸照片已通过质量检查并加密录入"));
     } catch (error: any) {
-      message.error(errorText(error, '人脸照片录入失败'));
+      message.error(errorText(error, tr("人脸照片录入失败")));
     } finally {
       setSaving(false);
     }
@@ -396,9 +398,9 @@ const FaceGalleriesPage: React.FC = () => {
       setBundleModalOpen(false);
       bundleForm.resetFields();
       await loadOverview();
-      message.success('逻辑模型包已创建');
+      message.success(tr("逻辑模型包已创建"));
     } catch (error: any) {
-      message.error(errorText(error, '创建模型包失败'));
+      message.error(errorText(error, tr("创建模型包失败")));
     } finally {
       setSaving(false);
     }
@@ -408,7 +410,7 @@ const FaceGalleriesPage: React.FC = () => {
     const values = await artifactForm.validateFields();
     const file = artifactFiles[0]?.originFileObj;
     if (!file) {
-      message.warning('请选择模型制品');
+      message.warning(tr("请选择模型制品"));
       return;
     }
     const data = new FormData();
@@ -425,9 +427,9 @@ const FaceGalleriesPage: React.FC = () => {
       setArtifactFiles([]);
       artifactForm.resetFields();
       await loadOverview();
-      message.success('平台模型制品已上传');
+      message.success(tr("平台模型制品已上传"));
     } catch (error: any) {
-      message.error(errorText(error, '上传模型制品失败'));
+      message.error(errorText(error, tr("上传模型制品失败")));
     } finally {
       setSaving(false);
     }
@@ -436,7 +438,7 @@ const FaceGalleriesPage: React.FC = () => {
   const submitImport = async () => {
     const file = importFiles[0]?.originFileObj;
     if (!selectedGalleryId || !file) {
-      message.warning('请选择 ZIP 导入包');
+      message.warning(tr("请选择 ZIP 导入包"));
       return;
     }
     setSaving(true);
@@ -444,16 +446,16 @@ const FaceGalleriesPage: React.FC = () => {
       if (!importPreflight?.success) {
         const response = await preflightFaceImport(file);
         setImportPreflight(response);
-        message.success(`预检通过：${response.person_count} 人，${response.image_count} 张照片`);
+        message.success(trf("预检通过：__VAR0__ 人，__VAR1__ 张照片", [response.person_count, response.image_count]));
       } else {
         const response = await createFaceImport(selectedGalleryId, file);
         setImportJob(response.job);
-        message.success('导入任务已提交，可在此查看进度');
+        message.success(tr("导入任务已提交，可在此查看进度"));
       }
     } catch (error: any) {
       const payload = error?.response?.data || error?.data;
       if (payload?.errors) setImportPreflight(payload);
-      message.error(errorText(error, '导入包检查失败'));
+      message.error(errorText(error, tr("导入包检查失败")));
     } finally {
       setSaving(false);
     }
@@ -465,7 +467,7 @@ const FaceGalleriesPage: React.FC = () => {
     try {
       setCalibration(await calibrateFaceThresholds(selectedGalleryId));
     } catch (error: any) {
-      message.error(errorText(error, '阈值评估失败'));
+      message.error(errorText(error, tr("阈值评估失败")));
     } finally {
       setSaving(false);
     }
@@ -481,9 +483,9 @@ const FaceGalleriesPage: React.FC = () => {
       });
       setCalibration(undefined);
       await loadOverview();
-      message.success('建议阈值已应用');
+      message.success(tr("建议阈值已应用"));
     } catch (error: any) {
-      message.error(errorText(error, '应用阈值失败'));
+      message.error(errorText(error, tr("应用阈值失败")));
     } finally {
       setSaving(false);
     }
@@ -494,13 +496,13 @@ const FaceGalleriesPage: React.FC = () => {
       const blob = await getFaceEventSnapshot(event.id);
       setEventSnapshotUrl(URL.createObjectURL(blob));
     } catch (error: any) {
-      message.error(errorText(error, '无法读取加密抓拍'));
+      message.error(errorText(error, tr("无法读取加密抓拍")));
     }
   };
 
   const columns: ColumnsType<FacePerson> = [
     {
-      title: '人员',
+      title: tr("人员"),
       key: 'identity',
       render: (_, person) => (
         <div className="face-person-cell">
@@ -513,7 +515,7 @@ const FaceGalleriesPage: React.FC = () => {
       ),
     },
     {
-      title: '模板质量',
+      title: tr("模板质量"),
       key: 'templates',
       width: 220,
       render: (_, person) => {
@@ -521,20 +523,20 @@ const FaceGalleriesPage: React.FC = () => {
         const percent = Math.min(100, Math.round((ready / 3) * 100));
         return (
           <div className="template-health">
-            <div><span>{ready} 张可用</span><span>建议 3–5 张</span></div>
+            <div><span>{ready} {tr("张可用")}</span><span>{tr("建议 3–5 张")}</span></div>
             <Progress percent={percent} showInfo={false} size="small" strokeColor="#0f766e" />
           </div>
         );
       },
     },
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'enabled',
       width: 110,
-      render: (enabled) => <Badge status={enabled ? 'success' : 'default'} text={enabled ? '启用' : '停用'} />,
+      render: (enabled) => <Badge status={enabled ? 'success' : 'default'} text={enabled ? tr("启用") : tr("停用")} />,
     },
     {
-      title: '操作',
+      title: tr("操作"),
       key: 'actions',
       width: 190,
       render: (_, person) => (
@@ -546,24 +548,24 @@ const FaceGalleriesPage: React.FC = () => {
             icon={<FileImageOutlined />}
             onClick={() => setTemplatePerson(person)}
           >
-            录入照片
+            {tr("录入照片")}
           </AppButton>
-          <Tooltip title="删除人员及全部生物模板">
+          <Tooltip title={tr("删除人员及全部生物模板")}>
             <AppButton
               size="small"
               tone="danger"
               variant="text"
               iconOnly
-              aria-label={`删除${person.name}`}
+              aria-label={trf("删除__VAR0__", [person.name])}
               icon={<DeleteOutlined />}
               onClick={() => confirmAction({
-                title: '删除人员',
+                title: tr("删除人员"),
                 objectName: `${person.name}（${person.person_code}）`,
-                description: '人员的全部加密照片和特征将一并删除，此操作无法恢复。',
+                description: tr("人员的全部加密照片和特征将一并删除，此操作无法恢复。"),
                 onConfirm: async () => {
                   await deleteFacePerson(person.id);
                   await Promise.all([loadPersons(), loadOverview()]);
-                  message.success('人员已删除');
+                  message.success(tr("人员已删除"));
                 },
               })}
             />
@@ -575,12 +577,12 @@ const FaceGalleriesPage: React.FC = () => {
 
   const galleryPanel = (
     <div className="face-workbench">
-      <aside className="gallery-ledger" aria-label="人脸库列表">
+      <aside className="gallery-ledger" aria-label={tr("人脸库列表")}>
         <div className="gallery-ledger__heading">
-          <div><span>人脸库</span><strong>{galleries.length}</strong></div>
+          <div><span>{tr("人脸库")}</span><strong>{galleries.length}</strong></div>
           <AppButton
             iconOnly
-            aria-label="创建人脸库"
+            aria-label={tr("创建人脸库")}
             icon={<PlusOutlined />}
             onClick={openGalleryCreation}
           />
@@ -599,12 +601,12 @@ const FaceGalleriesPage: React.FC = () => {
               <span className="gallery-entry__icon"><FolderOpenOutlined /></span>
               <span className="gallery-entry__copy">
                 <strong>{gallery.name}</strong>
-                <small>{gallery.person_count} 人 · {gallery.template_count} 模板</small>
+                <small>{gallery.person_count} {tr("人 ·")} {gallery.template_count} {tr("模板")}</small>
               </span>
               <span className="gallery-entry__version">v{gallery.gallery_version}</span>
             </button>
           ))}
-          {!galleries.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先创建一个人脸库" />}
+          {!galleries.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tr("先创建一个人脸库")} />}
         </div>
       </aside>
 
@@ -613,19 +615,19 @@ const FaceGalleriesPage: React.FC = () => {
           <>
             <div className="identity-ledger__toolbar">
               <div>
-                <span className="identity-ledger__eyebrow">当前名单</span>
+                <span className="identity-ledger__eyebrow">{tr("当前名单")}</span>
                 <h2>{selectedGallery.name}</h2>
                 <Space size={6} wrap>
-                  <Tag color={selectedGallery.enabled ? 'green' : 'default'}>{selectedGallery.enabled ? '识别中' : '已停用'}</Tag>
-                  <Tag>{selectedGallery.model_bundle_name || '未配置模型'}</Tag>
-                  <Tag>阈值 {selectedGallery.low_threshold.toFixed(2)} / {selectedGallery.high_threshold.toFixed(2)}</Tag>
+                  <Tag color={selectedGallery.enabled ? 'green' : 'default'}>{selectedGallery.enabled ? tr("识别中") : tr("已停用")}</Tag>
+                  <Tag>{selectedGallery.model_bundle_name || tr("未配置模型")}</Tag>
+                  <Tag>{tr("阈值")} {selectedGallery.low_threshold.toFixed(2)} / {selectedGallery.high_threshold.toFixed(2)}</Tag>
                 </Space>
               </div>
               <Space wrap>
                 <Input
                   allowClear
                   prefix={<SearchOutlined />}
-                  placeholder="姓名或人员编号"
+                  placeholder={tr("姓名或人员编号")}
                   value={search}
                   onChange={(event) => {
                     setPersonPage(1);
@@ -633,10 +635,10 @@ const FaceGalleriesPage: React.FC = () => {
                   }}
                   className="identity-search"
                 />
-                <Tooltip title="使用库内同人/异人分数建议灰区和确认阈值">
+                <Tooltip title={tr("使用库内同人/异人分数建议灰区和确认阈值")}>
                   <AppButton
                     iconOnly
-                    aria-label="评估识别阈值"
+                    aria-label={tr("评估识别阈值")}
                     icon={<ExperimentOutlined />}
                     loading={saving}
                     disabled={selectedGallery.template_count < 2}
@@ -648,7 +650,7 @@ const FaceGalleriesPage: React.FC = () => {
                   onClick={openImportModal}
                   disabled={!selectedGallery.model_bundle_id}
                 >
-                  批量导入
+                  {tr("批量导入")}
                 </AppButton>
                 <AppButton
                   type="primary"
@@ -657,7 +659,7 @@ const FaceGalleriesPage: React.FC = () => {
                   onClick={() => setPersonModalOpen(true)}
                   disabled={!selectedGallery.model_bundle_id}
                 >
-                  添加人员
+                  {tr("添加人员")}
                 </AppButton>
               </Space>
             </div>
@@ -665,8 +667,8 @@ const FaceGalleriesPage: React.FC = () => {
               <Alert
                 type="warning"
                 showIcon
-                message="当前人脸库尚未绑定逻辑模型包"
-                description="绑定模型包后才能录入照片和生成跨平台特征。"
+                message={tr("当前人脸库尚未绑定逻辑模型包")}
+                description={tr("绑定模型包后才能录入照片和生成跨平台特征。")}
               />
             ) : null}
             <Table
@@ -680,31 +682,31 @@ const FaceGalleriesPage: React.FC = () => {
                 showSizeChanger: false,
                 onChange: setPersonPage,
               }}
-              locale={{ emptyText: <Empty description="名单为空，添加第一位人员" /> }}
+              locale={{ emptyText: <Empty description={tr("名单为空，添加第一位人员")} /> }}
             />
             <div className="identity-ledger__danger">
-              <span>删除名单不会删除同时属于其他名单的人员。</span>
+              <span>{tr("删除名单不会删除同时属于其他名单的人员。")}</span>
               <AppButton
                 tone="danger"
                 variant="text"
                 icon={<DeleteOutlined />}
                 onClick={() => confirmAction({
-                  title: '删除人脸库',
+                  title: tr("删除人脸库"),
                   objectName: selectedGallery.name,
-                  description: '将删除该名单关系和识别配置，人员档案仍可由其他名单使用。',
+                  description: tr("将删除该名单关系和识别配置，人员档案仍可由其他名单使用。"),
                   onConfirm: async () => {
                     await deleteFaceGallery(selectedGallery.id);
                     await loadOverview();
-                    message.success('人脸库已删除');
+                    message.success(tr("人脸库已删除"));
                   },
                 })}
               >
-                删除人脸库
+                {tr("删除人脸库")}
               </AppButton>
             </div>
           </>
         ) : (
-          <Empty description="选择或创建一个人脸库" />
+          <Empty description={tr("选择或创建一个人脸库")} />
         )}
       </section>
     </div>
@@ -714,16 +716,16 @@ const FaceGalleriesPage: React.FC = () => {
     <div className="face-model-grid">
       <div className="face-model-grid__toolbar">
         <div>
-          <h2>人脸模型</h2>
-          <p>先为当前设备上传一组检测与特征模型；需要跨平台时，再向同一模型包追加平台制品。</p>
+          <h2>{tr("人脸模型")}</h2>
+          <p>{tr("先为当前设备上传一组检测与特征模型；需要跨平台时，再向同一模型包追加平台制品。")}</p>
         </div>
         <Space wrap>
           <Dropdown
             trigger={['click']}
             menu={{
               items: [
-                { key: 'bundle', label: '只创建空模型包', icon: <PlusOutlined /> },
-                { key: 'artifact', label: '上传单个平台制品', icon: <UploadOutlined />, disabled: !bundles.length },
+                { key: 'bundle', label: tr("只创建空模型包"), icon: <PlusOutlined /> },
+                { key: 'artifact', label: tr("上传单个平台制品"), icon: <UploadOutlined />, disabled: !bundles.length },
               ],
               onClick: ({ key }) => {
                 if (key === 'bundle') setBundleModalOpen(true);
@@ -731,27 +733,27 @@ const FaceGalleriesPage: React.FC = () => {
               },
             }}
           >
-            <AppButton icon={<SettingOutlined />}>高级管理</AppButton>
+            <AppButton icon={<SettingOutlined />}>{tr("高级管理")}</AppButton>
           </Dropdown>
           <AppButton type="primary" tone="info" icon={<ScanOutlined />} onClick={() => openModelWizard()}>
-            快速配置模型
+            {tr("快速配置模型")}
           </AppButton>
         </Space>
       </div>
       {!bundles.length ? (
         <section className="face-model-onboarding">
           <div className="face-model-onboarding__lead">
-            <span>从这里开始</span>
-            <h3>三步完成人脸模型配置</h3>
-            <p>无需理解 Runtime、架构和设备标签，向导会根据当前服务器自动填写。</p>
+            <span>{tr("从这里开始")}</span>
+            <h3>{tr("三步完成人脸模型配置")}</h3>
+            <p>{tr("无需理解 Runtime、架构和设备标签，向导会根据当前服务器自动填写。")}</p>
           </div>
           <ol>
-            <li><span>1</span><div><strong>上传两个文件</strong><small>检测模型 + 特征模型</small></div></li>
-            <li><span>2</span><div><strong>自动匹配平台</strong><small>CUDA / CPU / Jetson / RK3588</small></div></li>
-            <li><span>3</span><div><strong>组合检查</strong><small>确认当前设备可以选中整套模型</small></div></li>
+            <li><span>1</span><div><strong>{tr("上传两个文件")}</strong><small>{tr("检测模型 + 特征模型")}</small></div></li>
+            <li><span>2</span><div><strong>{tr("自动匹配平台")}</strong><small>CUDA / CPU / Jetson / RK3588</small></div></li>
+            <li><span>3</span><div><strong>{tr("组合检查")}</strong><small>{tr("确认当前设备可以选中整套模型")}</small></div></li>
           </ol>
           <AppButton type="primary" tone="info" icon={<ScanOutlined />} onClick={() => openModelWizard()}>
-            开始配置
+            {tr("开始配置")}
           </AppButton>
         </section>
       ) : (
@@ -761,8 +763,8 @@ const FaceGalleriesPage: React.FC = () => {
               className="face-model-grid__alert"
               type="warning"
               showIcon
-              message="有模型尚未适配当前平台"
-              description="模型必须同时具备当前平台可用的检测与特征文件。可在下方对应卡片中继续配置。"
+              message={tr("有模型尚未适配当前平台")}
+              description={tr("模型必须同时具备当前平台可用的检测与特征文件。可在下方对应卡片中继续配置。")}
             />
           ) : null}
           <Row gutter={[16, 16]}>
@@ -773,31 +775,31 @@ const FaceGalleriesPage: React.FC = () => {
                   <Card className="face-model-card">
                     <div className="face-model-card__title">
                       <div><strong>{bundle.name}</strong><span>{bundle.version}</span></div>
-                      <Badge status={runtimeBundle?.ready ? 'success' : 'warning'} text={runtimeBundle?.ready ? runtimeBundle.backend : '配置未完成'} />
+                      <Badge status={runtimeBundle?.ready ? 'success' : 'warning'} text={runtimeBundle?.ready ? runtimeBundle.backend : tr("配置未完成")} />
                     </div>
                     <Descriptions column={2} size="small">
-                      <Descriptions.Item label="契约">{bundle.contract_id}</Descriptions.Item>
-                      <Descriptions.Item label="特征">{bundle.embedding_dimension} 维</Descriptions.Item>
-                      <Descriptions.Item label="授权">{bundle.commercial_use_allowed ? '允许商用' : '仅验证'}</Descriptions.Item>
-                      <Descriptions.Item label="制品">{bundle.artifacts.length} 个</Descriptions.Item>
+                      <Descriptions.Item label={tr("契约")}>{bundle.contract_id}</Descriptions.Item>
+                      <Descriptions.Item label={tr("特征")}>{bundle.embedding_dimension} {tr("维")}</Descriptions.Item>
+                      <Descriptions.Item label={tr("授权")}>{bundle.commercial_use_allowed ? tr("允许商用") : tr("仅验证")}</Descriptions.Item>
+                      <Descriptions.Item label={tr("制品")}>{bundle.artifacts.length} {tr("个")}</Descriptions.Item>
                     </Descriptions>
                     <Divider />
                     <Space size={[6, 6]} wrap>
                       {bundle.artifacts.length ? bundle.artifacts.map((artifact) => (
                         <Tag key={artifact.id} color={artifact.role === 'detection' ? 'cyan' : 'purple'}>
-                          {artifact.runtime} · {artifact.role === 'detection' ? '检测' : '特征'}
+                          {artifact.runtime} · {artifact.role === 'detection' ? tr("检测") : tr("特征")}
                         </Tag>
-                      )) : <span className="face-model-card__empty">尚未上传模型文件</span>}
+                      )) : <span className="face-model-card__empty">{tr("尚未上传模型文件")}</span>}
                     </Space>
                     {runtimeBundle?.error ? (
                       <div className="face-model-card__recovery">
                         <p>{readableModelError(runtimeBundle.error)}</p>
                         <Space size={4} wrap>
                           <AppButton size="small" type="primary" tone="warning" onClick={() => openModelWizard(bundle)}>
-                            继续配置
+                            {tr("继续配置")}
                           </AppButton>
                           <Tooltip title={runtimeBundle.error}>
-                            <AppButton size="small" variant="text">查看技术详情</AppButton>
+                            <AppButton size="small" variant="text">{tr("查看技术详情")}</AppButton>
                           </Tooltip>
                         </Space>
                       </div>
@@ -816,10 +818,10 @@ const FaceGalleriesPage: React.FC = () => {
     <Card className="face-event-ledger" bordered={false}>
       <div className="face-model-grid__toolbar">
         <div>
-          <h2>最近识别事件</h2>
-          <p>同一跟踪轨迹只记录一次确认结果；抓拍按名单保留策略自动清理。</p>
+          <h2>{tr("最近识别事件")}</h2>
+          <p>{tr("同一跟踪轨迹只记录一次确认结果；抓拍按名单保留策略自动清理。")}</p>
         </div>
-        <Tag>{selectedGallery?.name || '请选择人脸库'}</Tag>
+        <Tag>{selectedGallery?.name || tr("请选择人脸库")}</Tag>
       </div>
       <Table<FaceRecognitionEvent>
         rowKey="id"
@@ -827,26 +829,26 @@ const FaceGalleriesPage: React.FC = () => {
         pagination={{ pageSize: 15, showSizeChanger: false }}
         columns={[
           {
-            title: '时间',
+            title: tr("时间"),
             dataIndex: 'occurred_at',
             width: 190,
-            render: (value) => new Date(value).toLocaleString(),
+            render: (value) => new Date(value).toLocaleString(getDateLocale()),
           },
           {
-            title: '判定',
+            title: tr("判定"),
             dataIndex: 'identity_status',
             width: 110,
-            render: (value) => <Tag color={value === 'known' ? 'green' : 'orange'}>{value === 'known' ? '白名单' : '陌生人'}</Tag>,
+            render: (value) => <Tag color={value === 'known' ? 'green' : 'orange'}>{value === 'known' ? tr("白名单") : tr("陌生人")}</Tag>,
           },
           {
-            title: '人员',
+            title: tr("人员"),
             key: 'person',
             render: (_, event) => event.person_name
               ? <span>{event.person_name} <small>{event.person_code}</small></span>
-              : <span className="face-event-muted">未匹配</span>,
+              : <span className="face-event-muted">{tr("未匹配")}</span>,
           },
           {
-            title: '相似度 / 阈值',
+            title: tr("相似度 / 阈值"),
             key: 'score',
             width: 150,
             render: (_, event) => event.similarity == null
@@ -854,26 +856,26 @@ const FaceGalleriesPage: React.FC = () => {
               : `${event.similarity.toFixed(3)} / ${(event.threshold || 0).toFixed(3)}`,
           },
           {
-            title: '推理路径',
+            title: tr("推理路径"),
             dataIndex: 'inference_backend',
             width: 150,
             render: (value) => value || '—',
           },
           {
-            title: '活体',
+            title: tr("活体"),
             dataIndex: 'liveness_status',
             width: 100,
-            render: () => <Tag>未检测</Tag>,
+            render: () => <Tag>{tr("未检测")}</Tag>,
           },
           {
-            title: '抓拍',
+            title: tr("抓拍"),
             key: 'snapshot',
             width: 90,
             render: (_, event) => (
               <AppButton
                 iconOnly
                 variant="text"
-                aria-label="查看加密抓拍"
+                aria-label={tr("查看加密抓拍")}
                 icon={<EyeOutlined />}
                 disabled={!event.snapshot_path}
                 onClick={() => void previewEventSnapshot(event)}
@@ -881,7 +883,7 @@ const FaceGalleriesPage: React.FC = () => {
             ),
           },
         ]}
-        locale={{ emptyText: <Empty description="当前名单暂无确认事件" /> }}
+        locale={{ emptyText: <Empty description={tr("当前名单暂无确认事件")} /> }}
       />
     </Card>
   );
@@ -891,16 +893,16 @@ const FaceGalleriesPage: React.FC = () => {
       <PageHeader
         icon={<ScanOutlined />}
         eyebrow="IDENTITY REGISTRY"
-        title="人脸识别"
-        subtitle="维护加密名单、跨平台模型与人员录入质量"
+        title={tr("人脸识别")}
+        subtitle={tr("维护加密名单、跨平台模型与人员录入质量")}
         count={galleries.reduce((total, item) => total + item.person_count, 0)}
-        countLabel="人次"
+        countLabel={tr("人次")}
       />
 
-      <section className="runtime-rail" aria-label="推理平台兼容状态">
+      <section className="runtime-rail" aria-label={tr("推理平台兼容状态")}>
         <div className="runtime-rail__lead">
           <CloudServerOutlined />
-          <div><span>当前推理路径</span><strong>{runtime?.capabilities.preferred_backend || '检测中'}</strong></div>
+          <div><span>{tr("当前推理路径")}</span><strong>{runtime?.capabilities.preferred_backend || tr("检测中")}</strong></div>
         </div>
         <div className="runtime-rail__steps">
           {PLATFORM_STEPS.map((step) => {
@@ -915,18 +917,18 @@ const FaceGalleriesPage: React.FC = () => {
         </div>
         <div className={`runtime-secret ${runtime?.encryption_ready ? 'is-ready' : ''}`} aria-live="polite">
           <SafetyCertificateOutlined />
-          <span>{runtime ? (runtime.encryption_ready ? '生物数据密钥就绪' : '未配置加密密钥') : '密钥状态检测中'}</span>
+          <span>{runtime ? (runtime.encryption_ready ? tr("生物数据密钥就绪") : tr("未配置加密密钥")) : tr("密钥状态检测中")}</span>
           {runtime && !runtime.encryption_ready ? (
-            <Tooltip title="生成 256 位密钥并保存到持久化数据目录，请随数据卷一起备份">
+            <Tooltip title={tr("生成 256 位密钥并保存到持久化数据目录，请随数据卷一起备份")}>
               <AppButton
                 className="runtime-secret__action"
                 tone="warning"
                 icon={<KeyOutlined />}
                 loading={generatingKey}
-                aria-label="自动生成生物数据加密密钥"
+                aria-label={tr("自动生成生物数据加密密钥")}
                 onClick={() => void handleGenerateEncryptionKey()}
               >
-                自动生成
+                {tr("自动生成")}
               </AppButton>
             </Tooltip>
           ) : null}
@@ -938,17 +940,17 @@ const FaceGalleriesPage: React.FC = () => {
           className="face-runtime-error"
           type="error"
           showIcon
-          message="推理插件加载失败"
+          message={tr("推理插件加载失败")}
           description={runtime.capabilities.plugin_errors.join('；')}
         />
       ) : null}
 
       {!loading ? (
-        <section className="face-setup-path" aria-label="人脸识别配置流程">
+        <section className="face-setup-path" aria-label={tr("人脸识别配置流程")}>
           <div className="face-setup-path__heading">
             <div>
-              <span>配置流程</span>
-              <strong>按顺序完成，系统会自动带你进入下一步</strong>
+              <span>{tr("配置流程")}</span>
+              <strong>{tr("按顺序完成，系统会自动带你进入下一步")}</strong>
             </div>
             <AppButton
               size="small"
@@ -958,43 +960,43 @@ const FaceGalleriesPage: React.FC = () => {
               disabled={!galleries.length}
               onClick={openFaceAlgorithmWizard}
             >
-              进入算法编排
+              {tr("进入算法编排")}
             </AppButton>
           </div>
           <div className="face-setup-path__steps">
             {[
               {
                 key: 'secret',
-                title: '加密密钥',
-                hint: runtime?.encryption_ready ? '已就绪' : '保护生物数据',
+                title: tr("加密密钥"),
+                hint: runtime?.encryption_ready ? tr("已就绪") : tr("保护生物数据"),
                 done: Boolean(runtime?.encryption_ready),
                 action: () => void handleGenerateEncryptionKey(),
               },
               {
                 key: 'model',
-                title: '当前平台模型',
-                hint: readyBundles.length ? `${readyBundles.length} 套可用` : '上传两个模型文件',
+                title: tr("当前平台模型"),
+                hint: readyBundles.length ? trf("__VAR0__ 套可用", [readyBundles.length]) : tr("上传两个模型文件"),
                 done: Boolean(readyBundles.length),
                 action: () => setActiveTab('models'),
               },
               {
                 key: 'gallery',
-                title: '人脸库',
-                hint: galleries.length ? `${galleries.length} 个名单` : '绑定可用模型',
+                title: tr("人脸库"),
+                hint: galleries.length ? trf("__VAR0__ 个名单", [galleries.length]) : tr("绑定可用模型"),
                 done: Boolean(galleries.length),
                 action: openGalleryCreation,
               },
               {
                 key: 'person',
-                title: '人员与照片',
-                hint: galleries.some((gallery) => gallery.template_count > 0) ? '已有可用模板' : '建议每人 3–5 张',
+                title: tr("人员与照片"),
+                hint: galleries.some((gallery) => gallery.template_count > 0) ? tr("已有可用模板") : tr("建议每人 3–5 张"),
                 done: galleries.some((gallery) => gallery.template_count > 0),
                 action: openPersonCreation,
               },
               {
                 key: 'algorithm',
-                title: '算法编排',
-                hint: '绑定人脸库后使用',
+                title: tr("算法编排"),
+                hint: tr("绑定人脸库后使用"),
                 done: false,
                 action: openFaceAlgorithmWizard,
               },
@@ -1020,25 +1022,25 @@ const FaceGalleriesPage: React.FC = () => {
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
-            { key: 'galleries', label: '人员与名单', children: galleryPanel },
-            { key: 'events', label: '识别事件', children: eventPanel },
-            { key: 'models', label: '跨平台模型', children: modelPanel },
+            { key: 'galleries', label: tr("人员与名单"), children: galleryPanel },
+            { key: 'events', label: tr("识别事件"), children: eventPanel },
+            { key: 'models', label: tr("跨平台模型"), children: modelPanel },
           ]}
         />
       )}
 
-      <Modal title="创建人脸库" open={galleryModalOpen} onCancel={() => setGalleryModalOpen(false)} onOk={submitGallery} confirmLoading={saving} okText="创建人脸库">
+      <Modal title={tr("创建人脸库")} open={galleryModalOpen} onCancel={() => setGalleryModalOpen(false)} onOk={submitGallery} confirmLoading={saving} okText={tr("创建人脸库")}>
         <Form form={galleryForm} layout="vertical" initialValues={{ low_threshold: 0.5, high_threshold: 0.6, enabled: true }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入人脸库名称' }]}><Input placeholder="例如：园区员工" /></Form.Item>
-          <Form.Item name="description" label="说明"><Input.TextArea rows={2} placeholder="这份名单在哪些场景使用" /></Form.Item>
-          <Form.Item name="model_bundle_id" label="逻辑模型包" rules={[{ required: true, message: '请选择模型包' }]}>
+          <Form.Item name="name" label={tr("名称")} rules={[{ required: true, message: tr("请输入人脸库名称") }]}><Input placeholder={tr("例如：园区员工")} /></Form.Item>
+          <Form.Item name="description" label={tr("说明")}><Input.TextArea rows={2} placeholder={tr("这份名单在哪些场景使用")} /></Form.Item>
+          <Form.Item name="model_bundle_id" label={tr("逻辑模型包")} rules={[{ required: true, message: tr("请选择模型包") }]}>
             <Select options={readyBundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}><Form.Item name="low_threshold" label="低阈值"><InputNumber min={0} max={1} step={0.01} /></Form.Item></Col>
-            <Col span={12}><Form.Item name="high_threshold" label="高阈值"><InputNumber min={0} max={1} step={0.01} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="low_threshold" label={tr("低阈值")}><InputNumber min={0} max={1} step={0.01} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="high_threshold" label={tr("高阈值")}><InputNumber min={0} max={1} step={0.01} /></Form.Item></Col>
           </Row>
-          <Form.Item name="enabled" label="立即启用" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="enabled" label={tr("立即启用")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
 
@@ -1054,54 +1056,54 @@ const FaceGalleriesPage: React.FC = () => {
         }}
       />
 
-      <Modal title="添加人员" open={personModalOpen} onCancel={() => setPersonModalOpen(false)} onOk={submitPerson} confirmLoading={saving} okText="添加人员">
+      <Modal title={tr("添加人员")} open={personModalOpen} onCancel={() => setPersonModalOpen(false)} onOk={submitPerson} confirmLoading={saving} okText={tr("添加人员")}>
         <Form form={personForm} layout="vertical" initialValues={{ enabled: true }}>
-          <Form.Item name="person_code" label="人员编号" rules={[{ required: true, message: '请输入人员编号' }]}><Input placeholder="例如：E-1042" /></Form.Item>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}><Input /></Form.Item>
-          <Form.Item name="enabled" label="参与识别" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="person_code" label={tr("人员编号")} rules={[{ required: true, message: tr("请输入人员编号") }]}><Input placeholder={tr("例如：E-1042")} /></Form.Item>
+          <Form.Item name="name" label={tr("姓名")} rules={[{ required: true, message: tr("请输入姓名") }]}><Input /></Form.Item>
+          <Form.Item name="enabled" label={tr("参与识别")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={`录入人脸 · ${templatePerson?.name || ''}`} open={Boolean(templatePerson)} onCancel={() => { setTemplatePerson(undefined); setTemplateFiles([]); }} onOk={submitTemplate} confirmLoading={saving} okText="检查并录入">
+      <Modal title={trf("录入人脸 · __VAR0__", [templatePerson?.name || ''])} open={Boolean(templatePerson)} onCancel={() => { setTemplatePerson(undefined); setTemplateFiles([]); }} onOk={submitTemplate} confirmLoading={saving} okText={tr("检查并录入")}>
         {!runtime?.encryption_ready ? (
           <Alert
             type="warning"
             showIcon
-            message="录入前需要生物数据加密密钥"
-            description={<AppButton size="small" loading={generatingKey} onClick={() => void handleGenerateEncryptionKey()}>自动生成密钥</AppButton>}
+            message={tr("录入前需要生物数据加密密钥")}
+            description={<AppButton size="small" loading={generatingKey} onClick={() => void handleGenerateEncryptionKey()}>{tr("自动生成密钥")}</AppButton>}
           />
         ) : null}
-        <Alert type="info" showIcon message="选择清晰正脸照片" description="照片必须只包含一人，建议短边不低于 320px。服务会检查人脸尺寸、清晰度和曝光。" />
+        <Alert type="info" showIcon message={tr("选择清晰正脸照片")} description={tr("照片必须只包含一人，建议短边不低于 320px。服务会检查人脸尺寸、清晰度和曝光。")} />
         <Upload.Dragger accept="image/jpeg,image/png,image/webp" maxCount={1} fileList={templateFiles} beforeUpload={() => false} onChange={({ fileList }) => setTemplateFiles(fileList)}>
           <p className="ant-upload-drag-icon"><FileImageOutlined /></p>
-          <p>拖入照片或点击选择</p>
+          <p>{tr("拖入照片或点击选择")}</p>
         </Upload.Dragger>
         {templatePerson?.templates.length ? (
           <List
             className="template-list"
             size="small"
-            header="已录入模板"
+            header={tr("已录入模板")}
             dataSource={templatePerson.templates}
             renderItem={(template) => (
-              <List.Item actions={[<AppButton key="delete" tone="danger" variant="text" size="small" onClick={async () => { await deleteFaceTemplate(template.id); await Promise.all([loadPersons(), loadOverview()]); }}>删除</AppButton>]}>质量 {Math.round((template.quality_score || 0) * 100)}% · {template.inference_backend}</List.Item>
+              <List.Item actions={[<AppButton key="delete" tone="danger" variant="text" size="small" onClick={async () => { await deleteFaceTemplate(template.id); await Promise.all([loadPersons(), loadOverview()]); }}>{tr("删除")}</AppButton>]}>{tr("质量")} {Math.round((template.quality_score || 0) * 100)}% · {template.inference_backend}</List.Item>
             )}
           />
         ) : null}
       </Modal>
 
-      <Modal title="新建逻辑模型包" open={bundleModalOpen} onCancel={() => setBundleModalOpen(false)} onOk={submitBundle} confirmLoading={saving} okText="创建模型包">
+      <Modal title={tr("新建逻辑模型包")} open={bundleModalOpen} onCancel={() => setBundleModalOpen(false)} onOk={submitBundle} confirmLoading={saving} okText={tr("创建模型包")}>
         <Form form={bundleForm} layout="vertical" initialValues={{ version: 'v1.0', contract_id: 'arcface-mobilefacenet-512-v1', embedding_dimension: 512, input_size: '112x112', commercial_use_allowed: false }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input placeholder="RetinaFace + MobileFaceNet" /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="version" label="版本" rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={12}><Form.Item name="input_size" label="特征输入"><Input /></Form.Item></Col></Row>
-          <Form.Item name="contract_id" label="模型契约" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="embedding_dimension" label="特征维度"><InputNumber min={32} max={4096} /></Form.Item>
-          <Form.Item name="license_name" label="模型许可证"><Input placeholder="内部验证时也应记录权重来源" /></Form.Item>
-          <Form.Item name="commercial_use_allowed" label="许可证允许商用" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="name" label={tr("名称")} rules={[{ required: true }]}><Input placeholder="RetinaFace + MobileFaceNet" /></Form.Item>
+          <Row gutter={12}><Col span={12}><Form.Item name="version" label={tr("版本")} rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={12}><Form.Item name="input_size" label={tr("特征输入")}><Input /></Form.Item></Col></Row>
+          <Form.Item name="contract_id" label={tr("模型契约")} rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="embedding_dimension" label={tr("特征维度")}><InputNumber min={32} max={4096} /></Form.Item>
+          <Form.Item name="license_name" label={tr("模型许可证")}><Input placeholder={tr("内部验证时也应记录权重来源")} /></Form.Item>
+          <Form.Item name="commercial_use_allowed" label={tr("许可证允许商用")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={`批量导入 · ${galleries.find((item) => item.id === (importJob?.gallery_id || selectedGalleryId))?.name || ''}`}
+        title={trf("批量导入 · __VAR0__", [galleries.find((item) => item.id === (importJob?.gallery_id || selectedGalleryId))?.name || ''])}
         open={importModalOpen}
         onCancel={() => {
           setImportModalOpen(false);
@@ -1113,9 +1115,9 @@ const FaceGalleriesPage: React.FC = () => {
         }}
         onOk={submitImport}
         confirmLoading={saving}
-        okText={importJob ? '导入已提交' : importPreflight?.success ? '开始导入' : '预检导入包'}
+        okText={importJob ? tr("导入已提交") : importPreflight?.success ? tr("开始导入") : tr("预检导入包")}
         okButtonProps={{ disabled: Boolean(importJob) }}
-        cancelText={importJob ? '后台运行' : '取消'}
+        cancelText={importJob ? tr("后台运行") : tr("取消")}
       >
         {importJob ? (
           <div className="face-import-progress">
@@ -1127,10 +1129,10 @@ const FaceGalleriesPage: React.FC = () => {
               status={importJob.status === 'failed' ? 'exception' : undefined}
             />
             <div>
-              <strong>{importJob.status === 'processing' ? '正在生成加密人脸模板' : importJob.status}</strong>
-              <p>{importJob.processed_people} / {importJob.total_people} 人已处理，成功 {importJob.succeeded_people}，失败 {importJob.failed_people}</p>
+              <strong>{importJob.status === 'processing' ? tr("正在生成加密人脸模板") : importJob.status}</strong>
+              <p>{importJob.processed_people} / {importJob.total_people} {tr("人已处理，成功")} {importJob.succeeded_people}{tr("，失败")} {importJob.failed_people}</p>
               {importJob.errors.slice(0, 4).map((item, index) => (
-                <small key={`${item.row}-${index}`}>{item.person_code || `第 ${item.row} 行`}：{item.error || item.warning}</small>
+                <small key={`${item.row}-${index}`}>{item.person_code || trf("第 __VAR0__ 行", [item.row])}：{item.error || item.warning}</small>
               ))}
             </div>
           </div>
@@ -1139,8 +1141,8 @@ const FaceGalleriesPage: React.FC = () => {
             <Alert
               type="info"
               showIcon
-              message="ZIP 内需要 manifest.csv 与 photos/ 目录"
-              description="manifest.csv 至少包含 person_code,name；照片放在 photos/{person_code}/ 下，每人最多录入前 5 张。"
+              message={tr("ZIP 内需要 manifest.csv 与 photos/ 目录")}
+              description={tr("manifest.csv 至少包含 person_code,name；照片放在 photos/{person_code}/ 下，每人最多录入前 5 张。")}
             />
             <Upload.Dragger
               accept=".zip,application/zip"
@@ -1153,7 +1155,7 @@ const FaceGalleriesPage: React.FC = () => {
               }}
             >
               <p className="ant-upload-drag-icon"><FileZipOutlined /></p>
-              <p>拖入批量导入 ZIP 或点击选择</p>
+              <p>{tr("拖入批量导入 ZIP 或点击选择")}</p>
             </Upload.Dragger>
             {importPreflight ? (
               <Alert
@@ -1161,9 +1163,9 @@ const FaceGalleriesPage: React.FC = () => {
                 type={importPreflight.success ? 'success' : 'error'}
                 showIcon
                 message={importPreflight.success
-                  ? `预检通过：${importPreflight.person_count} 人，${importPreflight.image_count} 张照片`
-                  : `预检发现 ${importPreflight.errors.length} 个问题`}
-                description={importPreflight.errors.slice(0, 5).map((item) => `第 ${item.row || '?'} 行：${item.error}`).join('；') || undefined}
+                  ? trf("预检通过：__VAR0__ 人，__VAR1__ 张照片", [importPreflight.person_count, importPreflight.image_count])
+                  : trf("预检发现 __VAR0__ 个问题", [importPreflight.errors.length])}
+                description={importPreflight.errors.slice(0, 5).map((item) => trf("第 __VAR0__ 行：__VAR1__", [item.row || '?', item.error])).join('；') || undefined}
               />
             ) : null}
           </>
@@ -1171,35 +1173,35 @@ const FaceGalleriesPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title="阈值离线评估"
+        title={tr("阈值离线评估")}
         open={Boolean(calibration)}
         onCancel={() => setCalibration(undefined)}
         onOk={applyCalibration}
         confirmLoading={saving}
-        okText="应用建议阈值"
+        okText={tr("应用建议阈值")}
       >
         {calibration ? (
           <>
             <Alert
               type="warning"
               showIcon
-              message="这是库内估计，不替代现场标定"
-              description="上线前仍需使用目标摄像头、距离和光照下的独立正负样本验证 FPIR/FNIR。"
+              message={tr("这是库内估计，不替代现场标定")}
+              description={tr("上线前仍需使用目标摄像头、距离和光照下的独立正负样本验证 FPIR/FNIR。")}
             />
             <Descriptions className="face-calibration" bordered size="small" column={2}>
-              <Descriptions.Item label="建议低阈值">{calibration.suggested_low_threshold.toFixed(4)}</Descriptions.Item>
-              <Descriptions.Item label="建议高阈值">{calibration.suggested_high_threshold.toFixed(4)}</Descriptions.Item>
-              <Descriptions.Item label="估计 FPIR">{(calibration.measured_fpir * 100).toFixed(3)}%</Descriptions.Item>
-              <Descriptions.Item label="估计 FNIR">{calibration.measured_fnir == null ? '样本不足' : `${(calibration.measured_fnir * 100).toFixed(2)}%`}</Descriptions.Item>
-              <Descriptions.Item label="同人对">{calibration.genuine_pair_count}</Descriptions.Item>
-              <Descriptions.Item label="异人对">{calibration.impostor_pair_count}</Descriptions.Item>
+              <Descriptions.Item label={tr("建议低阈值")}>{calibration.suggested_low_threshold.toFixed(4)}</Descriptions.Item>
+              <Descriptions.Item label={tr("建议高阈值")}>{calibration.suggested_high_threshold.toFixed(4)}</Descriptions.Item>
+              <Descriptions.Item label={tr("估计 FPIR")}>{(calibration.measured_fpir * 100).toFixed(3)}%</Descriptions.Item>
+              <Descriptions.Item label={tr("估计 FNIR")}>{calibration.measured_fnir == null ? tr("样本不足") : `${(calibration.measured_fnir * 100).toFixed(2)}%`}</Descriptions.Item>
+              <Descriptions.Item label={tr("同人对")}>{calibration.genuine_pair_count}</Descriptions.Item>
+              <Descriptions.Item label={tr("异人对")}>{calibration.impostor_pair_count}</Descriptions.Item>
             </Descriptions>
           </>
         ) : null}
       </Modal>
 
       <Modal
-        title="加密事件抓拍"
+        title={tr("加密事件抓拍")}
         open={Boolean(eventSnapshotUrl)}
         footer={null}
         onCancel={() => {
@@ -1207,16 +1209,16 @@ const FaceGalleriesPage: React.FC = () => {
           setEventSnapshotUrl(undefined);
         }}
       >
-        {eventSnapshotUrl ? <img className="face-event-snapshot" src={eventSnapshotUrl} alt="人脸识别事件抓拍" /> : null}
+        {eventSnapshotUrl ? <img className="face-event-snapshot" src={eventSnapshotUrl} alt={tr("人脸识别事件抓拍")} /> : null}
       </Modal>
 
-      <Modal title="高级：上传单个平台制品" open={artifactModalOpen} onCancel={() => setArtifactModalOpen(false)} onOk={submitArtifact} confirmLoading={saving} okText="上传制品">
+      <Modal title={tr("高级：上传单个平台制品")} open={artifactModalOpen} onCancel={() => setArtifactModalOpen(false)} onOk={submitArtifact} confirmLoading={saving} okText={tr("上传制品")}>
         <Form form={artifactForm} layout="vertical" initialValues={{ architecture: 'any', device: 'any', metadata: '{}', runtime: 'onnxruntime', role: 'detection' }}>
-          <Form.Item name="bundle_id" label="逻辑模型包" rules={[{ required: true }]}><Select options={bundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="role" label="模型角色"><Select options={[{ value: 'detection', label: '人脸检测' }, { value: 'embedding', label: '特征提取' }]} /></Form.Item></Col><Col span={12}><Form.Item name="runtime" label="运行时"><Select options={[{ value: 'onnxruntime', label: 'ONNX Runtime' }, { value: 'tensorrt', label: 'TensorRT EP' }, { value: 'torchscript', label: 'TorchScript' }, { value: 'rknn', label: 'RKNNLite' }]} /></Form.Item></Col></Row>
-          <Row gutter={12}><Col span={12}><Form.Item name="architecture" label="架构"><Input placeholder="any / amd64 / arm64" /></Form.Item></Col><Col span={12}><Form.Item name="device" label="设备"><Input placeholder="any / cuda / rk3588" /></Form.Item></Col></Row>
-          <Form.Item name="metadata" label="输入输出元数据" rules={[{ validator: async (_, value) => { try { JSON.parse(value || '{}'); } catch { throw new Error('请输入有效 JSON'); } } }]}><Input.TextArea rows={4} /></Form.Item>
-          <Upload accept=".onnx,.rknn,.pt,.pth" maxCount={1} fileList={artifactFiles} beforeUpload={() => false} onChange={({ fileList }) => setArtifactFiles(fileList)}><AppButton icon={<UploadOutlined />}>选择模型文件</AppButton></Upload>
+          <Form.Item name="bundle_id" label={tr("逻辑模型包")} rules={[{ required: true }]}><Select options={bundles.map((item) => ({ value: item.id, label: `${item.name} · ${item.version}` }))} /></Form.Item>
+          <Row gutter={12}><Col span={12}><Form.Item name="role" label={tr("模型角色")}><Select options={[{ value: 'detection', label: tr("人脸检测") }, { value: 'embedding', label: tr("特征提取") }]} /></Form.Item></Col><Col span={12}><Form.Item name="runtime" label={tr("运行时")}><Select options={[{ value: 'onnxruntime', label: 'ONNX Runtime' }, { value: 'tensorrt', label: 'TensorRT EP' }, { value: 'torchscript', label: 'TorchScript' }, { value: 'rknn', label: 'RKNNLite' }]} /></Form.Item></Col></Row>
+          <Row gutter={12}><Col span={12}><Form.Item name="architecture" label={tr("架构")}><Input placeholder="any / amd64 / arm64" /></Form.Item></Col><Col span={12}><Form.Item name="device" label={tr("设备")}><Input placeholder="any / cuda / rk3588" /></Form.Item></Col></Row>
+          <Form.Item name="metadata" label={tr("输入输出元数据")} rules={[{ validator: async (_, value) => { try { JSON.parse(value || '{}'); } catch { throw new Error(tr("请输入有效 JSON")); } } }]}><Input.TextArea rows={4} /></Form.Item>
+          <Upload accept=".onnx,.rknn,.pt,.pth" maxCount={1} fileList={artifactFiles} beforeUpload={() => false} onChange={({ fileList }) => setArtifactFiles(fileList)}><AppButton icon={<UploadOutlined />}>{tr("选择模型文件")}</AppButton></Upload>
         </Form>
       </Modal>
     </div>

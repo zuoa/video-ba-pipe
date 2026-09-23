@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -61,9 +62,9 @@ interface DiscoveredProfile {
 }
 
 const MODE_OPTIONS = [
-  { value: 'multicast', label: 'LAN 组播' },
-  { value: 'subnet', label: '网段探测' },
-  { value: 'host', label: '指定 IP' },
+  { value: 'multicast', label: tr("LAN 组播") },
+  { value: 'subnet', label: tr("网段探测") },
+  { value: 'host', label: tr("指定 IP") },
 ];
 
 function deviceKey(host: string, port: number) {
@@ -72,12 +73,12 @@ function deviceKey(host: string, port: number) {
 
 function emptyHint(mode: string) {
   if (mode === 'multicast') {
-    return '未发现 ONVIF 设备。Docker bridge 网络通常收不到组播，请改用网段探测或指定 IP。';
+    return tr("未发现 ONVIF 设备。Docker bridge 网络通常收不到组播，请改用网段探测或指定 IP。");
   }
   if (mode === 'subnet') {
-    return '该网段未探测到 ONVIF 服务。可调整端口列表，或改用指定 IP。';
+    return tr("该网段未探测到 ONVIF 服务。可调整端口列表，或改用指定 IP。");
   }
-  return '无法将该地址作为 ONVIF 设备加入候选。';
+  return tr("无法将该地址作为 ONVIF 设备加入候选。");
 }
 
 export default function OnvifScanModal({
@@ -175,13 +176,13 @@ export default function OnvifScanModal({
       if (nextDevices.length === 0) {
         message.warning(emptyHint(values.mode));
       } else {
-        message.success(`发现 ${nextDevices.length} 台设备`);
+        message.success(trf("发现 __VAR0__ 台设备", [nextDevices.length]));
       }
     } catch (error: any) {
       if (error?.errorFields) {
         return;
       }
-      message.error(error?.response?.data?.error || error?.message || 'ONVIF 扫描失败');
+      message.error(error?.response?.data?.error || error?.message || tr("ONVIF 扫描失败"));
     } finally {
       setScanning(false);
     }
@@ -189,7 +190,7 @@ export default function OnvifScanModal({
 
   const handleFetchProfiles = async () => {
     if (!selectedDevices.length) {
-      message.warning('请至少选择一台设备');
+      message.warning(tr("请至少选择一台设备"));
       return;
     }
 
@@ -213,7 +214,7 @@ export default function OnvifScanModal({
       results.forEach((item, index) => {
         const device = selectedDevices[index];
         if (item.status !== 'fulfilled') {
-          failures.push(`${device.host}: ${item.reason?.response?.data?.error || item.reason?.message || '拉取失败'}`);
+          failures.push(`${device.host}: ${item.reason?.response?.data?.error || item.reason?.message || tr("拉取失败")}`);
           return;
         }
         const payload = item.value.result;
@@ -256,19 +257,19 @@ export default function OnvifScanModal({
       setStep(2);
 
       if (nextProfiles.length) {
-        message.success(`获取到 ${nextProfiles.length} 条码流`);
+        message.success(trf("获取到 __VAR0__ 条码流", [nextProfiles.length]));
       }
       if (failures.length) {
         message.warning(failures.join('；'));
       }
       if (!nextProfiles.length && !failures.length) {
-        message.warning('未获取到可用码流');
+        message.warning(tr("未获取到可用码流"));
       }
     } catch (error: any) {
       if (error?.errorFields) {
         return;
       }
-      message.error(error?.response?.data?.error || error?.message || '获取码流失败');
+      message.error(error?.response?.data?.error || error?.message || tr("获取码流失败"));
     } finally {
       setFetching(false);
     }
@@ -276,7 +277,7 @@ export default function OnvifScanModal({
 
   const handleImport = async () => {
     if (!selectedProfiles.length) {
-      message.warning('请至少选择一条码流');
+      message.warning(tr("请至少选择一条码流"));
       return;
     }
     try {
@@ -292,17 +293,17 @@ export default function OnvifScanModal({
       const createdCount = result?.created_count || 0;
       const errorCount = result?.errors?.length || 0;
       if (createdCount > 0) {
-        message.success(`成功导入 ${createdCount} 个视频源`);
+        message.success(trf("成功导入 __VAR0__ 个视频源", [createdCount]));
       }
       if (errorCount > 0) {
-        message.warning(`${errorCount} 条码流导入失败`);
+        message.warning(trf("__VAR0__ 条码流导入失败", [errorCount]));
       }
       if (createdCount > 0) {
         await onImported();
         onCancel();
       }
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '导入失败');
+      message.error(error?.response?.data?.error || error?.message || tr("导入失败"));
     } finally {
       setImporting(false);
     }
@@ -310,7 +311,7 @@ export default function OnvifScanModal({
 
   const deviceColumns = [
     {
-      title: '地址',
+      title: tr("地址"),
       dataIndex: 'host',
       width: 160,
       render: (_: string, record: ScannedDevice) => (
@@ -318,12 +319,12 @@ export default function OnvifScanModal({
       ),
     },
     {
-      title: '名称',
+      title: tr("名称"),
       dataIndex: 'name',
       width: 180,
     },
     {
-      title: '型号',
+      title: tr("型号"),
       dataIndex: 'hardware',
       width: 160,
       render: (value?: string) => value || '-',
@@ -331,25 +332,25 @@ export default function OnvifScanModal({
     ...(step === 1
       ? [
           {
-            title: '用户名',
+            title: tr("用户名"),
             dataIndex: 'username',
             width: 140,
             render: (_: string, record: ScannedDevice) => (
               <Input
                 value={record.username}
-                placeholder="用默认账号"
+                placeholder={tr("用默认账号")}
                 onChange={(event) => updateDevice(record.key, { username: event.target.value })}
               />
             ),
           },
           {
-            title: '密码',
+            title: tr("密码"),
             dataIndex: 'password',
             width: 140,
             render: (_: string, record: ScannedDevice) => (
               <Input.Password
                 value={record.password}
-                placeholder="用默认密码"
+                placeholder={tr("用默认密码")}
                 onChange={(event) => updateDevice(record.key, { password: event.target.value })}
               />
             ),
@@ -357,23 +358,23 @@ export default function OnvifScanModal({
         ]
       : []),
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'already_imported',
       width: 100,
       render: (value: boolean) =>
-        value ? <Tag>已添加</Tag> : <Tag color="success">可加入</Tag>,
+        value ? <Tag>{tr("已添加")}</Tag> : <Tag color="success">{tr("可加入")}</Tag>,
     },
   ];
 
   const profileColumns = [
     {
-      title: '设备',
+      title: tr("设备"),
       dataIndex: 'host',
       width: 150,
       render: (_: string, record: DiscoveredProfile) => `${record.host}:${record.port}`,
     },
     {
-      title: '名称',
+      title: tr("名称"),
       dataIndex: 'name',
       width: 180,
       render: (_: string, record: DiscoveredProfile) => (
@@ -384,7 +385,7 @@ export default function OnvifScanModal({
       ),
     },
     {
-      title: '编码',
+      title: tr("编码"),
       dataIndex: 'source_code',
       width: 210,
       render: (_: string, record: DiscoveredProfile) => (
@@ -395,29 +396,29 @@ export default function OnvifScanModal({
       ),
     },
     {
-      title: '码流',
+      title: tr("码流"),
       dataIndex: 'stream_hint',
       width: 90,
-      render: (value: 'main' | 'sub') => (value === 'main' ? '主码流' : '子码流'),
+      render: (value: 'main' | 'sub') => (value === 'main' ? tr("主码流") : tr("子码流")),
     },
     {
-      title: '分辨率',
+      title: tr("分辨率"),
       dataIndex: 'width',
       width: 110,
       render: (_: number, record: DiscoveredProfile) =>
         record.width && record.height ? `${record.width}x${record.height}` : '-',
     },
     {
-      title: '编码格式',
+      title: tr("编码格式"),
       dataIndex: 'encoding',
       width: 90,
     },
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'already_imported',
       width: 90,
       render: (value: boolean) =>
-        value ? <Tag>已添加</Tag> : <Tag color="success">可加入</Tag>,
+        value ? <Tag>{tr("已添加")}</Tag> : <Tag color="success">{tr("可加入")}</Tag>,
     },
   ];
 
@@ -426,17 +427,17 @@ export default function OnvifScanModal({
       open={visible}
       size="xl"
       onCancel={onCancel}
-      title="ONVIF 扫描"
-      description="扫描局域网摄像机，拉取码流后加入视频源"
+      title={tr("ONVIF 扫描")}
+      description={tr("扫描局域网摄像机，拉取码流后加入视频源")}
       className="import-sources-modal onvif-scan-modal"
       closable={!busy}
       keyboard={!busy}
       footer={
         <Space>
-          <Button onClick={onCancel} disabled={busy}>取消</Button>
+          <Button onClick={onCancel} disabled={busy}>{tr("取消")}</Button>
           {step > 0 && (
             <Button onClick={() => setStep(step - 1)} disabled={busy}>
-              上一步
+              {tr("上一步")}
             </Button>
           )}
           {step === 0 && (
@@ -446,7 +447,7 @@ export default function OnvifScanModal({
               disabled={busy && !scanning}
               onClick={handleScan}
             >
-              开始扫描
+              {tr("开始扫描")}
             </Button>
           )}
           {step === 1 && (
@@ -457,7 +458,7 @@ export default function OnvifScanModal({
               disabled={selectedDeviceKeys.length === 0}
               onClick={handleFetchProfiles}
             >
-              获取码流
+              {tr("获取码流")}
             </Button>
           )}
           {step === 2 && (
@@ -468,7 +469,7 @@ export default function OnvifScanModal({
               disabled={selectedProfileKeys.length === 0}
               onClick={handleImport}
             >
-              导入已选码流
+              {tr("导入已选码流")}
             </Button>
           )}
           {step === 0 && (
@@ -477,7 +478,7 @@ export default function OnvifScanModal({
               disabled={busy || selectedDevices.length === 0}
               onClick={() => setStep(1)}
             >
-              下一步
+              {tr("下一步")}
             </Button>
           )}
         </Space>
@@ -489,9 +490,9 @@ export default function OnvifScanModal({
             <ScanOutlined />
           </div>
           <div>
-            <div className="import-hero-title">扫描 ONVIF 摄像机并加入视频源</div>
+            <div className="import-hero-title">{tr("扫描 ONVIF 摄像机并加入视频源")}</div>
             <div className="import-hero-subtitle">
-              组播适合宿主机直连；Docker 部署请用网段探测或指定 IP。
+              {tr("组播适合宿主机直连；Docker 部署请用网段探测或指定 IP。")}
             </div>
           </div>
         </div>
@@ -500,9 +501,9 @@ export default function OnvifScanModal({
           current={step}
           className="onvif-steps"
           items={[
-            { title: '扫描设备' },
-            { title: '获取码流' },
-            { title: '导入视频源' },
+            { title: tr("扫描设备") },
+            { title: tr("获取码流") },
+            { title: tr("导入视频源") },
           ]}
         />
 
@@ -511,32 +512,32 @@ export default function OnvifScanModal({
             <Form form={form} layout="vertical" className="import-config-form">
               <div className="import-grid">
                 <Form.Item
-                  label="扫描方式"
+                  label={tr("扫描方式")}
                   name="mode"
-                  rules={[{ required: true, message: '请选择扫描方式' }]}
+                  rules={[{ required: true, message: tr("请选择扫描方式") }]}
                 >
                   <Select options={MODE_OPTIONS} />
                 </Form.Item>
                 <Form.Item
-                  label="超时（秒）"
+                  label={tr("超时（秒）")}
                   name="timeout_seconds"
-                  rules={[{ required: true, message: '请输入超时' }]}
+                  rules={[{ required: true, message: tr("请输入超时") }]}
                 >
                   <InputNumber min={1} max={15} style={{ width: '100%' }} />
                 </Form.Item>
                 {mode === 'subnet' && (
                   <>
                     <Form.Item
-                      label="网段"
+                      label={tr("网段")}
                       name="subnet"
-                      rules={[{ required: true, message: '请输入 CIDR 网段' }]}
+                      rules={[{ required: true, message: tr("请输入 CIDR 网段") }]}
                     >
                       <Input placeholder="192.168.1.0/24" />
                     </Form.Item>
                     <Form.Item
-                      label="端口"
+                      label={tr("端口")}
                       name="ports"
-                      rules={[{ required: true, message: '请输入端口' }]}
+                      rules={[{ required: true, message: tr("请输入端口") }]}
                     >
                       <Input placeholder="80,8000,8080,8899,2020" />
                     </Form.Item>
@@ -545,16 +546,16 @@ export default function OnvifScanModal({
                 {mode === 'host' && (
                   <>
                     <Form.Item
-                      label="设备地址"
+                      label={tr("设备地址")}
                       name="host"
-                      rules={[{ required: true, message: '请输入设备地址' }]}
+                      rules={[{ required: true, message: tr("请输入设备地址") }]}
                     >
                       <Input placeholder="192.168.1.64" />
                     </Form.Item>
                     <Form.Item
-                      label="ONVIF 端口"
+                      label={tr("ONVIF 端口")}
                       name="port"
-                      rules={[{ required: true, message: '请输入端口' }]}
+                      rules={[{ required: true, message: tr("请输入端口") }]}
                     >
                       <InputNumber min={1} max={65535} style={{ width: '100%' }} />
                     </Form.Item>
@@ -567,9 +568,9 @@ export default function OnvifScanModal({
               <div className="import-results">
                 <div className="import-results-header">
                   <div>
-                    <div className="import-results-title">发现的设备</div>
+                    <div className="import-results-title">{tr("发现的设备")}</div>
                     <div className="import-results-subtitle">
-                      共 {devices.length} 台，已选择 {selectedDevices.length} 台
+                      {tr("共")} {devices.length} {tr("台，已选择")} {selectedDevices.length} {tr("台")}
                     </div>
                   </div>
                 </div>
@@ -595,21 +596,21 @@ export default function OnvifScanModal({
             <Form form={form} layout="vertical" className="import-config-form">
               <div className="import-grid">
                 <Form.Item
-                  label="默认用户名"
+                  label={tr("默认用户名")}
                   name="username"
-                  rules={[{ required: true, message: '请输入用户名' }]}
+                  rules={[{ required: true, message: tr("请输入用户名") }]}
                 >
                   <Input placeholder="admin" />
                 </Form.Item>
-                <Form.Item label="默认密码" name="password">
-                  <Input.Password placeholder="设备密码" />
+                <Form.Item label={tr("默认密码")} name="password">
+                  <Input.Password placeholder={tr("设备密码")} />
                 </Form.Item>
               </div>
             </Form>
             <Alert
               type="info"
               showIcon
-              message="表格里留空的账号密码会使用上面的默认值。已添加过的设备仍可勾选，用来补子码流；已导入的码流会在下一步禁用。"
+              message={tr("表格里留空的账号密码会使用上面的默认值。已添加过的设备仍可勾选，用来补子码流；已导入的码流会在下一步禁用。")}
               className="import-results-alert"
             />
             <Table
@@ -627,9 +628,9 @@ export default function OnvifScanModal({
           <div className="import-results">
             <div className="import-results-header">
               <div>
-                <div className="import-results-title">可导入码流</div>
+                <div className="import-results-title">{tr("可导入码流")}</div>
                 <div className="import-results-subtitle">
-                  共 {profiles.length} 条，已选择 {selectedProfiles.length} 条。默认每台设备勾选子码流。
+                  {tr("共")} {profiles.length} {tr("条，已选择")} {selectedProfiles.length} {tr("条。默认每台设备勾选子码流。")}
                 </div>
               </div>
             </div>

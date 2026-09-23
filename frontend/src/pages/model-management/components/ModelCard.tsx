@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Card, Space, Typography, Tooltip, message } from 'antd';
 import {
@@ -54,18 +56,18 @@ const ModelCard: React.FC<ModelCardProps> = ({
       const data = await getModel(model.id);
       const ok = await copyToClipboard(data.model.file_path);
       if (ok) {
-        message.success('模型路径已复制');
+        message.success(tr("模型路径已复制"));
       } else {
-        message.error('复制路径失败');
+        message.error(tr("复制路径失败"));
       }
     } catch (error) {
-      message.error('复制路径失败');
+      message.error(tr("复制路径失败"));
     }
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleString(getDateLocale(), {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -99,30 +101,30 @@ const ModelCard: React.FC<ModelCardProps> = ({
       {/* 信息列表 */}
       <div className="model-card-info">
         <div className="info-item">
-          <span className="info-label">类型</span>
+          <span className="info-label">{tr("类型")}</span>
           <span className="info-value">{model.model_type}</span>
         </div>
         <div className="info-item">
-          <span className="info-label">框架</span>
+          <span className="info-label">{tr("框架")}</span>
           <span className="info-value">{model.framework}</span>
         </div>
         {model.model_type === 'OCR' ? (
           <div className="info-item">
-            <span className="info-label">角色</span>
-            <span className="info-value">{model.model_role === 'detection' ? '文字检测' : '文字识别'}</span>
+            <span className="info-label">{tr("角色")}</span>
+            <span className="info-value">{model.model_role === 'detection' ? tr("文字检测") : tr("文字识别")}</span>
           </div>
         ) : null}
         <div className="info-item">
-          <span className="info-label">大小</span>
+          <span className="info-label">{tr("大小")}</span>
           <span className="info-value">{model.file_size_mb} MB</span>
         </div>
         <div className="info-item">
-          <span className="info-label">使用</span>
-          <span className="info-value">{model.usage_count} 次</span>
+          <span className="info-label">{tr("使用")}</span>
+          <span className="info-value">{model.usage_count} {tr("次")}</span>
         </div>
         {model.input_shape && (
           <div className="info-item">
-            <span className="info-label">输入</span>
+            <span className="info-label">{tr("输入")}</span>
             <span className="info-value">{model.input_shape}</span>
           </div>
         )}
@@ -149,32 +151,32 @@ const ModelCard: React.FC<ModelCardProps> = ({
         </Space>
         <Space size="small">
           {model.quick_setup?.eligible ? (
-            <Tooltip title="用通用脚本创建算法和告警模板">
+            <Tooltip title={tr("用通用脚本创建算法和告警模板")}>
               <AppButton
                 size="small"
                 tone="success"
                 iconOnly
                 className="action-btn action-btn-quick"
-                aria-label={`从模型 ${model.name} 快速创建算法和模板`}
+                aria-label={trf("从模型 __VAR0__ 快速创建算法和模板", [model.name])}
                 onClick={() => onQuickSetup(model)}
               >
                 <ThunderboltOutlined />
               </AppButton>
             </Tooltip>
           ) : (
-            <Tooltip title={model.quick_setup?.reason || '使用完整向导配置算法'}>
+            <Tooltip title={model.quick_setup?.reason || tr("使用完整向导配置算法")}>
               <AppButton
                 size="small"
                 iconOnly
                 className="action-btn action-btn-configure"
-                aria-label={`为模型 ${model.name} 配置算法`}
+                aria-label={trf("为模型 __VAR0__ 配置算法", [model.name])}
                 onClick={() => onConfigure(model)}
               >
                 <SettingOutlined />
               </AppButton>
             </Tooltip>
           )}
-          <Tooltip title="查看详情">
+          <Tooltip title={tr("查看详情")}>
             <AppButton
               size="small"
               tone="info"
@@ -182,28 +184,28 @@ const ModelCard: React.FC<ModelCardProps> = ({
               onClick={() => onView(model)}
             >
               <EyeOutlined />
-              <span>详情</span>
+              <span>{tr("详情")}</span>
             </AppButton>
           </Tooltip>
-          <Tooltip title="复制路径">
+          <Tooltip title={tr("复制路径")}>
             <AppButton
               size="small"
               iconOnly
               className="action-btn action-btn-copy"
-              aria-label={`复制模型 ${model.name} 的路径`}
+              aria-label={trf("复制模型 __VAR0__ 的路径", [model.name])}
               onClick={handleCopyPath}
             >
               <CopyOutlined />
             </AppButton>
           </Tooltip>
           {model.usage_count === 0 && (
-            <Tooltip title="删除模型">
+            <Tooltip title={tr("删除模型")}>
               <AppButton
                 size="small"
                 tone="danger"
                 iconOnly
                 className="action-btn action-btn-delete"
-                aria-label={`删除模型 ${model.name}`}
+                aria-label={trf("删除模型 __VAR0__", [model.name])}
                 onClick={() => onDelete(model.id)}
               >
                 <DeleteOutlined />

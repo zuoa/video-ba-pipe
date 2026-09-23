@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 export const formatDate = (dateString: string): string => {
   if (!dateString) return '-';
   const date = new Date(dateString);
@@ -9,17 +11,17 @@ export const formatDate = (dateString: string): string => {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     if (hours === 0) {
       const minutes = Math.floor(diff / (1000 * 60));
-      return minutes === 0 ? '刚刚' : `${minutes}分钟前`;
+      return minutes === 0 ? tr("刚刚") : trf("__VAR0__分钟前", [minutes]);
     }
-    return `${hours}小时前`;
+    return trf("__VAR0__小时前", [hours]);
   }
   
-  if (days === 1) return '昨天';
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  if (days < 365) return `${Math.floor(days / 30)}个月前`;
+  if (days === 1) return tr("昨天");
+  if (days < 7) return trf("__VAR0__天前", [days]);
+  if (days < 30) return trf("__VAR0__周前", [Math.floor(days / 7)]);
+  if (days < 365) return trf("__VAR0__个月前", [Math.floor(days / 30)]);
   
-  return date.toLocaleDateString('zh-CN');
+  return date.toLocaleDateString(getDateLocale());
 };
 
 export const formatFileSize = (bytes: number): string => {

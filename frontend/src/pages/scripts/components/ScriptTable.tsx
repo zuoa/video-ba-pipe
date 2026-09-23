@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Table, Space, Tag, Input, message } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -45,16 +47,16 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return '刚刚';
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 7) return `${diffDays}天前`;
-    return date.toLocaleDateString('zh-CN');
+    if (diffMins < 1) return tr("刚刚");
+    if (diffMins < 60) return trf("__VAR0__分钟前", [diffMins]);
+    if (diffHours < 24) return trf("__VAR0__小时前", [diffHours]);
+    if (diffDays < 7) return trf("__VAR0__天前", [diffDays]);
+    return date.toLocaleDateString(getDateLocale());
   };
 
   const columns = [
     {
-      title: '脚本名称',
+      title: tr("脚本名称"),
       dataIndex: 'name',
       key: 'name',
       width: 250,
@@ -71,7 +73,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
       ),
     },
     {
-      title: '路径',
+      title: tr("路径"),
       dataIndex: 'path',
       key: 'path',
       width: 300,
@@ -82,19 +84,19 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
       ),
     },
     {
-      title: '使用状态',
+      title: tr("使用状态"),
       key: 'in_use',
       width: 120,
       render: (_: any, record: any) => (
         record.algorithm_id ? (
-          <Tag icon={<CheckCircleOutlined />} color="success">在用</Tag>
+          <Tag icon={<CheckCircleOutlined />} color="success">{tr("在用")}</Tag>
         ) : (
-          <Tag>未使用</Tag>
+          <Tag>{tr("未使用")}</Tag>
         )
       ),
     },
     {
-      title: '最后修改',
+      title: tr("最后修改"),
       dataIndex: 'modified_time',
       key: 'modified_time',
       width: 140,
@@ -103,7 +105,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
       ),
     },
     {
-      title: '操作',
+      title: tr("操作"),
       key: 'action',
       width: 200,
       render: (_: any, record: any) => (
@@ -114,7 +116,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
             onClick={() => onEdit(record)}
             className="action-btn action-btn-edit"
           >
-            编辑
+            {tr("编辑")}
           </Button>
           <Button
             size="small"
@@ -132,9 +134,9 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
                     const content = event.target?.result as string;
                     try {
                       await updateScript(record.path, { content });
-                      message.success('脚本上传成功');
+                      message.success(tr("脚本上传成功"));
                     } catch (error: any) {
-                      message.error(error?.message || '脚本上传失败');
+                      message.error(error?.message || tr("脚本上传失败"));
                     }
                   };
                   reader.readAsText(file);
@@ -143,9 +145,9 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
               input.click();
             }}
             className="action-btn action-btn-upload"
-            title="上传文件"
+            title={tr("上传文件")}
           >
-            上传
+            {tr("上传")}
           </Button>
           <Button
             size="small"
@@ -154,7 +156,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
             className="action-btn action-btn-delete"
             danger
           >
-            删除
+            {tr("删除")}
           </Button>
         </Space>
       ),
@@ -166,7 +168,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
       {/* 搜索栏 */}
       <AppToolbar className="search-bar">
         <Input
-          placeholder="搜索脚本名称或路径..."
+          placeholder={tr("搜索脚本名称或路径...")}
           value={searchText}
           onChange={handleSearchChange}
           prefix={<SearchOutlined />}
@@ -187,7 +189,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
             pageSize: 20,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条`,
+            showTotal: (total) => trf("共 __VAR0__ 条", [total]),
           }}
           className="script-table"
           locale={{
@@ -195,7 +197,7 @@ const ScriptTable: React.FC<ScriptTableProps> = ({
               <AppEmptyState
                 compact
                 image={<CodeOutlined className="script-empty-icon" />}
-                title="暂无脚本"
+                title={tr("暂无脚本")}
               />
             ),
           }}

@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Upload, Alert, Space, Image, message, Tag } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -95,7 +96,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
 
   const handleCaptureFrame = async () => {
     if (!workflowVideoSourceId) {
-      message.error('工作流中没有配置视频源');
+      message.error(tr("工作流中没有配置视频源"));
       return;
     }
 
@@ -115,12 +116,12 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         }
         setTestVideoUrl(null);
         setTestResult(null);
-        message.success(`抓帧成功 (${response.resolution || ''})`);
+        message.success(trf("抓帧成功 (__VAR0__)", [response.resolution || '']));
       } else {
-        throw new Error('无效的响应数据');
+        throw new Error(tr("无效的响应数据"));
       }
     } catch (error: any) {
-      message.error(error.message || '抓帧失败，请检查视频源连接');
+      message.error(error.message || tr("抓帧失败，请检查视频源连接"));
     } finally {
       setCapturing(false);
     }
@@ -128,12 +129,12 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
 
   const handleRunTest = async () => {
     if (!workflow?.id) {
-      message.error('工作流ID不存在');
+      message.error(tr("工作流ID不存在"));
       return;
     }
 
     if (!testImage && !testVideoFile) {
-      message.warning('请先上传测试图片/视频，或从视频源抓帧');
+      message.warning(tr("请先上传测试图片/视频，或从视频源抓帧"));
       return;
     }
 
@@ -143,8 +144,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         if (saveOk === false || typeof saveOk === 'string') {
           message.error(
             typeof saveOk === 'string'
-              ? `保存失败，无法开始测试：${saveOk}`
-              : '保存失败，无法开始测试'
+              ? trf("保存失败，无法开始测试：__VAR0__", [saveOk])
+              : tr("保存失败，无法开始测试")
           );
           return;
         }
@@ -169,23 +170,23 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         }
 
         const recordId = response.test_record_id;
-        const suffix = recordId ? `（记录 #${recordId}）` : '';
-        message.success(`测试完成${suffix}`);
+        const suffix = recordId ? trf("（记录 #__VAR0__）", [recordId]) : '';
+        message.success(trf("测试完成__VAR0__", [suffix]));
       } else {
         setTestResult({
           success: false,
-          error: response.error || '测试失败',
+          error: response.error || tr("测试失败"),
           details: response.traceback,
         });
-        message.error('测试失败: ' + (response.error || '未知错误'));
+        message.error(tr("测试失败: ") + (response.error || tr("未知错误")));
       }
     } catch (error: any) {
       setTestResult({
         success: false,
-        error: error.message || '测试过程中出现错误',
+        error: error.message || tr("测试过程中出现错误"),
         details: error.stack,
       });
-      message.error('测试失败: ' + error.message);
+      message.error(tr("测试失败: ") + error.message);
     } finally {
       setTesting(false);
     }
@@ -207,7 +208,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
     <div className="test-panel">
       <div className="panel-header">
         <PlayCircleOutlined className="panel-icon" />
-        <span className="panel-title">算法编排测试</span>
+        <span className="panel-title">{tr("算法编排测试")}</span>
       </div>
 
       <div className="test-content">
@@ -216,7 +217,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               <div className="info-title">
                 <InfoCircleOutlined style={{ marginRight: 6, color: '#1890ff' }} />
-                <span>工作流视频源</span>
+                <span>{tr("工作流视频源")}</span>
               </div>
               <div className="video-source-card">
                 <div className="video-source-name">{videoSourceInfo.name}</div>
@@ -234,7 +235,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         )}
 
         <div className="test-section">
-          <div className="section-label">测试输入</div>
+          <div className="section-label">{tr("测试输入")}</div>
           <div className="source-tabs">
             <Button
               size="small"
@@ -245,7 +246,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 setTestResult(null);
               }}
             >
-              上传图片
+              {tr("上传图片")}
             </Button>
             <Button
               size="small"
@@ -256,7 +257,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 setTestResult(null);
               }}
             >
-              上传视频
+              {tr("上传视频")}
             </Button>
             <Button
               size="small"
@@ -267,7 +268,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 setTestResult(null);
               }}
             >
-              视频源抓帧
+              {tr("视频源抓帧")}
             </Button>
           </div>
         </div>
@@ -283,8 +284,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
               <p className="ant-upload-drag-icon">
                 <UploadOutlined />
               </p>
-              <p className="ant-upload-text">点击或拖拽上传测试图片</p>
-              <p className="ant-upload-hint">支持 JPG、PNG 等格式</p>
+              <p className="ant-upload-text">{tr("点击或拖拽上传测试图片")}</p>
+              <p className="ant-upload-hint">{tr("支持 JPG、PNG 等格式")}</p>
             </Dragger>
           </div>
         )}
@@ -300,8 +301,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
               <p className="ant-upload-drag-icon">
                 <VideoCameraOutlined />
               </p>
-              <p className="ant-upload-text">点击或拖拽上传测试视频</p>
-              <p className="ant-upload-hint">系统将抽样多帧执行编排测试</p>
+              <p className="ant-upload-text">{tr("点击或拖拽上传测试视频")}</p>
+              <p className="ant-upload-hint">{tr("系统将抽样多帧执行编排测试")}</p>
             </Dragger>
           </div>
         )}
@@ -311,8 +312,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
             {!canUseVideoSource ? (
               <Alert
                 type="warning"
-                message="工作流未配置视频源"
-                description="请在工作流中添加视频源节点后再使用此功能"
+                message={tr("工作流未配置视频源")}
+                description={tr("请在工作流中添加视频源节点后再使用此功能")}
                 showIcon
               />
             ) : (
@@ -325,7 +326,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 loading={capturing}
                 className="capture-frame-btn"
               >
-                {capturing ? '正在抓帧...' : '抓取当前帧'}
+                {capturing ? tr("正在抓帧...") : tr("抓取当前帧")}
               </Button>
             )}
           </div>
@@ -334,7 +335,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
         {testImage && (
           <div className="test-section">
             <div className="image-preview">
-              <Image src={testImage} alt="测试图片" preview={false} />
+              <Image src={testImage} alt={tr("测试图片")} preview={false} />
               <Button
                 size="small"
                 danger
@@ -342,7 +343,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 onClick={handleClearMedia}
                 className="clear-btn"
               >
-                清除
+                {tr("清除")}
               </Button>
             </div>
           </div>
@@ -364,7 +365,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 onClick={handleClearMedia}
                 className="clear-btn"
               >
-                清除
+                {tr("清除")}
               </Button>
             </div>
           </div>
@@ -381,7 +382,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
               loading={testing}
               className="run-test-btn"
             >
-              运行测试
+              {tr("运行测试")}
             </Button>
           </div>
         )}
@@ -392,8 +393,8 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
               <>
                 <Alert
                   type="success"
-                  message="测试完成"
-                  description={testResult.message || '执行成功'}
+                  message={tr("测试完成")}
+                  description={testResult.message || tr("执行成功")}
                   icon={<CheckCircleOutlined />}
                   className="result-alert"
                   action={
@@ -403,7 +404,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                         onClick={() => setShowResultModal(true)}
                         style={{ color: '#52c41a' }}
                       >
-                        查看流程图
+                        {tr("查看流程图")}
                       </Button>
                     ) : undefined
                   }
@@ -412,13 +413,13 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                 <div className="result-summary">
                   <div className="summary-item">
                     <ClockCircleOutlined style={{ color: '#1890ff' }} />
-                    <span className="summary-label">总耗时:</span>
+                    <span className="summary-label">{tr("总耗时:")}</span>
                     <span className="summary-value">{testResult.execution_time || testResult.totalTime || 0}ms</span>
                   </div>
                   <div className="summary-item">
                     <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                    <span className="summary-label">执行节点:</span>
-                    <span className="summary-value">{testResult.nodes?.length || 0} 个</span>
+                    <span className="summary-label">{tr("执行节点:")}</span>
+                    <span className="summary-value">{testResult.nodes?.length || 0} {tr("个")}</span>
                   </div>
                   <Button
                     type="default"
@@ -426,7 +427,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                     onClick={() => navigate('/workflow-test-results')}
                     style={{ marginLeft: 'auto' }}
                   >
-                    查看测试结果中心
+                    {tr("查看测试结果中心")}
                   </Button>
                 </div>
               </>
@@ -434,7 +435,7 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
               <>
                 <Alert
                   type="error"
-                  message="测试失败"
+                  message={tr("测试失败")}
                   description={testResult.error}
                   icon={<CloseCircleOutlined />}
                   className="result-alert"
@@ -444,13 +445,13 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
                       onClick={() => navigate('/workflow-test-results')}
                       style={{ color: '#ff4d4f' }}
                     >
-                      查看测试结果中心
+                      {tr("查看测试结果中心")}
                     </Button>
                   }
                 />
                 {testResult.details && (
                   <div className="error-details">
-                    <div className="error-title">错误详情:</div>
+                    <div className="error-title">{tr("错误详情:")}</div>
                     <pre className="error-stack">{testResult.details}</pre>
                   </div>
                 )}
@@ -463,11 +464,11 @@ const TestPanel: React.FC<TestPanelProps> = ({ workflow, nodes = [], edges = [],
           <div className="test-empty">
             <AppEmptyState
               compact
-              title="尚未准备测试素材"
+              title={tr("尚未准备测试素材")}
               description={
                 canUseVideoSource
-                  ? '上传图片或视频，或从工作流视频源抓取当前帧'
-                  : '上传图片或视频后开始测试'
+                  ? tr("上传图片或视频，或从工作流视频源抓取当前帧")
+                  : tr("上传图片或视频后开始测试")
               }
             />
           </div>

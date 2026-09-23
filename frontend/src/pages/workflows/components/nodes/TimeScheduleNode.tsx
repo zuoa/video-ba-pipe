@@ -1,3 +1,4 @@
+import { tr } from '@/i18n/tr';
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { ClockCircleOutlined } from '@ant-design/icons';
@@ -10,12 +11,12 @@ const TimeScheduleNode = ({ data }: any) => (
     <Handle type="source" position={Position.Right} id="output" className="node-handle time-schedule-handle" />
     <div className="node-header">
       <ClockCircleOutlined className="node-icon" />
-      <span className="node-title">{data.label || '时间启用区间'}</span>
+      <span className="node-title">{data.label || tr("时间启用区间")}</span>
     </div>
     <div className="time-schedule-node-summary">
       {summarizeWeeklySchedule(data.weeklySchedule)}
     </div>
-    <div className="node-description">命中时段才继续</div>
+    <div className="node-description">{tr("命中时段才继续")}</div>
   </div>
 );
 

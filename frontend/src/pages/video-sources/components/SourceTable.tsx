@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Table, Space, Image, Tag, Tooltip } from 'antd';
 import Button from '@/components/common/AppButton';
@@ -52,7 +53,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
       ),
     },
     {
-      title: '名称',
+      title: tr("名称"),
       dataIndex: 'name',
       key: 'name',
       width: 280,
@@ -65,8 +66,8 @@ const SourceTable: React.FC<SourceTableProps> = ({
             <div className="name-text">
               {name}
               {record.license_runtime_allowed === false ? (
-                <Tooltip title="该视频源超出当前授权运行范围，配置会保留但不会启动分析">
-                  <Tag color="default" style={{ marginLeft: 8 }}>未获运行授权</Tag>
+                <Tooltip title={tr("该视频源超出当前授权运行范围，配置会保留但不会启动分析")}>
+                  <Tag color="default" style={{ marginLeft: 8 }}>{tr("未获运行授权")}</Tag>
                 </Tooltip>
               ) : null}
             </div>
@@ -76,14 +77,14 @@ const SourceTable: React.FC<SourceTableProps> = ({
       ),
     },
     {
-      title: '状态',
+      title: tr("状态"),
       dataIndex: 'status',
       key: 'status',
       width: 180,
       render: (status: string, record: any) => (
         <Space size={6}>
           <StatusBadge status={status} />
-          <Tooltip title="重新探测状态">
+          <Tooltip title={tr("重新探测状态")}>
             <Button
               type="text"
               size="small"
@@ -97,34 +98,34 @@ const SourceTable: React.FC<SourceTableProps> = ({
       ),
     },
     {
-      title: '启用',
+      title: tr("启用"),
       dataIndex: 'enabled',
       key: 'enabled',
       width: 140,
       render: (enabled: boolean, record: any) => (
         <SwitchBadge
           checked={enabled}
-          checkedText="启用"
-          uncheckedText="禁用"
+          checkedText={tr("启用")}
+          uncheckedText={tr("禁用")}
           size="small"
         />
       ),
     },
     {
-      title: '源信息',
+      title: tr("源信息"),
       key: 'sourceInfo',
       width: 300,
       render: (_: any, record: any) => (
         <div className="source-info-cell">
           <div className="source-info-content">
-            <div className="source-name">{record.name || '未命名'}</div>
+            <div className="source-name">{record.name || tr("未命名")}</div>
             <div className="source-code">
               <span className="code-icon">⚡</span>
               {record.source_code}
             </div>
           </div>
           <div className="source-preview-actions">
-            <Tooltip title="WebRTC 实时画面（按需拉流）">
+            <Tooltip title={tr("WebRTC 实时画面（按需拉流）")}>
               <Button
                 type="text"
                 size="small"
@@ -133,7 +134,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
                 className="live-preview-btn"
                 disabled={!webrtcEnabled}
               >
-                <span className="live-label">实时预览</span>
+                <span className="live-label">{tr("实时预览")}</span>
                 {webrtcEnabled && <span className="live-dot" />}
               </Button>
             </Tooltip>
@@ -144,14 +145,14 @@ const SourceTable: React.FC<SourceTableProps> = ({
               onClick={() => onPreview(record)}
               className="detection-frame-btn"
             >
-              最新检测帧
+              {tr("最新检测帧")}
             </Button>
           </div>
         </div>
       ),
     },
     {
-      title: '操作',
+      title: tr("操作"),
       key: 'action',
       width: 300,
       render: (_: any, record: any) => (
@@ -159,10 +160,10 @@ const SourceTable: React.FC<SourceTableProps> = ({
           <Tooltip
             title={
               record.license_runtime_allowed === false
-                ? '该视频源不在当前授权运行范围'
+                ? tr("该视频源不在当前授权运行范围")
                 : !record.enabled
-                  ? '请先启用视频源'
-                  : '优先处理该视频源，不等待普通启动队列'
+                  ? tr("请先启用视频源")
+                  : tr("优先处理该视频源，不等待普通启动队列")
             }
           >
             <Button
@@ -178,7 +179,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
               }
               className="action-btn"
             >
-              立即启动
+              {tr("立即启动")}
             </Button>
           </Tooltip>
           <Button
@@ -187,7 +188,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
             onClick={() => onEdit(record)}
             className="action-btn action-btn-edit"
           >
-            编辑
+            {tr("编辑")}
           </Button>
           <Button
             size="small"
@@ -195,7 +196,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
             onClick={() => onDelete(record.id)}
             className="action-btn action-btn-delete"
           >
-            删除
+            {tr("删除")}
           </Button>
         </Space>
       ),
@@ -213,7 +214,7 @@ const SourceTable: React.FC<SourceTableProps> = ({
           pageSize: 10,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (total) => `共 ${total} 条`,
+          showTotal: (total) => trf("共 __VAR0__ 条", [total]),
         }}
         className="source-table"
       />

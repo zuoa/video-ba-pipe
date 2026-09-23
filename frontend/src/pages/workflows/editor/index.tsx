@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'umi';
 import { Space, message, Spin, Tag } from 'antd';
@@ -43,8 +44,8 @@ function persistNonConditionEdgeCondition(raw: unknown): 'detected' | 'not_detec
 }
 
 function edgeConditionLabel(condition: string | null | undefined): string {
-  if (condition === 'detected') return '检测到';
-  if (condition === 'not_detected') return '未检测到';
+  if (condition === 'detected') return tr("检测到");
+  if (condition === 'not_detected') return tr("未检测到");
   return '';
 }
 
@@ -158,7 +159,7 @@ export default function WorkflowEditorPage() {
             const nodeData: any = {
               type: nodeType,
               subtype: node.subtype,
-              label: node.name || '未命名节点',
+              label: node.name || tr("未命名节点"),
               description: node.description,
               dataId: node.dataId || node.data_id,
               algorithmId: node.algorithmId || node.algorithm_id,
@@ -271,7 +272,7 @@ export default function WorkflowEditorPage() {
               console.log('📝 视频源信息初始值:', {
                 sourceName,
                 sourceCode,
-                来源: sourceName ? '已存储在数据中' : '需要从列表查找'
+                来源: sourceName ? tr("已存储在数据中") : tr("需要从列表查找")
               });
 
               // 如果没有名称或编码，从 videoSources 列表中查找
@@ -280,7 +281,7 @@ export default function WorkflowEditorPage() {
                 const matchingSource = videoSources.find(s => s.id == sourceId);
                 console.log('查找结果:', {
                   sourceId,
-                  matchingSource: matchingSource ? `找到: ${matchingSource.name}` : '未找到',
+                  matchingSource: matchingSource ? trf("找到: __VAR0__", [matchingSource.name]) : tr("未找到"),
                   所有视频源: videoSources.map(s => ({ id: s.id, name: s.name, code: s.source_code }))
                 });
                 if (matchingSource) {
@@ -416,10 +417,10 @@ export default function WorkflowEditorPage() {
 
           setNodes(convertedNodes);
           setEdges(convertedEdges);
-          message.success(`加载成功：${convertedNodes.length} 个节点，${convertedEdges.length} 条连线`);
+          message.success(trf("加载成功：__VAR0__ 个节点，__VAR1__ 条连线", [convertedNodes.length, convertedEdges.length]));
         } catch (error) {
           console.error('解析工作流图失败:', error);
-          message.error('工作流数据格式错误，请联系管理员');
+          message.error(tr("工作流数据格式错误，请联系管理员"));
           // 设置空数据
           setNodes([]);
           setEdges([]);
@@ -431,7 +432,7 @@ export default function WorkflowEditorPage() {
       }
     } catch (error: any) {
       console.error('加载工作流失败:', error);
-      message.error(error.message || '加载工作流失败');
+      message.error(error.message || tr("加载工作流失败"));
       setNodes([]);
       setEdges([]);
     } finally {
@@ -485,19 +486,19 @@ export default function WorkflowEditorPage() {
     const targetType = targetNode?.data?.type || targetNode?.type;
 
     if (sourceType === 'webhook') {
-      message.warning('Webhook 是终端节点，不能连接下游节点');
+      message.warning(tr("Webhook 是终端节点，不能连接下游节点"));
       return;
     }
     if (targetType === 'webhook' && sourceType !== 'alert') {
-      message.warning('Webhook 只能直接连接告警输出节点');
+      message.warning(tr("Webhook 只能直接连接告警输出节点"));
       return;
     }
     if (sourceType === 'alert' && targetType !== 'webhook') {
-      message.warning('告警输出节点的下游只能是 Webhook 推送节点');
+      message.warning(tr("告警输出节点的下游只能是 Webhook 推送节点"));
       return;
     }
     if (targetType === 'webhook' && edges.some((edge) => edge.target === params.target)) {
-      message.warning('Webhook 只能连接一个告警输出节点');
+      message.warning(tr("Webhook 只能连接一个告警输出节点"));
       return;
     }
     if (targetType === 'detectionFilter' || targetType === 'detection_filter') {
@@ -506,11 +507,11 @@ export default function WorkflowEditorPage() {
         'detectionFilter', 'detection_filter',
       ]);
       if (!allowedSourceTypes.has(sourceType)) {
-        message.warning('目标尺寸筛选只能连接检测结果节点');
+        message.warning(tr("目标尺寸筛选只能连接检测结果节点"));
         return;
       }
       if (edges.some((edge) => edge.target === params.target)) {
-        message.warning('目标尺寸筛选只能连接一个上游结果节点');
+        message.warning(tr("目标尺寸筛选只能连接一个上游结果节点"));
         return;
       }
     }
@@ -520,11 +521,11 @@ export default function WorkflowEditorPage() {
       && (targetConditionKind === 'count_change' || targetConditionKind === 'http_value')
       && edges.some((edge) => edge.target === params.target)
     ) {
-      message.warning('当前条件类型只能连接一个上游结果节点');
+      message.warning(tr("当前条件类型只能连接一个上游结果节点"));
       return;
     }
     if (targetType === 'condition' && targetConditionKind === 'http_value' && sourceType !== 'httpRequest') {
-      message.warning('API 值条件只能连接 HTTP 请求节点');
+      message.warning(tr("API 值条件只能连接 HTTP 请求节点"));
       return;
     }
 
@@ -585,8 +586,8 @@ export default function WorkflowEditorPage() {
       const sourceNodes = getSourceNodes(nodes);
       if (sourceNodes.length !== 1) {
         const errorMsg = sourceNodes.length === 0
-          ? '工作流必须包含一个视频源节点'
-          : '工作流只允许包含一个视频源节点';
+          ? tr("工作流必须包含一个视频源节点")
+          : tr("工作流只允许包含一个视频源节点");
         console.warn('⚠️ [EDITOR] 保存被阻止，source 节点数量非法:', sourceNodes.length);
         if (!silent) {
           message.error(errorMsg);
@@ -596,11 +597,11 @@ export default function WorkflowEditorPage() {
       const sourceNode = sourceNodes[0];
       const sourceId = sourceNode.data?.dataId ?? sourceNode.data?.videoSourceId;
       if (workflow?.is_template && sourceId != null && sourceId !== '') {
-        if (!silent) message.error('编排模板的视频源节点必须保持未绑定状态');
+        if (!silent) message.error(tr("编排模板的视频源节点必须保持未绑定状态"));
         return false;
       }
       if (!workflow?.is_template && (sourceId == null || sourceId === '')) {
-        if (!silent) message.error('请选择视频源');
+        if (!silent) message.error(tr("请选择视频源"));
         return false;
       }
 
@@ -809,13 +810,13 @@ export default function WorkflowEditorPage() {
 
       await updateWorkflow(Number(id), { workflow_data: graphData });
       if (!silent) {
-        message.success('保存成功');
+        message.success(tr("保存成功"));
       }
       console.log('✅ [EDITOR] 保存成功');
       return true;
     } catch (error: any) {
       console.error('❌ [EDITOR] 保存失败:', error);
-      const saveError = getApiErrorMessage(error) || '保存失败';
+      const saveError = getApiErrorMessage(error) || tr("保存失败");
       if (!silent) {
         message.error(saveError);
         return false;
@@ -832,7 +833,7 @@ export default function WorkflowEditorPage() {
     console.log('🚀 [EDITOR] handleAddNode 收到的数据:', nodeData);
 
     if (nodeData.type === 'videoSource' && getSourceNodes().length > 0) {
-      message.warning('一个编排只允许一个视频源节点');
+      message.warning(tr("一个编排只允许一个视频源节点"));
       return;
     }
 
@@ -893,7 +894,7 @@ export default function WorkflowEditorPage() {
     setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
     setSelectedNodeId((currentId) => currentId === nodeId ? null : currentId);
     setSelectedEdgeId(null);
-    message.success('节点删除成功');
+    message.success(tr("节点删除成功"));
   };
 
   const handleUpdateEdge = (edgeId: string, data: { condition: 'detected' | 'not_detected' | null }) => {
@@ -912,7 +913,7 @@ export default function WorkflowEditorPage() {
   const handleDeleteEdge = (edgeId: string) => {
     setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId));
     setSelectedEdgeId((currentId) => currentId === edgeId ? null : currentId);
-    message.success('连线删除成功');
+    message.success(tr("连线删除成功"));
   };
 
   const deleteSelected = () => {
@@ -926,14 +927,14 @@ export default function WorkflowEditorPage() {
       );
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
-      message.success(`已删除 ${selectedNodeIds.size} 个节点`);
+      message.success(trf("已删除 __VAR0__ 个节点", [selectedNodeIds.size]));
       return;
     }
 
     if (selectedEdgeIds.size > 0) {
       setEdges((eds) => eds.filter((edge) => !selectedEdgeIds.has(edge.id)));
       setSelectedEdgeId(null);
-      message.success(`已删除 ${selectedEdgeIds.size} 条连线`);
+      message.success(trf("已删除 __VAR0__ 条连线", [selectedEdgeIds.size]));
       return;
     }
 
@@ -954,7 +955,7 @@ export default function WorkflowEditorPage() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" tip={tr("加载中...")} />
       </div>
     );
   }
@@ -969,17 +970,17 @@ export default function WorkflowEditorPage() {
             onClick={handleBack}
             style={{ marginRight: 16 }}
           >
-            返回
+            {tr("返回")}
           </Button>
           <div className="header-content">
-            <h3 className="header-title">{workflow?.name || '算法编排编辑器'}</h3>
+            <h3 className="header-title">{workflow?.name || tr("算法编排编辑器")}</h3>
             <p className="header-subtitle">
-              {workflow?.is_template ? '配置可复用结构，视频源将在复制时绑定' : '拖拽组件到画布，连线配置算法编排'}
+              {workflow?.is_template ? tr("配置可复用结构，视频源将在复制时绑定") : tr("拖拽组件到画布，连线配置算法编排")}
             </p>
           </div>
           {workflow?.is_template ? (
             <Tag color="purple" icon={<FileTextOutlined />} className="editor-template-tag">
-              编排模板 · 不调度
+              {tr("编排模板 · 不调度")}
             </Tag>
           ) : null}
         </div>
@@ -991,14 +992,14 @@ export default function WorkflowEditorPage() {
               disabled={!selectedNodeId && !selectedEdgeId && !nodes.some((node) => node.selected) && !edges.some((edge) => edge.selected)}
               danger
             >
-              删除
+              {tr("删除")}
             </Button>
             <Button
               icon={<ExperimentOutlined />}
               onClick={() => setRightPanel('test')}
               className={rightPanel === 'test' ? 'active' : ''}
             >
-              测试
+              {tr("测试")}
             </Button>
             <Button
               type="primary"
@@ -1007,7 +1008,7 @@ export default function WorkflowEditorPage() {
               disabled={saving}
               onClick={() => void handleSave()}
             >
-              保存
+              {tr("保存")}
             </Button>
           </Space>
         </div>
@@ -1097,8 +1098,8 @@ export default function WorkflowEditorPage() {
               <div className="property-panel-empty">
                 <AppEmptyState
                   compact
-                  title="点击节点或连线查看属性"
-                  description="点击画布中的节点或连线以编辑其属性"
+                  title={tr("点击节点或连线查看属性")}
+                  description={tr("点击画布中的节点或连线以编辑其属性")}
                 />
               </div>
             )

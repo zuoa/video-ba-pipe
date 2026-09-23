@@ -1,3 +1,4 @@
+import { tr, trf } from '@/i18n/tr';
 import React, { useEffect, useState } from 'react';
 import { Segmented } from 'antd';
 import { BarChartOutlined } from '@ant-design/icons';
@@ -12,11 +13,11 @@ interface ChannelStat {
 }
 
 const PERIOD_LABELS: Record<AlertStatsPeriod, string> = {
-  hour: '时',
-  day: '日',
-  week: '周',
-  month: '月',
-  year: '年',
+  hour: tr("时"),
+  day: tr("日"),
+  week: tr("周"),
+  month: tr("月"),
+  year: tr("年"),
 };
 
 const ChannelAlertChart: React.FC = () => {
@@ -57,7 +58,7 @@ const ChannelAlertChart: React.FC = () => {
           <span className="title-icon">
             <BarChartOutlined />
           </span>
-          通道告警统计
+          {tr("通道告警统计")}
         </h3>
         <Segmented
           size="small"
@@ -71,11 +72,11 @@ const ChannelAlertChart: React.FC = () => {
       </div>
 
       {loading && channels.length === 0 ? (
-        <div className="channel-alert-chart__placeholder">加载中...</div>
+        <div className="channel-alert-chart__placeholder">{tr("加载中...")}</div>
       ) : channels.length === 0 ? (
-        <div className="channel-alert-chart__placeholder">暂无视频通道</div>
+        <div className="channel-alert-chart__placeholder">{tr("暂无视频通道")}</div>
       ) : totalCount === 0 ? (
-        <div className="channel-alert-chart__placeholder">该时间段内暂无告警</div>
+        <div className="channel-alert-chart__placeholder">{tr("该时间段内暂无告警")}</div>
       ) : (
         <div className={`channel-alert-chart__body ${loading ? 'is-refreshing' : ''}`}>
           <div className="channel-alert-chart__bars">
@@ -85,7 +86,7 @@ const ChannelAlertChart: React.FC = () => {
                 <div
                   key={channel.id}
                   className="channel-alert-chart__item"
-                  title={`${channel.name}：${channel.count} 条告警`}
+                  title={trf("__VAR0__：__VAR1__ 条告警", [channel.name, channel.count])}
                 >
                   <span className="channel-alert-chart__count">{channel.count}</span>
                   <div className="channel-alert-chart__bar-track">

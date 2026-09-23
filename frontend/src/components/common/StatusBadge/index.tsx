@@ -1,13 +1,14 @@
+import { tr } from '@/i18n/tr';
 import React from 'react';
 import type { SemanticTone } from '../AppButton';
 import './index.css';
 
 const STATUS_LABELS: Record<string, string> = {
-  STARTING: '启动中',
-  RUNNING: '检测中',
-  DRAINING: '排空中',
-  STOPPED: '等待中',
-  ERROR: '异常',
+  STARTING: tr("启动中"),
+  RUNNING: tr("检测中"),
+  DRAINING: tr("排空中"),
+  STOPPED: tr("等待中"),
+  ERROR: tr("异常"),
 };
 
 const ANIMATED_STATUSES = new Set(['STARTING', 'RUNNING', 'DRAINING', 'ERROR']);

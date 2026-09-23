@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { history } from '@umijs/max';
+import { formatMessage, history } from '@umijs/max';
 import { App as AntdApp, ConfigProvider, message } from 'antd';
 import { appTheme } from '@/theme';
+import { getPreferredLanguage } from '@/i18n/locale';
 import {
   buildLoginPath,
   clearAuthStorage,
@@ -12,6 +13,12 @@ import {
 } from '@/utils/auth';
 
 const ADMIN_ONLY_PATHS = ['/users', '/system-settings', '/models', '/scripts', '/face-galleries', '/reid-models'];
+
+// Umi matches locale files by exact tag. Normalize regional variants so en-GB,
+// zh-TW, and plain en/zh follow the user's language preference too.
+export const locale = {
+  getLocale: getPreferredLanguage,
+};
 
 function getStoredUser() {
   const userStr = localStorage.getItem('user');
@@ -75,7 +82,7 @@ export function onRouteChange({ location }: any) {
   } else if (token && isLoginPage) {
     history.replace(resolvePostLoginPath(location.search));
   } else if (token && isAdminOnlyPath(location.pathname) && user?.role !== 'admin') {
-    message.error('无权限访问该页面');
+    message.error(formatMessage({ id: 'app.accessDenied' }));
     history.push('/dashboard');
   }
 }
@@ -105,7 +112,7 @@ export const request = {
       (error: any) => {
         if (error?.response?.status === 401 && !isLoginRequestUrl(error?.config?.url)) {
           if (handleUnauthorizedSession()) {
-            message.error('登录已过期，请重新登录');
+            message.error(formatMessage({ id: 'app.sessionExpired' }));
           }
         }
         return Promise.reject(error);

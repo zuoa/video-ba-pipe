@@ -1,3 +1,5 @@
+import { getDateLocale } from '@/i18n/tr';
+import { tr, trf } from '@/i18n/tr';
 import React from 'react';
 import { Table, Space, Tag, Tooltip } from 'antd';
 import {
@@ -80,7 +82,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       ),
     },
     {
-      title: '算法信息',
+      title: tr("算法信息"),
       key: 'algorithmInfo',
       width: 360,
       render: (_: any, record: Algorithm) => (
@@ -101,11 +103,11 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                 color={record.algorithm_type === 'vl' ? 'cyan' : record.algorithm_type === 'ocr' ? 'blue' : record.algorithm_type === 'cascade' ? 'gold' : 'purple'}
                 className="algorithm-type-tag"
               >
-                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? '组合检测' : '脚本'}
+                {record.algorithm_type === 'vl' ? 'VL' : record.algorithm_type === 'ocr' ? 'OCR' : record.algorithm_type === 'cascade' ? tr("组合检测") : tr("脚本")}
               </Tag>
               {record.license_runtime_allowed === false ? (
-                <Tooltip title="该算法超出当前授权运行范围，配置会保留但不会执行">
-                  <Tag color="default">未获运行授权</Tag>
+                <Tooltip title={tr("该算法超出当前授权运行范围，配置会保留但不会执行")}>
+                  <Tag color="default">{tr("未获运行授权")}</Tag>
                 </Tooltip>
               ) : null}
             </div>
@@ -117,7 +119,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                 record.algorithm_type === 'vl'
                   ? record.vl_config?.base_url
                   : record.algorithm_type === 'ocr'
-                    ? `运行设备：${record.ocr_config?.device || 'auto'}`
+                    ? trf("运行设备：__VAR0__", [record.ocr_config?.device || 'auto'])
                     : record.algorithm_type === 'cascade'
                       ? record.cascade_config?.version === 2
                         ? record.cascade_config?.nodes?.filter(node => node.type === 'detector').map(node => node.name).join(' · ')
@@ -127,13 +129,13 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
                 <code className="algorithm-code">
                   <ApiOutlined />
                   {record.algorithm_type === 'vl'
-                    ? `${record.vl_config?.model_name || '未配置模型'} · ${record.vl_config?.base_url || '未配置接口'}`
+                    ? `${record.vl_config?.model_name || tr("未配置模型")} · ${record.vl_config?.base_url || tr("未配置接口")}`
                     : record.algorithm_type === 'ocr'
-                      ? `检测模型 #${record.ocr_config?.detection_model_id || '-'} · 识别模型 #${record.ocr_config?.recognition_model_id || '-'}`
+                      ? trf("检测模型 #__VAR0__ · 识别模型 #__VAR1__", [record.ocr_config?.detection_model_id || '-', record.ocr_config?.recognition_model_id || '-'])
                       : record.algorithm_type === 'cascade'
                         ? record.cascade_config?.version === 2
-                          ? `${record.cascade_config?.nodes?.filter(node => node.type === 'detector').length || 0} 个检测 · ${record.cascade_config?.nodes?.find(node => node.type === 'output')?.label || '未配置输出'}`
-                          : `${record.cascade_config?.stages?.length || 0} 阶段 · ${record.cascade_config?.output?.label || '未配置输出'}`
+                          ? trf("__VAR0__ 个检测 · __VAR1__", [record.cascade_config?.nodes?.filter(node => node.type === 'detector').length || 0, record.cascade_config?.nodes?.find(node => node.type === 'output')?.label || tr("未配置输出")])
+                          : trf("__VAR0__ 阶段 · __VAR1__", [record.cascade_config?.stages?.length || 0, record.cascade_config?.output?.label || tr("未配置输出")])
                       : record.script_path}
                 </code>
               </Tooltip>
@@ -143,23 +145,23 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
       ),
     },
     {
-      title: '创建时间',
+      title: tr("创建时间"),
       key: 'createdAt',
       width: 180,
       render: (_: any, record: Algorithm) => (
         <div className="date-cell">
-          {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}
+          {record.created_at ? new Date(record.created_at).toLocaleString(getDateLocale()) : '-'}
         </div>
       ),
     },
     {
-      title: '操作',
+      title: tr("操作"),
       key: 'action',
       width: 220,
       fixed: 'right',
       render: (_: any, record: Algorithm) => (
         <Space size="small">
-          <Tooltip title="测试算法">
+          <Tooltip title={tr("测试算法")}>
             <AppButton
               size="small"
               tone="info"
@@ -167,10 +169,10 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
               onClick={() => onTest(record)}
             >
               <PlayCircleOutlined />
-              <span>测试</span>
+              <span>{tr("测试")}</span>
             </AppButton>
           </Tooltip>
-          <Tooltip title="编辑算法">
+          <Tooltip title={tr("编辑算法")}>
             <AppButton
               size="small"
               tone="info"
@@ -178,10 +180,10 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
               onClick={() => onEdit(record)}
             >
               <EditOutlined />
-              <span>编辑</span>
+              <span>{tr("编辑")}</span>
             </AppButton>
           </Tooltip>
-          <Tooltip title="删除算法">
+          <Tooltip title={tr("删除算法")}>
             <AppButton
               size="small"
               tone="danger"
@@ -189,7 +191,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
               onClick={() => onDelete(record.id)}
             >
               <DeleteOutlined />
-              <span>删除</span>
+              <span>{tr("删除")}</span>
             </AppButton>
           </Tooltip>
         </Space>
@@ -208,7 +210,7 @@ const AlgorithmTable: React.FC<AlgorithmTableProps> = ({
           pageSize: 10,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (total) => `共 ${total} 条`,
+          showTotal: (total) => trf("共 __VAR0__ 条", [total]),
           pageSizeOptions: ['10', '20', '50', '100'],
         }}
         className="algorithm-table"
