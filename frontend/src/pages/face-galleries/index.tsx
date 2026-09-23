@@ -1130,7 +1130,7 @@ const FaceGalleriesPage: React.FC = () => {
             />
             <div>
               <strong>{importJob.status === 'processing' ? tr("正在生成加密人脸模板") : importJob.status}</strong>
-              <p>{importJob.processed_people} / {importJob.total_people} {tr("人已处理，成功")} {importJob.succeeded_people}{tr("，失败")} {importJob.failed_people}</p>
+              <p>{trf("已处理 __VAR0__ / __VAR1__ 人，成功 __VAR2__，失败 __VAR3__", [importJob.processed_people, importJob.total_people, importJob.succeeded_people, importJob.failed_people])}</p>
               {importJob.errors.slice(0, 4).map((item, index) => (
                 <small key={`${item.row}-${index}`}>{item.person_code || trf("第 __VAR0__ 行", [item.row])}：{item.error || item.warning}</small>
               ))}

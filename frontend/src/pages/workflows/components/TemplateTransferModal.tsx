@@ -338,7 +338,7 @@ export default function TemplateTransferModal({
             if (blocker.resource === 'model' && (blocker.status === 'missing' || !blocker.included)) {
               return (
                 <div className="transfer-resolution" key={`blocker-${index}`}>
-                  <label>{tr("为模型“")}{blocker.name}{tr("”选择文件与元数据一致的目标模型")}</label>
+                  <label>{trf("为模型“__VAR0__”选择文件与元数据一致的目标模型", [blocker.name])}</label>
                   <Select
                     showSearch
                     optionFilterProp="label"
@@ -364,7 +364,7 @@ export default function TemplateTransferModal({
               : resolutions.template?.name;
             return (
               <div className="transfer-resolution" key={`blocker-${index}`}>
-                <label>“{blocker.name || preflight.template.name}{tr("”已存在，指定导入名称")}</label>
+                <label>{trf("“__VAR0__”已存在，指定导入名称", [blocker.name || preflight.template.name])}</label>
                 <Input
                   value={currentName}
                   onChange={(event) => {

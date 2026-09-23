@@ -630,7 +630,7 @@ export default function OnvifScanModal({
               <div>
                 <div className="import-results-title">{tr("可导入码流")}</div>
                 <div className="import-results-subtitle">
-                  {tr("共")} {profiles.length} {tr("条，已选择")} {selectedProfiles.length} {tr("条。默认每台设备勾选子码流。")}
+                  {trf("__VAR0__ 条码流可导入，已选择 __VAR1__ 条。默认每台设备勾选子码流。", [profiles.length, selectedProfiles.length])}
                 </div>
               </div>
             </div>

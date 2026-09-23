@@ -24,6 +24,22 @@ for (const [source, translated] of Object.entries({ ...english, ...templates }))
   if (/[\u3400-\u9fff]/.test(translated)) problems.push(`Untranslated English copy: ${source}`);
 }
 
+const domainTerms = {
+  '有录像': 'Recording available',
+  '码流': 'Video Stream',
+  '所有框架': 'All frameworks',
+  '活体': 'Liveness',
+  '陌生人事件保留（天）': 'Unknown-person event retention (days)',
+};
+for (const [source, expected] of Object.entries(domainTerms)) {
+  if (english[source] !== expected) problems.push(`Domain term mismatch: ${source}`);
+}
+for (const [source, translated] of Object.entries({ ...english, ...templates })) {
+  if (/barcode stream|Stranger Things|prompt word template|There is video|tickets per person/i.test(translated)) {
+    problems.push(`Suspicious literal translation: ${source}`);
+  }
+}
+
 const walk = (directory, visit) => {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (entry.name.startsWith('.umi') || entry.name === 'i18n') continue;

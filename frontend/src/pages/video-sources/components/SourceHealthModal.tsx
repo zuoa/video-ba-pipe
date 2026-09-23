@@ -104,7 +104,7 @@ const SourceHealthModal: React.FC<SourceHealthModalProps> = ({
               {typeof t === 'number' ? trf("__VAR0__ 秒", [t.toFixed(1)]) : '—'}
             </span>
             <span style={{ color: '#999', marginLeft: 8, fontSize: 12 }}>
-              （&gt;{NO_FRAME_WARNING}{tr("s 预警，&gt;")}{NO_FRAME_CRITICAL}{tr("s 危险）")}
+              {trf("（>__VAR0__s 预警，>__VAR1__s 危险）", [NO_FRAME_WARNING, NO_FRAME_CRITICAL])}
             </span>
           </Descriptions.Item>
           <Descriptions.Item label={tr("累计帧数")}>

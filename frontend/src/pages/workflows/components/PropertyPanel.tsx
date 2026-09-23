@@ -171,7 +171,7 @@ export const EdgePropertyPanel: React.FC<EdgePropertyPanelProps> = ({
           <div className="info-box" style={{ background: '#f0f5ff', borderColor: '#adc6ff', color: '#1d39c4' }}>
             <InfoCircleOutlined />
             <span>
-              {tr("条件节点连线由「是 / 否」端口决定（当前端口：")}{portLabel}{tr("），不能在此覆盖。")}
+              {trf("条件节点连线由「是 / 否」端口决定（当前端口：__VAR0__），不能在此覆盖。", [portLabel])}
             </span>
           </div>
         ) : (
@@ -1009,7 +1009,7 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             {currentSourceId && !currentSource && (
               <div className="info-box" style={{ background: '#fff7e6', borderColor: '#ffd591', color: '#d46b08' }}>
                 <InfoCircleOutlined />
-                <span>{tr("原视频源 (ID:")} {currentSourceId}{tr(") 不存在，请重新选择")}</span>
+                <span>{trf("原视频源 (ID: __VAR0__) 不存在，请重新选择", [currentSourceId])}</span>
               </div>
             )}
           </>

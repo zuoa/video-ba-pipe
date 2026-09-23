@@ -880,8 +880,8 @@ const TestModal: React.FC<TestModalProps> = ({ visible, algorithm, onCancel }) =
                                           <p>{tr("模型已成功运行，但在图片中未发现任何目标。")}</p>
                                           <p>{tr("可能原因：")}</p>
                                           <ul style={{ marginLeft: 20, marginTop: 8 }}>
-                                            <li>{tr("置信度阈值过高（当前为")} {testResult.metadata.confidence_threshold}{tr("），建议降低到 0.3-0.5")}</li>
-                                            <li>{tr("类别过滤配置不匹配，当前过滤：")}{Array.isArray(testResult.metadata.class_filter) ? testResult.metadata.class_filter.join(', ') : tr("全部")}</li>
+                                            <li>{trf("置信度阈值过高（当前为 __VAR0__），建议降低到 0.3-0.5", [testResult.metadata.confidence_threshold])}</li>
+                                            <li>{trf("类别过滤配置不匹配，当前过滤：__VAR0__", [Array.isArray(testResult.metadata.class_filter) ? testResult.metadata.class_filter.join(', ') : tr("全部")])}</li>
                                             <li>{tr("图片中确实没有目标物体")}</li>
                                             <li>{tr("模型训练数据不包含此类目标")}</li>
                                           </ul>

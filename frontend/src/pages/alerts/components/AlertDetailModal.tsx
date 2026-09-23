@@ -117,7 +117,7 @@ const VideoPreview: React.FC<{
     return (
       <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
         <VideoCameraOutlined />
-        <strong>{title}{tr("暂不可用")}</strong>
+        <strong>{trf("__VAR0__暂不可用", [title])}</strong>
         <span>{tr("未生成可播放的视频地址。")}</span>
       </div>
     );
@@ -127,7 +127,7 @@ const VideoPreview: React.FC<{
     return (
       <div className={`alertDetail__videoFallback ${compact ? 'is-compact' : ''}`}>
         <VideoCameraOutlined />
-        <strong>{title}{tr("无法播放")}</strong>
+        <strong>{trf("__VAR0__无法播放", [title])}</strong>
         <span>{tr("文件已返回，但浏览器无法解码该编码。告警录像需要 H.264。")}</span>
         <span className="alertDetail__videoFallbackPath">{rawPath}</span>
         <div className="alertDetail__videoFallbackActions">

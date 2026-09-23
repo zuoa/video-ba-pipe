@@ -489,7 +489,7 @@ const FaceModelSetupWizard: React.FC<FaceModelSetupWizardProps> = ({
           disabled={!profile || submitting}
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="face-model-wizard__drop-title">{tr("拖入")}{detection ? tr("检测") : tr("特征")}{tr("模型，或点击选择")}</p>
+          <p className="face-model-wizard__drop-title">{trf("拖入__VAR0__模型，或点击选择", [detection ? tr("人脸检测") : tr("特征提取")])}</p>
           <p className="face-model-wizard__drop-hint">
             {profile?.extensionLabel || tr("等待识别当前平台")}
           </p>

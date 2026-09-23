@@ -1022,7 +1022,7 @@ const SystemSettingsPage: React.FC = () => {
                       />
                       <div className="storage-free-space">
                         <DatabaseOutlined />
-                        {tr("磁盘使用率")} {storageUsage.disk_used_percent.toFixed(1)}{tr("%，剩余")} {formatBytes(storageUsage.disk_free_bytes)} / {formatBytes(storageUsage.disk_total_bytes)}
+                        {trf("磁盘使用率 __VAR0__%，剩余 __VAR1__ / __VAR2__", [storageUsage.disk_used_percent.toFixed(1), formatBytes(storageUsage.disk_free_bytes), formatBytes(storageUsage.disk_total_bytes)])}
                         <span className={`storage-pressure-badge storage-pressure-${storageUsage.pressure_level}`}>
                           {pressureLevelLabel(storageUsage.pressure_level)}
                         </span>

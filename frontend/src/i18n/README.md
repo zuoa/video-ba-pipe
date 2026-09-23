@@ -12,11 +12,15 @@ Use these product terms consistently:
 | 算法编排 / 编排 | Workflow Orchestration / Workflow |
 | 编排模板 | Workflow Template |
 | 告警 | Alert |
+| 告警录像 | Alert Recording |
+| 码流 | Video Stream |
 | 告警大屏 | Alert Wall |
 | 推理 | Inference |
 | 推理 Worker | Inference Worker |
 | 模型制品 | Model Artifact |
 | 人脸库 | Face Gallery |
+| 人脸特征 | Face Embedding |
+| 活体 | Liveness |
 | 行人 ReID | Person ReID |
 | 视觉语言模型 | Vision-Language Model |
 | 录像 | Recording |

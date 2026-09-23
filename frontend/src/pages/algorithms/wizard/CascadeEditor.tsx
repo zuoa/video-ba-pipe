@@ -927,7 +927,7 @@ const CascadeEditor: React.FC<CascadeEditorProps> = ({ models, value, onChange }
           {selectedNode ? (
             <>
               <div className="combination-inspector-header">
-                <div><span>{kindLabel[selectedNode.type]}{tr("节点")}</span><strong>{selectedNode.name}</strong></div>
+                <div><span>{trf("__VAR0__节点", [kindLabel[selectedNode.type]])}</span><strong>{selectedNode.name}</strong></div>
                 <Button size="small" aria-label={tr("关闭属性面板")} onClick={() => setSelectedNodeId(null)}><CloseOutlined /></Button>
               </div>
               <Form layout="vertical" className="combination-inspector-form">

@@ -904,7 +904,7 @@ const AlertWallPage: React.FC = () => {
                           {alert.detection_count > 1 && (
                             <div className="alert-detection-count">
                               <AppstoreOutlined />
-                              {tr("检测")}{alert.detection_count}{tr("帧")}
+                              {trf("检测 __VAR0__ 帧", [alert.detection_count])}
                             </div>
                           )}
                         </div>
