@@ -133,7 +133,7 @@ export default function WorkflowEditorPage() {
                             originalType === 'detection_filter' ? 'detectionFilter' :
                             originalType === 'condition' ? 'condition' :
                             originalType === 'time_schedule' ? 'timeSchedule' :
-                            originalType === 'roi' ? 'roi' :
+                            (originalType === 'roi' || originalType === 'roi_draw') ? 'roi' :
                             originalType === 'alert' ? 'alert' :
                             originalType === 'output' ? 'alert' :
                             originalType;
@@ -152,7 +152,14 @@ export default function WorkflowEditorPage() {
                       algorithmType: node.data.algorithmType || currentAlgorithm?.algorithm_type || 'script',
                       isTemplate: Boolean(data.is_template),
                     }
-                  : { ...node.data, isTemplate: Boolean(data.is_template) },
+                  : nodeType === 'roi'
+                    ? {
+                        ...node.data,
+                        type: nodeType,
+                        roiRegions: node.data.roiRegions ?? node.data.roi_regions ?? [],
+                        isTemplate: Boolean(data.is_template),
+                      }
+                    : { ...node.data, isTemplate: Boolean(data.is_template) },
               };
             }
 
@@ -311,7 +318,7 @@ export default function WorkflowEditorPage() {
 
             // ROI 节点：从 data.roiRegions 读取
             if (nodeType === 'roi') {
-              nodeData.roiRegions = node.data?.roiRegions || [];
+              nodeData.roiRegions = node.data?.roiRegions ?? node.data?.roi_regions ?? [];
               console.log('🎯 ROI 节点加载 roiRegions:', {
                 节点ID: node.id,
                 区域数: nodeData.roiRegions.length,
@@ -613,7 +620,8 @@ export default function WorkflowEditorPage() {
       const saveNodes = nodes.map(node => {
         // 重要：后端期望的类型是 'source', 'algorithm' 等，不是 'videoSource'
         // 所以需要映射内部类型到后端类型
-        const nodeType = node.data?.type || node.type;
+        const originalType = node.data?.type || node.type;
+        const nodeType = originalType === 'roi_draw' ? 'roi' : originalType;
         const backendType = nodeType === 'videoSource'
           ? 'source'
           : nodeType === 'externalApi'

@@ -5,7 +5,7 @@ import pytest
 from flask import Flask
 from peewee import IntegrityError, SqliteDatabase
 
-from app.core.database_models import User, VideoSource, Workflow
+from app.core.database_models import Algorithm, User, VideoSource, Workflow
 from app.web.api import workflows as workflows_api
 from app.web.api.auth import generate_token
 
@@ -13,7 +13,7 @@ from app.web.api.auth import generate_token
 @pytest.fixture
 def workflow_api(monkeypatch):
     test_db = SqliteDatabase(':memory:', pragmas={'foreign_keys': 1})
-    models = [User, VideoSource, Workflow]
+    models = [User, VideoSource, Workflow, Algorithm]
 
     with test_db.bind_ctx(models):
         test_db.connect()

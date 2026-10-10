@@ -5,6 +5,7 @@
     "dev": "max dev",
     "build": "max build",
     "check:i18n": "node scripts/check-i18n.cjs",
+    "test:roi-roundtrip": "node scripts/test-roi-editor-roundtrip.cjs",
     "postinstall": "max setup",
     "start": "npm run dev"
   },

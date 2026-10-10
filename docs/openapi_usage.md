@@ -31,6 +31,7 @@ X-API-Key: vbp_xxxxxxxxxxxxxxxx
 - API Key 由 **管理员** 在 Web 界面「系统设置 → API Key」中生成。
 - 完整 Key 仅在生成时展示一次,请妥善保存。
 - Key 缺失、无效或已禁用时,接口返回 `401`。
+- 外部应用前端通过自己的应用服务器代理调用，API Key 保存在应用服务器端。
 
 ```bash
 curl -H "X-API-Key: vbp_xxxxxxxxxxxxxxxx" \
@@ -78,12 +79,16 @@ http://<服务器地址>:5002/openapi/v1
 | 400 | `field_not_allowed` | 字段不允许通过该接口修改 |
 | 400 | `invalid_workflow_template` | 模板配置校验未通过 |
 | 400 | `workflow_template_not_deactivatable` | 模板编排不能去激活 |
+| 400 | `workflow_template_not_configurable` | 运行配置接口不能修改模板 |
+| 400 | `invalid_workflow_structure` | 编排结构无效或插入点没有下游连接 |
 | 401 | `api_key_required` | 缺少 `X-API-Key` 请求头 |
 | 401 | `invalid_api_key` | API Key 无效或已禁用 |
 | 404 | `video_source_not_found` | 视频源不存在 |
 | 404 | `workflow_template_not_found` | 编排模板不存在 |
 | 404 | `workflow_not_found` | 编排不存在 |
 | 409 | `source_code_exists` | 视频源编码已存在 |
+| 409 | `version_conflict` | 配置版本发生变化，需重新查询 |
+| 409 | `entry_component_conflict` | 同类入口组件位于分支、存在多个实例或顺序异常 |
 
 ---
 
@@ -346,6 +351,174 @@ curl -X POST http://<服务器地址>:5002/openapi/v1/workflows/25/deactivate \
 模板编排不能去激活,将返回 `400 workflow_template_not_deactivatable`。
 
 ---
+
+### 4.8 查询运行编排配置
+
+```
+GET /openapi/v1/workflows/{workflow_id}/configuration
+```
+
+先使用现有编排列表接口选择运行编排，再查询配置。时间与 ROI 通过能力接口配置，无需提供 `node_id`；公共参数批量修改使用本接口返回的各编排节点 ID。
+
+```json
+{
+  "success": true,
+  "data": {
+    "workflow_id": 25,
+    "config_version": 3,
+    "is_active": true,
+    "time_schedule": {
+      "status": "missing",
+      "node_id": null,
+      "weekly_schedule": null
+    },
+    "roi_draw": {
+      "status": "missing",
+      "node_id": null,
+      "roi_regions": null
+    },
+    "common_parameters": [
+      {
+        "node_id": "algorithm-001",
+        "node_type": "algorithm",
+        "name": "人员检测",
+        "allowed_fields": ["confidence", "interval_seconds"],
+        "config": {"confidence": 0.5, "interval_seconds": 1}
+      }
+    ]
+  }
+}
+```
+
+入口状态：`configured` 表示可直接修改，`missing` 表示提交时按需补建，`conflict` 表示须先在编辑器中整理结构。公共参数未显式配置的值返回 `null`，不表示运行时有效值为零。
+
+### 4.9 设置每周启用时段
+
+```
+PUT /openapi/v1/workflows/{workflow_id}/configuration/time-schedule
+```
+
+```json
+{
+  "expected_version": 3,
+  "dry_run": true,
+  "weekly_schedule": {
+    "1": [{"start": "08:00", "end": "18:00"}],
+    "2": [{"start": "08:00", "end": "18:00"}],
+    "3": [{"start": "08:00", "end": "18:00"}],
+    "4": [{"start": "08:00", "end": "18:00"}],
+    "5": [{"start": "08:00", "end": "18:00"}],
+    "6": [],
+    "7": []
+  }
+}
+```
+
+- 星期 `1` 为周一，`7` 为周日，七天都须提供；每天可设置多个时段。
+- 按执行服务器本地时区判断，开始和结束分钟均包含在内；全天使用 `00:00` 至 `23:59`。
+- 跨日时段必须拆成两天，例如周一 `22:00–23:59` 加周二 `00:00–02:00`。
+- 当天空数组表示当天不启用，全周至少一个启用时段；不提供额外的时间组件启停开关。
+
+### 4.10 设置 ROI 区域
+
+```
+PUT /openapi/v1/workflows/{workflow_id}/configuration/roi
+```
+
+```json
+{
+  "expected_version": 3,
+  "dry_run": true,
+  "roi_regions": [
+    {
+      "name": "入口检测区",
+      "mode": "post_filter",
+      "anchor": "bottom_center",
+      "polygon": [
+        {"x": 0.1, "y": 0.2},
+        {"x": 0.9, "y": 0.2},
+        {"x": 0.9, "y": 0.8},
+        {"x": 0.1, "y": 0.8}
+      ]
+    }
+  ]
+}
+```
+
+- 每次整体替换区域列表；支持多个区域。
+- 顶点为相对原始视频画面的归一化坐标，范围 `[0,1]`，至少三个不同顶点且面积非零。前端绘制时需先扣除画面留白，再按实际画面宽高换算坐标。
+- 检测模式支持 `pre_mask`、`crop_infer`、`post_filter`。
+- `anchor` 可选，支持目标框九个判定点，详见 OpenAPI 枚举；省略时沿用算法原有规则。
+- `roi_regions: []` 清除已有区域，不删除组件；组件不存在时不创建空组件，版本保持不变。清除入口 ROI 后，下游算法恢复其原有 ROI 配置或默认规则。
+
+### 4.11 入口补建、预检与生效
+
+时间与 ROI 作用于当前编排的全部视频源下游分支，入口固定为：
+
+```
+视频源 → [时间启动区间] → [热区绘制] → 原有下游流程
+```
+
+只配置一项时只补建对应组件，另一项后续补建仍遵循上述顺序。原有分支、目标端口、连线条件和标签保持原意。同类组件位于分支、存在多个实例或顺序异常时返回 `409 entry_component_conflict`，不会自动移动或合并。插入点没有下游连接时返回 `400 invalid_workflow_structure`。
+
+两个写接口的 `dry_run` 默认为 `true`，预检不保存、不递增版本、不重载。预检响应中的 `change.action` 为 `created`、`updated` 或 `unchanged`，`change.connections` 包含连线修改前后内容。预检中的新节点 ID 仅供展示，正式提交时重新生成。
+
+检查预检结果后，以相同配置和版本重新请求并设置 `dry_run: false`。补建、接线及参数保存原子提交，每个编排版本递增一次；响应的 `data.config_version` 为提交后的版本。连续设置时间和 ROI 时，第二次请求使用第一次提交返回的新版本。
+
+成功表示配置已保存。已激活编排由 Worker 异步重载，未激活编排下次启动时使用新配置。重载单位为视频源执行进程，因此同一视频源下的其他运行编排也可能短暂中断。
+
+`409 version_conflict` 时重新查询配置并让用户核对变更，再预检和提交；不要直接换成新版本号自动覆盖。配置错误响应的 `details` 包含编排、节点或字段定位信息。模板不允许通过这些接口修改。
+
+### 4.12 批量修改公共参数
+
+```
+POST /openapi/v1/workflows/batch-config
+```
+
+```json
+{
+  "workflow_ids": [25, 26],
+  "expected_versions": {"25": 4, "26": 2},
+  "dry_run": true,
+  "targets": [
+    {
+      "workflow_ids": [25],
+      "node_id": "algorithm-001",
+      "node_type": "algorithm",
+      "changes": {"confidence": 0.7, "interval_seconds": 2}
+    },
+    {
+      "workflow_ids": [26],
+      "node_id": "algorithm-009",
+      "node_type": "algorithm",
+      "changes": {"confidence": 0.7, "interval_seconds": 2}
+    }
+  ]
+}
+```
+
+| 节点类型 | 公共参数 | 约束 |
+| --- | --- | --- |
+| `algorithm` | `confidence`、`interval_seconds` | 置信度 0–1，检测间隔 0.1–60 秒；设置置信度会启用节点覆盖 |
+| `alert` | `trigger_condition`、`suppression` | 检测窗口 1–300；次数阈值 1–100，比例阈值 0–1；抑制时长 1–3600 秒 |
+| `time_schedule` | `weekly_schedule` | 与单独设置周时段的规则一致 |
+
+告警配置示例：
+
+```json
+{
+  "trigger_condition": {"enable": true, "mode": "count", "window_size": 10, "threshold": 3},
+  "suppression": {"enable": true, "seconds": 60}
+}
+```
+
+`trigger_condition.mode` 支持 `count`、`ratio`、`consecutive`，停用某项时传 `{"enable": false}`。
+
+仅覆盖明确提交的公共参数；嵌套的告警窗口或抑制对象按整体配置处理。同一编排同一节点只能指定一次，每个已选编排必须有目标；`expected_versions` 必须与已选编排一一对应。跨编排不假定节点 ID 相同，应分别查询并选择。
+
+批量操作只修改已有组件，不补建算法、告警或时间节点；缺少时间节点时先调用专用时间接口。ROI 使用专用接口配置。
+
+预检返回 `summary`、`changes`、当前 `config_versions`；正式提交返回新 `config_versions`。任一目标校验失败或发生版本冲突，整批不写入。同一编排修改多个节点只递增一次版本。
 
 ## 5. 典型集成示例(Python)
 

@@ -187,6 +187,92 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workflows/{workflow_id}/configuration:
+    get:
+      summary: 查询运行编排入口配置与公共参数
+      operationId: getWorkflowConfiguration
+      parameters:
+        - $ref: '#/components/parameters/WorkflowId'
+      responses:
+        '200':
+          description: 组件状态为 configured、missing 或 conflict；公共参数包含节点 ID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowConfigurationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workflows/{workflow_id}/configuration/time-schedule:
+    put:
+      summary: 设置入口每周启用时段，缺失时自动补建
+      operationId: configureWorkflowTimeSchedule
+      description: >-
+        无需 node_id。入口顺序固定为视频源、时间、ROI、原下游流程。分支内同类组件、重复组件
+        或异常顺序返回 409。dry_run 默认 true；false 才保存。保存成功后 Worker 异步重载，
+        同一视频源下其他运行编排也可能短暂中断。
+      parameters:
+        - $ref: '#/components/parameters/WorkflowId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimeScheduleConfigurationRequest' }
+      responses:
+        '200':
+          description: 预检通过或配置已保存；不代表运行实例已经生效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryConfigurationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /workflows/{workflow_id}/configuration/roi:
+    put:
+      summary: 设置入口 ROI 区域，缺失时自动补建
+      operationId: configureWorkflowRoi
+      description: >-
+        无需 node_id。整体替换 ROI 列表；空数组清除已有 ROI，组件缺失时不创建空组件、不递增版本。
+        dry_run 默认 true。结构冲突返回 409；保存后异步重载，可能影响同源其他编排。
+      parameters:
+        - $ref: '#/components/parameters/WorkflowId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoiConfigurationRequest' }
+      responses:
+        '200':
+          description: 预检通过或配置已保存
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryConfigurationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /workflows/batch-config:
+    post:
+      summary: 预检或原子批量修改运行编排公共参数
+      operationId: batchConfigureWorkflows
+      description: >-
+        通过配置查询获取各编排节点 ID。仅修改明确指定的字段，不创建组件。
+        所有目标通过校验和版本检查后统一提交；任一失败整批不写入。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchConfigurationRequest' }
+      responses:
+        '200':
+          description: 预检摘要或提交结果，包含各编排版本号
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchConfigurationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -194,6 +280,11 @@ components:
       in: header
       name: X-API-Key
   parameters:
+    WorkflowId:
+      name: workflow_id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
     SourceCode:
       name: source_code
       in: path
@@ -217,7 +308,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     Conflict:
-      description: 资源唯一标识冲突
+      description: 资源唯一标识冲突、配置版本冲突或入口组件结构冲突
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -229,6 +320,10 @@ components:
         success: { type: boolean, example: false }
         code: { type: string, example: invalid_field }
         message: { type: string }
+        details:
+          type: array
+          description: 配置错误详情，可包含 workflow_id、node_id、field、fields、code、error 或 config_version
+          items: { type: object }
     VideoSourceCreate:
       type: object
       required: [source_code, name, source_url]
@@ -348,3 +443,244 @@ components:
             source_code: { type: string }
             created: { type: boolean }
             is_active: { type: boolean, example: true }
+    WeeklySchedule:
+      type: object
+      additionalProperties: false
+      required: ['1', '2', '3', '4', '5', '6', '7']
+      description: >-
+        ISO 星期 1-7，按服务器本地时区。每天允许多个时段或空数组，全周至少一个时段。
+        结束分钟包含在内；跨日必须拆分。例如全天为 00:00-23:59。
+      properties:
+        '1': { $ref: '#/components/schemas/DailyPeriods' }
+        '2': { $ref: '#/components/schemas/DailyPeriods' }
+        '3': { $ref: '#/components/schemas/DailyPeriods' }
+        '4': { $ref: '#/components/schemas/DailyPeriods' }
+        '5': { $ref: '#/components/schemas/DailyPeriods' }
+        '6': { $ref: '#/components/schemas/DailyPeriods' }
+        '7': { $ref: '#/components/schemas/DailyPeriods' }
+    DailyPeriods:
+      type: array
+      items:
+        type: object
+        required: [start, end]
+        properties:
+          start: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$', example: '08:00' }
+          end: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$', example: '18:00' }
+    RoiRegions:
+      type: array
+      description: 相对原始视频画面的归一化坐标。整体替换，空数组清除区域。
+      items:
+        type: object
+        additionalProperties: false
+        required: [name, mode, polygon]
+        properties:
+          name: { type: string, minLength: 1 }
+          mode: { type: string, enum: [pre_mask, crop_infer, post_filter] }
+          anchor:
+            type: string
+            description: 可选目标框判定点，缺失时沿用算法原有规则
+            enum: [top_left, top_center, top_right, center_left, center, center_right, bottom_left, bottom_center, bottom_right]
+          polygon:
+            type: array
+            minItems: 3
+            description: 至少三个不同顶点且面积非零
+            items:
+              type: object
+              additionalProperties: false
+              required: [x, y]
+              properties:
+                x: { type: number, minimum: 0, maximum: 1 }
+                y: { type: number, minimum: 0, maximum: 1 }
+    TimeScheduleConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, weekly_schedule]
+      properties:
+        expected_version: { type: integer, minimum: 0, description: 查询返回的 config_version }
+        dry_run: { type: boolean, default: true }
+        weekly_schedule: { $ref: '#/components/schemas/WeeklySchedule' }
+    RoiConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, roi_regions]
+      properties:
+        expected_version: { type: integer, minimum: 0 }
+        dry_run: { type: boolean, default: true }
+        roi_regions: { $ref: '#/components/schemas/RoiRegions' }
+    WorkflowConfigurationResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          required: [workflow_id, config_version, is_active, time_schedule, roi_draw, common_parameters]
+          properties:
+            workflow_id: { type: integer }
+            config_version: { type: integer }
+            is_active: { type: boolean }
+            time_schedule:
+              type: object
+              properties:
+                status: { type: string, enum: [configured, missing, conflict] }
+                node_id: { type: string, nullable: true }
+                weekly_schedule: { type: object, nullable: true, description: 存在时结构同 WeeklySchedule }
+            roi_draw:
+              type: object
+              properties:
+                status: { type: string, enum: [configured, missing, conflict] }
+                node_id: { type: string, nullable: true }
+                roi_regions:
+                  type: array
+                  nullable: true
+                  items: { type: object }
+                  description: 存在时结构同 RoiRegions
+            common_parameters:
+              type: array
+              items:
+                type: object
+                required: [node_id, node_type, name, allowed_fields, config]
+                properties:
+                  node_id: { type: string }
+                  node_type: { type: string, enum: [algorithm, alert, time_schedule] }
+                  name: { type: string }
+                  allowed_fields: { type: array, items: { type: string } }
+                  config:
+                    type: object
+                    description: 当前节点显式配置的公共参数；未显式配置的字段返回 null
+    EntryConfigurationResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          required: [workflow_id, config_version, dry_run, change, configuration, is_active, message]
+          properties:
+            workflow_id: { type: integer }
+            config_version: { type: integer, description: 预检返回当前版本；提交返回新版本；空 ROI 无操作保持版本 }
+            dry_run: { type: boolean }
+            is_active: { type: boolean }
+            message: { type: string }
+            configuration:
+              oneOf:
+                - $ref: '#/components/schemas/WeeklySchedule'
+                - $ref: '#/components/schemas/RoiRegions'
+            change:
+              type: object
+              required: [action, node_type, node_id, connections]
+              properties:
+                action: { type: string, enum: [created, updated, unchanged] }
+                node_type: { type: string, enum: [time_schedule, roi_draw] }
+                node_id: { type: string, nullable: true, description: 预检中的新节点 ID 仅供展示，提交时重新生成 }
+                fields: { type: array, items: { type: string } }
+                connections:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      before: { type: object, nullable: true }
+                      after: { type: object }
+    AlgorithmChanges:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        interval_seconds: { type: number, minimum: 0.1, maximum: 60 }
+    AlertChanges:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        trigger_condition:
+          type: object
+          required: [enable]
+          description: enable=true 时 mode、window_size、threshold 必填；count/consecutive 阈值为 1-100 整数，ratio 阈值为 0-1 数值
+          properties:
+            enable: { type: boolean }
+            mode: { type: string, enum: [count, ratio, consecutive] }
+            window_size: { type: integer, minimum: 1, maximum: 300 }
+            threshold: { type: number, minimum: 0, maximum: 100 }
+        suppression:
+          type: object
+          required: [enable]
+          description: enable=true 时 seconds 必填
+          properties:
+            enable: { type: boolean }
+            seconds: { type: integer, minimum: 1, maximum: 3600 }
+    TimeScheduleChanges:
+      type: object
+      additionalProperties: false
+      required: [weekly_schedule]
+      properties:
+        weekly_schedule: { $ref: '#/components/schemas/WeeklySchedule' }
+    BatchConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required: [workflow_ids, expected_versions, targets]
+      properties:
+        workflow_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        expected_versions:
+          type: object
+          description: 键为 workflow_id 字符串，必须与 workflow_ids 一一对应
+          additionalProperties: { type: integer, minimum: 0 }
+        dry_run: { type: boolean, default: true }
+        targets:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [workflow_ids, node_id, node_type, changes]
+            properties:
+              workflow_ids:
+                type: array
+                minItems: 1
+                uniqueItems: true
+                items: { type: integer, minimum: 1 }
+              node_id: { type: string, minLength: 1 }
+              node_type: { type: string, enum: [algorithm, alert, time_schedule] }
+              changes:
+                oneOf:
+                  - $ref: '#/components/schemas/AlgorithmChanges'
+                  - $ref: '#/components/schemas/AlertChanges'
+                  - $ref: '#/components/schemas/TimeScheduleChanges'
+                description: 必须与 node_type 对应；同一编排同一节点只能出现一次
+    BatchConfigurationResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          required: [dry_run, summary, changes, config_versions, message]
+          properties:
+            dry_run: { type: boolean }
+            message: { type: string }
+            config_versions:
+              type: object
+              description: 预检返回当前版本，提交返回更新后版本
+              additionalProperties: { type: integer }
+            summary:
+              type: object
+              properties:
+                workflow_count: { type: integer }
+                active_count: { type: integer }
+                node_change_count: { type: integer }
+            changes:
+              type: array
+              items:
+                type: object
+                properties:
+                  workflow_id: { type: integer }
+                  workflow_name: { type: string }
+                  node_id: { type: string }
+                  node_name: { type: string }
+                  node_type: { type: string }
+                  fields: { type: array, items: { type: string } }
+                  is_active: { type: boolean }

@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
-from flask import jsonify, request, send_file
+from flask import current_app, jsonify, request, send_file
 from peewee import IntegrityError
 
 from app.config import DEFAULT_DECODE_HEIGHT, DEFAULT_DECODE_WIDTH
@@ -31,6 +31,20 @@ from app.core.workflow_runtime import (
     normalize_source_node_fields,
     validate_template_source_node,
 )
+from app.core.workflow_configuration import (
+    ConfigurationError,
+    apply_entry_configuration,
+    configuration_view,
+    dry_run_value,
+    validate_fields,
+)
+from app.core.workflow_configuration_service import (
+    check_version,
+    configure_batch,
+    runtime_workflow,
+    save_configurations,
+    validate_configuration,
+)
 from app.web.api.auth import current_username, require_admin, require_auth
 
 
@@ -49,6 +63,26 @@ def _success(data=None, status=200):
 
 def _error(code, message, status):
     return jsonify({'success': False, 'code': code, 'message': message}), status
+
+
+def _configuration_endpoint(func):
+    """Translate configuration errors without exposing unexpected exceptions."""
+    @wraps(func)
+    def decorated(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ConfigurationError as exc:
+            details = exc.details or [{}]
+            if 'workflow_id' in kwargs:
+                details = [{'workflow_id': kwargs['workflow_id'], **item} for item in details]
+            return jsonify({
+                'success': False, 'code': exc.code, 'message': str(exc),
+                'details': details,
+            }), exc.status
+        except Exception:
+            current_app.logger.exception('运行编排配置操作失败')
+            return _error('internal_error', '配置操作失败', 500)
+    return decorated
 
 
 def _hash_api_key(raw_key: str) -> str:
@@ -632,3 +666,47 @@ def register_public_api(app):
         query = query.order_by(Workflow.updated_at.desc(), Workflow.id.desc())
         items = [_serialize_workflow(item) for item in query]
         return _success({'items': items, 'total': len(items)})
+
+    @app.route('/openapi/v1/workflows/<int:workflow_id>/configuration', methods=['GET'])
+    @require_api_key
+    @_configuration_endpoint
+    def public_workflow_configuration(workflow_id):
+        return _success(configuration_view(runtime_workflow(workflow_id)))
+
+    def configure_entry(workflow_id, node_type, field):
+        data = request.get_json(silent=True)
+        validate_fields(data, {'expected_version', 'dry_run', field}, {'expected_version', field})
+        dry_run = dry_run_value(data)
+        workflow = runtime_workflow(workflow_id)
+        check_version(workflow, data['expected_version'])
+        graph, change = apply_entry_configuration(workflow.data_dict, node_type, data[field])
+        validate_configuration(graph, workflow_id)
+        version = workflow.config_version
+        if not dry_run and change['action'] != 'unchanged':
+            versions = save_configurations({workflow_id: graph}, {workflow_id: version}, db)
+            version = versions[str(workflow_id)]
+        return _success({
+            'workflow_id': workflow_id, 'config_version': version,
+            'dry_run': dry_run, 'change': change,
+            'configuration': data[field],
+            'is_active': workflow.is_active,
+            'message': '预检通过' if dry_run else '配置已保存，已激活编排将异步加载',
+        })
+
+    @app.route('/openapi/v1/workflows/<int:workflow_id>/configuration/time-schedule', methods=['PUT'])
+    @require_api_key
+    @_configuration_endpoint
+    def public_configure_time_schedule(workflow_id):
+        return configure_entry(workflow_id, 'time_schedule', 'weekly_schedule')
+
+    @app.route('/openapi/v1/workflows/<int:workflow_id>/configuration/roi', methods=['PUT'])
+    @require_api_key
+    @_configuration_endpoint
+    def public_configure_roi(workflow_id):
+        return configure_entry(workflow_id, 'roi_draw', 'roi_regions')
+
+    @app.route('/openapi/v1/workflows/batch-config', methods=['POST'])
+    @require_api_key
+    @_configuration_endpoint
+    def public_batch_configure_workflows():
+        return _success(configure_batch(request.get_json(silent=True), db))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any
 
 from app.core.time_schedule import validate_weekly_schedule
@@ -22,8 +23,11 @@ SUPPORTED_CHANGES = {
 def _number(value: Any, label: str, minimum: float, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise BatchConfigValidationError(f"{label} 必须是数字")
-    numeric = float(value)
-    if numeric < minimum or numeric > maximum:
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise BatchConfigValidationError(f"{label} 必须在 {minimum:g}-{maximum:g} 之间") from exc
+    if not math.isfinite(numeric) or numeric < minimum or numeric > maximum:
         raise BatchConfigValidationError(f"{label} 必须在 {minimum:g}-{maximum:g} 之间")
     return numeric
 
