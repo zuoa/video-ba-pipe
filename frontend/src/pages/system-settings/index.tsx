@@ -998,6 +998,24 @@ const SystemSettingsPage: React.FC = () => {
                       </Form.Item>
 
                       <Form.Item
+                        label={tr("告警图片保留（天）")}
+                        name="image_retention_days"
+                        extra={tr("0 表示不按天删除，仅在目录超限或磁盘空间不足时清理；大于 0 时，到期也会删除，即使目录未满。保存后从下一轮清理生效。")}
+                        rules={[{ required: true, message: tr("请输入保留天数") }]}
+                      >
+                        <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+
+                      <Form.Item
+                        label={tr("告警录像保留（天）")}
+                        name="video_retention_days"
+                        extra={tr("0 表示不按天删除，仅在目录超限或磁盘空间不足时清理；大于 0 时，到期也会删除，即使目录未满。保存后从下一轮清理生效。")}
+                        rules={[{ required: true, message: tr("请输入保留天数") }]}
+                      >
+                        <InputNumber min={0} max={3650} precision={0} style={{ width: '100%' }} />
+                      </Form.Item>
+
+                      <Form.Item
                         label={tr("最低剩余空间（GB）")}
                         name="min_free_gb"
                         extra={tr("低于该水位时，即使尚未达到目录上限，也会优先淘汰最老录像和图片。")}

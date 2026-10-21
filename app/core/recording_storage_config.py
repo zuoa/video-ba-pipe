@@ -1,4 +1,4 @@
-"""数据库持久化的录像与本地媒体容量保护配置。"""
+"""数据库持久化的录像、媒体留存与本地容量保护配置。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ from app import logger
 from app.config import (
     ALERT_IMAGE_MAX_STORAGE_GB,
     ALERT_IMAGE_MIN_FREE_GB,
+    ALERT_IMAGE_RETENTION_DAYS,
     ALERT_VIDEO_MAX_STORAGE_GB,
+    ALERT_VIDEO_RETENTION_DAYS,
     POST_ALERT_DURATION,
     PRE_ALERT_DURATION,
     RECORDING_ENABLED,
@@ -25,6 +27,7 @@ MIN_STORAGE_LIMIT_GB = 1.0
 MAX_STORAGE_LIMIT_GB = 4096.0
 MAX_RECORDING_WINDOW_SECONDS = 300
 MAX_RECORDING_FPS = 30
+MAX_MEDIA_RETENTION_DAYS = 3650
 MIN_DISK_PRESSURE_PERCENT = 1.0
 MAX_DISK_PRESSURE_PERCENT = 99.0
 
@@ -37,6 +40,8 @@ class RecordingStorageConfig:
     recording_fps: int = RECORDING_FPS
     video_max_gb: float = ALERT_VIDEO_MAX_STORAGE_GB
     image_max_gb: float = ALERT_IMAGE_MAX_STORAGE_GB
+    image_retention_days: int = ALERT_IMAGE_RETENTION_DAYS
+    video_retention_days: int = ALERT_VIDEO_RETENTION_DAYS
     min_free_gb: float = ALERT_IMAGE_MIN_FREE_GB
     stop_recording_percent: float = 80.0
     metadata_only_percent: float = 90.0
@@ -115,6 +120,18 @@ def normalize_recording_storage_config(
             MIN_STORAGE_LIMIT_GB,
             MAX_STORAGE_LIMIT_GB,
         ),
+        image_retention_days=_safe_int(
+            data.get("image_retention_days"),
+            defaults.image_retention_days,
+            0,
+            MAX_MEDIA_RETENTION_DAYS,
+        ),
+        video_retention_days=_safe_int(
+            data.get("video_retention_days"),
+            defaults.video_retention_days,
+            0,
+            MAX_MEDIA_RETENTION_DAYS,
+        ),
         min_free_gb=_safe_float(
             data.get("min_free_gb"),
             defaults.min_free_gb,
@@ -170,8 +187,10 @@ def _validate_number(
 ) -> None:
     try:
         value = int(data.get(key)) if integer else float(data.get(key))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{label}必须是数字") from exc
+    if integer and (isinstance(data.get(key), bool) or float(data[key]) != value):
+        raise ValueError(f"{label}必须是整数")
     if value < minimum or value > maximum:
         raise ValueError(f"{label}必须在 {minimum:g} 到 {maximum:g} 之间")
 
@@ -227,7 +246,14 @@ def save_recording_storage_config(
     if metadata_only_percent <= stop_recording_percent:
         raise ValueError("仅保留元数据水位必须高于自动停录像水位")
 
-    config = normalize_recording_storage_config(data)
+    for key, label in (
+        ("image_retention_days", "告警图片保留天数"),
+        ("video_retention_days", "告警录像保留天数"),
+    ):
+        # 兼容尚未提交留存字段的旧客户端；0 显式表示关闭按天清理。
+        if key in data:
+            _validate_number(data, key, label, 0, MAX_MEDIA_RETENTION_DAYS, integer=True)
+
     record, _ = SystemSetting.get_or_create(
         key=RECORDING_STORAGE_SETTING_KEY,
         defaults={
@@ -237,6 +263,13 @@ def save_recording_storage_config(
             "updated_by": updated_by,
         },
     )
+    try:
+        persisted = json.loads(record.value or "{}")
+    except (TypeError, ValueError):
+        persisted = {}
+    merged = normalize_recording_storage_config(persisted).to_dict()
+    merged.update(data)
+    config = normalize_recording_storage_config(merged)
     record.value = json.dumps(config.to_dict(), ensure_ascii=False)
     record.description = "录像与本地媒体容量保护配置"
     record.updated_at = datetime.now()

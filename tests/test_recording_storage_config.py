@@ -1,4 +1,9 @@
+import json
+
 import pytest
+from peewee import SqliteDatabase
+
+from app.core.database_models import SystemSetting
 
 from app.core.recording_storage_config import (
     MAX_RECORDING_FPS,
@@ -150,3 +155,41 @@ def test_save_recording_storage_config_allows_missing_recording_fields_when_disa
     assert config.pre_alert_seconds == RecordingStorageConfig().pre_alert_seconds
     assert config.post_alert_seconds == RecordingStorageConfig().post_alert_seconds
     assert config.recording_fps == RecordingStorageConfig().recording_fps
+
+
+def test_saved_retention_overrides_environment_defaults_and_survives_legacy_updates():
+    test_db = SqliteDatabase(":memory:")
+    with test_db.bind_ctx([SystemSetting]):
+        test_db.create_tables([SystemSetting])
+        data = RecordingStorageConfig().to_dict()
+        data.update(image_retention_days=0, video_retention_days=90)
+
+        saved = save_recording_storage_config(data, updated_by="admin")
+        loaded, available = load_recording_storage_config_with_status()
+
+        assert available is True
+        assert loaded == saved
+        assert loaded.image_retention_days == 0
+        assert loaded.video_retention_days == 90
+        record = SystemSetting.get()
+        assert json.loads(record.value)["image_retention_days"] == 0
+        assert record.updated_by == "admin"
+
+        del data["image_retention_days"]
+        del data["video_retention_days"]
+        data["image_max_gb"] = 100
+        updated = save_recording_storage_config(data)
+
+        assert updated.image_max_gb == 100
+        assert updated.image_retention_days == 0
+        assert updated.video_retention_days == 90
+
+
+@pytest.mark.parametrize("key", ["image_retention_days", "video_retention_days"])
+@pytest.mark.parametrize("value", [-1, 3651, 1.5, None, "invalid", True])
+def test_save_rejects_invalid_retention_before_writing(key, value):
+    data = RecordingStorageConfig().to_dict()
+    data[key] = value
+
+    with pytest.raises(ValueError, match="保留天数"):
+        save_recording_storage_config(data)

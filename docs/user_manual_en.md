@@ -470,6 +470,8 @@ The system cleans up periodically:
 | Video storage cap | 20 GB |
 | Minimum free disk | 10 GB |
 
+Image and clip retention can be changed in **System Settings → Recording & Storage** and applies from the next cleanup cycle. Set it to `0` to disable age-based deletion and evict the oldest files only when a directory exceeds its cap or free disk space is low. A positive value also deletes expired media even when the directory has room. Increasing the cap alone does not extend retention. The 30-day alert-record cleanup only removes records that no longer reference images or clips.
+
 Disk water-mark protection: recording stops at ≥ 80% usage; metadata-only mode at ≥ 90% (both adjustable in System Settings).
 
 ---
@@ -515,6 +517,7 @@ Entry: left menu "System Settings" (`/system-settings`, admin only) — 10 tabs.
 
 - Master recording switch, pre/post-alert seconds, recording FPS
 - Caps: video GB / image GB / minimum free disk GB
+- Image and clip retention: 7 days by default; `0` disables age-based deletion. Changes apply from the next cleanup cycle
 - Disk water marks: stop-recording (default 80%), metadata-only (default 90%)
 - The page shows current disk and directory usage with pressure levels; changes hot-apply in ~5 seconds
 

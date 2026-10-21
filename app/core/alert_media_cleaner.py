@@ -385,6 +385,17 @@ class AlertMediaCleaner:
             return
 
         recording_config = get_recording_storage_config()
+        retention_days = (
+            recording_config.image_retention_days,
+            recording_config.video_retention_days,
+        )
+        if retention_days != (self.image_retention_days, self.video_retention_days):
+            self.image_retention_days, self.video_retention_days = retention_days
+            logger.info(
+                "[AlertMediaCleaner] 留存配置已更新（0 表示仅按容量和磁盘水位清理）: "
+                f"image_retention_days={self.image_retention_days}, "
+                f"video_retention_days={self.video_retention_days}"
+            )
         notification_config = get_ops_notification_config()
         self._monitor_disk_pressure(recording_config, notification_config)
 

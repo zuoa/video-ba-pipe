@@ -247,6 +247,7 @@ cp env.example .env
 - `RECORDING_ENABLED`：是否录制预警视频（默认关闭；运行后优先使用“系统设置”中的配置）
 - `ALERT_VIDEO_MAX_STORAGE_GB`：本地告警录像容量上限，默认 20 GB
 - `ALERT_IMAGE_MAX_STORAGE_GB`：本地告警图片容量上限，默认 10 GB
+- `ALERT_IMAGE_RETENTION_DAYS` / `ALERT_VIDEO_RETENTION_DAYS`：图片、录像的初始保留天数，默认 7 天；运行后可在“系统设置 → 录像与存储”修改，`0` 表示仅按目录容量和剩余空间清理。容量上限与保留天数独立生效，仅调大目录上限不会延长保留期
 - `ALERT_IMAGE_MIN_FREE_GB`：磁盘最低剩余空间，默认 10 GB
 - `VIDEO_DECODER_TYPE`：默认视频解码器类型；RK3588 推荐 `rk_mpp`，Jetson 推荐 `jetson_gst`
 - `FFMPEG_DIRECT_RTSP_ENABLED`：FFmpeg 软解、NVDEC 和 RKMPP 是否直接拉取 RTSP 并解码；默认 `true`，异常时会自动回退两阶段链路

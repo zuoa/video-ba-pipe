@@ -1,5 +1,8 @@
 // UI copy migrated from JSX. Keep technical identifiers and API values unchanged.
 export const uiEnglish: Record<string, string> = {
+  "告警图片保留（天）": "Alert image retention (days)",
+  "告警录像保留（天）": "Alert clip retention (days)",
+  "0 表示不按天删除，仅在目录超限或磁盘空间不足时清理；大于 0 时，到期也会删除，即使目录未满。保存后从下一轮清理生效。": "0 disables age-based deletion; files are removed only when the directory limit is exceeded or disk space is low. A positive value also deletes expired files even when the directory has room. Changes apply from the next cleanup cycle.",
   "结构化输出模式": "Structured output mode",
   "自动模式会根据接口支持情况切换输出模式；无论选择哪种模式，系统都会附加格式要求并校验结果。": "Auto mode adapts to the formats supported by the API. Every mode includes system output instructions and result validation.",
   "自动兼容（推荐）": "Auto compatibility (recommended)",

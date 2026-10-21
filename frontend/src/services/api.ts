@@ -764,6 +764,8 @@ export interface RecordingStorageConfig {
   recording_fps: number;
   video_max_gb: number;
   image_max_gb: number;
+  image_retention_days: number;
+  video_retention_days: number;
   min_free_gb: number;
   stop_recording_percent: number;
   metadata_only_percent: number;

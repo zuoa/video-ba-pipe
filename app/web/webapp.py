@@ -694,7 +694,7 @@ def update_system_recording_storage_config():
         return jsonify({
             'success': True,
             'config': config.to_dict(),
-            'message': '录像与存储配置已更新，将在 5 秒内热生效',
+            'message': '录像与存储配置已更新；录像配置将在 5 秒内热生效，保留天数从下一轮媒体清理生效',
         })
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
