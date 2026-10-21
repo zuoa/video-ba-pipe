@@ -1,5 +1,11 @@
 // UI copy migrated from JSX. Keep technical identifiers and API values unchanged.
 export const uiEnglish: Record<string, string> = {
+  "结构化输出模式": "Structured output mode",
+  "自动模式会根据接口支持情况切换输出模式；无论选择哪种模式，系统都会附加格式要求并校验结果。": "Auto mode adapts to the formats supported by the API. Every mode includes system output instructions and result validation.",
+  "自动兼容（推荐）": "Auto compatibility (recommended)",
+  "JSON 对象": "JSON object",
+  "仅提示词约束": "Prompt instructions only",
+  "这里只需配置检测目标、命中条件和忽略规则。系统会自动附加 JSON 字段要求、坐标规则及命中和未命中示例，无需手动填写输出格式。": "Configure the targets, match conditions, and exclusions here. The system adds JSON field requirements, coordinate rules, and examples for matches and no matches automatically.",
   " 未执行": " Not executed",
   " 跳过": " skip",
   "%，剩余": "%, remaining",

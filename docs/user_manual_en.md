@@ -197,6 +197,19 @@ The adaptive YOLO detector supports two inference modes:
 - **Image test**: upload an image to run the algorithm immediately and inspect the annotated result — the quickest way to validate a configuration
 - **Cascade preview**: preview composite detection output for cascade-type algorithms
 
+### 7.4 VL Business Rules and Output Format
+
+Configure each VL algorithm's targets, match conditions, and exclusions in its prompt. The system appends common JSON field requirements, pixel coordinate rules, and examples for matches and no matches. Business categories belong in the individual algorithm, not in the system output instructions.
+
+The structured output mode defaults to **Auto compatibility**, including for existing algorithms without this setting:
+
+- Auto starts with JSON Schema. When the API explicitly rejects that format, it falls back to JSON object mode, then prompt instructions only. Each algorithm instance remembers the mode that succeeded.
+- An invalid model result gets at most one correction attempt. In auto mode, an invalid JSON Schema result is retried in JSON object mode. Local validation remains required; top-level booleans and arrays are not treated as valid no-match results.
+- Fallbacks and correction share the API timeout budget. Authentication failures, rate limits, and network timeouts do not trigger format fallback.
+- You can select a specific mode when the service's capabilities are known. The API field is `vl_config.response_format_mode`, with values `auto`, `json_schema`, `json_object`, or `text`.
+
+Failures include the model, output mode, attempt count, and up to 4,000 characters of response diagnostics in logs and result metadata. The configured API key is redacted from response previews. Existing business prompts and API timeouts are preserved.
+
 ---
 
 ## 8. Script Management

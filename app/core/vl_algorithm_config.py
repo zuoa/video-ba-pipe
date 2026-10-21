@@ -7,6 +7,9 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 
+VL_RESPONSE_FORMAT_MODES = ("auto", "json_schema", "json_object", "text")
+
+
 def ensure_json_object(value: Any, field_name: str) -> Dict[str, Any]:
     if value in (None, ""):
         return {}
@@ -52,6 +55,9 @@ def normalize_vl_algorithm_config(
     config["image_detail"] = config.get("image_detail") or "auto"
     if config["image_detail"] not in ("auto", "low", "high"):
         raise ValueError("VL image_detail 仅支持 auto、low 或 high")
+    config["response_format_mode"] = str(config.get("response_format_mode") or "auto").strip().lower()
+    if config["response_format_mode"] not in VL_RESPONSE_FORMAT_MODES:
+        raise ValueError("VL response_format_mode 仅支持 auto、json_schema、json_object 或 text")
     config["extra_headers"] = ensure_json_object(config.get("extra_headers"), "extra_headers")
     config["extra_body"] = ensure_json_object(config.get("extra_body"), "extra_body")
 

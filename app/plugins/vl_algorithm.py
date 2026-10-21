@@ -16,6 +16,7 @@ from app.config import VIDEO_FRAME_PIXEL_FORMAT
 from app.core.algorithm import BaseAlgorithm
 from app.core.cv2_compat import cv2, require_cv2
 from app.core.frame_utils import detect_frame_pixel_format, frame_to_rgb, infer_frame_dimensions
+from app.core.vl_algorithm_config import VL_RESPONSE_FORMAT_MODES
 from app.user_scripts.common.roi import filter_items_by_regions, split_regions
 
 
@@ -76,11 +77,16 @@ def build_chat_completions_endpoint(base_url: str) -> str:
 
 
 def _extract_response_text(response_data: Dict[str, Any]) -> str:
+    if not isinstance(response_data, dict):
+        raise VLResponseError("接口响应必须是 JSON 对象")
     choices = response_data.get("choices") or []
-    if not choices or not isinstance(choices[0], dict):
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
         raise VLResponseError("响应缺少 choices[0]")
 
-    content = (choices[0].get("message") or {}).get("content")
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise VLResponseError("响应缺少 message")
+    content = message.get("content")
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -190,6 +196,7 @@ class VLAlgorithm(BaseAlgorithm):
     def load_model(self):
         self.vl_config = dict(self.config.get("vl_config") or {})
         self.endpoint = build_chat_completions_endpoint(self.vl_config.get("base_url", ""))
+        self._compatible_response_format = None
 
     def _render_prompt(
         self,
@@ -220,12 +227,142 @@ class VLAlgorithm(BaseAlgorithm):
             )
 
         contract = (
-            "\n\n请只返回一个 JSON 对象，不要包含 Markdown。格式必须为："
-            '{"has_detection": boolean, "detections": '
-            '[{"label_name": string, "confidence": 0到1, "bbox": [x1,y1,x2,y2]或null}], '
-            '"reason": string}。每个命中目标或事件返回一条 detections；不能可靠定位时 bbox 返回 null。'
+            "\n\n【系统统一输出协议】\n"
+            "检测类别、命中条件和需要忽略的情况，以本算法上面的业务判断要求为准。"
+            "以下示例只说明输出结构，不代表实际检测结论；若上文的输出格式要求与本协议冲突，以本协议为准。\n"
+            "1. 只返回一个 JSON 对象，不要包含 Markdown、代码块或对象之外的文字。"
+            "顶层不能是数组、字符串、true、false 或 null。\n"
+            "2. 必须且仅包含 has_detection、detections、reason 三个字段。"
+            "has_detection 必须是布尔值，detections 必须是数组，reason 必须是简要说明画面依据的字符串。\n"
+            "3. 每个命中目标或事件返回一条 detections，检测项必须且仅包含 label_name、confidence、bbox。"
+            "label_name 使用本算法业务要求中的目标或事件名称，不要照抄示例名称；"
+            "confidence 是 0 到 1 的数字；不能可靠定位的语义事件，bbox 返回 null。\n"
+            f"4. bbox 使用原图像素坐标 [x1,y1,x2,y2]，画面宽 {frame_width}、高 {frame_height}，"
+            "必须满足 0<=x1<x2<=画面宽、0<=y1<y2<=画面高。\n"
+            "5. has_detection 必须与 detections 是否非空一致。未命中时返回 false 和空数组，"
+            "不要为未命中结果创建检测项。无法确认的目标不要猜测。\n"
+            "命中时的结构示例（名称、置信度、位置及原因均需按实际画面填写）：\n"
+            '{"has_detection":true,"detections":[{"label_name":"业务目标或事件名称",'
+            '"confidence":0.9,"bbox":null}],"reason":"画面中存在符合业务条件的目标或事件"}\n'
+            "未命中时的结构示例：\n"
+            '{"has_detection":false,"detections":[],"reason":"未发现符合业务条件的目标或事件"}'
         )
         return template + contract
+
+    def _response_preview(self, value: Any) -> str:
+        text = str(value or "")
+        api_key = str(self.vl_config.get("api_key") or "")
+        if api_key:
+            text = text.replace(api_key, "[REDACTED]")
+        return text[:4000]
+
+    @staticmethod
+    def _format_not_supported(response) -> bool:
+        if response is None or response.status_code not in (400, 422):
+            return False
+        detail = str(response.text or "").lower()
+        format_fields = ("response_format", "json_schema", "json_object", "structured output", "结构化输出")
+        rejection_terms = (
+            "not support", "unsupported", "not available", "not implemented", "only support",
+            "invalid", "unknown", "unrecognized", "unexpected", "not allowed", "not permitted",
+            "not recognized", "not compatible", "must be", "不支持", "无效", "未知参数",
+        )
+        return any(field in detail for field in format_fields) and any(term in detail for term in rejection_terms)
+
+    def _request_result(
+        self,
+        payload: Dict[str, Any],
+        headers: Dict[str, str],
+        timeout: int,
+        frame_width: int,
+        frame_height: int,
+        diagnostics: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        configured_mode = self.vl_config.get("response_format_mode") or "auto"
+        if configured_mode not in VL_RESPONSE_FORMAT_MODES:
+            raise VLResponseError(f"不支持的 VL 输出模式: {configured_mode}")
+        modes = ["json_schema", "json_object", "text"] if configured_mode == "auto" else [configured_mode]
+        mode_index = modes.index(self._compatible_response_format) if self._compatible_response_format in modes else 0
+        diagnostics["response_format_requested"] = configured_mode
+        diagnostics["request_attempts"] = 0
+        deadline = time.perf_counter() + timeout
+        correction = None
+
+        while True:
+            mode = modes[mode_index]
+            request_payload = dict(payload)
+            request_payload.pop("response_format", None)
+            if mode == "json_schema":
+                request_payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": "vl_detection_result", "strict": True, "schema": VL_RESPONSE_SCHEMA},
+                }
+            elif mode == "json_object":
+                request_payload["response_format"] = {"type": "json_object"}
+            if correction:
+                message = payload["messages"][0]
+                request_payload["messages"] = [{
+                    **message,
+                    "content": [*message["content"], {"type": "text", "text": correction}],
+                }]
+
+            # Fallbacks and the single format correction share one timeout budget.
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise requests.Timeout("VL 请求及格式兼容重试已超过接口超时限制")
+            diagnostics["response_format"] = mode
+            diagnostics["request_attempts"] += 1
+            response = requests.post(self.endpoint, headers=headers, json=request_payload, timeout=remaining)
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                detail = self._response_preview(response.text)
+                diagnostics["http_error"] = detail
+                if configured_mode == "auto" and mode_index < len(modes) - 1 and self._format_not_supported(response):
+                    mode_index += 1
+                    logger.info(
+                        "VL response format fallback: algorithm=%s model=%s from=%s to=%s detail=%r",
+                        self.config.get("name"), self.vl_config.get("model_name"), mode, modes[mode_index], detail,
+                    )
+                    continue
+                raise VLResponseError(f"VL API HTTP {response.status_code}: {detail or exc}") from exc
+
+            diagnostics.pop("http_error", None)
+            diagnostics.pop("raw_response", None)
+            try:
+                response_data = response.json()
+            except ValueError as exc:
+                diagnostics["raw_response"] = self._response_preview(response.text)
+                raise VLResponseError("接口响应不是合法 JSON") from exc
+            try:
+                response_text = _extract_response_text(response_data)
+                diagnostics["raw_response"] = self._response_preview(response_text)
+                normalized = normalize_vl_result(
+                    _parse_json_text(response_text), frame_width=frame_width, frame_height=frame_height,
+                )
+            except VLResponseError as exc:
+                if "raw_response" not in diagnostics:
+                    diagnostics["raw_response"] = self._response_preview(json.dumps(response_data, ensure_ascii=False))
+                if correction is not None:
+                    raise
+                correction = (
+                    f"上一次返回结果不符合系统输出协议：{exc}。"
+                    "请重新检查同一张图像，按本算法业务要求判断，严格遵守系统统一输出协议，"
+                    "只返回包含 has_detection、detections、reason 的 JSON 对象。"
+                )
+                diagnostics["retry_reason"] = str(exc)
+                # Some compatible endpoints silently ignore json_schema. Try JSON mode.
+                if configured_mode == "auto" and mode == "json_schema":
+                    mode_index += 1
+                logger.warning(
+                    "VL response validation failed; retrying once: algorithm=%s model=%s mode=%s error=%s raw_response=%r",
+                    self.config.get("name"), self.vl_config.get("model_name"), mode,
+                    exc, diagnostics.get("raw_response", ""),
+                )
+                continue
+            if configured_mode == "auto":
+                self._compatible_response_format = mode
+            return normalized, response_data
 
     @staticmethod
     def _frame_to_data_url(frame_rgb: np.ndarray) -> str:
@@ -236,8 +373,9 @@ class VLAlgorithm(BaseAlgorithm):
             raise RuntimeError("JPEG 编码失败")
         return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
 
-    def _empty_result(self, error: str, latency_ms: Optional[float] = None) -> Dict[str, Any]:
+    def _empty_result(self, error: str, latency_ms: Optional[float] = None, diagnostics: Optional[dict] = None) -> Dict[str, Any]:
         metadata = {
+            **(diagnostics or {}),
             "error": error,
             "vl_model": self.vl_config.get("model_name"),
             "vl_checked": False,
@@ -248,6 +386,7 @@ class VLAlgorithm(BaseAlgorithm):
 
     def process(self, frame: np.ndarray, roi_regions: list = None, upstream_results: dict = None) -> dict:
         started_at = time.perf_counter()
+        diagnostics = {}
         required = ("base_url", "api_key", "model_name", "prompt_template")
         missing = [key for key in required if not str(self.vl_config.get(key) or "").strip()]
         if missing:
@@ -294,14 +433,6 @@ class VLAlgorithm(BaseAlgorithm):
                         ],
                     }
                 ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "vl_detection_result",
-                        "strict": True,
-                        "schema": VL_RESPONSE_SCHEMA,
-                    },
-                },
             }
             extra_body = self.vl_config.get("extra_body")
             if isinstance(extra_body, dict):
@@ -320,14 +451,8 @@ class VLAlgorithm(BaseAlgorithm):
                 or self.vl_config.get("timeout_seconds")
                 or 30
             )
-            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=timeout)
-            response.raise_for_status()
-            response_data = response.json()
-            response_text = _extract_response_text(response_data)
-            normalized = normalize_vl_result(
-                _parse_json_text(response_text),
-                frame_width=frame_width,
-                frame_height=frame_height,
+            normalized, response_data = self._request_result(
+                payload, headers, timeout, frame_width, frame_height, diagnostics,
             )
             detections = normalized["detections"]
             detections_before_roi = len(detections)
@@ -344,12 +469,12 @@ class VLAlgorithm(BaseAlgorithm):
             return {
                 "detections": detections,
                 "metadata": {
+                    **diagnostics,
                     "vl_checked": True,
                     "vl_reason": normalized["reason"],
                     "vl_model": self.vl_config.get("model_name"),
                     "latency_ms": round(latency_ms, 2),
                     "usage": response_data.get("usage") or {},
-                    "raw_response": response_text[:4000],
                     "roi_applied": roi_mask is not None,
                     "roi_filtered_count": detections_before_roi - len(detections),
                 },
@@ -358,9 +483,13 @@ class VLAlgorithm(BaseAlgorithm):
         except Exception as exc:
             latency_ms = (time.perf_counter() - started_at) * 1000
             logger.warning(
-                "VL algorithm request failed: algorithm=%s endpoint=%s error=%s",
+                "VL algorithm request failed: algorithm=%s endpoint=%s model=%s mode=%s attempts=%s error=%s raw_response=%r",
                 self.config.get("name"),
                 self.endpoint,
-                exc,
+                self.vl_config.get("model_name"),
+                diagnostics.get("response_format"),
+                diagnostics.get("request_attempts", 0),
+                self._response_preview(exc),
+                diagnostics.get("raw_response", diagnostics.get("http_error", "")),
             )
-            return self._empty_result(str(exc), latency_ms)
+            return self._empty_result(self._response_preview(exc), latency_ms, diagnostics)

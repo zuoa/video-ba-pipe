@@ -135,11 +135,9 @@ const getAvailableDetectorPresets = (scripts: Script[]): DetectorPreset[] => {
 
 const DEFAULT_VL_PROMPT = getDateLocale() === 'en-US'
   ? `Determine whether the frame contains an object or event of interest.
-For each match, return one detection item. Set bbox to null when the location cannot be determined reliably.
-Briefly explain the evidence in reason.`
+Judge from visible evidence and avoid guessing when uncertain.`
   : `请判断画面中是否存在需要关注的目标或事件。
-如果命中，请为每个目标或事件返回一个检测项；无法可靠定位时 bbox 返回 null。
-请在 reason 中简要说明判断依据。`;
+请根据画面证据判断，无法确认时不要猜测。`;
 
 const validateJsonObject = (_: unknown, value: string) => {
   if (!value) return Promise.resolve();
@@ -328,6 +326,7 @@ export default function AlgorithmWizard() {
         vlMaxTokens: vlConfig.max_tokens || 512,
         vlTimeoutSeconds: vlConfig.timeout_seconds || 30,
         vlImageDetail: vlConfig.image_detail || 'auto',
+        vlResponseFormatMode: vlConfig.response_format_mode || 'auto',
         vlExtraHeaders: JSON.stringify(vlConfig.extra_headers || {}, null, 2),
         vlExtraBody: JSON.stringify(vlConfig.extra_body || {}, null, 2),
       });
@@ -490,6 +489,7 @@ export default function AlgorithmWizard() {
       vlMaxTokens: form.getFieldValue('vlMaxTokens') || 512,
       vlTimeoutSeconds: form.getFieldValue('vlTimeoutSeconds') || 30,
       vlImageDetail: form.getFieldValue('vlImageDetail') || 'auto',
+      vlResponseFormatMode: form.getFieldValue('vlResponseFormatMode') || 'auto',
       vlExtraHeaders: form.getFieldValue('vlExtraHeaders') || '{}',
       vlExtraBody: form.getFieldValue('vlExtraBody') || '{}',
       labelName: form.getFieldValue('labelName') || 'VL Result',
@@ -643,6 +643,7 @@ export default function AlgorithmWizard() {
             max_tokens: values.vlMaxTokens,
             timeout_seconds: values.vlTimeoutSeconds,
             image_detail: values.vlImageDetail,
+            response_format_mode: values.vlResponseFormatMode || 'auto',
             extra_headers: JSON.parse(values.vlExtraHeaders || '{}'),
             extra_body: JSON.parse(values.vlExtraBody || '{}'),
           },
@@ -1104,6 +1105,18 @@ export default function AlgorithmWizard() {
                   </Form.Item>
                 </Col>
               </Row>
+              <Form.Item
+                label={tr("结构化输出模式")}
+                name="vlResponseFormatMode"
+                extra={tr("自动模式会根据接口支持情况切换输出模式；无论选择哪种模式，系统都会附加格式要求并校验结果。")}
+              >
+                <Select>
+                  <Option value="auto">{tr("自动兼容（推荐）")}</Option>
+                  <Option value="json_schema">JSON Schema</Option>
+                  <Option value="json_object">{tr("JSON 对象")}</Option>
+                  <Option value="text">{tr("仅提示词约束")}</Option>
+                </Select>
+              </Form.Item>
             </Card>
 
             <Card title={<Space><SettingOutlined />{tr("判断提示词")}</Space>} className="config-card vl-prompt-card">
@@ -1118,7 +1131,7 @@ export default function AlgorithmWizard() {
                 type="success"
                 showIcon
                 message={tr("返回格式由系统约束")}
-                description={tr("模型必须返回 has_detection、detections 和 reason。每个检测项包含名称、置信度和可为空的 bbox。")}
+                description={tr("这里只需配置检测目标、命中条件和忽略规则。系统会自动附加 JSON 字段要求、坐标规则及命中和未命中示例，无需手动填写输出格式。")}
               />
             </Card>
           </Form>
