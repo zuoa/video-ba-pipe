@@ -14,7 +14,7 @@ import requests
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from multiprocessing import resource_tracker
 from typing import Collection, Dict, List, Any, Optional
 
@@ -86,6 +86,7 @@ try:
         VideoSource,
         Algorithm,
         Alert,
+        AlertReview,
         ExternalApi,
         User,
         close_database_connection,
@@ -4153,6 +4154,15 @@ class WorkflowExecutor:
 
             if getattr(alert_node, 'publish_to_mq', True):
                 enqueue_alert_delivery(alert)
+            review = alert_node.review or {}
+            if review.get('enabled'):
+                AlertReview.create(
+                    alert=alert, workflow=self.workflow, video_source=self.video_source,
+                    node_id=node_id,
+                    due_at=datetime.now() + timedelta(seconds=int(review.get('delay_seconds', 3600))),
+                    confirmation_seconds=int(review.get('confirmation_seconds', 60)),
+                    publish_to_mq=bool(alert_node.publish_to_mq),
+                )
         self._cache_output_result(
             node_id=node_id,
             alert_triggered=True,
@@ -4249,6 +4259,106 @@ class WorkflowExecutor:
         logger.info(f"[Workflow-{self.workflow_id}] 测试完成，共执行 {len(final_result['nodes'])} 个节点")
         return final_result
 
+    def _process_due_reviews(self, context, cache_before=None):
+        """Observe fresh upstream results; never infer recovery from alert suppression."""
+        now = datetime.now()
+        reviews = (AlertReview.select()
+                   .where((AlertReview.workflow == self.workflow)
+                          & (AlertReview.video_source == self.video_source)
+                          & (AlertReview.status.in_(['pending', 'running']))
+                          & (AlertReview.due_at <= now))
+                   .order_by(AlertReview.due_at).limit(20))
+        for review in reviews:
+            upstream = next((c['from'] for c in self.connections
+                             if c['to'] == review.node_id), None)
+            if not upstream or upstream not in self.executed_nodes:
+                continue
+            with self._state_lock:
+                current_result = self.node_results_cache.get(upstream)
+                observed = dict(current_result or {})
+            if cache_before is not None and id(current_result) == cache_before.get(upstream):
+                continue
+            if observed.get('skipped'):
+                continue
+            if 'has_detection' not in observed or not isinstance(observed.get('result'), dict):
+                continue
+            metadata = observed['result'].get('metadata') or {}
+            if isinstance(metadata, dict) and metadata.get('error'):
+                continue
+            timestamp = float(context['frame_timestamp'])
+            if timestamp <= review.due_at.timestamp() or (
+                review.last_frame_timestamp is not None
+                and timestamp <= review.last_frame_timestamp
+            ):
+                continue
+            max_gap = max(5.0, review.confirmation_seconds / 3.0)
+            reset_window = review.sample_count > 0 and (
+                review.last_frame_timestamp is None
+                or timestamp - review.last_frame_timestamp > max_gap
+            )
+            next_count = 1 if reset_window else review.sample_count + 1
+            window_start = now if reset_window else (review.confirmation_started_at or now)
+            # A competing worker may have already claimed this frame.
+            changed = (AlertReview.update(
+                status='running', started_at=review.started_at or now,
+                confirmation_started_at=window_start,
+                last_frame_timestamp=timestamp,
+                sample_count=next_count,
+            ).where((AlertReview.id == review.id)
+                    & (AlertReview.status == review.status)
+                    & (AlertReview.sample_count == review.sample_count)).execute())
+            if not changed:
+                continue
+            review.sample_count = next_count
+            review.started_at = review.started_at or now
+            review.confirmation_started_at = window_start
+            hit = bool(observed['has_detection'])
+            expired = (now - window_start).total_seconds() >= review.confirmation_seconds
+            if not hit and not expired:
+                continue
+            status = 'present' if hit else ('cleared' if review.sample_count >= 3 else 'failed')
+            try:
+                if not self._get_storage_pressure().allow_media:
+                    raise RuntimeError('磁盘压力限制保存复核照片')
+                relative = (f"{self.video_source.source_code}/reviews/"
+                            f"review_{review.id}_{int(timestamp * 1000)}.jpg")
+                absolute = os.path.join(FRAME_SAVE_PATH, relative)
+                original = relative + '.ori.jpg'
+                frame = context.get('frame')
+                saved = self._save_visualized_frame(
+                    frame_rgb=frame,
+                    detections=observed['result'].get('detections', []),
+                    save_path=absolute,
+                    label_color=observed.get('label_color', '#FF0000'),
+                    roi_mask=observed.get('roi_mask'),
+                    roi_regions=self._find_upstream_roi(upstream) or [],
+                    upstream_node_id=upstream,
+                )
+                if not saved:
+                    raise RuntimeError('未能生成复核标注图')
+                save_frame(frame, os.path.join(FRAME_SAVE_PATH, original))
+                review.image = relative
+                review.image_ori = original
+                review.error = None if status != 'failed' else '确认窗口内有效样本不足 3 帧'
+            except Exception as exc:
+                logger.exception('保存复核证据失败 review=%s', review.id)
+                status = 'failed'
+                review.error = str(exc)
+            review.status = status
+            review.completed_at = datetime.now()
+            review.detection_summary = json.dumps({
+                'has_detection': hit,
+                'detection_count': len(observed['result'].get('detections') or []),
+                'upstream_node_id': upstream,
+                'frame_timestamp': timestamp,
+            }, ensure_ascii=False)
+            review.save(only=[AlertReview.status, AlertReview.completed_at,
+                              AlertReview.image, AlertReview.image_ori,
+                              AlertReview.error, AlertReview.detection_summary])
+            from app.core.alert_delivery import enqueue_review_delivery
+            if review.publish_to_mq:
+                enqueue_review_delivery(review)
+
     def run_once(self, frame_nv12: np.ndarray, frame_timestamp: float, executor=None, source_code: str = None):
         """执行单帧工作流，用于 source host 统一驱动多个工作流。"""
         if not self.running:
@@ -4275,6 +4385,8 @@ class WorkflowExecutor:
         })
 
         with self._state_lock:
+            review_cache_before = {node_id: id(value)
+                                   for node_id, value in self.node_results_cache.items()}
             self.execution_results.clear()
             self.executed_nodes.clear()
             self.skipped_nodes.clear()
@@ -4283,6 +4395,11 @@ class WorkflowExecutor:
 
         self._execute_by_topology_levels(executor=executor, context=context)
         self._record_to_window_detector_for_all_alerts(context)
+        if not self.test_mode:
+            try:
+                self._process_due_reviews(context, review_cache_before)
+            except Exception:
+                logger.exception('[Workflow-%s] 复核处理失败', self.workflow_id)
         self._record_run_once_profile((time.perf_counter() - started_at) * 1000)
 
         # 周期性写入「最新检测帧」快照（供视频源管理页预览）。节流 + 异常吞掉，绝不影响主流程。

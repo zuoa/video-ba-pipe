@@ -47,6 +47,7 @@ from app.core.workflow_validation import (
     _sanitize_workflow_edge_conditions,
     _normalize_algorithm_edge_condition as _normalize_algorithm_edge_condition,
     validate_workflow_configuration,
+    _validate_alert_reviews,
 )
 
 
@@ -205,6 +206,9 @@ def register_workflows_api(app):
             is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
             if not is_valid:
                 return jsonify({'error': error_message}), 400
+            is_valid, error_message = _validate_alert_reviews(workflow_data)
+            if not is_valid:
+                return jsonify({'error': error_message}), 400
 
             workflow = Workflow.create(
                 name=data['name'],
@@ -309,6 +313,9 @@ def register_workflows_api(app):
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 is_valid, error_message = validate_workflow_time_schedule_nodes(workflow_data)
+                if not is_valid:
+                    return jsonify({'error': error_message}), 400
+                is_valid, error_message = _validate_alert_reviews(workflow_data)
                 if not is_valid:
                     return jsonify({'error': error_message}), 400
                 workflow_data_str = json.dumps(workflow_data)

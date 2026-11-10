@@ -11,7 +11,7 @@ from peewee import SqliteDatabase
 from app.core import alert_export as export_mod
 from app.core import alert_media_cleaner
 from app.core.alert_query import apply_alert_filters, build_alert_query, parse_alert_filters
-from app.core.database_models import Alert, AlertExportTask, User, VideoSource, Workflow
+from app.core.database_models import Alert, AlertReview, AlertExportTask, User, VideoSource, Workflow
 from app.web.api.auth import generate_token
 from app.web.api import alert_exports as export_api
 
@@ -19,7 +19,7 @@ from app.web.api import alert_exports as export_api
 @pytest.fixture
 def export_env(tmp_path, monkeypatch):
     test_db = SqliteDatabase(':memory:', pragmas={'foreign_keys': 1})
-    models = [User, VideoSource, Workflow, Alert, AlertExportTask]
+    models = [User, VideoSource, Workflow, Alert, AlertReview, AlertExportTask]
     frames_dir = tmp_path / 'frames'
     exports_dir = tmp_path / 'exports'
     frames_dir.mkdir()

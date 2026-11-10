@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 import traceback
 from collections import deque
 from typing import Callable, Optional
@@ -55,6 +56,7 @@ from app.core.compressed_ringbuffer import CompressedVideoRingBuffer
 from app.core.decoder.async_dec import SOFTWARE_DECODE_FALLBACK_EXIT_CODE
 from app.core.database_models import (
     db,
+    AlertReview,
     VideoSource,
     Workflow,
     Algorithm,
@@ -1440,10 +1442,20 @@ class Orchestrator:
         if open_slots == 0:
             self._sync_rotation_phase()
             return []
-        selected = self.rotation_selector.select(
-            selectable_ids,
-            open_slots,
-        )
+        due_ids = list(dict.fromkeys(
+            review.video_source_id for review in
+            AlertReview.select(AlertReview.video_source)
+            .where((AlertReview.status.in_(['pending', 'running']))
+                   & (AlertReview.due_at <= datetime.now())
+                   & (AlertReview.video_source.in_(selectable_ids)))
+            .order_by(AlertReview.due_at)
+        )) if selectable_ids and db.table_exists(AlertReview._meta.table_name) else []
+        selected = due_ids[:open_slots]
+        if len(selected) < open_slots:
+            selected += self.rotation_selector.select(
+                [source_id for source_id in selectable_ids if source_id not in selected],
+                open_slots - len(selected),
+            )
         for source_id in selected:
             self.rotation_batch_ids.append(source_id)
         self._sync_rotation_phase()
@@ -1615,6 +1627,19 @@ class Orchestrator:
 
     def _update_rotation_schedule(self, now: float):
         self._refresh_rotation_config(now)
+        # Expire stranded inspections, so a dead source cannot pin a decoder slot.
+        if db.table_exists(AlertReview._meta.table_name):
+            expired = (AlertReview.select().where(
+                ((AlertReview.status == 'pending') &
+                 (AlertReview.due_at < datetime.now() - timedelta(minutes=30))) |
+                ((AlertReview.status == 'running') &
+                 (AlertReview.started_at < datetime.now() - timedelta(hours=2)))
+            ).limit(100))
+            for review in expired:
+                review.status = 'failed'
+                review.completed_at = datetime.now()
+                review.error = '复核等待视频源或有效检测结果超时'
+                review.save(only=[AlertReview.status, AlertReview.completed_at, AlertReview.error])
         config = self.rotation_config
 
         if not config.enabled:
@@ -1716,9 +1741,15 @@ class Orchestrator:
 
         # 每个槽独立驻留，慢流或重启中的流不影响其他槽按时轮转。
         if len(candidate_ids) > effective_decoder_limit:
+            protected_ids = set(review.video_source_id for review in
+                AlertReview.select(AlertReview.video_source)
+                .where((AlertReview.status.in_(['pending', 'running']))
+                       & (AlertReview.due_at <= datetime.now())
+                       & (AlertReview.video_source.in_(self.rotation_batch_ids)))) if self.rotation_batch_ids and db.table_exists(AlertReview._meta.table_name) else set()
             expired_ids = [
                 source_id
                 for source_id in self.rotation_batch_ids
+                if source_id not in protected_ids
                 if self.rotation_source_ready_at.get(source_id) is not None
                 and now - self.rotation_source_ready_at[source_id]
                 >= config.dwell_seconds

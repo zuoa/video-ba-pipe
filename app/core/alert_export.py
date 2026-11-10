@@ -23,6 +23,7 @@ from app.core.alert_media_cleaner import resolve_frame_media_path
 from app.core.alert_query import build_alert_query, build_filter_summary, parse_alert_filters
 from app.core.database_models import (
     Alert,
+    AlertReview,
     AlertExportTask,
     VideoSource,
     Workflow,
@@ -64,6 +65,11 @@ CSV_COLUMNS = (
     'detection_count',
     'annotated_image',
     'original_image',
+    'review_status',
+    'review_due_at',
+    'review_completed_at',
+    'review_annotated_image',
+    'review_original_image',
 )
 
 _worker_lock = threading.Lock()
@@ -322,7 +328,8 @@ def _related_or_none(alert, field_name: str):
         return None
 
 
-def _write_csv_row(writer: csv.DictWriter, alert, annotated: str, original: str) -> None:
+def _write_csv_row(writer: csv.DictWriter, alert, annotated: str, original: str,
+                   review=None, review_annotated: str = '', review_original: str = '') -> None:
     source = _related_or_none(alert, 'video_source')
     workflow = _related_or_none(alert, 'workflow')
     writer.writerow({
@@ -339,6 +346,11 @@ def _write_csv_row(writer: csv.DictWriter, alert, annotated: str, original: str)
         'detection_count': alert.detection_count if alert.detection_count is not None else '',
         'annotated_image': annotated,
         'original_image': original,
+        'review_status': review.status if review else '',
+        'review_due_at': review.due_at.isoformat() if review else '',
+        'review_completed_at': review.completed_at.isoformat() if review and review.completed_at else '',
+        'review_annotated_image': review_annotated,
+        'review_original_image': review_original,
     })
 
 
@@ -418,7 +430,14 @@ def run_export_task(task: AlertExportTask) -> AlertExportTask:
                     zf, alert.id, 'original', getattr(alert, 'alert_image_ori', None),
                 )
                 missing_image_count += int(annotated_missing) + int(original_missing)
-                _write_csv_row(writer, alert, annotated, original)
+                review = AlertReview.get_or_none(AlertReview.alert == alert)
+                review_annotated, review_annotated_missing = _add_image(
+                    zf, alert.id, 'review_annotated', review.image if review else None)
+                review_original, review_original_missing = _add_image(
+                    zf, alert.id, 'review_original', review.image_ori if review else None)
+                missing_image_count += int(review_annotated_missing) + int(review_original_missing)
+                _write_csv_row(writer, alert, annotated, original, review,
+                               review_annotated, review_original)
                 processed += 1
                 if processed == 1 or processed % PROGRESS_BATCH_SIZE == 0:
                     task = _touch_progress(

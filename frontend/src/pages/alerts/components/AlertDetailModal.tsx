@@ -310,6 +310,22 @@ const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
           </div>
         </section>
 
+        {alert.review && <section className="alertDetail__panel" style={{ padding: 20 }}>
+          <div className="alertDetail__panelHeader">
+            <div className="alertDetail__panelTitle"><ClockCircleOutlined /><span>{tr("定时复核")}</span></div>
+          </div>
+          <p>{tr("结论")}: {{pending: tr('等待复核'), running: tr('复核中'), cleared: tr('已解除'), present: tr('问题仍存在'), failed: tr('无法判断')}[alert.review.status]}</p>
+          <p>{tr("计划时间")}: {formatDateTime(alert.review.due_at)}　{tr("实际开始")}: {formatDateTime(alert.review.started_at || undefined)}</p>
+          <p>{tr("完成时间")}: {formatDateTime(alert.review.completed_at || undefined)}
+            {alert.review.started_at && `　${tr("排队延迟")}: ${Math.max(0, Math.round((new Date(alert.review.started_at).getTime() - new Date(alert.review.due_at).getTime()) / 1000))} ${tr("秒")}`}
+          </p>
+          <p>{tr("有效样本")}: {alert.review.sample_count}　{tr("末次目标数")}: {safeParseJson<{detection_count?: number}>(alert.review.detection_summary || undefined, {}).detection_count ?? '-'}　{alert.review.error || ''}</p>
+          <Space wrap>
+            {alert.review.image_url && <Image width={240} src={alert.review.image_url} alt={tr("复核标注图")} />}
+            {alert.review.image_ori_url && <Image width={240} src={alert.review.image_ori_url} alt={tr("复核原图")} />}
+          </Space>
+        </section>}
+
         {primaryMedia && (
           <section className="alertDetail__panel">
             <div className="alertDetail__panelHeader">

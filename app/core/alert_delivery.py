@@ -16,6 +16,7 @@ from peewee import fn
 from app.config import FRAME_SAVE_PATH
 from app.core.database_models import (
     Alert,
+    AlertReview,
     AlertDeliveryTask,
     close_database_connection,
     db,
@@ -24,7 +25,7 @@ from app.core.message_queue_config import get_message_queue_config
 from app.core.message_queue_publisher import publish_alert_to_mq
 from app.core.node_identity import get_node_id
 from app.core.object_storage import build_alert_object_key, upload_alert_image
-from app.core.public_media_config import PublicMediaConfig, get_public_media_config
+from app.core.public_media_config import PublicMediaConfig, get_public_media_config, build_public_media_url
 from app.core.rabbitmq_publisher import format_alert_message
 
 
@@ -47,6 +48,20 @@ def enqueue_alert_delivery(alert: Alert, *, delivery_mode: Optional[str] = None)
             "next_attempt_at": now,
             "created_at": now,
             "updated_at": now,
+        },
+    )
+    return task
+
+
+def enqueue_review_delivery(review: AlertReview) -> Optional[AlertDeliveryTask]:
+    if not review.publish_to_mq or not get_message_queue_config().enabled:
+        return None
+    now = datetime.now()
+    task, _ = AlertDeliveryTask.get_or_create(
+        alert=review.alert, event_type='alert.review.completed',
+        defaults={
+            'delivery_mode': 'url', 'status': 'pending', 'attempts': 0,
+            'next_attempt_at': now, 'created_at': now, 'updated_at': now,
         },
     )
     return task
@@ -345,6 +360,21 @@ class AlertDeliveryWorker:
                 )
         elif task.event_type == "alert.media.ready":
             _publish_or_raise(_media_ready_event(task, alert, config))
+        elif task.event_type == 'alert.review.completed':
+            review = AlertReview.get(AlertReview.alert == alert)
+            event = _base_event(alert, event_type=task.event_type, delivery_mode='url')
+            event['review'] = {
+                'status': review.status,
+                'due_at': review.due_at.isoformat(),
+                'started_at': review.started_at.isoformat() if review.started_at else None,
+                'completed_at': review.completed_at.isoformat() if review.completed_at else None,
+                'sample_count': review.sample_count,
+                'detection_summary': review.detection_summary,
+                'image_url': build_public_media_url('image', review.image, config=config),
+                'image_ori_url': build_public_media_url('image', review.image_ori, config=config),
+                'error': review.error,
+            }
+            _publish_or_raise(event)
         else:
             raise ValueError(f"不支持的投递事件类型: {task.event_type}")
         self._complete(task)

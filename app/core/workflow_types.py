@@ -113,6 +113,7 @@ class RoiDrawNodeData(NodeContext):
 @dataclass
 class AlertNodeData(NodeContext):
     node_type: str = "alert"
+    review: Optional[Dict[str, Any]] = None
     alert_level: Optional[str] = None
     """告警级别: info, warning, error, critical"""
 
@@ -343,6 +344,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
         message_format = data.get('messageFormat') or data.get('message_format')
         trigger_condition = data.get('triggerCondition') or data.get('trigger_condition')
         suppression = data.get('suppression')
+        review = data.get('review')
         vl_validation = data.get('vlValidation') or data.get('vl_validation')
         # 布尔字段不能用 `or` 串联（False 会被覆盖），需显式回退到默认值 True
         publish_to_mq = data.get('publishToMq')
@@ -360,6 +362,7 @@ def create_node_data(node_dict: Dict) -> NodeContext:
             message_format=message_format,
             trigger_condition=trigger_condition,
             suppression=suppression,
+            review=review,
             vl_validation=vl_validation,
             publish_to_mq=publish_to_mq
         )

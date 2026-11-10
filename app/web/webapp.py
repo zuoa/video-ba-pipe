@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.core.alert_query import apply_alert_filters, parse_alert_filters
 from app.core.alert_stats import build_alert_trend, get_alert_period_spec
-from app.core.database_models import Algorithm, VideoSource, Alert, MLModel, SourceHealthLog, Workflow
+from app.core.database_models import Algorithm, VideoSource, Alert, AlertReview, MLModel, SourceHealthLog, Workflow
 from app.core.database_models import db
 from app.config import (
     ALGORITHM_TEST_MAX_IMAGE_BYTES,
@@ -1848,6 +1848,10 @@ def get_alerts():
     
     # 获取分页数据
     alerts = query.order_by(Alert.alert_time.desc()).limit(per_page).offset(offset)
+    alert_list = list(alerts)
+    review_map = {review.alert_id: review for review in AlertReview.select().where(
+        AlertReview.alert.in_([alert.id for alert in alert_list])
+    )} if alert_list else {}
     
     media_config = get_public_media_config()
     return jsonify({
@@ -1873,7 +1877,18 @@ def get_alerts():
                 config=media_config,
             ),
             'created_by': a.created_by,
-        } for a in alerts],
+            'review': ({
+                'status': review_map[a.id].status,
+                'due_at': review_map[a.id].due_at.isoformat(),
+                'started_at': review_map[a.id].started_at.isoformat() if review_map[a.id].started_at else None,
+                'completed_at': review_map[a.id].completed_at.isoformat() if review_map[a.id].completed_at else None,
+                'sample_count': review_map[a.id].sample_count,
+                'detection_summary': review_map[a.id].detection_summary,
+                'image_url': build_public_media_url('image', review_map[a.id].image, config=media_config),
+                'image_ori_url': build_public_media_url('image', review_map[a.id].image_ori, config=media_config),
+                'error': review_map[a.id].error,
+            } if a.id in review_map else None),
+        } for a in alert_list],
         'pagination': {
             'page': page,
             'per_page': per_page,

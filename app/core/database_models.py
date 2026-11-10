@@ -313,6 +313,28 @@ class Alert(BaseModel):
     created_by = pw.CharField(default='admin')
 
 
+class AlertReview(BaseModel):
+    """One durable, one-shot follow-up inspection for an alert."""
+    id = pw.AutoField()
+    alert = pw.ForeignKeyField(Alert, backref='reviews', unique=True, on_delete='CASCADE')
+    workflow = pw.ForeignKeyField(Workflow, null=True, on_delete='SET NULL')
+    video_source = pw.ForeignKeyField(VideoSource, on_delete='CASCADE')
+    node_id = pw.CharField()
+    due_at = pw.DateTimeField(index=True)
+    confirmation_seconds = pw.IntegerField(default=60)
+    publish_to_mq = pw.BooleanField(default=True)
+    status = pw.CharField(default='pending', index=True)
+    started_at = pw.DateTimeField(null=True)
+    confirmation_started_at = pw.DateTimeField(null=True)
+    completed_at = pw.DateTimeField(null=True)
+    sample_count = pw.IntegerField(default=0)
+    last_frame_timestamp = pw.FloatField(null=True)
+    image = pw.TextField(null=True)
+    image_ori = pw.TextField(null=True)
+    detection_summary = pw.TextField(null=True)
+    error = pw.TextField(null=True)
+
+
 class AlertDeliveryTask(BaseModel):
     """Persistent outbox entry for at-least-once alert delivery."""
 

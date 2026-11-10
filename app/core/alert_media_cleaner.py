@@ -22,6 +22,7 @@ from app.config import (
 )
 from app.core.database_models import (
     Alert,
+    AlertReview,
     WorkflowTestResult,
     close_database_connection,
     db,
@@ -650,6 +651,26 @@ class AlertMediaCleaner:
                     ),
                 ):
                     removed_alerts += 1
+            if self.image_retention_days > 0:
+                reviews = (AlertReview.select().join(Alert).where(
+                    (Alert.alert_time < image_cutoff) &
+                    AlertReview.status.not_in(('pending', 'running')) &
+                    (AlertReview.image.is_null(False) | AlertReview.image_ori.is_null(False))
+                ))
+                for review in reviews.iterator():
+                    if AlertDeliveryTask is not None and AlertDeliveryTask.select().where(
+                        (AlertDeliveryTask.alert == review.alert) &
+                        (AlertDeliveryTask.event_type == 'alert.review.completed') &
+                        AlertDeliveryTask.status.in_(('pending', 'processing', 'retrying'))
+                    ).exists():
+                        continue
+                    for path in (review.image, review.image_ori):
+                        resolved = resolve_frame_media_path(path)
+                        if resolved:
+                            resolved.unlink(missing_ok=True)
+                    review.image = None
+                    review.image_ori = None
+                    review.save(only=[AlertReview.image, AlertReview.image_ori])
 
         return removed_alerts
 
@@ -663,6 +684,8 @@ class AlertMediaCleaner:
                 Alert.delete()
                 .where(
                     (Alert.alert_time < cutoff) &
+                    ~Alert.id.in_(AlertReview.select(AlertReview.alert).where(
+                        AlertReview.status.in_(('pending', 'running')))) &
                     Alert.alert_image.is_null(True) &
                     Alert.alert_image_ori.is_null(True) &
                     Alert.detection_images.is_null(True) &
@@ -720,6 +743,18 @@ class AlertMediaCleaner:
                 for record in query.iterator():
                     if self._reconcile_record_media_references(record, model):
                         reconciled += 1
+            for review in AlertReview.select().where(
+                AlertReview.image.is_null(False) | AlertReview.image_ori.is_null(False)
+            ).iterator():
+                fields = []
+                for field in (AlertReview.image, AlertReview.image_ori):
+                    path = getattr(review, field.name)
+                    if path and not _media_file_exists(resolve_frame_media_path, path):
+                        setattr(review, field.name, None)
+                        fields.append(field)
+                if fields:
+                    review.save(only=fields)
+                    reconciled += 1
         return reconciled
 
     @staticmethod
@@ -766,11 +801,16 @@ class AlertMediaCleaner:
             & AlertDeliveryTask.status.in_(("pending", "processing", "retrying"))
         ).exists():
             purge_images = False
+        review = AlertReview.get_or_none(AlertReview.alert == alert)
+        if review and review.status in ('pending', 'running'):
+            purge_images = False
         image_paths = collect_alert_media_paths(
             alert.alert_image,
             alert.alert_image_ori,
             alert.detection_images,
         ) if purge_images else set()
+        if purge_images and review:
+            image_paths.update(path for path in (review.image, review.image_ori) if path)
         video_paths = {alert.alert_video.strip()} if (
             purge_video and isinstance(alert.alert_video, str) and alert.alert_video.strip()
         ) else set()
@@ -806,6 +846,10 @@ class AlertMediaCleaner:
 
         fields_to_save = []
         if purge_images:
+            if review:
+                review.image = None
+                review.image_ori = None
+                review.save(only=[AlertReview.image, AlertReview.image_ori])
             if alert.alert_image is not None:
                 fields_to_save.append(Alert.alert_image)
             if alert.alert_image_ori is not None:
@@ -844,6 +888,14 @@ class AlertMediaCleaner:
                 resolved = resolve_frame_media_path(alert.alert_image)
                 if resolved is not None:
                     protected.add(resolved.resolve())
+            for review in AlertReview.select().join(AlertDeliveryTask, on=(AlertReview.alert == AlertDeliveryTask.alert)).where(
+                AlertDeliveryTask.event_type == 'alert.review.completed',
+                AlertDeliveryTask.status.in_(('pending', 'processing', 'retrying')),
+            ).iterator():
+                for path in (review.image, review.image_ori):
+                    resolved = resolve_frame_media_path(path)
+                    if resolved is not None:
+                        protected.add(resolved.resolve())
         return protected
 
     @staticmethod

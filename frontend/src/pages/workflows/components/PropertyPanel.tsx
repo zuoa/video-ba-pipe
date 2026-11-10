@@ -450,6 +450,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
           formValues.suppressionEnable = false;
           formValues.suppressionSeconds = 60;
         }
+        formValues.reviewEnabled = node.data.review?.enabled === true;
+        formValues.reviewDelaySeconds = node.data.review?.delay_seconds ?? 3600;
+        formValues.reviewConfirmationSeconds = node.data.review?.confirmation_seconds ?? 60;
 
         // 读取 MQ 输出开关（默认开启）
         formValues.publishToMq = node.data.publishToMq !== false;
@@ -667,6 +670,11 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
             enable: false,
           };
         }
+        updatedData.review = {
+          enabled: values.reviewEnabled === true,
+          delay_seconds: values.reviewDelaySeconds ?? 3600,
+          confirmation_seconds: values.reviewConfirmationSeconds ?? 60,
+        };
 
         updatedData.vlValidation = {
           enable: vlConfigReady && values.vlValidationEnable === true,
@@ -685,6 +693,9 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
         delete updatedData.triggerConditionThreshold;
         delete updatedData.suppressionEnable;
         delete updatedData.suppressionSeconds;
+        delete updatedData.reviewEnabled;
+        delete updatedData.reviewDelaySeconds;
+        delete updatedData.reviewConfirmationSeconds;
         delete updatedData.vlValidationEnable;
         delete updatedData.vlValidationPromptTemplate;
       } else if (nodeType === 'function') {
@@ -2678,6 +2689,28 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
                     </Form.Item>
                   );
                 }}
+              </Form.Item>
+            </div>
+
+            {/* 消息投递输出 */}
+            <div className="config-section">
+              <div className="config-section-header">
+                <span className="config-section-title">{tr("定时复核")}</span>
+              </div>
+              <Form.Item label={tr("启用复核")} name="reviewEnabled" valuePropName="checked"
+                extra={tr("告警发生后重新检测，并在告警详情保存复核照片与结论")}>
+                <Switch />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(previous, current) => previous.reviewEnabled !== current.reviewEnabled}>
+                {({ getFieldValue }) => getFieldValue('reviewEnabled') && <>
+                  <Form.Item label={tr("告警后多久复核（秒）")} name="reviewDelaySeconds">
+                    <InputNumber min={60} max={2592000} step={60} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item label={tr("持续未命中确认时间（秒）")} name="reviewConfirmationSeconds"
+                    extra={tr("确认窗口内至少需要三帧有效检测结果")}>
+                    <InputNumber min={10} max={3600} step={10} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>}
               </Form.Item>
             </div>
 

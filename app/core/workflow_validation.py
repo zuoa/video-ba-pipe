@@ -14,6 +14,28 @@ from app.core.time_schedule import validate_workflow_time_schedule_nodes
 _logger = logging.getLogger(__name__)
 
 
+def _validate_alert_reviews(workflow_data):
+    for node in workflow_data.get('nodes', []):
+        if node.get('type') != 'alert':
+            continue
+        review = (node.get('data') or {}).get('review') or {}
+        if not isinstance(review, dict):
+            return False, '复核配置必须是对象'
+        if not review.get('enabled'):
+            continue
+        try:
+            delay = int(review.get('delay_seconds', 3600))
+            confirmation = int(review.get('confirmation_seconds', 60))
+        except (TypeError, ValueError):
+            return False, '复核延迟和确认窗口必须是整数秒'
+        if not 60 <= delay <= 30 * 86400 or not 10 <= confirmation <= 3600:
+            return False, '复核延迟须为 1 分钟至 30 天，确认窗口须为 10 秒至 1 小时'
+        incoming = [c for c in workflow_data.get('connections', []) if c.get('to') == node.get('id')]
+        if len(incoming) != 1:
+            return False, '启用复核的告警节点必须且只能连接一个上游结果节点'
+    return True, None
+
+
 def _validate_ocr_text_conditions(workflow_data):
     if not isinstance(workflow_data, dict):
         return True, None
@@ -314,6 +336,7 @@ def validate_workflow_configuration(workflow_data):
         validate_http_value_conditions,
         validate_workflow_detection_filter_nodes,
         validate_workflow_time_schedule_nodes,
+        _validate_alert_reviews,
     )
     for validator in validators:
         result = validator(workflow_data)

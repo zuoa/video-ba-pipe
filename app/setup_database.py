@@ -6,7 +6,7 @@ import time
 import peewee as pw
 
 from app.core.database_models import (
-    db, Algorithm, VideoSource, Alert, AlertDeliveryTask, AlertExportTask,
+    db, Algorithm, VideoSource, Alert, AlertReview, AlertDeliveryTask, AlertExportTask,
     ScriptVersion, Hook, AlgorithmHook, ScriptExecutionLog, MLModel,
     Workflow, WorkflowNode, WorkflowConnection, WorkflowTestResult, User, ApiKey, SourceHealthLog,
     SystemSetting, ExternalApi, FaceModelBundle, FaceModelArtifact, FaceGallery,
@@ -28,6 +28,7 @@ _DATABASE_MODELS = (
     VideoSource,
     ExternalApi,
     Alert,
+    AlertReview,
     AlertDeliveryTask,
     AlertExportTask,
     ScriptVersion,
@@ -191,6 +192,8 @@ def _apply_schema_changes():
     # 不存在的双引号列当成表达式，留下不可用的索引。
     if db.table_exists(Workflow._meta.table_name):
         _ensure_workflow_columns()
+    if db.table_exists(AlertReview._meta.table_name):
+        _ensure_alert_review_columns()
     _ensure_portability_columns(create_indexes=False)
     # 创建所有数据库表，按依赖顺序
     db.create_tables(_DATABASE_MODELS, safe=True)
@@ -480,6 +483,22 @@ def _ensure_workflow_columns():
             db.execute_sql(
                 f"ALTER TABLE {table_name} ADD COLUMN {column_name} INTEGER NULL"
             )
+
+
+def _ensure_alert_review_columns():
+    table_name = AlertReview._meta.table_name
+    if not _column_exists(table_name, 'publish_to_mq'):
+        db.execute_sql(
+            f'ALTER TABLE {table_name} ADD COLUMN publish_to_mq BOOLEAN NOT NULL DEFAULT TRUE'
+        )
+    if not _column_exists(table_name, 'confirmation_started_at'):
+        db.execute_sql(
+            f'ALTER TABLE {table_name} ADD COLUMN confirmation_started_at DATETIME NULL'
+        )
+    if not _column_exists(table_name, 'detection_summary'):
+        db.execute_sql(
+            f'ALTER TABLE {table_name} ADD COLUMN detection_summary TEXT NULL'
+        )
 
 
 def _ensure_workflow_indexes():

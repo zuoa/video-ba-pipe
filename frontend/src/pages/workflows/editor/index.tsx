@@ -199,6 +199,7 @@ export default function WorkflowEditorPage() {
                 nodeData.alertType = node.data.alertType;
                 nodeData.alertMessage = node.data.alertMessage;
                 nodeData.suppression = node.data.suppression;
+                nodeData.review = node.data.review;
                 nodeData.vlValidation = node.data.vlValidation;
                 console.log('🚨 [EDITOR] Alert 节点加载配置:', {
                   id: node.id,
@@ -333,6 +334,7 @@ export default function WorkflowEditorPage() {
               nodeData.messageFormat = node.data?.messageFormat || 'detailed';
               nodeData.triggerCondition = node.data?.triggerCondition;
               nodeData.suppression = node.data?.suppression;
+              nodeData.review = node.data?.review;
               nodeData.vlValidation = node.data?.vlValidation;
               console.log('🚨 Alert 节点加载数据:', {
                 节点ID: node.id,
@@ -712,6 +714,7 @@ export default function WorkflowEditorPage() {
             messageFormat: node.data?.messageFormat || 'detailed',  // 添加消息格式字段
             triggerCondition: node.data?.triggerCondition,
             suppression: node.data?.suppression,
+            review: node.data?.review,
             vlValidation: node.data?.vlValidation,
           };
           console.log('🚨 [EDITOR] Alert 节点保存数据:', {
@@ -866,6 +869,7 @@ export default function WorkflowEditorPage() {
         messageFormat: nodeData.messageFormat,
         triggerCondition: nodeData.triggerCondition,
         suppression: nodeData.suppression,
+        review: nodeData.review,
         vlValidation: nodeData.vlValidation,
         externalApiName: nodeData.externalApiName,
         executionMode: nodeData.config?.execution_mode || 'sync',

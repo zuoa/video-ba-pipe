@@ -10,6 +10,7 @@ from peewee import SqliteDatabase
 from app.core import alert_media_cleaner
 from app.core.database_models import (
     Alert,
+    AlertReview,
     AlertDeliveryTask,
     SystemSetting,
     VideoSource,
@@ -25,7 +26,7 @@ from app.core.recording_storage_config import (
 @pytest.fixture
 def retention_env(tmp_path, monkeypatch):
     test_db = SqliteDatabase(str(tmp_path / "retention.db"))
-    models = [SystemSetting, VideoSource, Workflow, Alert, AlertDeliveryTask, WorkflowTestResult]
+    models = [SystemSetting, VideoSource, Workflow, Alert, AlertReview, AlertDeliveryTask, WorkflowTestResult]
     frames = tmp_path / "frames"
     videos = tmp_path / "videos"
     frames.mkdir()
@@ -153,3 +154,29 @@ def test_zero_retention_still_recovers_low_disk_space(retention_env, monkeypatch
     assert env.original.exists()
     assert env.detection.exists()
     assert Alert.get_by_id(env.alert_id).alert_video is None
+
+
+def test_review_photos_survive_until_review_event_is_delivered(retention_env):
+    env = retention_env
+    review_photo = env.frames / 'review.jpg'
+    review_photo.write_bytes(b'review')
+    alert = Alert.get_by_id(env.alert_id)
+    review = AlertReview.create(
+        alert=alert, video_source=alert.video_source, node_id='alert',
+        due_at=datetime.now() - timedelta(hours=1),
+        status='cleared', completed_at=datetime.now(), image=review_photo.name,
+    )
+    task = AlertDeliveryTask.create(
+        alert=alert, event_type='alert.review.completed', status='pending',
+        next_attempt_at=datetime.now(), created_at=datetime.now(), updated_at=datetime.now(),
+    )
+    env.cleaner.image_retention_days = 7
+    env.cleaner.video_retention_days = 0
+    env.cleaner._cleanup_expired_alert_media()
+    assert review_photo.exists()
+    assert AlertReview.get_by_id(review.id).image == review_photo.name
+    task.status = 'succeeded'
+    task.save(only=[AlertDeliveryTask.status])
+    env.cleaner._cleanup_expired_alert_media()
+    assert not review_photo.exists()
+    assert AlertReview.get_by_id(review.id).image is None

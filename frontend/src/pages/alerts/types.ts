@@ -18,6 +18,17 @@ export interface Alert {
   alert_video_url?: string;
   detection_images?: string | DetectionImage[];
   window_stats?: string | WindowStats;
+  review?: {
+    status: 'pending' | 'running' | 'cleared' | 'present' | 'failed';
+    due_at: string;
+    started_at?: string | null;
+    completed_at?: string | null;
+    sample_count: number;
+    detection_summary?: string | null;
+    image_url?: string | null;
+    image_ori_url?: string | null;
+    error?: string | null;
+  } | null;
 }
 
 export interface Workflow {

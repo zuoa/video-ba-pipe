@@ -59,6 +59,29 @@ def _create_template(client, headers):
     return response.get_json()['id']
 
 
+def test_review_validation_runs_on_create_and_update(workflow_api):
+    client, headers, source = workflow_api
+    graph = {
+        'nodes': [
+            {'id': 'source', 'type': 'source', 'dataId': source.id},
+            {'id': 'alert', 'type': 'alert', 'data': {
+                'review': {'enabled': True, 'delay_seconds': 'bad', 'confirmation_seconds': 60}}},
+        ],
+        'connections': [{'from': 'source', 'to': 'alert'}],
+    }
+    invalid_create = client.post('/api/workflows', headers=headers,
+                                 json={'name': '复核校验', 'workflow_data': graph})
+    assert invalid_create.status_code == 400
+    graph['nodes'][1]['data']['review']['delay_seconds'] = 3600
+    created = client.post('/api/workflows', headers=headers,
+                          json={'name': '复核校验', 'workflow_data': graph})
+    assert created.status_code == 201
+    graph['connections'] = []
+    invalid_update = client.put(f"/api/workflows/{created.get_json()['id']}",
+                                headers=headers, json={'workflow_data': graph})
+    assert invalid_update.status_code == 400
+
+
 def test_template_is_unbound_inactive_and_cannot_activate(workflow_api):
     client, headers, _source = workflow_api
     template_id = _create_template(client, headers)
