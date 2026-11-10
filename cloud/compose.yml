@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cloud_video
+      POSTGRES_USER: cloud_video
+      POSTGRES_PASSWORD: ${CLOUD_DB_PASSWORD:?set CLOUD_DB_PASSWORD}
+    volumes:
+      - cloud-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloud_video -d cloud_video"]
+      interval: 5s
+      retries: 20
+
+  platform:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://cloud_video:${CLOUD_DB_PASSWORD}@db:5432/cloud_video
+      CLOUD_ADMIN_PASSWORD: ${CLOUD_ADMIN_PASSWORD:?set CLOUD_ADMIN_PASSWORD}
+      CLOUD_JWT_SECRET: ${CLOUD_JWT_SECRET:?set CLOUD_JWT_SECRET}
+      CLOUD_PUBLIC_URL: https://${CLOUD_DOMAIN:?set CLOUD_DOMAIN}
+      CLOUD_INGEST_URL: rtsps://${CLOUD_DOMAIN}:8322
+      CLOUD_MEDIA_PUBLIC_HOST: ${CLOUD_MEDIA_PUBLIC_HOST:?set CLOUD_MEDIA_PUBLIC_HOST}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3
+    restart: unless-stopped
+    environment:
+      MTX_WEBRTCADDITIONALHOSTS: ${CLOUD_MEDIA_PUBLIC_HOST:?set CLOUD_MEDIA_PUBLIC_HOST}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ./certs:/certs:ro
+    ports:
+      - "8322:8322/tcp"
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    depends_on:
+      - platform
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      CLOUD_DOMAIN: ${CLOUD_DOMAIN:?set CLOUD_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy-data:/data
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - platform
+      - mediamtx
+
+volumes:
+  cloud-db:
+  caddy-data:

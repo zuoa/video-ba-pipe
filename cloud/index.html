@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频预览平台</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#17242b;background:#edf2f3}
+    body{margin:0}header{background:#113744;color:white;padding:20px 28px;display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:21px;margin:0}main{max-width:1100px;margin:28px auto;padding:0 20px}
+    section{background:white;border-radius:10px;padding:22px;margin-bottom:18px;box-shadow:0 2px 12px #18343c10}
+    button{border:0;background:#087e83;color:white;border-radius:6px;padding:9px 13px;cursor:pointer}
+    button:hover{background:#08686d}button.secondary{background:#e1e9eb;color:#173843}
+    input{padding:9px;border:1px solid #b8c9ce;border-radius:6px;margin-right:8px;max-width:100%}
+    .row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e9eff0}
+    .grow{flex:1}.muted{color:#61747c}.online{color:#087e62}.offline{color:#a34435}
+    video{width:100%;max-height:65vh;background:#0b1519;border-radius:6px}
+    #status{min-height:1.5em}#viewer{display:none}
+  </style>
+</head>
+<body>
+  <header><h1>视频预览平台</h1><span id="identity">请登录</span></header>
+  <main>
+    <section id="login"><h2>管理员登录</h2><form id="loginForm"><input id="password" type="password" placeholder="平台管理员密码" required><button>登录</button></form></section>
+    <section id="dashboard" hidden><div class="row"><h2 class="grow">设备与视频源</h2><button class="secondary" id="refresh">刷新</button></div><div id="devices"></div><h3>添加边缘设备</h3><form id="createForm"><input id="deviceId" placeholder="设备标识：字母、数字、_、-" required><button>生成设备凭据</button></form><p id="created" class="muted"></p></section>
+    <section id="viewer"><div class="row"><h2 id="videoTitle" class="grow">实时预览</h2><button class="secondary" id="close">关闭</button></div><video id="video" autoplay muted playsinline controls></video><p id="status" class="muted"></p></section>
+  </main>
+  <script>
+    let token='', lease='', pc=null, renewTimer=null;
+    const $=id=>document.getElementById(id);
+    async function api(path, method='GET', body) {
+      const response=await fetch(path,{method,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+      const data=await response.json();
+      if(!response.ok) throw new Error(data.detail||'请求失败');
+      return data;
+    }
+    function message(error){$('status').textContent=String(error?.message||error)}
+    $('loginForm').onsubmit=async event=>{
+      event.preventDefault();
+      try { const data=await api('/api/login','POST',{password:$('password').value});token=data.token;
+        $('login').hidden=true;$('dashboard').hidden=false;$('identity').textContent='管理员';await refresh();
+      } catch(error){alert(error.message)}
+    };
+    async function refresh(){
+      try {const devices=await api('/api/devices');$('devices').replaceChildren();
+        if(!devices.length)$('devices').textContent='尚无设备';
+        for(const device of devices){
+          const box=document.createElement('div');const title=document.createElement('h3');
+          title.textContent=device.device_id+' · '+(device.online?'在线':'离线');title.className=device.online?'online':'offline';box.append(title);
+          for(const source of device.sources){const row=document.createElement('div');row.className='row';
+            const label=document.createElement('span');label.className='grow';label.textContent=source.name+' ('+source.source_code+', '+source.codec+')';
+            const button=document.createElement('button');button.textContent='实时预览';button.disabled=!device.online;
+            button.onclick=()=>view(device.device_id,source.source_code,source.name);row.append(label,button);box.append(row)}
+          $('devices').append(box)
+        }
+      }catch(error){alert(error.message)}
+    }
+    $('refresh').onclick=refresh;
+    $('createForm').onsubmit=async event=>{event.preventDefault();try{
+      const result=await api('/api/devices','POST',{device_id:$('deviceId').value});
+      $('created').textContent='设备 '+result.device_id+' 的 CLOUD_DEVICE_TOKEN：'+result.device_token+'。请立即保存；页面不会再次显示。';
+      await refresh();
+    }catch(error){alert(error.message)}};
+    async function closeView(){
+      if(renewTimer)clearInterval(renewTimer);renewTimer=null;
+      if(pc){pc.close();pc=null} $('video').srcObject=null;$('viewer').style.display='none';
+      if(lease){const old=lease;lease='';try{await api('/api/leases/'+old,'DELETE')}catch(_){}}
+    }
+    $('close').onclick=closeView;
+    async function view(deviceId,sourceCode,name){
+      await closeView();$('viewer').style.display='block';$('videoTitle').textContent=name;message('正在连接视频…');
+      try{
+        const session=await api('/api/view/'+encodeURIComponent(deviceId)+'/'+encodeURIComponent(sourceCode),'POST');lease=session.lease_id;
+        renewTimer=setInterval(()=>api('/api/leases/'+lease+'/renew','POST').catch(message),20000);
+        for(let attempt=0;attempt<12;attempt++){
+          if(!lease)return;
+          const peer=new RTCPeerConnection();peer.addTransceiver('video',{direction:'recvonly'});pc=peer;
+          peer.ontrack=event=>{$('video').srcObject=event.streams[0];message('正在播放')};
+          peer.onconnectionstatechange=()=>{if(peer.connectionState==='failed')message('媒体连接失败，请重试')};
+          const offer=await peer.createOffer();await peer.setLocalDescription(offer);
+          const response=await fetch(session.whep_url,{method:'POST',headers:{'Content-Type':'application/sdp',
+            'Authorization':'Basic '+btoa('viewer:'+session.read_token)},body:offer.sdp});
+          if(response.ok){await peer.setRemoteDescription({type:'answer',sdp:await response.text()});return}
+          peer.close();pc=null;
+          if(attempt===11)throw new Error('视频尚未就绪，HTTP '+response.status);
+          await new Promise(resolve=>setTimeout(resolve,1000));
+        }
+      }catch(error){message(error)}
+    }
+  </script>
+</body>
+</html>

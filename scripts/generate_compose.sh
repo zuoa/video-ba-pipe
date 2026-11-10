@@ -23,6 +23,7 @@ ENABLE_RABBITMQ=false
 RABBITMQ_SET=false
 ENABLE_MEDIAMTX=false
 MEDIAMTX_SET=false
+ENABLE_CLOUD_EDGE=false
 USE_NJU_MIRROR=true
 NJU_MIRROR_SET=false
 OUTPUT_FILE="${PROJECT_DIR}/docker-compose.yml"
@@ -53,6 +54,7 @@ usage() {
       --without-rabbitmq   不包含内置 RabbitMQ（默认）
       --with-mediamtx      包含 MediaMTX 实时预览中继
       --without-mediamtx   不包含 MediaMTX（默认）
+      --with-cloud-edge    包含公网平台连接进程（自动启用 MediaMTX）
       --nju-mirror         将 GHCR 替换为南京大学镜像（默认）
       --no-nju-mirror      使用上游 GHCR 地址
       --download-configs   自动准备 Compose 引用的配置文件（默认）
@@ -585,6 +587,12 @@ while (($# > 0)); do
       MEDIAMTX_SET=true
       shift
       ;;
+    --with-cloud-edge)
+      ENABLE_CLOUD_EDGE=true
+      ENABLE_MEDIAMTX=true
+      MEDIAMTX_SET=true
+      shift
+      ;;
     --without-mediamtx|--no-mediamtx)
       ENABLE_MEDIAMTX=false
       MEDIAMTX_SET=true
@@ -661,6 +669,10 @@ while (($# > 0)); do
     *) die "未知参数：$1（使用 --help 查看帮助）" ;;
   esac
 done
+
+if [[ "${ENABLE_CLOUD_EDGE}" == "true" ]]; then
+  ENABLE_MEDIAMTX=true
+fi
 
 if [[ "${INTERACTIVE_MODE}" != "false" ]]; then
   if prepare_interactive_input; then
@@ -801,6 +813,9 @@ fi
 if [[ "${ENABLE_MEDIAMTX}" == "true" ]]; then
   add_service_fragment mediamtx
 fi
+if [[ "${ENABLE_CLOUD_EDGE}" == "true" ]]; then
+  add_service_fragment cloud-edge
+fi
 
 if [[ "${USE_NJU_MIRROR}" == "true" ]]; then
   set_next_file
@@ -819,6 +834,9 @@ if [[ "${ENABLE_RABBITMQ}" == "true" ]]; then
 fi
 if [[ "${ENABLE_MEDIAMTX}" == "true" ]]; then
   OPTIONAL_SERVICES="${OPTIONAL_SERVICES:+${OPTIONAL_SERVICES},}mediamtx"
+fi
+if [[ "${ENABLE_CLOUD_EDGE}" == "true" ]]; then
+  OPTIONAL_SERVICES="${OPTIONAL_SERVICES:+${OPTIONAL_SERVICES},}cloud-edge"
 fi
 OPTIONAL_SERVICES="${OPTIONAL_SERVICES:-none}"
 MIRROR_NAME="upstream"

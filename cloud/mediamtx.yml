@@ -1,0 +1,18 @@
+api: no
+authMethod: http
+authHTTPAddress: http://platform:8000/internal/media-auth
+rtsp: yes
+rtspTransports: [tcp]
+rtspEncryption: strict
+rtspsAddress: :8322
+rtspServerKey: /certs/media.key
+rtspServerCert: /certs/media.crt
+rtmp: no
+srt: no
+hls: no
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+paths:
+  all_others:

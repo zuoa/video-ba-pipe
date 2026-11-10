@@ -1,0 +1,12 @@
+{$CLOUD_DOMAIN} {
+  tls /certs/media.crt /certs/media.key
+  handle /internal/* {
+    respond 404
+  }
+  handle /media/* {
+    reverse_proxy mediamtx:8889
+  }
+  handle {
+    reverse_proxy platform:8000
+  }
+}

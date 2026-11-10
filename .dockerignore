@@ -60,6 +60,7 @@ test_*.py
 .env
 .env.*
 !env.example
+cloud/certs/
 
 # Logs
 *.log

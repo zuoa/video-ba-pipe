@@ -216,3 +216,4 @@ __marimo__/
 /app.db
 debug.log.*
 run.log.*
+/cloud/certs/

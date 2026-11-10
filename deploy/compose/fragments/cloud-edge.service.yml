@@ -1,0 +1,33 @@
+  # Optional outbound connection to the public preview platform.
+  cloud-edge:
+    image: ${VIDEO_BA_PIPE_CONTROL_IMAGE:?set VIDEO_BA_PIPE_CONTROL_IMAGE}
+    restart: unless-stopped
+    init: true
+    entrypoint: ["python3", "-m", "app.cloud_edge"]
+    environment:
+      DB_BACKEND: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-video_ba_pipe}
+      DB_USER: ${DB_USER:-video_ba_pipe}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      NODE_ID: ${NODE_ID:-}
+      CLOUD_DEVICE_ID: ${CLOUD_DEVICE_ID:?set CLOUD_DEVICE_ID}
+      CLOUD_DEVICE_TOKEN: ${CLOUD_DEVICE_TOKEN:?set CLOUD_DEVICE_TOKEN}
+      CLOUD_PLATFORM_URL: ${CLOUD_PLATFORM_URL:?set CLOUD_PLATFORM_URL}
+      CLOUD_FORCE_H264: ${CLOUD_FORCE_H264:-false}
+      MEDIAMTX_ENABLED: "true"
+      MEDIAMTX_API_HOST: mediamtx
+      MEDIAMTX_API_PORT: "9997"
+      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-video-ba-api}
+      MEDIAMTX_API_PASSWORD: ${MEDIAMTX_API_PASSWORD:?set MEDIAMTX_API_PASSWORD}
+      MEDIAMTX_RTSP_PORT: "8554"
+    volumes:
+      - ./data:/data
+    networks:
+      - video-ba-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
